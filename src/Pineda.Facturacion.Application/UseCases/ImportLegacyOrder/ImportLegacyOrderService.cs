@@ -97,6 +97,7 @@ public class ImportLegacyOrderService
 
         return new ImportLegacyOrderResult
         {
+            Outcome = ImportLegacyOrderOutcome.Imported,
             IsSuccess = true,
             SourceSystem = command.SourceSystem,
             SourceTable = command.SourceTable,
@@ -118,6 +119,7 @@ public class ImportLegacyOrderService
         {
             return new ImportLegacyOrderResult
             {
+                Outcome = ImportLegacyOrderOutcome.Conflict,
                 IsSuccess = false,
                 SourceSystem = command.SourceSystem,
                 SourceTable = command.SourceTable,
@@ -135,6 +137,7 @@ public class ImportLegacyOrderService
 
         return new ImportLegacyOrderResult
         {
+            Outcome = ImportLegacyOrderOutcome.Idempotent,
             IsSuccess = true,
             IsIdempotent = true,
             SourceSystem = command.SourceSystem,
@@ -153,6 +156,9 @@ public class ImportLegacyOrderService
     {
         return new ImportLegacyOrderResult
         {
+            Outcome = errorMessage == $"Legacy order '{command.LegacyOrderId}' was not found."
+                ? ImportLegacyOrderOutcome.NotFound
+                : ImportLegacyOrderOutcome.Conflict,
             IsSuccess = false,
             SourceSystem = command.SourceSystem,
             SourceTable = command.SourceTable,

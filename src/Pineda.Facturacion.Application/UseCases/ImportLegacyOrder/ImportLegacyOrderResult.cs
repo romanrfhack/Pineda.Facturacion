@@ -4,6 +4,8 @@ namespace Pineda.Facturacion.Application.UseCases.ImportLegacyOrder;
 
 public class ImportLegacyOrderResult
 {
+    public ImportLegacyOrderOutcome Outcome { get; set; }
+
     public bool IsSuccess { get; set; }
 
     public bool IsIdempotent { get; set; }

@@ -24,6 +24,7 @@ public class ImportLegacyOrderServiceTests
         var result = await service.ExecuteAsync(command);
 
         Assert.False(result.IsSuccess);
+        Assert.Equal(ImportLegacyOrderOutcome.NotFound, result.Outcome);
         Assert.Equal("Legacy order '123' was not found.", result.ErrorMessage);
     }
 
@@ -63,6 +64,7 @@ public class ImportLegacyOrderServiceTests
 
         Assert.True(result.IsSuccess);
         Assert.True(result.IsIdempotent);
+        Assert.Equal(ImportLegacyOrderOutcome.Idempotent, result.Outcome);
         Assert.Equal(10, result.LegacyImportRecordId);
         Assert.Equal(20, result.SalesOrderId);
     }
@@ -94,6 +96,7 @@ public class ImportLegacyOrderServiceTests
         });
 
         Assert.False(result.IsSuccess);
+        Assert.Equal(ImportLegacyOrderOutcome.Conflict, result.Outcome);
         Assert.Contains("different source hash", result.ErrorMessage);
     }
 
@@ -120,6 +123,7 @@ public class ImportLegacyOrderServiceTests
 
         Assert.True(result.IsSuccess);
         Assert.False(result.IsIdempotent);
+        Assert.Equal(ImportLegacyOrderOutcome.Imported, result.Outcome);
         Assert.Equal(ImportStatus.Imported, result.ImportStatus);
         Assert.NotNull(importRecordRepository.Added);
         Assert.NotNull(importRecordRepository.Updated);

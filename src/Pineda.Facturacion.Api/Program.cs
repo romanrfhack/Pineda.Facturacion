@@ -1,4 +1,5 @@
 using Pineda.Facturacion.Application.DependencyInjection;
+using Pineda.Facturacion.Api.Endpoints;
 using Pineda.Facturacion.Infrastructure.DependencyInjection;
 using Pineda.Facturacion.Infrastructure.BillingWrite.DependencyInjection;
 using Pineda.Facturacion.Infrastructure.LegacyRead.DependencyInjection;
@@ -19,5 +20,6 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.MapOrdersEndpoints();
 
 app.Run();
