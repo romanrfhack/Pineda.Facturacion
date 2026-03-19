@@ -111,3 +111,36 @@ Replacement or re-import with changed source data is not defined yet and must be
 - Duplicate imports can be detected safely.
 - Changed source documents will surface explicitly instead of being overwritten silently.
 - The first import use case can be implemented with predictable behavior.
+
+---
+
+## ADR-007 - Snapshot pricing formulas validated from legacy orders
+- Date: 2026-03-19
+- Status: Accepted
+
+### Context
+The snapshot import needed real legacy formulas for subtotal, discount total, line total, and detail discount amount. These values were initially marked as TBD and then validated against multiple real TipoDocPedido = 'F' orders.
+
+### Decision
+For the currently validated legacy invoice-oriented orders, the snapshot import must use these formulas:
+
+- Header:
+  - Subtotal = SUM(pedidosdet.SuPrecio * pedidosdet.Cantidad)
+  - DiscountTotal = SUM((pedidosdet.Precio - pedidosdet.SuPrecio) * pedidosdet.Cantidad)
+  - TaxTotal = 0
+  - Total = pedidos.MontoPedido
+
+- Detail:
+  - LineTotal = pedidosdet.SuPrecio * pedidosdet.Cantidad
+  - DiscountAmount = (pedidosdet.Precio - pedidosdet.SuPrecio) * pedidosdet.Cantidad
+  - TaxRate = 0
+  - TaxAmount = 0
+
+- Line numbering:
+  - LineNumber is derived deterministically from row order because the legacy detail table does not provide a native line number.
+
+### Consequences
+- Snapshot totals now match validated legacy behavior.
+- Header and detail discount totals are consistent.
+- The import flow is stable enough to support the next phase: BillingDocument foundation.
+- These formulas apply to the currently validated TipoDocPedido = 'F' sample set and must be revisited if a contrary legacy case is found.
