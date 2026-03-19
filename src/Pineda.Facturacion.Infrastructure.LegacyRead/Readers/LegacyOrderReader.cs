@@ -25,6 +25,17 @@ public class LegacyOrderReader : ILegacyOrderReader
             p.condPagoPedido AS PaymentCondition,
             c.TipoCliente AS PriceListCode,
             p.TipoEntrega AS DeliveryType,
+            COALESCE((
+                SELECT SUM(d.SuPrecio * d.Cantidad)
+                FROM pedidosdet d
+                WHERE d.noPedido = p.noPedido
+            ), 0) AS Subtotal,
+            COALESCE((
+                SELECT SUM((d.Precio - d.SuPrecio) * d.Cantidad)
+                FROM pedidosdet d
+                WHERE d.noPedido = p.noPedido
+            ), 0) AS DiscountTotal,
+            0 AS TaxTotal,
             p.MontoPedido AS Total
         FROM pedidos p
         INNER JOIN clientes c
@@ -46,14 +57,16 @@ public class LegacyOrderReader : ILegacyOrderReader
             a.uniMedida AS UnitName,
             d.Cantidad AS Quantity,
             d.SuPrecio AS UnitPrice,
-            a.PorcentajeIVAArt AS TaxRate,
-            a.IVA AS TaxAmount,
+            ((d.Precio - d.SuPrecio) * d.Cantidad) AS DiscountAmount,
+            0 AS TaxRate,
+            0 AS TaxAmount,
             (d.SuPrecio * d.Cantidad) AS LineTotal
         FROM pedidosdet d
         INNER JOIN articulos a
             ON d.cveArticulo = a.cveArticulo
            AND d.cveMarcaArticulo = a.cveMarcaArticulo
-        WHERE d.noPedido = @legacyOrderId;
+        WHERE d.noPedido = @legacyOrderId
+        ORDER BY d.cveArticulo, d.cveMarcaArticulo, d.SuPrecio, d.Cantidad, d.uniMedida;
         """;
 
     private readonly string _connectionString;
@@ -113,9 +126,9 @@ public class LegacyOrderReader : ILegacyOrderReader
             PriceListCode = GetNullableString(reader, "PriceListCode"),
             DeliveryType = GetNullableString(reader, "DeliveryType"),
             CurrencyCode = "MXN",
-            // docs/013 maps subtotal to TBD, so this remains intentionally unmapped.
-            // docs/013 maps discount total to TBD, so this remains intentionally unmapped.
-            // docs/013 maps tax total to TBD, so this remains intentionally unmapped.
+            Subtotal = GetRequiredDecimal(reader, "Subtotal"),
+            DiscountTotal = GetRequiredDecimal(reader, "DiscountTotal"),
+            TaxTotal = GetRequiredDecimal(reader, "TaxTotal"),
             Total = GetRequiredDecimal(reader, "Total")
         };
     }
@@ -131,12 +144,13 @@ public class LegacyOrderReader : ILegacyOrderReader
         command.Parameters.AddWithValue("@legacyOrderId", legacyOrderId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var lineNumber = 1;
 
         while (await reader.ReadAsync(cancellationToken))
         {
             items.Add(new LegacyOrderItemReadModel
             {
-                // docs/013 still marks line number as TBD, so this remains intentionally unmapped.
+                LineNumber = lineNumber++,
                 LegacyArticleId = GetRequiredString(reader, "LegacyArticleId"),
                 // docs/013 documents Sku as a temporary same-source mapping from cveArticulo.
                 Sku = GetNullableString(reader, "Sku"),
@@ -147,7 +161,7 @@ public class LegacyOrderReader : ILegacyOrderReader
                 UnitName = GetNullableString(reader, "UnitName"),
                 Quantity = GetRequiredDecimal(reader, "Quantity"),
                 UnitPrice = GetRequiredDecimal(reader, "UnitPrice"),
-                // docs/013 maps discount amount to TBD, so this remains intentionally unmapped.
+                DiscountAmount = GetRequiredDecimal(reader, "DiscountAmount"),
                 TaxRate = GetRequiredDecimal(reader, "TaxRate"),
                 TaxAmount = GetRequiredDecimal(reader, "TaxAmount"),
                 LineTotal = GetRequiredDecimal(reader, "LineTotal"),
