@@ -144,3 +144,50 @@ For the currently validated legacy invoice-oriented orders, the snapshot import 
 - Header and detail discount totals are consistent.
 - The import flow is stable enough to support the next phase: BillingDocument foundation.
 - These formulas apply to the currently validated TipoDocPedido = 'F' sample set and must be revisited if a contrary legacy case is found.
+
+---
+
+## ADR-008 - Initial BillingDocument creation rules
+- Date: 2026-03-19
+- Status: Accepted
+
+### Context
+The project now has snapshot import working end-to-end and the illing_document / illing_document_item foundation persisted in MySQL. The next phase needs explicit rules for creating internal billing documents from imported sales_order snapshots before PAC integration.
+
+### Decision
+For the current MVP foundation:
+
+- A BillingDocument is created from exactly one imported SalesOrder.
+- At this stage, only one active BillingDocument per SalesOrder is allowed.
+- BillingDocument is an internal application document, not the fiscal CFDI result.
+- BillingDocumentItem rows are derived directly from SalesOrderItem rows.
+- The initial creation flow must copy these fields from SalesOrder into BillingDocument:
+  - SalesOrderId
+  - PaymentCondition
+  - Subtotal
+  - DiscountTotal
+  - TaxTotal
+  - Total
+- The initial creation flow must copy these fields from SalesOrderItem into BillingDocumentItem:
+  - LineNumber
+  - Sku
+  - Description
+  - Quantity
+  - UnitPrice
+  - DiscountAmount
+  - TaxRate
+  - TaxAmount
+  - LineTotal
+  - SatProductServiceCode
+  - SatUnitCode
+- Status starts as Draft.
+- CreatedAtUtc and UpdatedAtUtc are set by the application at creation time.
+- IssuedAtUtc remains null at this stage.
+- Series, Folio, PaymentMethodSat, PaymentFormSat, and fiscal-specific values remain null until a later phase.
+- TaxObjectCode will temporarily default to "02" for all imported lines until SAT-specific mapping is explicitly defined.
+- DocumentType will temporarily be assigned explicitly by the application layer and must not be inferred silently from PAC behavior.
+
+### Consequences
+- The next creation use case can be implemented without PAC coupling.
+- Internal billing documents can be previewed and persisted consistently.
+- Some fiscal fields remain intentionally deferred to later phases.
