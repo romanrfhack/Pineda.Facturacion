@@ -33,6 +33,7 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<ILegacyImportRecordRepository, LegacyImportRecordRepository>();
         services.AddScoped<ISalesOrderRepository, SalesOrderRepository>();
+        services.AddScoped<IBillingDocumentRepository, BillingDocumentRepository>();
         services.AddScoped<IUnitOfWork>(serviceProvider => serviceProvider.GetRequiredService<BillingDbContext>());
 
         return services;

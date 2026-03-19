@@ -17,6 +17,10 @@ public class BillingDbContext : DbContext, IUnitOfWork
 
     public DbSet<SalesOrderItem> SalesOrderItems => Set<SalesOrderItem>();
 
+    public DbSet<BillingDocument> BillingDocuments => Set<BillingDocument>();
+
+    public DbSet<BillingDocumentItem> BillingDocumentItems => Set<BillingDocumentItem>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(BillingDbContext).Assembly);
