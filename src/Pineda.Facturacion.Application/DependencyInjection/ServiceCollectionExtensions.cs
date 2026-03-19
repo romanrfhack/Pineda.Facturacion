@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Pineda.Facturacion.Application.UseCases.CreateBillingDocument;
 using Pineda.Facturacion.Application.UseCases.ImportLegacyOrder;
 
 namespace Pineda.Facturacion.Application.DependencyInjection;
@@ -10,6 +11,7 @@ public static class ServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.AddScoped<ImportLegacyOrderService>();
+        services.AddScoped<CreateBillingDocumentService>();
         return services;
     }
 }
