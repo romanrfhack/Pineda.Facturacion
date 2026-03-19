@@ -4,7 +4,7 @@ using Pineda.Facturacion.Domain.Entities;
 
 namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Repositories;
 
-public class SalesOrderRepository : ISalesOrderRepository
+public class SalesOrderRepository : ISalesOrderRepository, ISalesOrderSnapshotRepository
 {
     private readonly BillingDbContext _dbContext;
 
@@ -18,6 +18,14 @@ public class SalesOrderRepository : ISalesOrderRepository
         return _dbContext.SalesOrders
             .AsNoTracking()
             .FirstOrDefaultAsync(x => x.LegacyImportRecordId == legacyImportRecordId, cancellationToken);
+    }
+
+    public Task<SalesOrder?> GetByIdWithItemsAsync(long salesOrderId, CancellationToken cancellationToken = default)
+    {
+        return _dbContext.SalesOrders
+            .AsNoTracking()
+            .Include(x => x.Items)
+            .FirstOrDefaultAsync(x => x.Id == salesOrderId, cancellationToken);
     }
 
     public async Task AddAsync(SalesOrder salesOrder, CancellationToken cancellationToken = default)
