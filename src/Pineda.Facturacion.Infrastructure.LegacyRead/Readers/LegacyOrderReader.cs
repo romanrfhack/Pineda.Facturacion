@@ -1,4 +1,5 @@
 using System.Data;
+using System.Globalization;
 using MySqlConnector;
 using Pineda.Facturacion.Application.Abstractions.Legacy;
 using Pineda.Facturacion.Application.Models.Legacy;
@@ -14,7 +15,12 @@ public class LegacyOrderReader : ILegacyOrderReader
             p.refPedido AS LegacyOrderNumber,
             p.TipoPedido AS LegacyOrderType,
             p.noCliente AS CustomerLegacyId,
-            c.XRazonSocial AS CustomerName,
+            COALESCE(
+                NULLIF(TRIM(c.XRazonSocial), ''),
+                NULLIF(TRIM(CONCAT_WS(' ', NULLIF(c.Nombre, ''), NULLIF(c.Paterno, ''), NULLIF(c.Materno, ''))), ''),
+                NULLIF(TRIM(c.Cliente), ''),
+                CONCAT('Cliente ', p.noCliente)
+            ) AS CustomerName,
             c.RFC AS CustomerRfc,
             p.condPagoPedido AS PaymentCondition,
             c.TipoCliente AS PriceListCode,
@@ -97,20 +103,20 @@ public class LegacyOrderReader : ILegacyOrderReader
 
         return new LegacyOrderReadModel
         {
-            LegacyOrderId = reader.GetString(reader.GetOrdinal("LegacyOrderId")),
-            LegacyOrderNumber = reader.GetString(reader.GetOrdinal("LegacyOrderNumber")),
+            LegacyOrderId = GetRequiredString(reader, "LegacyOrderId"),
+            LegacyOrderNumber = GetRequiredString(reader, "LegacyOrderNumber"),
             LegacyOrderType = GetNullableString(reader, "LegacyOrderType"),
-            CustomerLegacyId = reader.GetString(reader.GetOrdinal("CustomerLegacyId")),
-            CustomerName = reader.GetString(reader.GetOrdinal("CustomerName")),
+            CustomerLegacyId = GetRequiredString(reader, "CustomerLegacyId"),
+            CustomerName = GetRequiredString(reader, "CustomerName"),
             CustomerRfc = GetNullableString(reader, "CustomerRfc"),
-            PaymentCondition = reader.GetString(reader.GetOrdinal("PaymentCondition")),
+            PaymentCondition = GetRequiredString(reader, "PaymentCondition"),
             PriceListCode = GetNullableString(reader, "PriceListCode"),
             DeliveryType = GetNullableString(reader, "DeliveryType"),
             CurrencyCode = "MXN",
             // docs/013 maps subtotal to TBD, so this remains intentionally unmapped.
             // docs/013 maps discount total to TBD, so this remains intentionally unmapped.
             // docs/013 maps tax total to TBD, so this remains intentionally unmapped.
-            Total = reader.GetDecimal(reader.GetOrdinal("Total"))
+            Total = GetRequiredDecimal(reader, "Total")
         };
     }
 
@@ -131,7 +137,7 @@ public class LegacyOrderReader : ILegacyOrderReader
             items.Add(new LegacyOrderItemReadModel
             {
                 // docs/013 still marks line number as TBD, so this remains intentionally unmapped.
-                LegacyArticleId = reader.GetString(reader.GetOrdinal("LegacyArticleId")),
+                LegacyArticleId = GetRequiredString(reader, "LegacyArticleId"),
                 // docs/013 documents Sku as a temporary same-source mapping from cveArticulo.
                 Sku = GetNullableString(reader, "Sku"),
                 Description = BuildDescription(
@@ -139,12 +145,12 @@ public class LegacyOrderReader : ILegacyOrderReader
                     GetNullableString(reader, "ArticleSpecification")),
                 UnitCode = GetNullableString(reader, "UnitCode"),
                 UnitName = GetNullableString(reader, "UnitName"),
-                Quantity = reader.GetDecimal(reader.GetOrdinal("Quantity")),
-                UnitPrice = reader.GetDecimal(reader.GetOrdinal("UnitPrice")),
+                Quantity = GetRequiredDecimal(reader, "Quantity"),
+                UnitPrice = GetRequiredDecimal(reader, "UnitPrice"),
                 // docs/013 maps discount amount to TBD, so this remains intentionally unmapped.
-                TaxRate = reader.GetDecimal(reader.GetOrdinal("TaxRate")),
-                TaxAmount = reader.GetDecimal(reader.GetOrdinal("TaxAmount")),
-                LineTotal = reader.GetDecimal(reader.GetOrdinal("LineTotal")),
+                TaxRate = GetRequiredDecimal(reader, "TaxRate"),
+                TaxAmount = GetRequiredDecimal(reader, "TaxAmount"),
+                LineTotal = GetRequiredDecimal(reader, "LineTotal"),
                 // docs/013 maps SAT product/service code to TBD, so this remains intentionally unmapped.
                 // docs/013 maps SAT unit code to TBD, so this remains intentionally unmapped.
             });
@@ -153,10 +159,47 @@ public class LegacyOrderReader : ILegacyOrderReader
         return items;
     }
 
+    private static string GetRequiredString(MySqlDataReader reader, string columnName)
+    {
+        var value = GetStringValue(reader, columnName);
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new InvalidOperationException($"Column '{columnName}' returned null or empty, but a value was required.");
+        }
+
+        return value;
+    }
+
     private static string? GetNullableString(MySqlDataReader reader, string columnName)
     {
+        return GetStringValue(reader, columnName);
+    }
+
+    private static string? GetStringValue(MySqlDataReader reader, string columnName)
+    {
         var ordinal = reader.GetOrdinal(columnName);
-        return reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
+
+        if (reader.IsDBNull(ordinal))
+        {
+            return null;
+        }
+
+        var value = reader.GetValue(ordinal);
+        return Convert.ToString(value, CultureInfo.InvariantCulture);
+    }
+
+    private static decimal GetRequiredDecimal(MySqlDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+
+        if (reader.IsDBNull(ordinal))
+        {
+            throw new InvalidOperationException($"Column '{columnName}' returned null, but a numeric value was required.");
+        }
+
+        var value = reader.GetValue(ordinal);
+        return Convert.ToDecimal(value, CultureInfo.InvariantCulture);
     }
 
     private static string BuildDescription(string? articleName, string? articleSpecification)
