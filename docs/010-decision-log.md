@@ -83,3 +83,31 @@ Keep FacturaloPlus isolated behind an abstraction defined in Application.
 - Provider-specific payloads stay in infrastructure.
 - Business logic remains portable.
 - Testing becomes easier with mocks/fakes.
+
+---
+
+## ADR-006 - Initial import idempotency strategy
+- Date: 2026-03-18
+- Status: Accepted
+
+### Context
+The new billing system imports legacy orders into snapshot tables and must avoid duplicate imports while preserving traceability.
+
+### Decision
+For the MVP, each legacy order import will be identified by:
+- source_system
+- source_table
+- source_document_id
+
+A deterministic source_hash will also be generated from the imported order content.
+
+If the same source document is imported again:
+- if the source hash matches the existing imported record, the operation is considered idempotent;
+- if the source hash differs, the operation must not silently overwrite prior imported data.
+
+Replacement or re-import with changed source data is not defined yet and must be treated as a controlled future flow.
+
+### Consequences
+- Duplicate imports can be detected safely.
+- Changed source documents will surface explicitly instead of being overwritten silently.
+- The first import use case can be implemented with predictable behavior.
