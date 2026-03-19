@@ -1,0 +1,16 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Pineda.Facturacion.Api/Pineda.Facturacion.Api.csproj" />
+    <Project Path="src/Pineda.Facturacion.Application/Pineda.Facturacion.Application.csproj" />
+    <Project Path="src/Pineda.Facturacion.Domain/Pineda.Facturacion.Domain.csproj" />
+    <Project Path="src/Pineda.Facturacion.Infrastructure.BillingWrite/Pineda.Facturacion.Infrastructure.BillingWrite.csproj" />
+    <Project Path="src/Pineda.Facturacion.Infrastructure.FacturaloPlus/Pineda.Facturacion.Infrastructure.FacturaloPlus.csproj" />
+    <Project Path="src/Pineda.Facturacion.Infrastructure.LegacyRead/Pineda.Facturacion.Infrastructure.LegacyRead.csproj" />
+    <Project Path="src/Pineda.Facturacion.Infrastructure/Pineda.Facturacion.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Pineda.Facturacion.ArchitectureTests/Pineda.Facturacion.ArchitectureTests.csproj" />
+    <Project Path="tests/Pineda.Facturacion.IntegrationTests/Pineda.Facturacion.IntegrationTests.csproj" />
+    <Project Path="tests/Pineda.Facturacion.UnitTests/Pineda.Facturacion.UnitTests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Pineda.Facturacion.Application\Pineda.Facturacion.Application.csproj" />
+    <ProjectReference Include="..\Pineda.Facturacion.Infrastructure\Pineda.Facturacion.Infrastructure.csproj" />
+    <ProjectReference Include="..\Pineda.Facturacion.Infrastructure.LegacyRead\Pineda.Facturacion.Infrastructure.LegacyRead.csproj" />
+    <ProjectReference Include="..\Pineda.Facturacion.Infrastructure.BillingWrite\Pineda.Facturacion.Infrastructure.BillingWrite.csproj" />
+    <ProjectReference Include="..\Pineda.Facturacion.Infrastructure.FacturaloPlus\Pineda.Facturacion.Infrastructure.FacturaloPlus.csproj" />
+  </ItemGroup>
+
+</Project>
