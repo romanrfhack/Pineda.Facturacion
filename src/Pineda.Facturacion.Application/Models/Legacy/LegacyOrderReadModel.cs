@@ -6,19 +6,19 @@ public class LegacyOrderReadModel
 
     public string LegacyOrderNumber { get; set; } = string.Empty;
 
-    public string LegacyOrderType { get; set; } = string.Empty;
+    public string? LegacyOrderType { get; set; }
 
     public string CustomerLegacyId { get; set; } = string.Empty;
 
     public string CustomerName { get; set; } = string.Empty;
 
-    public string CustomerRfc { get; set; } = string.Empty;
+    public string? CustomerRfc { get; set; }
 
     public string PaymentCondition { get; set; } = string.Empty;
 
-    public string PriceListCode { get; set; } = string.Empty;
+    public string? PriceListCode { get; set; }
 
-    public string DeliveryType { get; set; } = string.Empty;
+    public string? DeliveryType { get; set; }
 
     public string CurrencyCode { get; set; } = string.Empty;
 

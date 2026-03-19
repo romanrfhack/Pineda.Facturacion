@@ -75,7 +75,7 @@ public class ImportLegacyOrderService
             SourceSystem = command.SourceSystem,
             SourceTable = command.SourceTable,
             SourceDocumentId = legacyOrder.LegacyOrderId,
-            SourceDocumentType = legacyOrder.LegacyOrderType,
+            SourceDocumentType = legacyOrder.LegacyOrderType ?? string.Empty,
             SourceHash = sourceHash,
             ImportStatus = ImportStatus.Pending,
             ImportedAtUtc = DateTime.UtcNow,
