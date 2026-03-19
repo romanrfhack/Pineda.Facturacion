@@ -10,13 +10,13 @@ public class SalesOrderItem
 
     public string LegacyArticleId { get; set; } = string.Empty;
 
-    public string Sku { get; set; } = string.Empty;
+    public string? Sku { get; set; }
 
     public string Description { get; set; } = string.Empty;
 
-    public string UnitCode { get; set; } = string.Empty;
+    public string? UnitCode { get; set; }
 
-    public string UnitName { get; set; } = string.Empty;
+    public string? UnitName { get; set; }
 
     public decimal Quantity { get; set; }
 
@@ -30,7 +30,7 @@ public class SalesOrderItem
 
     public decimal LineTotal { get; set; }
 
-    public string SatProductServiceCode { get; set; } = string.Empty;
+    public string? SatProductServiceCode { get; set; }
 
-    public string SatUnitCode { get; set; } = string.Empty;
+    public string? SatUnitCode { get; set; }
 }
