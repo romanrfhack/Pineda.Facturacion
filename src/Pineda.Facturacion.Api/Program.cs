@@ -21,5 +21,6 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.MapOrdersEndpoints();
+app.MapSalesOrdersEndpoints();
 
 app.Run();
