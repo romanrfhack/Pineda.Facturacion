@@ -18,7 +18,7 @@ public class LegacyImportRecord
 
     public ImportStatus ImportStatus { get; set; }
 
-    public DateTime ImportedAtUtc { get; set; }
+    public DateTime? ImportedAtUtc { get; set; }
 
     public DateTime LastSeenAtUtc { get; set; }
 
