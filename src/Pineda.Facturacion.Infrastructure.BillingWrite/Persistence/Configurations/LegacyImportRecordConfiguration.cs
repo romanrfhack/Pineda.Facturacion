@@ -18,22 +18,32 @@ public class LegacyImportRecordConfiguration : IEntityTypeConfiguration<LegacyIm
 
         builder.Property(x => x.SourceSystem)
             .HasColumnName("source_system")
+            .HasMaxLength(50)
+            .HasColumnType("varchar(50)")
             .IsRequired();
 
         builder.Property(x => x.SourceTable)
             .HasColumnName("source_table")
+            .HasMaxLength(100)
+            .HasColumnType("varchar(100)")
             .IsRequired();
 
         builder.Property(x => x.SourceDocumentId)
             .HasColumnName("source_document_id")
+            .HasMaxLength(100)
+            .HasColumnType("varchar(100)")
             .IsRequired();
 
         builder.Property(x => x.SourceDocumentType)
             .HasColumnName("source_document_type")
+            .HasMaxLength(50)
+            .HasColumnType("varchar(50)")
             .IsRequired();
 
         builder.Property(x => x.SourceHash)
             .HasColumnName("source_hash")
+            .HasMaxLength(64)
+            .HasColumnType("char(64)")
             .IsRequired();
 
         builder.Property(x => x.ImportStatus)
@@ -54,6 +64,8 @@ public class LegacyImportRecordConfiguration : IEntityTypeConfiguration<LegacyIm
 
         builder.Property(x => x.ErrorMessage)
             .HasColumnName("error_message")
+            .HasMaxLength(1000)
+            .HasColumnType("varchar(1000)")
             .IsRequired(false);
 
         builder.HasIndex(x => new
