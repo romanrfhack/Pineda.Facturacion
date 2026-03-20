@@ -45,6 +45,28 @@ import { PaymentApplicationFormComponent } from '../components/payment-applicati
         <section class="card">
           <h3>Payment #{{ currentPayment.id }}</h3>
           <p class="helper">Amount {{ currentPayment.amount }} MXN · Remaining {{ currentPayment.remainingAmount }} MXN</p>
+          @if (currentPayment.applications.length) {
+            <table class="applications">
+              <thead>
+                <tr>
+                  <th>AR invoice</th>
+                  <th>Applied</th>
+                  <th>Previous balance</th>
+                  <th>New balance</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (application of currentPayment.applications; track application.id) {
+                  <tr>
+                    <td>{{ application.accountsReceivableInvoiceId }}</td>
+                    <td>{{ application.appliedAmount }}</td>
+                    <td>{{ application.previousBalance }}</td>
+                    <td>{{ application.newBalance }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          }
           @if (permissionService.canManagePayments()) {
             <app-payment-application-form [loading]="loading()" (submit)="applyPayment($event)" />
             <div class="links">
@@ -63,6 +85,8 @@ import { PaymentApplicationFormComponent } from '../components/payment-applicati
     .helper { color:#5f6b76; }
     button, a { border:none; border-radius:0.8rem; padding:0.75rem 1rem; background:#182533; color:#fff; cursor:pointer; text-decoration:none; display:inline-flex; }
     .links { margin-top:1rem; }
+    .applications { width:100%; border-collapse:collapse; margin:1rem 0; }
+    .applications th, .applications td { text-align:left; padding:0.6rem; border-top:1px solid #ece3d3; }
   `],
   changeDetection: ChangeDetectionStrategy.OnPush
 })

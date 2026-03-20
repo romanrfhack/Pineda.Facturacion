@@ -3,7 +3,7 @@
 ## Scope
 This document defines the automated browser test strategy for the Angular operations UI.
 
-The purpose of this step is reliability, not broad scenario coverage. Automated e2e tests validate a small number of real browser journeys. Detailed domain permutations remain covered by backend integration tests and frontend unit tests.
+The purpose of this step is reliability first, then focused operational journey coverage. Automated e2e validates a small set of real browser journeys while detailed domain permutations remain covered by backend integration tests and frontend unit tests.
 
 ## Chosen architecture
 The automated e2e flow uses:
@@ -52,24 +52,34 @@ Instead, Playwright intercepts the frontend's HTTP calls and returns determinist
 - fiscal receiver search
 - fiscal document preparation
 - fiscal document readback
+- invoice stamping
+- AR invoice creation
+- payment creation and payment application
+- payment-complement preparation and stamping
+- audit and evidence reads
 
 This keeps automated UI tests stable while backend behavior continues to be validated by existing .NET integration tests.
 
 ## Fake PAC behavior
 There are no real PAC calls in automated e2e.
 
-For this step, PAC-facing UI behavior is intentionally not validated through live providers. Any future automated browser flow that covers stamping or cancellation should continue to use mocked responses unless a dedicated backend test host is introduced later.
+PAC-facing UI behavior is validated only through deterministic mocked provider outcomes. Automated e2e does not use live FacturaloPlus traffic.
 
 Manual sandbox or provider smoke tests remain a separate operational activity.
 
 ## Test user and deterministic data
-The current happy-path browser scenario uses deterministic mocked data:
-- username: `supervisor`
-- password: `supervisor-password`
-- roles: `FiscalSupervisor`
-- known legacy order id: `LEG-7001`
+The suite uses deterministic mocked data such as:
+- `supervisor` / `Secret123!`
+- `operator` / `Secret123!`
+- `auditor` / `Secret123!`
+- known ids like `LEG-7001`, `LEG-7101`, fiscal document `401`, payment `702`
 
 These values are test-only fixtures returned by the Playwright mocks. They are not real production credentials and are not used by the backend runtime.
+
+Expanded convention:
+- each major browser journey owns a dedicated scenario mock helper
+- some journeys start from a deterministic pre-stamped or pre-applied state instead of recreating every earlier step
+- specs must not depend on previous specs having run
 
 ## Commands
 Local commands:
@@ -101,6 +111,8 @@ Automated e2e should cover:
 - route protection
 - key browser-level operational happy paths
 - visible status and validation handling
+- safe evidence and XML viewing
+- a small number of role and provider guardrails
 
 Manual smoke tests should cover:
 - real backend deployment configuration
@@ -126,7 +138,7 @@ If the app opens but the test fails:
 - update the test helper if the UI route or button labels change
 
 ## Current limitations
-- automated e2e currently mocks backend HTTP rather than running a full backend test host
-- only one meaningful happy-path UI journey is covered in this step
-- provider-unavailable and authorization edge cases remain primarily covered by integration and unit tests
+- automated e2e still mocks backend HTTP rather than running a full backend test host
+- cancellation and status-refresh browser journeys are not yet covered end-to-end
+- some role/forbidden cases still rely more heavily on component and integration tests than on browser tests
 - no manual sandbox/provider smoke test is automated here
