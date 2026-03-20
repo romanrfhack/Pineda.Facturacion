@@ -48,6 +48,17 @@ public class BillingDocumentConfiguration : IEntityTypeConfiguration<BillingDocu
             .HasColumnType("varchar(10)")
             .IsRequired();
 
+        builder.Property(x => x.CurrencyCode)
+            .HasColumnName("currency_code")
+            .HasMaxLength(3)
+            .HasColumnType("char(3)")
+            .IsRequired();
+
+        builder.Property(x => x.ExchangeRate)
+            .HasColumnName("exchange_rate")
+            .HasPrecision(18, 6)
+            .IsRequired(false);
+
         builder.Property(x => x.PaymentMethodSat)
             .HasColumnName("payment_method_sat")
             .HasMaxLength(10)

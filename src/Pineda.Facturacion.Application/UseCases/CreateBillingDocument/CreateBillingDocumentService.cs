@@ -1,4 +1,5 @@
 using Pineda.Facturacion.Application.Abstractions.Persistence;
+using Pineda.Facturacion.Application.Common;
 using Pineda.Facturacion.Domain.Entities;
 using Pineda.Facturacion.Domain.Enums;
 
@@ -28,12 +29,12 @@ public class CreateBillingDocumentService
     {
         if (command.SalesOrderId <= 0)
         {
-            return CreateFailureResult(command.SalesOrderId, "Sales order id is required.");
+            return CreateFailureResult(command.SalesOrderId, "Sales order id is required.", CreateBillingDocumentOutcome.ValidationFailed);
         }
 
         if (string.IsNullOrWhiteSpace(command.DocumentType))
         {
-            return CreateFailureResult(command.SalesOrderId, "Document type is required.");
+            return CreateFailureResult(command.SalesOrderId, "Document type is required.", CreateBillingDocumentOutcome.ValidationFailed);
         }
 
         var salesOrder = await _salesOrderSnapshotRepository.GetByIdWithItemsAsync(command.SalesOrderId, cancellationToken);
@@ -64,8 +65,17 @@ public class CreateBillingDocumentService
             };
         }
 
-        var now = DateTime.UtcNow;
-        var billingDocument = MapBillingDocument(salesOrder, command.DocumentType, now);
+        BillingDocument billingDocument;
+
+        try
+        {
+            var now = DateTime.UtcNow;
+            billingDocument = MapBillingDocument(salesOrder, command.DocumentType, now);
+        }
+        catch (InvalidOperationException exception)
+        {
+            return CreateFailureResult(command.SalesOrderId, exception.Message, CreateBillingDocumentOutcome.ValidationFailed);
+        }
 
         await _billingDocumentRepository.AddAsync(billingDocument, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -80,11 +90,14 @@ public class CreateBillingDocumentService
         };
     }
 
-    private static CreateBillingDocumentResult CreateFailureResult(long salesOrderId, string errorMessage)
+    private static CreateBillingDocumentResult CreateFailureResult(
+        long salesOrderId,
+        string errorMessage,
+        CreateBillingDocumentOutcome outcome)
     {
         return new CreateBillingDocumentResult
         {
-            Outcome = CreateBillingDocumentOutcome.Conflict,
+            Outcome = outcome,
             IsSuccess = false,
             SalesOrderId = salesOrderId,
             ErrorMessage = errorMessage
@@ -93,12 +106,22 @@ public class CreateBillingDocumentService
 
     private static BillingDocument MapBillingDocument(SalesOrder salesOrder, string documentType, DateTime now)
     {
+        var normalizedCurrencyCode = FiscalMasterDataNormalization.NormalizeRequiredCode(salesOrder.CurrencyCode);
+
+        if (normalizedCurrencyCode != "MXN")
+        {
+            throw new InvalidOperationException(
+                $"Current MVP BillingDocument creation supports MXN only. Sales order '{salesOrder.Id}' has currency '{normalizedCurrencyCode}'.");
+        }
+
         return new BillingDocument
         {
             SalesOrderId = salesOrder.Id,
             DocumentType = documentType,
             Status = BillingDocumentStatus.Draft,
             PaymentCondition = salesOrder.PaymentCondition,
+            CurrencyCode = normalizedCurrencyCode,
+            ExchangeRate = 1m,
             Subtotal = salesOrder.Subtotal,
             DiscountTotal = salesOrder.DiscountTotal,
             TaxTotal = salesOrder.TaxTotal,
@@ -109,6 +132,9 @@ public class CreateBillingDocumentService
             {
                 LineNumber = item.LineNumber,
                 Sku = item.Sku,
+                ProductInternalCode = string.IsNullOrWhiteSpace(item.Sku)
+                    ? null
+                    : FiscalMasterDataNormalization.NormalizeRequiredCode(item.Sku),
                 Description = item.Description,
                 Quantity = item.Quantity,
                 UnitPrice = item.UnitPrice,

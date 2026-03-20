@@ -1,5 +1,8 @@
 using Microsoft.AspNetCore.Http.HttpResults;
+using Pineda.Facturacion.Api.Security;
+using Pineda.Facturacion.Application.Abstractions.Security;
 using Pineda.Facturacion.Application.UseCases.CreateBillingDocument;
+using Pineda.Facturacion.Application.Security;
 
 namespace Pineda.Facturacion.Api.Endpoints;
 
@@ -10,7 +13,8 @@ public static class SalesOrdersEndpoints
         ArgumentNullException.ThrowIfNull(endpoints);
 
         var group = endpoints.MapGroup("/api/sales-orders")
-            .WithTags("SalesOrders");
+            .WithTags("SalesOrders")
+            .RequireAuthorization(AuthorizationPolicyNames.OperatorOrAbove);
 
         group.MapPost("/{salesOrderId:long}/billing-documents", CreateBillingDocumentAsync)
             .WithName("CreateBillingDocument")
@@ -18,15 +22,17 @@ public static class SalesOrdersEndpoints
             .WithDescription("Creates a draft internal billing document from an existing imported sales order snapshot.")
             .Produces<CreateBillingDocumentResponse>(StatusCodes.Status200OK)
             .Produces<CreateBillingDocumentResponse>(StatusCodes.Status404NotFound)
-            .Produces<CreateBillingDocumentResponse>(StatusCodes.Status409Conflict);
+            .Produces<CreateBillingDocumentResponse>(StatusCodes.Status409Conflict)
+            .Produces<CreateBillingDocumentResponse>(StatusCodes.Status400BadRequest);
 
         return endpoints;
     }
 
-    private static async Task<Results<Ok<CreateBillingDocumentResponse>, NotFound<CreateBillingDocumentResponse>, Conflict<CreateBillingDocumentResponse>>> CreateBillingDocumentAsync(
+    private static async Task<Results<Ok<CreateBillingDocumentResponse>, NotFound<CreateBillingDocumentResponse>, Conflict<CreateBillingDocumentResponse>, BadRequest<CreateBillingDocumentResponse>>> CreateBillingDocumentAsync(
         long salesOrderId,
         CreateBillingDocumentRequest request,
         CreateBillingDocumentService service,
+        IAuditService auditService,
         CancellationToken cancellationToken)
     {
         var result = await service.ExecuteAsync(
@@ -47,12 +53,24 @@ public static class SalesOrdersEndpoints
             BillingDocumentStatus = result.BillingDocumentStatus?.ToString()
         };
 
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "BillingDocument.Create",
+            "BillingDocument",
+            result.BillingDocumentId?.ToString() ?? salesOrderId.ToString(),
+            result.Outcome.ToString(),
+            new { salesOrderId, request.DocumentType },
+            new { result.BillingDocumentId, result.BillingDocumentStatus },
+            result.ErrorMessage,
+            cancellationToken);
+
         return result.Outcome switch
         {
             CreateBillingDocumentOutcome.Created => TypedResults.Ok(response),
             CreateBillingDocumentOutcome.NotFound => TypedResults.NotFound(response),
             CreateBillingDocumentOutcome.Conflict => TypedResults.Conflict(response),
-            _ => TypedResults.Conflict(response)
+            CreateBillingDocumentOutcome.ValidationFailed => TypedResults.BadRequest(response),
+            _ => TypedResults.BadRequest(response)
         };
     }
 

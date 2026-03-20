@@ -1,0 +1,7 @@
+namespace Pineda.Facturacion.Application.UseCases.PaymentComplements;
+
+public enum GetPaymentComplementByPaymentIdOutcome
+{
+    Found = 0,
+    NotFound = 1
+}

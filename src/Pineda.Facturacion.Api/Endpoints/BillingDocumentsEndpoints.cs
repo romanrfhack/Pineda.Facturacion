@@ -1,0 +1,116 @@
+using Microsoft.AspNetCore.Http.HttpResults;
+using Pineda.Facturacion.Api.Security;
+using Pineda.Facturacion.Application.Abstractions.Security;
+using Pineda.Facturacion.Application.UseCases.FiscalDocuments;
+using Pineda.Facturacion.Application.Security;
+
+namespace Pineda.Facturacion.Api.Endpoints;
+
+public static class BillingDocumentsEndpoints
+{
+    public static IEndpointRouteBuilder MapBillingDocumentsEndpoints(this IEndpointRouteBuilder endpoints)
+    {
+        ArgumentNullException.ThrowIfNull(endpoints);
+
+        var group = endpoints.MapGroup("/api/billing-documents")
+            .WithTags("BillingDocuments")
+            .RequireAuthorization(AuthorizationPolicyNames.OperatorOrAbove);
+
+        group.MapPost("/{billingDocumentId:long}/fiscal-documents", PrepareFiscalDocumentAsync)
+            .WithName("PrepareFiscalDocument")
+            .WithSummary("Prepare a fiscal snapshot from a billing document")
+            .Produces<PrepareFiscalDocumentResponse>(StatusCodes.Status200OK)
+            .Produces<PrepareFiscalDocumentResponse>(StatusCodes.Status404NotFound)
+            .Produces<PrepareFiscalDocumentResponse>(StatusCodes.Status409Conflict)
+            .Produces<PrepareFiscalDocumentResponse>(StatusCodes.Status400BadRequest);
+
+        return endpoints;
+    }
+
+    private static async Task<Results<Ok<PrepareFiscalDocumentResponse>, NotFound<PrepareFiscalDocumentResponse>, Conflict<PrepareFiscalDocumentResponse>, BadRequest<PrepareFiscalDocumentResponse>>> PrepareFiscalDocumentAsync(
+        long billingDocumentId,
+        PrepareFiscalDocumentRequest request,
+        PrepareFiscalDocumentService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(new PrepareFiscalDocumentCommand
+        {
+            BillingDocumentId = billingDocumentId,
+            FiscalReceiverId = request.FiscalReceiverId,
+            IssuerProfileId = request.IssuerProfileId,
+            PaymentMethodSat = request.PaymentMethodSat,
+            PaymentFormSat = request.PaymentFormSat,
+            PaymentCondition = request.PaymentCondition,
+            IsCreditSale = request.IsCreditSale,
+            CreditDays = request.CreditDays,
+            ReceiverCfdiUseCode = request.ReceiverCfdiUseCode,
+            IssuedAtUtc = request.IssuedAtUtc
+        }, cancellationToken);
+
+        var response = new PrepareFiscalDocumentResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            BillingDocumentId = result.BillingDocumentId,
+            FiscalDocumentId = result.FiscalDocumentId,
+            Status = result.Status?.ToString()
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "FiscalDocument.Prepare",
+            "FiscalDocument",
+            result.FiscalDocumentId?.ToString() ?? billingDocumentId.ToString(),
+            result.Outcome.ToString(),
+            new
+            {
+                billingDocumentId,
+                request.FiscalReceiverId,
+                request.IssuerProfileId,
+                request.PaymentMethodSat,
+                request.PaymentFormSat,
+                request.IsCreditSale,
+                request.CreditDays
+            },
+            new { result.FiscalDocumentId, result.Status },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            PrepareFiscalDocumentOutcome.Created => TypedResults.Ok(response),
+            PrepareFiscalDocumentOutcome.NotFound => TypedResults.NotFound(response),
+            PrepareFiscalDocumentOutcome.Conflict => TypedResults.Conflict(response),
+            PrepareFiscalDocumentOutcome.MissingIssuerProfile => TypedResults.BadRequest(response),
+            PrepareFiscalDocumentOutcome.MissingReceiver => TypedResults.BadRequest(response),
+            PrepareFiscalDocumentOutcome.MissingProductFiscalProfile => TypedResults.BadRequest(response),
+            PrepareFiscalDocumentOutcome.ValidationFailed => TypedResults.BadRequest(response),
+            _ => TypedResults.BadRequest(response)
+        };
+    }
+
+    public sealed class PrepareFiscalDocumentRequest
+    {
+        public long FiscalReceiverId { get; init; }
+        public long? IssuerProfileId { get; init; }
+        public string PaymentMethodSat { get; init; } = string.Empty;
+        public string PaymentFormSat { get; init; } = string.Empty;
+        public string? PaymentCondition { get; init; }
+        public bool IsCreditSale { get; init; }
+        public int? CreditDays { get; init; }
+        public string? ReceiverCfdiUseCode { get; init; }
+        public DateTime? IssuedAtUtc { get; init; }
+    }
+
+    public sealed class PrepareFiscalDocumentResponse
+    {
+        public string Outcome { get; init; } = string.Empty;
+        public bool IsSuccess { get; init; }
+        public string? ErrorMessage { get; init; }
+        public long BillingDocumentId { get; init; }
+        public long? FiscalDocumentId { get; init; }
+        public string? Status { get; init; }
+    }
+}

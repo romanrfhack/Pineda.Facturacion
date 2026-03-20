@@ -30,6 +30,12 @@ public class BillingDocumentItemConfiguration : IEntityTypeConfiguration<Billing
             .HasColumnType("varchar(100)")
             .IsRequired(false);
 
+        builder.Property(x => x.ProductInternalCode)
+            .HasColumnName("product_internal_code")
+            .HasMaxLength(100)
+            .HasColumnType("varchar(100)")
+            .IsRequired(false);
+
         builder.Property(x => x.Description)
             .HasColumnName("description")
             .HasMaxLength(500)
