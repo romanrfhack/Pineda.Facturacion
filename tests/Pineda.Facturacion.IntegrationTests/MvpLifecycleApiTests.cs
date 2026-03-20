@@ -132,6 +132,19 @@ public class MvpLifecycleApiTests
         var client = await factory.CreateAuthenticatedClientAsync();
         var fiscalDocumentId = await PrepareFiscalDocumentThroughApiAsync(factory, client, "LEG-1003");
 
+        factory.FiscalStampingGateway.ResponseFactory = _ => new FiscalStampingGatewayResult
+        {
+            Outcome = FiscalStampingGatewayOutcome.Stamped,
+            ProviderName = "FacturaloPlus",
+            ProviderOperation = "stamp",
+            ProviderTrackingId = "TRACK-FISCAL-1",
+            Uuid = "UUID-FISCAL-1",
+            StampedAtUtc = DateTime.UtcNow,
+            XmlContent = "<cfdi:Comprobante Version=\"4.0\" />",
+            XmlHash = "XML-HASH-FISCAL",
+            OriginalString = "||1.1|UUID-FISCAL-1||"
+        };
+
         var stampResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/stamp", new FiscalDocumentsEndpoints.StampFiscalDocumentRequest());
         Assert.Equal(HttpStatusCode.OK, stampResponse.StatusCode);
 
@@ -140,6 +153,13 @@ public class MvpLifecycleApiTests
         using var stampJson = await JsonDocument.ParseAsync(await getStampResponse.Content.ReadAsStreamAsync());
         Assert.Equal("UUID-FISCAL-1", stampJson.RootElement.GetProperty("uuid").GetString());
         Assert.False(stampJson.RootElement.TryGetProperty("xmlContent", out _));
+        Assert.Equal("||1.1|UUID-FISCAL-1||", stampJson.RootElement.GetProperty("originalString").GetString());
+
+        var getStampXmlResponse = await client.GetAsync($"/api/fiscal-documents/{fiscalDocumentId}/stamp/xml");
+        Assert.Equal(HttpStatusCode.OK, getStampXmlResponse.StatusCode);
+        Assert.Equal("application/xml", getStampXmlResponse.Content.Headers.ContentType?.MediaType);
+        var stampXml = await getStampXmlResponse.Content.ReadAsStringAsync();
+        Assert.Contains("<cfdi:Comprobante", stampXml, StringComparison.Ordinal);
 
         var duplicateStampResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/stamp", new FiscalDocumentsEndpoints.StampFiscalDocumentRequest());
         Assert.Equal(HttpStatusCode.Conflict, duplicateStampResponse.StatusCode);
@@ -245,6 +265,19 @@ public class MvpLifecycleApiTests
         var client = await factory.CreateAuthenticatedClientAsync();
         var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-1007");
 
+        factory.PaymentComplementStampingGateway.ResponseFactory = _ => new PaymentComplementStampingGatewayResult
+        {
+            Outcome = PaymentComplementStampingGatewayOutcome.Stamped,
+            ProviderName = "FacturaloPlus",
+            ProviderOperation = "payment-complement-stamp",
+            ProviderTrackingId = "TRACK-PC-1",
+            Uuid = "UUID-PC-1",
+            StampedAtUtc = DateTime.UtcNow,
+            XmlContent = "<cfdi:Comprobante Version=\"4.0\"><pago20:Pagos /></cfdi:Comprobante>",
+            XmlHash = "XML-HASH-PC",
+            OriginalString = "||1.1|UUID-PC-1||"
+        };
+
         var createArBody = await (await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest()))
             .Content.ReadFromJsonAsync<CreateAccountsReceivableInvoiceResponse>();
         var invoiceId = createArBody!.AccountsReceivableInvoice!.Id;
@@ -284,6 +317,12 @@ public class MvpLifecycleApiTests
 
         var stampComplementResponse = await client.PostAsJsonAsync($"/api/payment-complements/{paymentComplementId}/stamp", new StampPaymentComplementRequest());
         Assert.Equal(HttpStatusCode.OK, stampComplementResponse.StatusCode);
+
+        var getStampXmlResponse = await client.GetAsync($"/api/payment-complements/{paymentComplementId}/stamp/xml");
+        Assert.Equal(HttpStatusCode.OK, getStampXmlResponse.StatusCode);
+        Assert.Equal("application/xml", getStampXmlResponse.Content.Headers.ContentType?.MediaType);
+        var complementXml = await getStampXmlResponse.Content.ReadAsStringAsync();
+        Assert.Contains("<pago20:Pagos", complementXml, StringComparison.Ordinal);
 
         var cancelComplementResponse = await client.PostAsJsonAsync($"/api/payment-complements/{paymentComplementId}/cancel", new CancelPaymentComplementRequest
         {

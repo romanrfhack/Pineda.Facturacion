@@ -39,6 +39,12 @@ public static class FiscalDocumentsEndpoints
             .Produces<FiscalStampResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status404NotFound);
 
+        group.MapGet("/{fiscalDocumentId:long}/stamp/xml", GetFiscalStampXmlByFiscalDocumentIdAsync)
+            .WithName("GetFiscalStampXmlByFiscalDocumentId")
+            .WithSummary("Get persisted XML evidence for a fiscal document")
+            .Produces(StatusCodes.Status200OK, contentType: "application/xml")
+            .Produces(StatusCodes.Status404NotFound);
+
         group.MapPost("/{fiscalDocumentId:long}/cancel", CancelFiscalDocumentAsync)
             .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
             .WithName("CancelFiscalDocument")
@@ -145,6 +151,22 @@ public static class FiscalDocumentsEndpoints
         }
 
         return TypedResults.Ok(MapFiscalStamp(result.FiscalStamp));
+    }
+
+    private static async Task<IResult> GetFiscalStampXmlByFiscalDocumentIdAsync(
+        long fiscalDocumentId,
+        GetFiscalStampByFiscalDocumentIdService service,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(fiscalDocumentId, cancellationToken);
+        if (result.Outcome == GetFiscalStampByFiscalDocumentIdOutcome.NotFound
+            || result.FiscalStamp is null
+            || string.IsNullOrWhiteSpace(result.FiscalStamp.XmlContent))
+        {
+            return TypedResults.NotFound();
+        }
+
+        return TypedResults.Text(result.FiscalStamp.XmlContent, "application/xml");
     }
 
     private static async Task<Results<Ok<CancelFiscalDocumentResponse>, BadRequest<CancelFiscalDocumentResponse>, NotFound<CancelFiscalDocumentResponse>, Conflict<CancelFiscalDocumentResponse>, JsonHttpResult<CancelFiscalDocumentResponse>>> CancelFiscalDocumentAsync(
@@ -315,9 +337,12 @@ public static class FiscalDocumentsEndpoints
     {
         return new FiscalStampResponse
         {
+            Id = fiscalStamp.Id,
             FiscalDocumentId = fiscalStamp.FiscalDocumentId,
             ProviderName = fiscalStamp.ProviderName,
+            ProviderOperation = fiscalStamp.ProviderOperation,
             Status = fiscalStamp.Status.ToString(),
+            ProviderTrackingId = fiscalStamp.ProviderTrackingId,
             Uuid = fiscalStamp.Uuid,
             StampedAtUtc = fiscalStamp.StampedAtUtc,
             ProviderCode = fiscalStamp.ProviderCode,
@@ -325,6 +350,7 @@ public static class FiscalDocumentsEndpoints
             ErrorCode = fiscalStamp.ErrorCode,
             ErrorMessage = fiscalStamp.ErrorMessage,
             XmlHash = fiscalStamp.XmlHash,
+            OriginalString = fiscalStamp.OriginalString,
             QrCodeTextOrUrl = fiscalStamp.QrCodeTextOrUrl,
             CreatedAtUtc = fiscalStamp.CreatedAtUtc,
             UpdatedAtUtc = fiscalStamp.UpdatedAtUtc
@@ -440,9 +466,12 @@ public static class FiscalDocumentsEndpoints
 
     public sealed class FiscalStampResponse
     {
+        public long Id { get; init; }
         public long FiscalDocumentId { get; init; }
         public string ProviderName { get; init; } = string.Empty;
+        public string ProviderOperation { get; init; } = string.Empty;
         public string Status { get; init; } = string.Empty;
+        public string? ProviderTrackingId { get; init; }
         public string? Uuid { get; init; }
         public DateTime? StampedAtUtc { get; init; }
         public string? ProviderCode { get; init; }
@@ -450,6 +479,7 @@ public static class FiscalDocumentsEndpoints
         public string? ErrorCode { get; init; }
         public string? ErrorMessage { get; init; }
         public string? XmlHash { get; init; }
+        public string? OriginalString { get; init; }
         public string? QrCodeTextOrUrl { get; init; }
         public DateTime CreatedAtUtc { get; init; }
         public DateTime UpdatedAtUtc { get; init; }

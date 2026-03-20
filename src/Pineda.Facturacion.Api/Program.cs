@@ -40,6 +40,7 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy(AuthorizationPolicyNames.AdminOnly, policy => policy.RequireRole(AppRoleNames.Admin));
     options.AddPolicy(AuthorizationPolicyNames.SupervisorOrAdmin, policy => policy.RequireRole(AppRoleNames.Admin, AppRoleNames.FiscalSupervisor));
     options.AddPolicy(AuthorizationPolicyNames.OperatorOrAbove, policy => policy.RequireRole(AppRoleNames.Admin, AppRoleNames.FiscalSupervisor, AppRoleNames.FiscalOperator));
+    options.AddPolicy(AuthorizationPolicyNames.AuditRead, policy => policy.RequireRole(AppRoleNames.Admin, AppRoleNames.FiscalSupervisor, AppRoleNames.Auditor));
 });
 
 var app = builder.Build();
@@ -68,6 +69,7 @@ app.Use(async (context, next) =>
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapAuthEndpoints();
+app.MapAuditEventsEndpoints();
 app.MapOrdersEndpoints();
 app.MapSalesOrdersEndpoints();
 app.MapBillingDocumentsEndpoints();

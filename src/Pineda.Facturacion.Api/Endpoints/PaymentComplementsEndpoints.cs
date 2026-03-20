@@ -33,6 +33,12 @@ public static class PaymentComplementsEndpoints
             .Produces<PaymentComplementStampResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status404NotFound);
 
+        group.MapGet("/{paymentComplementId:long}/stamp/xml", GetPaymentComplementStampXmlByPaymentComplementIdAsync)
+            .WithName("GetPaymentComplementStampXmlByPaymentComplementId")
+            .WithSummary("Get persisted XML evidence for a payment complement")
+            .Produces(StatusCodes.Status200OK, contentType: "application/xml")
+            .Produces(StatusCodes.Status404NotFound);
+
         group.MapPost("/{paymentComplementId:long}/cancel", CancelPaymentComplementAsync)
             .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
             .WithName("CancelPaymentComplement")
@@ -124,6 +130,22 @@ public static class PaymentComplementsEndpoints
         }
 
         return TypedResults.Ok(MapPaymentComplementStamp(result.PaymentComplementStamp));
+    }
+
+    private static async Task<IResult> GetPaymentComplementStampXmlByPaymentComplementIdAsync(
+        long paymentComplementId,
+        GetPaymentComplementStampByPaymentComplementIdService service,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(paymentComplementId, cancellationToken);
+        if (result.Outcome == GetPaymentComplementStampByPaymentComplementIdOutcome.NotFound
+            || result.PaymentComplementStamp is null
+            || string.IsNullOrWhiteSpace(result.PaymentComplementStamp.XmlContent))
+        {
+            return TypedResults.NotFound();
+        }
+
+        return TypedResults.Text(result.PaymentComplementStamp.XmlContent, "application/xml");
     }
 
     private static async Task<Results<Ok<CancelPaymentComplementResponse>, BadRequest<CancelPaymentComplementResponse>, NotFound<CancelPaymentComplementResponse>, Conflict<CancelPaymentComplementResponse>, JsonHttpResult<CancelPaymentComplementResponse>>> CancelPaymentComplementAsync(
@@ -296,9 +318,12 @@ public static class PaymentComplementsEndpoints
     {
         return new PaymentComplementStampResponse
         {
+            Id = stamp.Id,
             PaymentComplementDocumentId = stamp.PaymentComplementDocumentId,
             ProviderName = stamp.ProviderName,
+            ProviderOperation = stamp.ProviderOperation,
             Status = stamp.Status.ToString(),
+            ProviderTrackingId = stamp.ProviderTrackingId,
             Uuid = stamp.Uuid,
             StampedAtUtc = stamp.StampedAtUtc,
             ProviderCode = stamp.ProviderCode,
@@ -306,6 +331,7 @@ public static class PaymentComplementsEndpoints
             ErrorCode = stamp.ErrorCode,
             ErrorMessage = stamp.ErrorMessage,
             XmlHash = stamp.XmlHash,
+            OriginalString = stamp.OriginalString,
             QrCodeTextOrUrl = stamp.QrCodeTextOrUrl,
             CreatedAtUtc = stamp.CreatedAtUtc,
             UpdatedAtUtc = stamp.UpdatedAtUtc
@@ -449,11 +475,17 @@ public class PaymentComplementRelatedDocumentResponse
 
 public class PaymentComplementStampResponse
 {
+    public long Id { get; set; }
+
     public long PaymentComplementDocumentId { get; set; }
 
     public string ProviderName { get; set; } = string.Empty;
 
+    public string ProviderOperation { get; set; } = string.Empty;
+
     public string Status { get; set; } = string.Empty;
+
+    public string? ProviderTrackingId { get; set; }
 
     public string? Uuid { get; set; }
 
@@ -468,6 +500,8 @@ public class PaymentComplementStampResponse
     public string? ErrorMessage { get; set; }
 
     public string? XmlHash { get; set; }
+
+    public string? OriginalString { get; set; }
 
     public string? QrCodeTextOrUrl { get; set; }
 

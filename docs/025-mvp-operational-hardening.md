@@ -82,6 +82,8 @@ Recommended order:
 9. stamp the payment complement
 10. validate cancellation/status-refresh endpoints against a controlled sandbox record
 
+Automated browser e2e is intentionally separate from this smoke-test sequence. UI e2e uses deterministic mocked backend responses and does not replace real deployment or PAC sandbox verification.
+
 ## What evidence is stored in the database
 Current MVP stores:
 - app users, roles, and user-role assignments
@@ -93,6 +95,11 @@ Current MVP stores:
 - latest-known external status snapshots
 - XML content in DB for stamped invoice/complement evidence
 - hashes, UUIDs, tracking ids, provider codes/messages, and timestamps
+
+Safe read behavior:
+- stamp metadata is available through normal evidence endpoints
+- XML is exposed only through explicit read-only XML endpoints
+- XML is intended for operator inspection and manual support work, not as the default first view
 
 Future recommendation:
 - move large XML payloads to file/blob storage
@@ -127,3 +134,4 @@ When refresh fails:
 - local auth only
 - no MFA
 - role-based authorization only, without finer permission scopes
+- automated UI e2e does not start the real backend or PAC provider

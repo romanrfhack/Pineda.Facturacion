@@ -25,6 +25,10 @@ Implemented endpoints:
 - `POST /api/auth/login`
 - `GET /api/auth/me`
 
+Frontend assumption added in Step 7A:
+- the current admin UI treats bare `401` from login as invalid credentials
+- all other `401` responses are treated as expired/invalid session and force return to login
+
 ## Role model
 Implemented roles:
 - `Admin`
@@ -121,3 +125,14 @@ Checked-in config must use placeholders only.
 - fine-grained permissions beyond roles
 - dual approval workflows
 - immutable audit-history / event-sourcing model
+
+## Audit read access
+The MVP now includes a safe read-only audit endpoint:
+- `GET /api/audit-events`
+
+Access is limited to:
+- `Admin`
+- `FiscalSupervisor`
+- `Auditor`
+
+The endpoint returns only persisted safe audit fields and supports basic filtering and paging. It does not provide any audit mutation capability.

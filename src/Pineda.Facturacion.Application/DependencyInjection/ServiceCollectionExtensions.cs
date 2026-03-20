@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Pineda.Facturacion.Application.UseCases.AccountsReceivable;
+using Pineda.Facturacion.Application.UseCases.Audit;
 using Pineda.Facturacion.Application.UseCases.Auth;
 using Pineda.Facturacion.Application.UseCases.CreateBillingDocument;
 using Pineda.Facturacion.Application.UseCases.FiscalReceivers;
@@ -18,6 +19,7 @@ public static class ServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.AddScoped<ImportLegacyOrderService>();
+        services.AddScoped<ListAuditEventsService>();
         services.AddScoped<LoginService>();
         services.AddScoped<GetCurrentUserService>();
         services.AddScoped<CreateBillingDocumentService>();
