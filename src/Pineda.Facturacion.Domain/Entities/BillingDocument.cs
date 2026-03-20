@@ -18,6 +18,10 @@ public class BillingDocument
 
     public string PaymentCondition { get; set; } = string.Empty;
 
+    public string CurrencyCode { get; set; } = string.Empty;
+
+    public decimal? ExchangeRate { get; set; }
+
     public string? PaymentMethodSat { get; set; }
 
     public string? PaymentFormSat { get; set; }

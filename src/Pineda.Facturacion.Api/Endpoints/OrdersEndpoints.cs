@@ -1,5 +1,8 @@
 using Microsoft.AspNetCore.Http.HttpResults;
+using Pineda.Facturacion.Api.Security;
+using Pineda.Facturacion.Application.Abstractions.Security;
 using Pineda.Facturacion.Application.UseCases.ImportLegacyOrder;
+using Pineda.Facturacion.Application.Security;
 
 namespace Pineda.Facturacion.Api.Endpoints;
 
@@ -13,7 +16,8 @@ public static class OrdersEndpoints
         ArgumentNullException.ThrowIfNull(endpoints);
 
         var group = endpoints.MapGroup("/api/orders")
-            .WithTags("Orders");
+            .WithTags("Orders")
+            .RequireAuthorization(AuthorizationPolicyNames.OperatorOrAbove);
 
         group.MapPost("/{legacyOrderId}/import", ImportOrderAsync)
             .WithName("ImportLegacyOrder")
@@ -29,6 +33,7 @@ public static class OrdersEndpoints
     private static async Task<Results<Ok<ImportLegacyOrderResponse>, NotFound<ImportLegacyOrderResponse>, Conflict<ImportLegacyOrderResponse>>> ImportOrderAsync(
         string legacyOrderId,
         ImportLegacyOrderService service,
+        IAuditService auditService,
         CancellationToken cancellationToken)
     {
         var result = await service.ExecuteAsync(
@@ -55,6 +60,17 @@ public static class OrdersEndpoints
             SalesOrderId = result.SalesOrderId,
             ImportStatus = result.ImportStatus?.ToString()
         };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "Order.Import",
+            "SalesOrder",
+            result.SalesOrderId?.ToString() ?? legacyOrderId,
+            result.Outcome.ToString(),
+            new { legacyOrderId, result.SourceSystem, result.SourceTable },
+            new { result.SalesOrderId, result.LegacyImportRecordId, result.ImportStatus },
+            result.ErrorMessage,
+            cancellationToken);
 
         return result.Outcome switch
         {

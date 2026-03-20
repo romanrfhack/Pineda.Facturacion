@@ -1,6 +1,13 @@
 using Microsoft.Extensions.DependencyInjection;
+using Pineda.Facturacion.Application.UseCases.AccountsReceivable;
+using Pineda.Facturacion.Application.UseCases.Auth;
 using Pineda.Facturacion.Application.UseCases.CreateBillingDocument;
+using Pineda.Facturacion.Application.UseCases.FiscalReceivers;
+using Pineda.Facturacion.Application.UseCases.FiscalDocuments;
 using Pineda.Facturacion.Application.UseCases.ImportLegacyOrder;
+using Pineda.Facturacion.Application.UseCases.IssuerProfiles;
+using Pineda.Facturacion.Application.UseCases.PaymentComplements;
+using Pineda.Facturacion.Application.UseCases.ProductFiscalProfiles;
 
 namespace Pineda.Facturacion.Application.DependencyInjection;
 
@@ -11,7 +18,47 @@ public static class ServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.AddScoped<ImportLegacyOrderService>();
+        services.AddScoped<LoginService>();
+        services.AddScoped<GetCurrentUserService>();
         services.AddScoped<CreateBillingDocumentService>();
+        services.AddScoped<CreateAccountsReceivableInvoiceFromFiscalDocumentService>();
+        services.AddScoped<GetAccountsReceivableInvoiceByFiscalDocumentIdService>();
+        services.AddScoped<CreateAccountsReceivablePaymentService>();
+        services.AddScoped<GetAccountsReceivablePaymentByIdService>();
+        services.AddScoped<ApplyAccountsReceivablePaymentService>();
+        services.AddScoped<PreparePaymentComplementService>();
+        services.AddScoped<GetPaymentComplementByPaymentIdService>();
+        services.AddScoped<StampPaymentComplementService>();
+        services.AddScoped<GetPaymentComplementStampByPaymentComplementIdService>();
+        services.AddScoped<CancelPaymentComplementService>();
+        services.AddScoped<GetPaymentComplementCancellationByPaymentComplementIdService>();
+        services.AddScoped<RefreshPaymentComplementStatusService>();
+        services.AddScoped<PrepareFiscalDocumentService>();
+        services.AddScoped<GetFiscalDocumentByIdService>();
+        services.AddScoped<GetFiscalStampByFiscalDocumentIdService>();
+        services.AddScoped<StampFiscalDocumentService>();
+        services.AddScoped<GetFiscalCancellationByFiscalDocumentIdService>();
+        services.AddScoped<CancelFiscalDocumentService>();
+        services.AddScoped<RefreshFiscalDocumentStatusService>();
+        services.AddScoped<CreateIssuerProfileService>();
+        services.AddScoped<UpdateIssuerProfileService>();
+        services.AddScoped<GetActiveIssuerProfileService>();
+        services.AddScoped<SearchFiscalReceiversService>();
+        services.AddScoped<GetFiscalReceiverByRfcService>();
+        services.AddScoped<CreateFiscalReceiverService>();
+        services.AddScoped<UpdateFiscalReceiverService>();
+        services.AddScoped<PreviewFiscalReceiverImportFromExcelService>();
+        services.AddScoped<GetFiscalReceiverImportBatchService>();
+        services.AddScoped<ListFiscalReceiverImportRowsService>();
+        services.AddScoped<ApplyFiscalReceiverImportBatchService>();
+        services.AddScoped<SearchProductFiscalProfilesService>();
+        services.AddScoped<GetProductFiscalProfileByInternalCodeService>();
+        services.AddScoped<CreateProductFiscalProfileService>();
+        services.AddScoped<UpdateProductFiscalProfileService>();
+        services.AddScoped<PreviewProductFiscalProfileImportFromExcelService>();
+        services.AddScoped<GetProductFiscalProfileImportBatchService>();
+        services.AddScoped<ListProductFiscalProfileImportRowsService>();
+        services.AddScoped<ApplyProductFiscalProfileImportBatchService>();
         return services;
     }
 }

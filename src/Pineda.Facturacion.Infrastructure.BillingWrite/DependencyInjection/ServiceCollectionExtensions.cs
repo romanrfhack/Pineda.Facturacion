@@ -34,7 +34,25 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ILegacyImportRecordRepository, LegacyImportRecordRepository>();
         services.AddScoped<ISalesOrderRepository, SalesOrderRepository>();
         services.AddScoped<ISalesOrderSnapshotRepository, SalesOrderRepository>();
+        services.AddScoped<IAppUserRepository, AppUserRepository>();
+        services.AddScoped<IAppRoleRepository, AppRoleRepository>();
+        services.AddScoped<IAppUserRoleRepository, AppUserRoleRepository>();
+        services.AddScoped<IAuditEventRepository, AuditEventRepository>();
         services.AddScoped<IBillingDocumentRepository, BillingDocumentRepository>();
+        services.AddScoped<IFiscalDocumentRepository, FiscalDocumentRepository>();
+        services.AddScoped<IFiscalStampRepository, FiscalStampRepository>();
+        services.AddScoped<IFiscalCancellationRepository, FiscalCancellationRepository>();
+        services.AddScoped<IAccountsReceivableInvoiceRepository, AccountsReceivableInvoiceRepository>();
+        services.AddScoped<IAccountsReceivablePaymentRepository, AccountsReceivablePaymentRepository>();
+        services.AddScoped<IAccountsReceivablePaymentApplicationRepository, AccountsReceivablePaymentApplicationRepository>();
+        services.AddScoped<IPaymentComplementDocumentRepository, PaymentComplementDocumentRepository>();
+        services.AddScoped<IPaymentComplementStampRepository, PaymentComplementStampRepository>();
+        services.AddScoped<IPaymentComplementCancellationRepository, PaymentComplementCancellationRepository>();
+        services.AddScoped<IIssuerProfileRepository, IssuerProfileRepository>();
+        services.AddScoped<IFiscalReceiverRepository, FiscalReceiverRepository>();
+        services.AddScoped<IProductFiscalProfileRepository, ProductFiscalProfileRepository>();
+        services.AddScoped<IFiscalReceiverImportRepository, FiscalReceiverImportRepository>();
+        services.AddScoped<IProductFiscalProfileImportRepository, ProductFiscalProfileImportRepository>();
         services.AddScoped<IUnitOfWork>(serviceProvider => serviceProvider.GetRequiredService<BillingDbContext>());
 
         return services;

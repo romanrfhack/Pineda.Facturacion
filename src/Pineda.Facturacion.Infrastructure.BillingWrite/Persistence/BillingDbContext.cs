@@ -21,6 +21,50 @@ public class BillingDbContext : DbContext, IUnitOfWork
 
     public DbSet<BillingDocumentItem> BillingDocumentItems => Set<BillingDocumentItem>();
 
+    public DbSet<FiscalDocument> FiscalDocuments => Set<FiscalDocument>();
+
+    public DbSet<FiscalDocumentItem> FiscalDocumentItems => Set<FiscalDocumentItem>();
+
+    public DbSet<FiscalStamp> FiscalStamps => Set<FiscalStamp>();
+
+    public DbSet<FiscalCancellation> FiscalCancellations => Set<FiscalCancellation>();
+
+    public DbSet<AccountsReceivableInvoice> AccountsReceivableInvoices => Set<AccountsReceivableInvoice>();
+
+    public DbSet<AccountsReceivablePayment> AccountsReceivablePayments => Set<AccountsReceivablePayment>();
+
+    public DbSet<AccountsReceivablePaymentApplication> AccountsReceivablePaymentApplications => Set<AccountsReceivablePaymentApplication>();
+
+    public DbSet<PaymentComplementDocument> PaymentComplementDocuments => Set<PaymentComplementDocument>();
+
+    public DbSet<PaymentComplementRelatedDocument> PaymentComplementRelatedDocuments => Set<PaymentComplementRelatedDocument>();
+
+    public DbSet<PaymentComplementStamp> PaymentComplementStamps => Set<PaymentComplementStamp>();
+
+    public DbSet<PaymentComplementCancellation> PaymentComplementCancellations => Set<PaymentComplementCancellation>();
+
+    public DbSet<AppUser> AppUsers => Set<AppUser>();
+
+    public DbSet<AppRole> AppRoles => Set<AppRole>();
+
+    public DbSet<AppUserRole> AppUserRoles => Set<AppUserRole>();
+
+    public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
+
+    public DbSet<IssuerProfile> IssuerProfiles => Set<IssuerProfile>();
+
+    public DbSet<FiscalReceiver> FiscalReceivers => Set<FiscalReceiver>();
+
+    public DbSet<ProductFiscalProfile> ProductFiscalProfiles => Set<ProductFiscalProfile>();
+
+    public DbSet<FiscalReceiverImportBatch> FiscalReceiverImportBatches => Set<FiscalReceiverImportBatch>();
+
+    public DbSet<FiscalReceiverImportRow> FiscalReceiverImportRows => Set<FiscalReceiverImportRow>();
+
+    public DbSet<ProductFiscalProfileImportBatch> ProductFiscalProfileImportBatches => Set<ProductFiscalProfileImportBatch>();
+
+    public DbSet<ProductFiscalProfileImportRow> ProductFiscalProfileImportRows => Set<ProductFiscalProfileImportRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(BillingDbContext).Assembly);

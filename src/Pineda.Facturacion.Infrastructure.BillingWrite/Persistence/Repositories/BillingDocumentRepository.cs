@@ -13,6 +13,14 @@ public class BillingDocumentRepository : IBillingDocumentRepository
         _dbContext = dbContext;
     }
 
+    public Task<BillingDocument?> GetByIdAsync(long billingDocumentId, CancellationToken cancellationToken = default)
+    {
+        return _dbContext.BillingDocuments
+            .AsNoTracking()
+            .Include(x => x.Items)
+            .FirstOrDefaultAsync(x => x.Id == billingDocumentId, cancellationToken);
+    }
+
     public Task<BillingDocument?> GetBySalesOrderIdAsync(long salesOrderId, CancellationToken cancellationToken = default)
     {
         return _dbContext.BillingDocuments

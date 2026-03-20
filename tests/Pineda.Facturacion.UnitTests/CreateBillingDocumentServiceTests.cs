@@ -83,6 +83,8 @@ public class CreateBillingDocumentServiceTests
         Assert.Equal(BillingDocumentStatus.Draft, added.Status);
         Assert.Null(added.IssuedAtUtc);
         Assert.Equal(salesOrder.PaymentCondition, added.PaymentCondition);
+        Assert.Equal("MXN", added.CurrencyCode);
+        Assert.Equal(1m, added.ExchangeRate);
         Assert.Equal(salesOrder.Subtotal, added.Subtotal);
         Assert.Equal(salesOrder.DiscountTotal, added.DiscountTotal);
         Assert.Equal(salesOrder.TaxTotal, added.TaxTotal);
@@ -92,8 +94,57 @@ public class CreateBillingDocumentServiceTests
         var item = Assert.Single(added.Items);
         Assert.Equal(1, item.LineNumber);
         Assert.Equal("SKU-1", item.Sku);
+        Assert.Equal("SKU-1", item.ProductInternalCode);
         Assert.Equal("Articulo demo", item.Description);
         Assert.Equal("02", item.TaxObjectCode);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_PersistsCurrencyAndExchangeRate_FromCommercialSnapshot()
+    {
+        var salesOrder = CreateSalesOrder();
+        salesOrder.CurrencyCode = " mxn ";
+
+        var billingDocumentRepository = new FakeBillingDocumentRepository();
+        var service = CreateService(
+            new FakeSalesOrderSnapshotRepository { Existing = salesOrder },
+            billingDocumentRepository,
+            new FakeUnitOfWork());
+
+        await service.ExecuteAsync(new CreateBillingDocumentCommand
+        {
+            SalesOrderId = salesOrder.Id,
+            DocumentType = "Invoice"
+        });
+
+        Assert.Equal("MXN", billingDocumentRepository.Added!.CurrencyCode);
+        Assert.Equal(1m, billingDocumentRepository.Added.ExchangeRate);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ReturnsValidationFailed_WhenSalesOrderCurrencyIsNotMxn()
+    {
+        var salesOrder = CreateSalesOrder();
+        salesOrder.CurrencyCode = "usd";
+
+        var billingDocumentRepository = new FakeBillingDocumentRepository();
+        var unitOfWork = new FakeUnitOfWork();
+        var service = CreateService(
+            new FakeSalesOrderSnapshotRepository { Existing = salesOrder },
+            billingDocumentRepository,
+            unitOfWork);
+
+        var result = await service.ExecuteAsync(new CreateBillingDocumentCommand
+        {
+            SalesOrderId = salesOrder.Id,
+            DocumentType = "Invoice"
+        });
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(CreateBillingDocumentOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("MXN only", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(billingDocumentRepository.Added);
+        Assert.Equal(0, unitOfWork.SaveChangesCallCount);
     }
 
     private static CreateBillingDocumentService CreateService(
@@ -113,6 +164,7 @@ public class CreateBillingDocumentServiceTests
         {
             Id = 55,
             PaymentCondition = "CONTADO",
+            CurrencyCode = "MXN",
             Subtotal = 100,
             DiscountTotal = 5,
             TaxTotal = 0,
@@ -155,6 +207,11 @@ public class CreateBillingDocumentServiceTests
         public BillingDocument? Existing { get; init; }
 
         public BillingDocument? Added { get; private set; }
+
+        public Task<BillingDocument?> GetByIdAsync(long billingDocumentId, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<BillingDocument?>(null);
+        }
 
         public Task<BillingDocument?> GetBySalesOrderIdAsync(long salesOrderId, CancellationToken cancellationToken = default)
         {
