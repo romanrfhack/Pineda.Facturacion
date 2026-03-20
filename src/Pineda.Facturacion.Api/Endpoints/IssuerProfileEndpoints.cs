@@ -14,7 +14,7 @@ public static class IssuerProfileEndpoints
         ArgumentNullException.ThrowIfNull(endpoints);
 
         var group = endpoints.MapGroup("/api/fiscal/issuer-profile")
-            .WithTags("Fiscal")
+            .WithTags("Catalogs")
             .RequireAuthorization(AuthorizationPolicyNames.Authenticated);
 
         group.MapGet("/active", GetActiveIssuerProfileAsync)

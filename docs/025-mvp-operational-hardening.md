@@ -14,6 +14,11 @@ This document captures the operational checklist for the completed MVP fiscal li
 - `Auth:BootstrapAdmin:Username`
 - `Auth:BootstrapAdmin:DisplayName`
 - `Auth:BootstrapAdmin:Password`
+- `Bootstrap:ApplyMigrationsOnStartup`
+- `Bootstrap:SeedDefaultRoles`
+- `Bootstrap:SeedDefaultTestUsers`
+- `Bootstrap:DefaultTestUserPassword`
+- `OpenApi:EnableSwagger`
 - `FacturaloPlus:BaseUrl`
 - `FacturaloPlus:StampPath`
 - `FacturaloPlus:CancelPath`
@@ -34,6 +39,8 @@ Rules:
 - certificate/key/password values are resolved indirectly from references
 - JWT signing keys must be injected at deployment time and must not remain at placeholder values
 - bootstrap admin must stay disabled in production unless there is a controlled one-time access procedure
+- default test users must stay disabled in production
+- Swagger must stay disabled in production unless explicitly and temporarily enabled for controlled support work
 
 ## Secret-reference expectations
 Persisted fiscal snapshots store only:
@@ -66,13 +73,15 @@ Recommended order:
 1. deploy binaries and configuration placeholders
 2. apply EF Core migrations
 3. verify JWT and PAC configuration binding
-4. verify bootstrap admin policy for the target environment
+4. verify bootstrap role/user policy for the target environment
 5. run smoke tests
 6. enable traffic
 
 ## Recommended smoke-test sequence
 1. log in with a known local user and verify `/api/auth/me`
+   non-production can use the seeded test users if enabled
 2. verify anonymous access is rejected for one protected write endpoint
+   optional: use `/swagger` for backend-only API inspection in `Development`, `Local`, or `Sandbox`
 3. import one known legacy order
 4. create one billing document
 5. prepare one fiscal document
@@ -135,3 +144,4 @@ When refresh fails:
 - no MFA
 - role-based authorization only, without finer permission scopes
 - automated UI e2e does not start the real backend or PAC provider
+- issuer and fiscal catalog business data still require manual setup before real sandbox stamping

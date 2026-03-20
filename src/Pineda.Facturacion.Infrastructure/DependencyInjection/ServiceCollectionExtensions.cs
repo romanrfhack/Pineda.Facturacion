@@ -28,6 +28,9 @@ public static class ServiceCollectionExtensions
 
             services.AddOptions<BootstrapAdminOptions>()
                 .Bind(configuration.GetSection(BootstrapAdminOptions.SectionName));
+
+            services.AddOptions<BootstrapSeedOptions>()
+                .Bind(configuration.GetSection(BootstrapSeedOptions.SectionName));
         }
 
         services.AddSingleton<IContentHashGenerator, Sha256ContentHashGenerator>();
@@ -36,6 +39,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IJwtTokenService, JwtTokenService>();
         services.AddScoped<ICurrentUserAccessor, CurrentUserAccessor>();
         services.AddScoped<IAuditService, AuditService>();
+        services.AddScoped<IdentityBootstrapService>();
+        services.AddHostedService<DatabaseBootstrapHostedService>();
         services.AddHostedService<AuthBootstrapHostedService>();
         return services;
     }

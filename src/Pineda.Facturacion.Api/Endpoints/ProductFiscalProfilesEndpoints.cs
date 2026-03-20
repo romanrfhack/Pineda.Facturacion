@@ -14,7 +14,7 @@ public static class ProductFiscalProfilesEndpoints
         ArgumentNullException.ThrowIfNull(endpoints);
 
         var group = endpoints.MapGroup("/api/fiscal/product-fiscal-profiles")
-            .WithTags("Fiscal")
+            .WithTags("Catalogs")
             .RequireAuthorization(AuthorizationPolicyNames.Authenticated);
 
         group.MapGet("/search", SearchProductFiscalProfilesAsync)

@@ -14,7 +14,7 @@ public static class FiscalReceiversEndpoints
         ArgumentNullException.ThrowIfNull(endpoints);
 
         var group = endpoints.MapGroup("/api/fiscal/receivers")
-            .WithTags("Fiscal")
+            .WithTags("Catalogs")
             .RequireAuthorization(AuthorizationPolicyNames.Authenticated);
 
         group.MapGet("/search", SearchFiscalReceiversAsync)

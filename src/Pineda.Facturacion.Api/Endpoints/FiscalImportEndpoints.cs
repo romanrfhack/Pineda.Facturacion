@@ -17,7 +17,7 @@ public static class FiscalImportEndpoints
         ArgumentNullException.ThrowIfNull(endpoints);
 
         var group = endpoints.MapGroup("/api/fiscal/imports")
-            .WithTags("Fiscal")
+            .WithTags("Catalogs")
             .RequireAuthorization(AuthorizationPolicyNames.Authenticated);
 
         group.MapPost("/receivers/preview", PreviewFiscalReceiverImportAsync)

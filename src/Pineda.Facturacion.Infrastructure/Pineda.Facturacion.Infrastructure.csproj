@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Pineda.Facturacion.Application\Pineda.Facturacion.Application.csproj" />
+    <ProjectReference Include="..\Pineda.Facturacion.Infrastructure.BillingWrite\Pineda.Facturacion.Infrastructure.BillingWrite.csproj" />
     <ProjectReference Include="..\Pineda.Facturacion.Domain\Pineda.Facturacion.Domain.csproj" />
   </ItemGroup>
 
@@ -11,6 +12,7 @@
 
   <ItemGroup>
     <PackageReference Include="ClosedXML" Version="0.104.2" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.13" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.14.0" />
   </ItemGroup>
 

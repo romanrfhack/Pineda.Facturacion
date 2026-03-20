@@ -106,6 +106,11 @@ Recommended production posture:
 - provision the first admin user through a controlled operational process
 - rotate bootstrap credentials immediately if temporary local enablement is ever used
 
+Expanded non-production bootstrap:
+- roles can be ensured automatically
+- seeded non-production test users can be enabled explicitly through `Bootstrap:*`
+- seeded users are intended only for local, testing, and sandbox environments
+
 ## Required configuration
 - `Auth:Jwt:Issuer`
 - `Auth:Jwt:Audience`
@@ -115,6 +120,10 @@ Recommended production posture:
 - `Auth:BootstrapAdmin:Username`
 - `Auth:BootstrapAdmin:DisplayName`
 - `Auth:BootstrapAdmin:Password`
+- `Bootstrap:ApplyMigrationsOnStartup`
+- `Bootstrap:SeedDefaultRoles`
+- `Bootstrap:SeedDefaultTestUsers`
+- `Bootstrap:DefaultTestUserPassword`
 
 Checked-in config must use placeholders only.
 

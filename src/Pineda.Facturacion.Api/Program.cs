@@ -1,6 +1,7 @@
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
 using Pineda.Facturacion.Application.Security;
 using Pineda.Facturacion.Application.DependencyInjection;
 using Pineda.Facturacion.Api.Endpoints;
@@ -11,8 +12,41 @@ using Pineda.Facturacion.Infrastructure.LegacyRead.DependencyInjection;
 using Pineda.Facturacion.Infrastructure.Options;
 
 var builder = WebApplication.CreateBuilder(args);
+var enableSwagger = builder.Configuration.GetValue<bool?>("OpenApi:EnableSwagger") ?? IsSwaggerEnabledByEnvironment(builder.Environment);
 
-builder.Services.AddOpenApi();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "Pineda.Facturacion API",
+        Version = "v1",
+        Description = "Operational backend API for fiscal lifecycle, catalogs, accounts receivable, payment complements, and audit support."
+    });
+
+    options.CustomSchemaIds(type => (type.FullName ?? type.Name).Replace("+", ".", StringComparison.Ordinal));
+
+    var bearerSecurityScheme = new OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Description = "Enter a JWT as: Bearer {token}",
+        In = ParameterLocation.Header,
+        Type = SecuritySchemeType.Http,
+        Scheme = JwtBearerDefaults.AuthenticationScheme.ToLowerInvariant(),
+        BearerFormat = "JWT",
+        Reference = new OpenApiReference
+        {
+            Id = JwtBearerDefaults.AuthenticationScheme,
+            Type = ReferenceType.SecurityScheme
+        }
+    };
+
+    options.AddSecurityDefinition(JwtBearerDefaults.AuthenticationScheme, bearerSecurityScheme);
+    options.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        [bearerSecurityScheme] = Array.Empty<string>()
+    });
+});
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddLegacyReadInfrastructure(builder.Configuration);
@@ -45,9 +79,16 @@ builder.Services.AddAuthorization(options =>
 
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment())
+if (enableSwagger)
 {
-    app.MapOpenApi();
+    app.UseSwagger();
+    app.UseSwaggerUI(options =>
+    {
+        options.SwaggerEndpoint("/swagger/v1/swagger.json", "Pineda.Facturacion API v1");
+        options.DocumentTitle = "Pineda.Facturacion API";
+        options.DisplayRequestDuration();
+        options.EnablePersistAuthorization();
+    });
 }
 
 app.UseHttpsRedirection();
@@ -82,5 +123,12 @@ app.MapAccountsReceivableEndpoints();
 app.MapPaymentComplementsEndpoints();
 
 app.Run();
+
+static bool IsSwaggerEnabledByEnvironment(IHostEnvironment environment)
+{
+    return environment.IsDevelopment()
+        || environment.IsEnvironment("Local")
+        || environment.IsEnvironment("Sandbox");
+}
 
 public partial class Program;

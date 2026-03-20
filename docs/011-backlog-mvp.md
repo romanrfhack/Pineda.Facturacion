@@ -17,6 +17,7 @@ The first end-to-end slice for snapshot import and internal billing document cre
 - Payment-complement cancellation and latest-status refresh are implemented from persisted complement evidence in the current MVP
 - Integration coverage and operational hardening are implemented for the completed MVP lifecycle
 - Local JWT authentication, role-based authorization, and critical-action audit trail are implemented for the backend MVP
+- Non-production bootstrap for baseline roles and test users is implemented, with explicit production guardrails
 - Initial snapshot migration applied successfully
 
 ## Completed phases
@@ -174,4 +175,4 @@ Acceptance criteria:
 - Secrets, API keys, certificates, and passwords must be externalized and documented with placeholders only.
 
 ## Current next priority
-Build the admin and operations UI on top of the secured backend, then extend the completed MVP toward richer attempt history, multi-currency, and advance-payment scenarios without bypassing persisted fiscal evidence.
+Run real sandbox smoke tests with the new install/bootstrap support, then extend the completed MVP toward richer attempt history, multi-currency, and advance-payment scenarios without bypassing persisted fiscal evidence.

@@ -18,6 +18,7 @@
     <ProjectReference Include="..\..\src\Pineda.Facturacion.Api\Pineda.Facturacion.Api.csproj" />
     <ProjectReference Include="..\..\src\Pineda.Facturacion.Application\Pineda.Facturacion.Application.csproj" />
     <ProjectReference Include="..\..\src\Pineda.Facturacion.Domain\Pineda.Facturacion.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Pineda.Facturacion.Infrastructure\Pineda.Facturacion.Infrastructure.csproj" />
   </ItemGroup>
 
   <ItemGroup>

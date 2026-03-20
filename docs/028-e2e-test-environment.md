@@ -117,6 +117,7 @@ Automated e2e should cover:
 Manual smoke tests should cover:
 - real backend deployment configuration
 - real database migrations
+- real non-production bootstrap configuration
 - real PAC sandbox/provider connectivity
 - production-like timeout and retry behavior
 
