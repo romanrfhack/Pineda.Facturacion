@@ -268,7 +268,7 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
 
     private static List<FacturaloPlusComprobanteTraslado> BuildConceptoTraslados(FiscalStampingRequestItem item)
     {
-        if (item.TaxTotal <= 0 || item.VatRate <= 0)
+        if (!string.Equals(item.TaxObjectCode, "02", StringComparison.Ordinal))
         {
             return [];
         }

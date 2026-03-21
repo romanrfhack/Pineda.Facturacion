@@ -106,7 +106,22 @@ public class FacturaloPlusStampingGatewayTests
         Assert.Equal("02", comprobante.GetProperty("Conceptos")[0].GetProperty("ObjetoImp").GetString());
         Assert.Equal(848m, comprobante.GetProperty("Conceptos")[0].GetProperty("Importe").GetDecimal());
         Assert.Equal(283m, comprobante.GetProperty("Conceptos")[0].GetProperty("Descuento").GetDecimal());
-        Assert.False(comprobante.TryGetProperty("Impuestos", out _));
+        var conceptoTraslado = comprobante
+            .GetProperty("Conceptos")[0]
+            .GetProperty("Impuestos")
+            .GetProperty("Traslados")[0];
+        Assert.Equal(565m, conceptoTraslado.GetProperty("Base").GetDecimal());
+        Assert.Equal("002", conceptoTraslado.GetProperty("Impuesto").GetString());
+        Assert.Equal("Tasa", conceptoTraslado.GetProperty("TipoFactor").GetString());
+        Assert.Equal(0m, conceptoTraslado.GetProperty("TasaOCuota").GetDecimal());
+        Assert.Equal(0m, conceptoTraslado.GetProperty("Importe").GetDecimal());
+        var comprobanteTraslado = comprobante.GetProperty("Impuestos").GetProperty("Traslados")[0];
+        Assert.Equal(565m, comprobanteTraslado.GetProperty("Base").GetDecimal());
+        Assert.Equal("002", comprobanteTraslado.GetProperty("Impuesto").GetString());
+        Assert.Equal("Tasa", comprobanteTraslado.GetProperty("TipoFactor").GetString());
+        Assert.Equal(0m, comprobanteTraslado.GetProperty("TasaOCuota").GetDecimal());
+        Assert.Equal(0m, comprobanteTraslado.GetProperty("Importe").GetDecimal());
+        Assert.Equal(0m, comprobante.GetProperty("Impuestos").GetProperty("TotalImpuestosTrasladados").GetDecimal());
         Assert.False(json.RootElement.TryGetProperty("issuer", out _));
         Assert.False(json.RootElement.TryGetProperty("Environment", out _));
         Assert.DoesNotContain("PRIVATE-KEY-PEM", decodedJson, StringComparison.Ordinal);
