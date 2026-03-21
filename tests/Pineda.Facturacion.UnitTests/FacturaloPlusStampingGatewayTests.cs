@@ -94,6 +94,9 @@ public class FacturaloPlusStampingGatewayTests
         Assert.Equal("99", comprobante.GetProperty("FormaPago").GetString());
         Assert.Equal("01", comprobante.GetProperty("Exportacion").GetString());
         Assert.Equal("01000", comprobante.GetProperty("LugarExpedicion").GetString());
+        Assert.Equal(848m, comprobante.GetProperty("SubTotal").GetDecimal());
+        Assert.Equal(283m, comprobante.GetProperty("Descuento").GetDecimal());
+        Assert.Equal(565m, comprobante.GetProperty("Total").GetDecimal());
         Assert.Equal("30001000000500003416", comprobante.GetProperty("NoCertificado").GetString());
         Assert.Equal(certificateBase64, comprobante.GetProperty("Certificado").GetString());
         Assert.Equal("AAA010101AAA", comprobante.GetProperty("Emisor").GetProperty("Rfc").GetString());
@@ -101,7 +104,9 @@ public class FacturaloPlusStampingGatewayTests
         Assert.Equal("G03", comprobante.GetProperty("Receptor").GetProperty("UsoCFDI").GetString());
         Assert.Equal("01010101", comprobante.GetProperty("Conceptos")[0].GetProperty("ClaveProdServ").GetString());
         Assert.Equal("02", comprobante.GetProperty("Conceptos")[0].GetProperty("ObjetoImp").GetString());
-        Assert.Equal("002", comprobante.GetProperty("Impuestos").GetProperty("Traslados")[0].GetProperty("Impuesto").GetString());
+        Assert.Equal(848m, comprobante.GetProperty("Conceptos")[0].GetProperty("Importe").GetDecimal());
+        Assert.Equal(283m, comprobante.GetProperty("Conceptos")[0].GetProperty("Descuento").GetDecimal());
+        Assert.False(comprobante.TryGetProperty("Impuestos", out _));
         Assert.False(json.RootElement.TryGetProperty("issuer", out _));
         Assert.False(json.RootElement.TryGetProperty("Environment", out _));
         Assert.DoesNotContain("PRIVATE-KEY-PEM", decodedJson, StringComparison.Ordinal);
@@ -140,10 +145,10 @@ public class FacturaloPlusStampingGatewayTests
             ReceiverCfdiUseCode = "G03",
             ReceiverPostalCode = "02000",
             ReceiverCountryCode = "MX",
-            Subtotal = 100m,
-            DiscountTotal = 0m,
-            TaxTotal = 16m,
-            Total = 116m,
+            Subtotal = 565m,
+            DiscountTotal = 283m,
+            TaxTotal = 0m,
+            Total = 565m,
             CertificateReference = "CERT_REF",
             PrivateKeyReference = "KEY_REF",
             PrivateKeyPasswordReference = "PWD_REF",
@@ -155,15 +160,15 @@ public class FacturaloPlusStampingGatewayTests
                     InternalCode = "SKU-1",
                     Description = "Producto",
                     Quantity = 1m,
-                    UnitPrice = 100m,
-                    DiscountAmount = 0m,
-                    Subtotal = 100m,
-                    TaxTotal = 16m,
-                    Total = 116m,
+                    UnitPrice = 848m,
+                    DiscountAmount = 283m,
+                    Subtotal = 565m,
+                    TaxTotal = 0m,
+                    Total = 565m,
                     SatProductServiceCode = "01010101",
                     SatUnitCode = "H87",
                     TaxObjectCode = "02",
-                    VatRate = 0.16m,
+                    VatRate = 0m,
                     UnitText = "Pieza"
                 }
             ]

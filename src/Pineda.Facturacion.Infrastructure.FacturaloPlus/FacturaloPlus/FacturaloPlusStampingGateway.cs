@@ -171,6 +171,8 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
             .OrderBy(x => x.LineNumber)
             .Select(BuildConcepto)
             .ToList();
+        var subTotal = itemPayloads.Sum(x => x.Importe);
+        var descuento = itemPayloads.Sum(x => x.Descuento ?? 0m);
 
         var traslados = itemPayloads
             .Where(x => x.Impuestos?.Traslados is { Count: > 0 })
@@ -185,6 +187,8 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
                 Importe = group.Sum(x => x.Importe)
             })
             .ToList();
+        var totalImpuestosTrasladados = traslados.Sum(x => x.Importe);
+        var total = subTotal - descuento + totalImpuestosTrasladados;
 
         return new FacturaloPlusStampingPayload
         {
@@ -202,9 +206,9 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
                 Exportacion = "01",
                 LugarExpedicion = request.IssuerPostalCode,
                 TipoCambio = request.ExchangeRate == 1m ? null : request.ExchangeRate,
-                SubTotal = request.Subtotal,
-                Descuento = request.DiscountTotal > 0 ? request.DiscountTotal : null,
-                Total = request.Total,
+                SubTotal = subTotal,
+                Descuento = descuento > 0 ? descuento : null,
+                Total = total,
                 NoCertificado = certificateMetadata.NoCertificado,
                 Certificado = certificateMetadata.Certificado,
                 Emisor = new FacturaloPlusComprobanteEmisor
@@ -230,7 +234,7 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
                     ? null
                     : new FacturaloPlusComprobanteImpuestos
                     {
-                        TotalImpuestosTrasladados = traslados.Sum(x => x.Importe),
+                        TotalImpuestosTrasladados = totalImpuestosTrasladados,
                         Traslados = traslados
                     }
             }
@@ -250,7 +254,7 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
             Unidad = item.UnitText,
             Descripcion = item.Description,
             ValorUnitario = item.UnitPrice,
-            Importe = item.Subtotal,
+            Importe = item.Subtotal + item.DiscountAmount,
             Descuento = item.DiscountAmount > 0 ? item.DiscountAmount : null,
             ObjetoImp = item.TaxObjectCode,
             Impuestos = traslados.Count == 0
