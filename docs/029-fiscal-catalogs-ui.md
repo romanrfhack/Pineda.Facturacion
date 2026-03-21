@@ -10,6 +10,10 @@ Covered areas:
 - receiver import preview/apply
 - product import preview/apply
 
+Import apply now supports:
+- apply all eligible rows
+- apply specific row numbers
+
 This step does not add new backend catalog behavior.
 
 ## Route structure
@@ -98,9 +102,16 @@ Preview shows:
 
 Apply shows:
 - selected apply mode
-- optional selected row numbers
+- apply target mode:
+  - all eligible rows
+  - specific row numbers
+- optional selected row numbers only when specific-row mode is chosen
 - stop-on-first-error flag
 - explicit confirmation before master-data mutation
+
+`All eligible rows` follows current backend semantics: valid rows whose suggested action is `Create` or `Update`.
+
+Apply failures now surface backend validation details directly instead of only showing a generic request failure.
 
 Product import screens also surface the optional preview defaults and make `NeedsEnrichment` rows visible instead of guessing missing SAT values.
 

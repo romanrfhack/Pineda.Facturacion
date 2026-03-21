@@ -8,6 +8,7 @@ import { ImportBatchSummaryCardComponent } from '../components/import-batch-summ
 import { FiscalImportsApiService } from '../infrastructure/fiscal-imports-api.service';
 import { ApplyImportBatchResponse, ImportApplyMode, ImportBatchSummary, ReceiverImportRow } from '../models/catalogs.models';
 import { getDisplayLabel } from '../../../shared/ui/display-labels';
+import { countEligibleImportRows, ImportApplySelectionMode, resolveSelectedRowNumbers } from '../application/import-apply';
 
 @Component({
   selector: 'app-receiver-imports-page',
@@ -54,6 +55,7 @@ import { getDisplayLabel } from '../../../shared/ui/display-labels';
       @if (summary()) {
         <section class="card">
           <h3>Aplicar lote</h3>
+          <p class="helper">Las filas elegibles son las válidas con acción sugerida Crear o Actualizar. Actualmente hay {{ eligibleRowsCount() }}.</p>
           <div class="form-grid">
             <label>
               <span>Modo de aplicación</span>
@@ -63,10 +65,24 @@ import { getDisplayLabel } from '../../../shared/ui/display-labels';
               </select>
             </label>
 
-            <label>
-              <span>Números de fila seleccionados</span>
-              <input [(ngModel)]="selectedRowsText" name="selectedRowsText" placeholder="1,2,7" [disabled]="!permissionService.canWriteMasterData()" />
-            </label>
+            <fieldset class="selection-mode" [disabled]="!permissionService.canWriteMasterData()">
+              <legend>Filas a aplicar</legend>
+              <label class="radio-option">
+                <input type="radio" name="receiverSelectionMode" [value]="'allEligible'" [(ngModel)]="applySelectionMode" />
+                <span>Aplicar todas las filas elegibles</span>
+              </label>
+              <label class="radio-option">
+                <input type="radio" name="receiverSelectionMode" [value]="'specificRows'" [(ngModel)]="applySelectionMode" />
+                <span>Aplicar filas específicas</span>
+              </label>
+            </fieldset>
+
+            @if (applySelectionMode === 'specificRows') {
+              <label>
+                <span>Números de fila</span>
+                <input [(ngModel)]="selectedRowsText" name="selectedRowsText" placeholder="1,2,7" [disabled]="!permissionService.canWriteMasterData()" />
+              </label>
+            }
 
             <label class="checkbox">
               <input [(ngModel)]="stopOnFirstError" name="stopOnFirstError" type="checkbox" [disabled]="!permissionService.canWriteMasterData()" />
@@ -133,8 +149,12 @@ import { getDisplayLabel } from '../../../shared/ui/display-labels';
     label { display:grid; gap:0.35rem; }
     input, select, button { font:inherit; }
     input, select { border:1px solid #c9d1da; border-radius:0.8rem; padding:0.75rem 0.9rem; }
+    fieldset { border:1px solid #d8d1c2; border-radius:0.8rem; padding:0.75rem 1rem; margin:0; }
+    legend { padding:0 0.35rem; }
     .checkbox { display:flex; align-items:center; gap:0.5rem; }
     .checkbox input { width:auto; }
+    .radio-option { display:flex; align-items:center; gap:0.5rem; }
+    .radio-option input { width:auto; }
     button { border:none; border-radius:0.8rem; padding:0.75rem 1rem; background:#182533; color:#fff; cursor:pointer; }
     button.secondary { background:#d8c49b; color:#182533; }
     .helper { margin:0; color:#5f6b76; }
@@ -158,8 +178,10 @@ export class ReceiverImportsPageComponent {
   protected readonly errorMessage = signal<string | null>(null);
   protected readonly previewing = signal(false);
   protected readonly applying = signal(false);
+  protected readonly eligibleRowsCount = signal(0);
 
   protected applyMode: ImportApplyMode = 'CreateOnly';
+  protected applySelectionMode: ImportApplySelectionMode = 'allEligible';
   protected selectedRowsText = '';
   protected stopOnFirstError = false;
   protected readonly getDisplayLabel = getDisplayLabel;
@@ -193,7 +215,7 @@ export class ReceiverImportsPageComponent {
     }
   }
 
-  protected async loadBatch(): Promise<void> {
+  protected async loadBatch(resetApplyResult = true): Promise<void> {
     if (!this.batchIdInput) {
       return;
     }
@@ -202,7 +224,9 @@ export class ReceiverImportsPageComponent {
     try {
       this.summary.set(await firstValueFrom(this.api.getReceiverBatch(this.batchIdInput)));
       await this.loadRows(this.batchIdInput);
-      this.applyResult.set(null);
+      if (resetApplyResult) {
+        this.applyResult.set(null);
+      }
     } catch (error) {
       this.errorMessage.set(extractApiErrorMessage(error));
     }
@@ -221,31 +245,30 @@ export class ReceiverImportsPageComponent {
     this.applying.set(true);
     this.errorMessage.set(null);
     try {
+      const selectedRowsResolution = resolveSelectedRowNumbers(this.applySelectionMode, this.selectedRowsText);
+      if (selectedRowsResolution.errorMessage) {
+        this.errorMessage.set(selectedRowsResolution.errorMessage);
+        return;
+      }
+
       const result = await firstValueFrom(this.api.applyReceiverBatch(batchId, {
         applyMode: this.applyMode,
-        selectedRowNumbers: parseSelectedRows(this.selectedRowsText),
+        selectedRowNumbers: selectedRowsResolution.selectedRowNumbers,
         stopOnFirstError: this.stopOnFirstError
       }));
       this.applyResult.set(result);
-      this.feedbackService.show('success', 'Lote de importación de receptores aplicado.');
-      await this.loadBatch();
+      this.feedbackService.show('success', 'Lote aplicado correctamente.');
+      await this.loadBatch(false);
     } catch (error) {
-      this.errorMessage.set(extractApiErrorMessage(error));
+      this.errorMessage.set(extractApiErrorMessage(error, 'No fue posible aplicar el lote.'));
     } finally {
       this.applying.set(false);
     }
   }
 
   private async loadRows(batchId: number): Promise<void> {
-    this.rows.set(await firstValueFrom(this.api.listReceiverRows(batchId)));
+    const rows = await firstValueFrom(this.api.listReceiverRows(batchId));
+    this.rows.set(rows);
+    this.eligibleRowsCount.set(countEligibleImportRows(rows));
   }
-}
-
-function parseSelectedRows(value: string): number[] | null {
-  const items = value
-    .split(',')
-    .map((item) => Number(item.trim()))
-    .filter((item) => Number.isInteger(item) && item > 0);
-
-  return items.length ? items : null;
 }

@@ -11,9 +11,35 @@ const KNOWN_ERROR_MESSAGES: Record<string, string> = {
 
 export function extractApiErrorMessage(error: unknown, fallback = 'No se pudo completar la operación.'): string {
   if (typeof error === 'object' && error && 'error' in error) {
-    const payload = (error as { error?: { errorMessage?: string } }).error;
+    const payload = (error as {
+      error?: {
+        errorMessage?: string;
+        detail?: string;
+        title?: string;
+        errors?: Record<string, string[]>;
+      };
+    }).error;
+
     if (payload?.errorMessage) {
       return KNOWN_ERROR_MESSAGES[payload.errorMessage] ?? payload.errorMessage;
+    }
+
+    const validationErrors = payload?.errors
+      ? Object.values(payload.errors)
+        .flat()
+        .map((message) => KNOWN_ERROR_MESSAGES[message] ?? message)
+      : [];
+
+    if (validationErrors.length) {
+      return validationErrors.join(' ');
+    }
+
+    if (payload?.detail) {
+      return KNOWN_ERROR_MESSAGES[payload.detail] ?? payload.detail;
+    }
+
+    if (payload?.title) {
+      return KNOWN_ERROR_MESSAGES[payload.title] ?? payload.title;
     }
   }
 

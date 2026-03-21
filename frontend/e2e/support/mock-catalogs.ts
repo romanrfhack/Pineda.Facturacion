@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 
 export async function mockCatalogReceiversBackend(page: Page): Promise<void> {
   let receivers = [
@@ -115,6 +115,124 @@ export async function mockCatalogReceiversBackend(page: Page): Promise<void> {
         outcome: 'Created',
         isSuccess: true,
         id: created.id
+      }
+    });
+  });
+}
+
+export async function mockCatalogReceiverImportsBackend(page: Page): Promise<void> {
+  let applied = false;
+
+  await page.route('**/api/auth/login', async (route) => {
+    await route.fulfill({
+      json: {
+        outcome: 'Authenticated',
+        isSuccess: true,
+        token: 'catalog-import-token',
+        expiresAtUtc: new Date().toISOString(),
+        user: {
+          id: 1,
+          username: 'supervisor',
+          displayName: 'Supervisor',
+          roles: ['FiscalSupervisor'],
+          isAuthenticated: true
+        }
+      }
+    });
+  });
+
+  await page.route('**/api/auth/me', async (route) => {
+    await route.fulfill({
+      json: {
+        id: 1,
+        username: 'supervisor',
+        displayName: 'Supervisor',
+        roles: ['FiscalSupervisor'],
+        isAuthenticated: true
+      }
+    });
+  });
+
+  await page.route('**/api/fiscal/imports/receivers/batches/22', async (route) => {
+    await route.fulfill({
+      json: {
+        batchId: 22,
+        sourceFileName: 'receivers.xlsx',
+        status: 'Validated',
+        totalRows: 4,
+        validRows: 2,
+        invalidRows: 1,
+        ignoredRows: 1,
+        existingMasterMatches: 1,
+        duplicateRowsInFile: 0,
+        appliedRows: applied ? 2 : 0,
+        applyFailedRows: 0,
+        applySkippedRows: 0,
+        completedAtUtc: null,
+        lastAppliedAtUtc: applied ? new Date().toISOString() : null,
+        errorMessage: null
+      }
+    });
+  });
+
+  await page.route('**/api/fiscal/imports/receivers/batches/22/rows', async (route) => {
+    await route.fulfill({
+      json: [
+        {
+          rowNumber: 1,
+          status: 'Valid',
+          suggestedAction: 'Create',
+          normalizedRfc: 'AAA010101AAA',
+          normalizedLegalName: 'Cliente A',
+          validationErrors: [],
+          existingMasterEntityId: null,
+          applyStatus: applied ? 'Applied' : 'Pending'
+        },
+        {
+          rowNumber: 2,
+          status: 'Valid',
+          suggestedAction: 'Update',
+          normalizedRfc: 'BBB010101BBB',
+          normalizedLegalName: 'Cliente B',
+          validationErrors: [],
+          existingMasterEntityId: 11,
+          applyStatus: applied ? 'Applied' : 'Pending'
+        },
+        {
+          rowNumber: 3,
+          status: 'Invalid',
+          suggestedAction: 'Conflict',
+          normalizedRfc: 'CCC010101CCC',
+          normalizedLegalName: 'Cliente C',
+          validationErrors: ['RFC inválido'],
+          existingMasterEntityId: null,
+          applyStatus: 'Pending'
+        }
+      ]
+    });
+  });
+
+  await page.route('**/api/fiscal/imports/receivers/batches/22/apply', async (route) => {
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    expect(body).toEqual({
+      applyMode: 0,
+      stopOnFirstError: false
+    });
+
+    applied = true;
+
+    await route.fulfill({
+      json: {
+        batchId: 22,
+        applyMode: 'CreateOnly',
+        totalCandidateRows: 2,
+        appliedRows: 2,
+        skippedRows: 0,
+        failedRows: 0,
+        alreadyAppliedRows: 0,
+        lastAppliedAtUtc: new Date().toISOString(),
+        errorMessage: null,
+        rows: []
       }
     });
   });

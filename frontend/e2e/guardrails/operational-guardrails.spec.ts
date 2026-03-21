@@ -27,7 +27,7 @@ test('supervisor sees provider unavailable feedback when invoice stamp fails', a
   await loginPage.open();
   await loginPage.signIn('supervisor', 'Secret123!');
 
-  await page.goto('/app/fiscal-documents/406');
+  await page.goto('/app/fiscal-documents/406', { waitUntil: 'commit' });
   await expect(page.getByText('Aún no hay evidencia de timbrado disponible')).toBeVisible();
   await page.getByRole('button', { name: 'Timbrar' }).click();
   await expect(page.getByText('PAC no disponible. Intenta de nuevo después de verificar el estatus.')).toBeVisible();

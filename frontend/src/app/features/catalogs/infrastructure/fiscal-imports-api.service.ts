@@ -29,7 +29,7 @@ export class FiscalImportsApiService {
   }
 
   applyReceiverBatch(batchId: number, request: ApplyImportBatchRequest): Observable<ApplyImportBatchResponse> {
-    return this.http.post<ApplyImportBatchResponse>(buildApiUrl(`/fiscal/imports/receivers/batches/${batchId}/apply`), request);
+    return this.http.post<ApplyImportBatchResponse>(buildApiUrl(`/fiscal/imports/receivers/batches/${batchId}/apply`), mapApplyRequest(request));
   }
 
   previewProducts(file: File, defaults: { defaultTaxObjectCode?: string; defaultVatRate?: number | null; defaultUnitText?: string }): Observable<ImportBatchSummary> {
@@ -56,6 +56,19 @@ export class FiscalImportsApiService {
   }
 
   applyProductBatch(batchId: number, request: ApplyImportBatchRequest): Observable<ApplyImportBatchResponse> {
-    return this.http.post<ApplyImportBatchResponse>(buildApiUrl(`/fiscal/imports/products/batches/${batchId}/apply`), request);
+    return this.http.post<ApplyImportBatchResponse>(buildApiUrl(`/fiscal/imports/products/batches/${batchId}/apply`), mapApplyRequest(request));
   }
+}
+
+function mapApplyRequest(request: ApplyImportBatchRequest): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    applyMode: request.applyMode === 'CreateAndUpdate' ? 1 : 0,
+    stopOnFirstError: request.stopOnFirstError
+  };
+
+  if (request.selectedRowNumbers && request.selectedRowNumbers.length) {
+    payload['selectedRowNumbers'] = request.selectedRowNumbers;
+  }
+
+  return payload;
 }
