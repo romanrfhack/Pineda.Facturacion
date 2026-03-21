@@ -1,4 +1,6 @@
 using System.Net;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
@@ -14,6 +16,22 @@ public class FacturaloPlusStampingGatewayTests
     [Fact]
     public async Task StampAsync_Builds_FormUrlEncoded_Request_For_TimbrarJson3()
     {
+        using var rsa = RSA.Create(2048);
+        var request = new CertificateRequest(
+            "CN=FacturaloPlus Test",
+            rsa,
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
+        var serialBytes = Encoding.ASCII.GetBytes("30001000000500003416");
+        var certificate = request.Create(
+            new X500DistinguishedName("CN=FacturaloPlus Test"),
+            X509SignatureGenerator.CreateForRSA(rsa, RSASignaturePadding.Pkcs1),
+            DateTimeOffset.UtcNow.AddDays(-1),
+            DateTimeOffset.UtcNow.AddYears(1),
+            serialBytes);
+        var certificatePem = new string(PemEncoding.Write("CERTIFICATE", certificate.Export(X509ContentType.Cert)));
+        var certificateBase64 = Convert.ToBase64String(certificate.Export(X509ContentType.Cert));
+
         var handler = new RecordingHandler(new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent("""
@@ -34,7 +52,7 @@ public class FacturaloPlusStampingGatewayTests
         var secretResolver = new RecordingSecretResolver(new Dictionary<string, string?>
         {
             ["FACTURALOPLUS_API_KEY_REFERENCE"] = "APIKEY-TEST",
-            ["CERT_REF"] = "CERTIFICATE-PEM",
+            ["CERT_REF"] = certificatePem,
             ["KEY_REF"] = "PRIVATE-KEY-PEM",
             ["PWD_REF"] = "PRIVATE-KEY-PASSWORD"
         });
@@ -63,7 +81,7 @@ public class FacturaloPlusStampingGatewayTests
 
         Assert.Equal("APIKEY-TEST", form["apikey"]);
         Assert.Equal("PRIVATE-KEY-PEM", form["keyPEM"]);
-        Assert.Equal("CERTIFICATE-PEM", form["cerPEM"]);
+        Assert.Equal(certificatePem, form["cerPEM"]);
         Assert.True(form.ContainsKey("jsonB64"));
 
         var decodedJson = Encoding.UTF8.GetString(Convert.FromBase64String(form["jsonB64"]));
@@ -75,6 +93,8 @@ public class FacturaloPlusStampingGatewayTests
         Assert.Equal("PPD", comprobante.GetProperty("MetodoPago").GetString());
         Assert.Equal("99", comprobante.GetProperty("FormaPago").GetString());
         Assert.Equal("01", comprobante.GetProperty("Exportacion").GetString());
+        Assert.Equal("30001000000500003416", comprobante.GetProperty("NoCertificado").GetString());
+        Assert.Equal(certificateBase64, comprobante.GetProperty("Certificado").GetString());
         Assert.Equal("AAA010101AAA", comprobante.GetProperty("Emisor").GetProperty("Rfc").GetString());
         Assert.Equal("Receiver SA", comprobante.GetProperty("Receptor").GetProperty("Nombre").GetString());
         Assert.Equal("G03", comprobante.GetProperty("Receptor").GetProperty("UsoCFDI").GetString());
@@ -84,7 +104,6 @@ public class FacturaloPlusStampingGatewayTests
         Assert.False(json.RootElement.TryGetProperty("issuer", out _));
         Assert.False(json.RootElement.TryGetProperty("Environment", out _));
         Assert.DoesNotContain("PRIVATE-KEY-PEM", decodedJson, StringComparison.Ordinal);
-        Assert.DoesNotContain("CERTIFICATE-PEM", decodedJson, StringComparison.Ordinal);
         Assert.DoesNotContain("PRIVATE-KEY-PASSWORD", decodedJson, StringComparison.Ordinal);
         Assert.DoesNotContain("\"certificate\"", decodedJson, StringComparison.OrdinalIgnoreCase);
 
@@ -156,9 +175,14 @@ public class FacturaloPlusStampingGatewayTests
             .Split('&', StringSplitOptions.RemoveEmptyEntries)
             .Select(segment => segment.Split('=', 2))
             .ToDictionary(
-                parts => Uri.UnescapeDataString(parts[0]),
-                parts => parts.Length > 1 ? Uri.UnescapeDataString(parts[1]) : string.Empty,
+                parts => DecodeFormComponent(parts[0]),
+                parts => parts.Length > 1 ? DecodeFormComponent(parts[1]) : string.Empty,
                 StringComparer.Ordinal);
+    }
+
+    private static string DecodeFormComponent(string value)
+    {
+        return Uri.UnescapeDataString(value.Replace("+", " ", StringComparison.Ordinal));
     }
 
     private sealed class RecordingHandler : HttpMessageHandler

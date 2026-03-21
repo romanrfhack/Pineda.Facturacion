@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -59,7 +60,18 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
 
         var redactedSummary = BuildRedactedRequestSummary(request);
         var providerRequestHash = ComputeSha256(JsonSerializer.Serialize(redactedSummary, JsonOptions));
-        var payload = BuildPayload(request);
+        CertificateMetadata certificateMetadata;
+
+        try
+        {
+            certificateMetadata = ExtractCertificateMetadata(certificateValue);
+        }
+        catch (CryptographicException)
+        {
+            return ValidationFailed("Fiscal document certificate PEM could not be parsed.");
+        }
+
+        var payload = BuildPayload(request, certificateMetadata);
         var payloadJson = JsonSerializer.Serialize(payload, JsonOptions);
         var formPayload = BuildFormPayload(apiKey, payloadJson, privateKeyValue, certificateValue);
 
@@ -152,7 +164,8 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
     }
 
     private static FacturaloPlusStampingPayload BuildPayload(
-        FiscalStampingRequest request)
+        FiscalStampingRequest request,
+        CertificateMetadata certificateMetadata)
     {
         var itemPayloads = request.Items
             .OrderBy(x => x.LineNumber)
@@ -191,6 +204,8 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
                 SubTotal = request.Subtotal,
                 Descuento = request.DiscountTotal > 0 ? request.DiscountTotal : null,
                 Total = request.Total,
+                NoCertificado = certificateMetadata.NoCertificado,
+                Certificado = certificateMetadata.Certificado,
                 Emisor = new FacturaloPlusComprobanteEmisor
                 {
                     Rfc = request.IssuerRfc,
@@ -264,6 +279,21 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
                 Importe = item.TaxTotal
             }
         ];
+    }
+
+    private static CertificateMetadata ExtractCertificateMetadata(string certificatePem)
+    {
+        var certificate = X509Certificate2.CreateFromPem(certificatePem);
+        var certificateBytes = certificate.Export(X509ContentType.Cert);
+        var serialBytes = certificate.GetSerialNumber().Reverse().ToArray();
+
+        var noCertificado = serialBytes.All(static x => x is >= (byte)'0' and <= (byte)'9')
+            ? Encoding.ASCII.GetString(serialBytes)
+            : Convert.ToHexString(serialBytes);
+
+        return new CertificateMetadata(
+            noCertificado,
+            Convert.ToBase64String(certificateBytes));
     }
 
     private static string MapTipoDeComprobante(string documentType)
@@ -455,6 +485,10 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
         public decimal? Descuento { get; init; }
         [JsonPropertyName("Total")]
         public decimal Total { get; init; }
+        [JsonPropertyName("NoCertificado")]
+        public string NoCertificado { get; init; } = string.Empty;
+        [JsonPropertyName("Certificado")]
+        public string Certificado { get; init; } = string.Empty;
         [JsonPropertyName("Emisor")]
         public FacturaloPlusComprobanteEmisor Emisor { get; init; } = new();
         [JsonPropertyName("Receptor")]
@@ -561,4 +595,8 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
         public string? ErrorCode { get; init; }
         public string? ErrorMessage { get; init; }
     }
+
+    private sealed record CertificateMetadata(
+        string NoCertificado,
+        string Certificado);
 }
