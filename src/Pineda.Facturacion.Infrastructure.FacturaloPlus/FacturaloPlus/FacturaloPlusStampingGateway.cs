@@ -154,64 +154,116 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
     private static FacturaloPlusStampingPayload BuildPayload(
         FiscalStampingRequest request)
     {
+        var itemPayloads = request.Items
+            .OrderBy(x => x.LineNumber)
+            .Select(BuildConcepto)
+            .ToList();
+
+        var traslados = itemPayloads
+            .Where(x => x.Impuestos?.Traslados is { Count: > 0 })
+            .SelectMany(x => x.Impuestos!.Traslados!)
+            .GroupBy(x => new { x.Impuesto, x.TipoFactor, x.TasaOCuota })
+            .Select(group => new FacturaloPlusComprobanteTraslado
+            {
+                Base = group.Sum(x => x.Base),
+                Impuesto = group.Key.Impuesto,
+                TipoFactor = group.Key.TipoFactor,
+                TasaOCuota = group.Key.TasaOCuota,
+                Importe = group.Sum(x => x.Importe)
+            })
+            .ToList();
+
         return new FacturaloPlusStampingPayload
         {
-            Environment = request.PacEnvironment,
-            CfdiVersion = request.CfdiVersion,
-            DocumentType = request.DocumentType,
-            Series = request.Series,
-            Folio = request.Folio,
-            IssuedAtUtc = request.IssuedAtUtc,
-            CurrencyCode = request.CurrencyCode,
-            ExchangeRate = request.ExchangeRate,
-            PaymentMethodSat = request.PaymentMethodSat,
-            PaymentFormSat = request.PaymentFormSat,
-            PaymentCondition = request.PaymentCondition,
-            Issuer = new FacturaloPlusStampingParty
+            Comprobante = new FacturaloPlusComprobante
             {
-                Rfc = request.IssuerRfc,
-                LegalName = request.IssuerLegalName,
-                FiscalRegimeCode = request.IssuerFiscalRegimeCode,
-                PostalCode = request.IssuerPostalCode
-            },
-            Receiver = new FacturaloPlusStampingReceiver
-            {
-                Rfc = request.ReceiverRfc,
-                LegalName = request.ReceiverLegalName,
-                FiscalRegimeCode = request.ReceiverFiscalRegimeCode,
-                CfdiUseCode = request.ReceiverCfdiUseCode,
-                PostalCode = request.ReceiverPostalCode,
-                CountryCode = request.ReceiverCountryCode,
-                ForeignTaxRegistration = request.ReceiverForeignTaxRegistration
-            },
-            Totals = new FacturaloPlusStampingTotals
-            {
-                Subtotal = request.Subtotal,
-                DiscountTotal = request.DiscountTotal,
-                TaxTotal = request.TaxTotal,
-                Total = request.Total
-            },
-            Items = request.Items
-                .OrderBy(x => x.LineNumber)
-                .Select(x => new FacturaloPlusStampingItem
+                Version = request.CfdiVersion,
+                Serie = request.Series,
+                Folio = request.Folio,
+                Fecha = request.IssuedAtUtc,
+                Moneda = request.CurrencyCode,
+                TipoDeComprobante = request.DocumentType,
+                MetodoPago = request.PaymentMethodSat,
+                FormaPago = request.PaymentFormSat,
+                CondicionesDePago = request.PaymentCondition,
+                Exportacion = "01",
+                TipoCambio = request.ExchangeRate == 1m ? null : request.ExchangeRate,
+                SubTotal = request.Subtotal,
+                Descuento = request.DiscountTotal > 0 ? request.DiscountTotal : null,
+                Total = request.Total,
+                Emisor = new FacturaloPlusComprobanteEmisor
                 {
-                    LineNumber = x.LineNumber,
-                    InternalCode = x.InternalCode,
-                    Description = x.Description,
-                    Quantity = x.Quantity,
-                    UnitPrice = x.UnitPrice,
-                    DiscountAmount = x.DiscountAmount,
-                    Subtotal = x.Subtotal,
-                    TaxTotal = x.TaxTotal,
-                    Total = x.Total,
-                    SatProductServiceCode = x.SatProductServiceCode,
-                    SatUnitCode = x.SatUnitCode,
-                    TaxObjectCode = x.TaxObjectCode,
-                    VatRate = x.VatRate,
-                    UnitText = x.UnitText
-                })
-                .ToList(),
+                    Rfc = request.IssuerRfc,
+                    Nombre = request.IssuerLegalName,
+                    RegimenFiscal = request.IssuerFiscalRegimeCode
+                },
+                Receptor = new FacturaloPlusComprobanteReceptor
+                {
+                    Rfc = request.ReceiverRfc,
+                    Nombre = request.ReceiverLegalName,
+                    DomicilioFiscalReceptor = request.ReceiverPostalCode,
+                    RegimenFiscalReceptor = request.ReceiverFiscalRegimeCode,
+                    UsoCFDI = request.ReceiverCfdiUseCode,
+                    ResidenciaFiscal = request.ReceiverCountryCode is { Length: > 0 } countryCode && !string.Equals(countryCode, "MX", StringComparison.OrdinalIgnoreCase)
+                        ? request.ReceiverCountryCode
+                        : null,
+                    NumRegIdTrib = request.ReceiverForeignTaxRegistration
+                },
+                Conceptos = itemPayloads,
+                Impuestos = traslados.Count == 0
+                    ? null
+                    : new FacturaloPlusComprobanteImpuestos
+                    {
+                        TotalImpuestosTrasladados = traslados.Sum(x => x.Importe),
+                        Traslados = traslados
+                    }
+            }
         };
+    }
+
+    private static FacturaloPlusComprobanteConcepto BuildConcepto(FiscalStampingRequestItem item)
+    {
+        var traslados = BuildConceptoTraslados(item);
+
+        return new FacturaloPlusComprobanteConcepto
+        {
+            ClaveProdServ = item.SatProductServiceCode,
+            NoIdentificacion = item.InternalCode,
+            Cantidad = item.Quantity,
+            ClaveUnidad = item.SatUnitCode,
+            Unidad = item.UnitText,
+            Descripcion = item.Description,
+            ValorUnitario = item.UnitPrice,
+            Importe = item.Subtotal,
+            Descuento = item.DiscountAmount > 0 ? item.DiscountAmount : null,
+            ObjetoImp = item.TaxObjectCode,
+            Impuestos = traslados.Count == 0
+                ? null
+                : new FacturaloPlusComprobanteConceptoImpuestos
+                {
+                    Traslados = traslados
+                }
+        };
+    }
+
+    private static List<FacturaloPlusComprobanteTraslado> BuildConceptoTraslados(FiscalStampingRequestItem item)
+    {
+        if (item.TaxTotal <= 0 || item.VatRate <= 0)
+        {
+            return [];
+        }
+
+        return
+        [
+            new FacturaloPlusComprobanteTraslado
+            {
+                Base = item.Subtotal,
+                Impuesto = "002",
+                TipoFactor = "Tasa",
+                TasaOCuota = item.VatRate,
+                Importe = item.TaxTotal
+            }
+        ];
     }
 
     private static IReadOnlyDictionary<string, string> BuildFormPayload(
@@ -359,62 +411,130 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
 
     private sealed class FacturaloPlusStampingPayload
     {
-        public string Environment { get; init; } = string.Empty;
-        public string CfdiVersion { get; init; } = string.Empty;
-        public string DocumentType { get; init; } = string.Empty;
-        public string? Series { get; init; }
+        [JsonPropertyName("Comprobante")]
+        public FacturaloPlusComprobante Comprobante { get; init; } = new();
+    }
+
+    private sealed class FacturaloPlusComprobante
+    {
+        [JsonPropertyName("Version")]
+        public string Version { get; init; } = string.Empty;
+        [JsonPropertyName("Serie")]
+        public string? Serie { get; init; }
+        [JsonPropertyName("Folio")]
         public string? Folio { get; init; }
-        public DateTime IssuedAtUtc { get; init; }
-        public string CurrencyCode { get; init; } = string.Empty;
-        public decimal ExchangeRate { get; init; }
-        public string PaymentMethodSat { get; init; } = string.Empty;
-        public string PaymentFormSat { get; init; } = string.Empty;
-        public string? PaymentCondition { get; init; }
-        public FacturaloPlusStampingParty Issuer { get; init; } = new();
-        public FacturaloPlusStampingReceiver Receiver { get; init; } = new();
-        public FacturaloPlusStampingTotals Totals { get; init; } = new();
-        public List<FacturaloPlusStampingItem> Items { get; init; } = [];
+        [JsonPropertyName("Fecha")]
+        public DateTime Fecha { get; init; }
+        [JsonPropertyName("Moneda")]
+        public string Moneda { get; init; } = string.Empty;
+        [JsonPropertyName("TipoCambio")]
+        public decimal? TipoCambio { get; init; }
+        [JsonPropertyName("TipoDeComprobante")]
+        public string TipoDeComprobante { get; init; } = string.Empty;
+        [JsonPropertyName("MetodoPago")]
+        public string MetodoPago { get; init; } = string.Empty;
+        [JsonPropertyName("FormaPago")]
+        public string FormaPago { get; init; } = string.Empty;
+        [JsonPropertyName("CondicionesDePago")]
+        public string? CondicionesDePago { get; init; }
+        [JsonPropertyName("Exportacion")]
+        public string Exportacion { get; init; } = string.Empty;
+        [JsonPropertyName("SubTotal")]
+        public decimal SubTotal { get; init; }
+        [JsonPropertyName("Descuento")]
+        public decimal? Descuento { get; init; }
+        [JsonPropertyName("Total")]
+        public decimal Total { get; init; }
+        [JsonPropertyName("Emisor")]
+        public FacturaloPlusComprobanteEmisor Emisor { get; init; } = new();
+        [JsonPropertyName("Receptor")]
+        public FacturaloPlusComprobanteReceptor Receptor { get; init; } = new();
+        [JsonPropertyName("Conceptos")]
+        public List<FacturaloPlusComprobanteConcepto> Conceptos { get; init; } = [];
+        [JsonPropertyName("Impuestos")]
+        public FacturaloPlusComprobanteImpuestos? Impuestos { get; init; }
     }
 
-    private class FacturaloPlusStampingParty
+    private sealed class FacturaloPlusComprobanteEmisor
     {
+        [JsonPropertyName("Rfc")]
         public string Rfc { get; init; } = string.Empty;
-        public string LegalName { get; init; } = string.Empty;
-        public string FiscalRegimeCode { get; init; } = string.Empty;
-        public string PostalCode { get; init; } = string.Empty;
+        [JsonPropertyName("Nombre")]
+        public string Nombre { get; init; } = string.Empty;
+        [JsonPropertyName("RegimenFiscal")]
+        public string RegimenFiscal { get; init; } = string.Empty;
     }
 
-    private sealed class FacturaloPlusStampingReceiver : FacturaloPlusStampingParty
+    private sealed class FacturaloPlusComprobanteReceptor
     {
-        public string CfdiUseCode { get; init; } = string.Empty;
-        public string? CountryCode { get; init; }
-        public string? ForeignTaxRegistration { get; init; }
+        [JsonPropertyName("Rfc")]
+        public string Rfc { get; init; } = string.Empty;
+        [JsonPropertyName("Nombre")]
+        public string Nombre { get; init; } = string.Empty;
+        [JsonPropertyName("DomicilioFiscalReceptor")]
+        public string DomicilioFiscalReceptor { get; init; } = string.Empty;
+        [JsonPropertyName("RegimenFiscalReceptor")]
+        public string RegimenFiscalReceptor { get; init; } = string.Empty;
+        [JsonPropertyName("UsoCFDI")]
+        public string UsoCFDI { get; init; } = string.Empty;
+        [JsonPropertyName("ResidenciaFiscal")]
+        public string? ResidenciaFiscal { get; init; }
+        [JsonPropertyName("NumRegIdTrib")]
+        public string? NumRegIdTrib { get; init; }
     }
 
-    private sealed class FacturaloPlusStampingTotals
+    private sealed class FacturaloPlusComprobanteConcepto
     {
-        public decimal Subtotal { get; init; }
-        public decimal DiscountTotal { get; init; }
-        public decimal TaxTotal { get; init; }
-        public decimal Total { get; init; }
+        [JsonPropertyName("ClaveProdServ")]
+        public string ClaveProdServ { get; init; } = string.Empty;
+        [JsonPropertyName("NoIdentificacion")]
+        public string NoIdentificacion { get; init; } = string.Empty;
+        [JsonPropertyName("Cantidad")]
+        public decimal Cantidad { get; init; }
+        [JsonPropertyName("ClaveUnidad")]
+        public string ClaveUnidad { get; init; } = string.Empty;
+        [JsonPropertyName("Unidad")]
+        public string? Unidad { get; init; }
+        [JsonPropertyName("Descripcion")]
+        public string Descripcion { get; init; } = string.Empty;
+        [JsonPropertyName("ValorUnitario")]
+        public decimal ValorUnitario { get; init; }
+        [JsonPropertyName("Importe")]
+        public decimal Importe { get; init; }
+        [JsonPropertyName("Descuento")]
+        public decimal? Descuento { get; init; }
+        [JsonPropertyName("ObjetoImp")]
+        public string ObjetoImp { get; init; } = string.Empty;
+        [JsonPropertyName("Impuestos")]
+        public FacturaloPlusComprobanteConceptoImpuestos? Impuestos { get; init; }
     }
 
-    private sealed class FacturaloPlusStampingItem
+    private sealed class FacturaloPlusComprobanteConceptoImpuestos
     {
-        public int LineNumber { get; init; }
-        public string InternalCode { get; init; } = string.Empty;
-        public string Description { get; init; } = string.Empty;
-        public decimal Quantity { get; init; }
-        public decimal UnitPrice { get; init; }
-        public decimal DiscountAmount { get; init; }
-        public decimal Subtotal { get; init; }
-        public decimal TaxTotal { get; init; }
-        public decimal Total { get; init; }
-        public string SatProductServiceCode { get; init; } = string.Empty;
-        public string SatUnitCode { get; init; } = string.Empty;
-        public string TaxObjectCode { get; init; } = string.Empty;
-        public decimal VatRate { get; init; }
-        public string? UnitText { get; init; }
+        [JsonPropertyName("Traslados")]
+        public List<FacturaloPlusComprobanteTraslado>? Traslados { get; init; }
+    }
+
+    private sealed class FacturaloPlusComprobanteImpuestos
+    {
+        [JsonPropertyName("TotalImpuestosTrasladados")]
+        public decimal TotalImpuestosTrasladados { get; init; }
+        [JsonPropertyName("Traslados")]
+        public List<FacturaloPlusComprobanteTraslado> Traslados { get; init; } = [];
+    }
+
+    private sealed class FacturaloPlusComprobanteTraslado
+    {
+        [JsonPropertyName("Base")]
+        public decimal Base { get; init; }
+        [JsonPropertyName("Impuesto")]
+        public string Impuesto { get; init; } = string.Empty;
+        [JsonPropertyName("TipoFactor")]
+        public string TipoFactor { get; init; } = string.Empty;
+        [JsonPropertyName("TasaOCuota")]
+        public decimal TasaOCuota { get; init; }
+        [JsonPropertyName("Importe")]
+        public decimal Importe { get; init; }
     }
 
     private sealed class FacturaloPlusStampingResponse

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Options;
 using Pineda.Facturacion.Application.Abstractions.Secrets;
 using Pineda.Facturacion.Application.Contracts.Pac;
@@ -66,7 +67,21 @@ public class FacturaloPlusStampingGatewayTests
         Assert.True(form.ContainsKey("jsonB64"));
 
         var decodedJson = Encoding.UTF8.GetString(Convert.FromBase64String(form["jsonB64"]));
-        Assert.Contains("\"issuer\":{\"rfc\":\"AAA010101AAA\"", decodedJson, StringComparison.Ordinal);
+        using var json = JsonDocument.Parse(decodedJson);
+        var comprobante = json.RootElement.GetProperty("Comprobante");
+        Assert.Equal("4.0", comprobante.GetProperty("Version").GetString());
+        Assert.Equal("I", comprobante.GetProperty("TipoDeComprobante").GetString());
+        Assert.Equal("PPD", comprobante.GetProperty("MetodoPago").GetString());
+        Assert.Equal("99", comprobante.GetProperty("FormaPago").GetString());
+        Assert.Equal("01", comprobante.GetProperty("Exportacion").GetString());
+        Assert.Equal("AAA010101AAA", comprobante.GetProperty("Emisor").GetProperty("Rfc").GetString());
+        Assert.Equal("Receiver SA", comprobante.GetProperty("Receptor").GetProperty("Nombre").GetString());
+        Assert.Equal("G03", comprobante.GetProperty("Receptor").GetProperty("UsoCFDI").GetString());
+        Assert.Equal("01010101", comprobante.GetProperty("Conceptos")[0].GetProperty("ClaveProdServ").GetString());
+        Assert.Equal("02", comprobante.GetProperty("Conceptos")[0].GetProperty("ObjetoImp").GetString());
+        Assert.Equal("002", comprobante.GetProperty("Impuestos").GetProperty("Traslados")[0].GetProperty("Impuesto").GetString());
+        Assert.False(json.RootElement.TryGetProperty("issuer", out _));
+        Assert.False(json.RootElement.TryGetProperty("Environment", out _));
         Assert.DoesNotContain("PRIVATE-KEY-PEM", decodedJson, StringComparison.Ordinal);
         Assert.DoesNotContain("CERTIFICATE-PEM", decodedJson, StringComparison.Ordinal);
         Assert.DoesNotContain("PRIVATE-KEY-PASSWORD", decodedJson, StringComparison.Ordinal);
