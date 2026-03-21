@@ -280,10 +280,15 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
                 Base = item.Subtotal,
                 Impuesto = "002",
                 TipoFactor = "Tasa",
-                TasaOCuota = item.VatRate,
+                TasaOCuota = FormatTasaOCuota(item.VatRate),
                 Importe = item.TaxTotal
             }
         ];
+    }
+
+    private static string FormatTasaOCuota(decimal tasaOcuota)
+    {
+        return tasaOcuota.ToString("0.000000", CultureInfo.InvariantCulture);
     }
 
     private static CertificateMetadata ExtractCertificateMetadata(string certificatePem)
@@ -583,7 +588,7 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
         [JsonPropertyName("TipoFactor")]
         public string TipoFactor { get; init; } = string.Empty;
         [JsonPropertyName("TasaOCuota")]
-        public decimal TasaOCuota { get; init; }
+        public string TasaOCuota { get; init; } = string.Empty;
         [JsonPropertyName("Importe")]
         public decimal Importe { get; init; }
     }

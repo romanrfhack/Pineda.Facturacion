@@ -113,13 +113,13 @@ public class FacturaloPlusStampingGatewayTests
         Assert.Equal(565m, conceptoTraslado.GetProperty("Base").GetDecimal());
         Assert.Equal("002", conceptoTraslado.GetProperty("Impuesto").GetString());
         Assert.Equal("Tasa", conceptoTraslado.GetProperty("TipoFactor").GetString());
-        Assert.Equal(0m, conceptoTraslado.GetProperty("TasaOCuota").GetDecimal());
+        Assert.Equal("0.000000", conceptoTraslado.GetProperty("TasaOCuota").GetString());
         Assert.Equal(0m, conceptoTraslado.GetProperty("Importe").GetDecimal());
         var comprobanteTraslado = comprobante.GetProperty("Impuestos").GetProperty("Traslados")[0];
         Assert.Equal(565m, comprobanteTraslado.GetProperty("Base").GetDecimal());
         Assert.Equal("002", comprobanteTraslado.GetProperty("Impuesto").GetString());
         Assert.Equal("Tasa", comprobanteTraslado.GetProperty("TipoFactor").GetString());
-        Assert.Equal(0m, comprobanteTraslado.GetProperty("TasaOCuota").GetDecimal());
+        Assert.Equal("0.000000", comprobanteTraslado.GetProperty("TasaOCuota").GetString());
         Assert.Equal(0m, comprobanteTraslado.GetProperty("Importe").GetDecimal());
         Assert.Equal(0m, comprobante.GetProperty("Impuestos").GetProperty("TotalImpuestosTrasladados").GetDecimal());
         Assert.False(json.RootElement.TryGetProperty("issuer", out _));
@@ -132,6 +132,85 @@ public class FacturaloPlusStampingGatewayTests
         Assert.Contains("CERT_REF", secretResolver.RequestedKeys);
         Assert.Contains("KEY_REF", secretResolver.RequestedKeys);
         Assert.DoesNotContain("PWD_REF", secretResolver.RequestedKeys);
+    }
+
+    [Fact]
+    public async Task StampAsync_Serializes_TasaOCuota_With_Six_Decimals()
+    {
+        using var rsa = RSA.Create(2048);
+        var request = new CertificateRequest(
+            "CN=FacturaloPlus Test",
+            rsa,
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
+        var serialBytes = Encoding.ASCII.GetBytes("30001000000500003416");
+        var certificate = request.Create(
+            new X500DistinguishedName("CN=FacturaloPlus Test"),
+            X509SignatureGenerator.CreateForRSA(rsa, RSASignaturePadding.Pkcs1),
+            DateTimeOffset.UtcNow.AddDays(-1),
+            DateTimeOffset.UtcNow.AddYears(1),
+            serialBytes);
+        var certificatePem = new string(PemEncoding.Write("CERTIFICATE", certificate.Export(X509ContentType.Cert)));
+
+        var handler = new RecordingHandler(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""
+                {
+                  "success": true,
+                  "trackingId": "TRACK-1",
+                  "uuid": "UUID-1",
+                  "stampedAtUtc": "2026-03-21T12:00:00Z",
+                  "xmlContent": "<cfdi:Comprobante Version=\"4.0\" />"
+                }
+                """, Encoding.UTF8, "application/json")
+        });
+
+        var client = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://dev.facturaloplus.com/api/rest/servicio/")
+        };
+        var secretResolver = new RecordingSecretResolver(new Dictionary<string, string?>
+        {
+            ["FACTURALOPLUS_API_KEY_REFERENCE"] = "APIKEY-TEST",
+            ["CERT_REF"] = certificatePem,
+            ["KEY_REF"] = "PRIVATE-KEY-PEM"
+        });
+
+        var gateway = new FacturaloPlusStampingGateway(
+            client,
+            Options.Create(new FacturaloPlusOptions
+            {
+                BaseUrl = "https://dev.facturaloplus.com/api/rest/servicio/",
+                StampPath = "timbrarJSON3",
+                ApiKeyReference = "FACTURALOPLUS_API_KEY_REFERENCE",
+                ApiKeyHeaderName = "X-Api-Key"
+            }),
+            secretResolver);
+
+        var requestPayload = CreateRequest();
+        requestPayload.Subtotal = 100m;
+        requestPayload.DiscountTotal = 0m;
+        requestPayload.Total = 116m;
+        requestPayload.TaxTotal = 16m;
+        requestPayload.Items[0].UnitPrice = 100m;
+        requestPayload.Items[0].DiscountAmount = 0m;
+        requestPayload.Items[0].Subtotal = 100m;
+        requestPayload.Items[0].TaxTotal = 16m;
+        requestPayload.Items[0].Total = 116m;
+        requestPayload.Items[0].VatRate = 0.16m;
+
+        await gateway.StampAsync(requestPayload);
+
+        var form = ParseFormBody(handler.LastBody!);
+        var decodedJson = Encoding.UTF8.GetString(Convert.FromBase64String(form["jsonB64"]));
+        using var json = JsonDocument.Parse(decodedJson);
+        var conceptoTraslado = json.RootElement
+            .GetProperty("Comprobante")
+            .GetProperty("Conceptos")[0]
+            .GetProperty("Impuestos")
+            .GetProperty("Traslados")[0];
+
+        Assert.Equal("0.160000", conceptoTraslado.GetProperty("TasaOCuota").GetString());
     }
 
     private static FiscalStampingRequest CreateRequest()
