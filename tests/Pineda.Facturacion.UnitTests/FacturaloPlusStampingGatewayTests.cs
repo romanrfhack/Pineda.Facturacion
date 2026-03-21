@@ -101,7 +101,7 @@ public class FacturaloPlusStampingGatewayTests
             FiscalDocumentId = 40,
             PacEnvironment = "Sandbox",
             CfdiVersion = "4.0",
-            DocumentType = "I",
+            DocumentType = "INVOICE",
             IssuedAtUtc = new DateTime(2026, 3, 21, 12, 0, 0, DateTimeKind.Utc),
             CurrencyCode = "MXN",
             ExchangeRate = 1m,

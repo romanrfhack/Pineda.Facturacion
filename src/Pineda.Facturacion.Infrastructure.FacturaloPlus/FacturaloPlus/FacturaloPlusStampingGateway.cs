@@ -182,7 +182,7 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
                 Folio = request.Folio,
                 Fecha = request.IssuedAtUtc.ToString("yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture),
                 Moneda = request.CurrencyCode,
-                TipoDeComprobante = request.DocumentType,
+                TipoDeComprobante = MapTipoDeComprobante(request.DocumentType),
                 MetodoPago = request.PaymentMethodSat,
                 FormaPago = request.PaymentFormSat,
                 CondicionesDePago = request.PaymentCondition,
@@ -264,6 +264,16 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
                 Importe = item.TaxTotal
             }
         ];
+    }
+
+    private static string MapTipoDeComprobante(string documentType)
+    {
+        if (string.Equals(documentType, "INVOICE", StringComparison.OrdinalIgnoreCase))
+        {
+            return "I";
+        }
+
+        return documentType;
     }
 
     private static IReadOnlyDictionary<string, string> BuildFormPayload(
