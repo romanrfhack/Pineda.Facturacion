@@ -9,7 +9,7 @@ import { FeedbackService } from './feedback.service';
     @if (message(); as current) {
       <div class="banner" [ngClass]="current.level">
         <span>{{ current.text }}</span>
-        <button type="button" (click)="dismiss()">Dismiss</button>
+        <button type="button" (click)="dismiss()">Cerrar</button>
       </div>
     }
   `,

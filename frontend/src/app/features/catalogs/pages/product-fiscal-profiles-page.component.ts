@@ -14,20 +14,20 @@ import { ProductFiscalProfile, ProductFiscalProfileSearchItem, UpsertProductFisc
   template: `
     <section class="page">
       <header>
-        <p class="eyebrow">Catalogs / Product fiscal profiles</p>
-        <h2>Product SAT mappings</h2>
+        <p class="eyebrow">Catálogos / Perfiles fiscales de producto</p>
+        <h2>Mapeos SAT de productos</h2>
       </header>
 
       <section class="card">
         <div class="toolbar">
           <label>
-            <span>Search products</span>
-            <input [(ngModel)]="query" name="query" placeholder="Internal code or description" />
+            <span>Buscar productos</span>
+            <input [(ngModel)]="query" name="query" placeholder="Código interno o descripción" />
           </label>
           <div class="actions">
-            <button type="button" (click)="search()" [disabled]="loadingList()">{{ loadingList() ? 'Searching...' : 'Search' }}</button>
+            <button type="button" (click)="search()" [disabled]="loadingList()">{{ loadingList() ? 'Buscando...' : 'Buscar' }}</button>
             @if (permissionService.canWriteMasterData()) {
-              <button type="button" class="secondary" (click)="startCreate()">New profile</button>
+              <button type="button" class="secondary" (click)="startCreate()">Nuevo perfil</button>
             }
           </div>
         </div>
@@ -35,19 +35,19 @@ import { ProductFiscalProfile, ProductFiscalProfileSearchItem, UpsertProductFisc
         @if (listError()) {
           <p class="error">{{ listError() }}</p>
         } @else if (!profiles().length) {
-          <p class="helper">Search by internal code or description to inspect fiscal mappings.</p>
+          <p class="helper">Busca por código interno o descripción para consultar mapeos fiscales.</p>
         } @else {
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>Internal code</th>
-                  <th>Description</th>
+                  <th>Código interno</th>
+                  <th>Descripción</th>
                   <th>Prod/Serv</th>
-                  <th>Unit</th>
-                  <th>Tax object</th>
-                  <th>VAT</th>
-                  <th>Status</th>
+                  <th>Unidad</th>
+                  <th>Objeto de impuesto</th>
+                  <th>IVA</th>
+                  <th>Estatus</th>
                   <th></th>
                 </tr>
               </thead>
@@ -60,8 +60,8 @@ import { ProductFiscalProfile, ProductFiscalProfileSearchItem, UpsertProductFisc
                     <td>{{ profile.satUnitCode }}</td>
                     <td>{{ profile.taxObjectCode }}</td>
                     <td>{{ profile.vatRate }}</td>
-                    <td>{{ profile.isActive ? 'Active' : 'Inactive' }}</td>
-                    <td><button type="button" class="link" (click)="selectProfile(profile)">Inspect</button></td>
+                    <td>{{ profile.isActive ? 'Activo' : 'Inactivo' }}</td>
+                    <td><button type="button" class="link" (click)="selectProfile(profile)">Consultar</button></td>
                   </tr>
                 }
               </tbody>
@@ -71,11 +71,11 @@ import { ProductFiscalProfile, ProductFiscalProfileSearchItem, UpsertProductFisc
       </section>
 
       <section class="card">
-        <h3>{{ selectedProfile() ? 'Product fiscal profile details' : 'New product fiscal profile' }}</h3>
+        <h3>{{ selectedProfile() ? 'Detalle del perfil fiscal de producto' : 'Nuevo perfil fiscal de producto' }}</h3>
         <app-product-fiscal-profile-form
           [profile]="selectedProfile()"
           [readOnly]="!permissionService.canWriteMasterData()"
-          [submitLabel]="selectedProfile() ? 'Update product fiscal profile' : 'Create product fiscal profile'"
+          [submitLabel]="selectedProfile() ? 'Actualizar perfil fiscal de producto' : 'Crear perfil fiscal de producto'"
           [errorMessage]="formError()"
           (submitted)="save($event)"
         />
@@ -150,10 +150,10 @@ export class ProductFiscalProfilesPageComponent {
       const selected = this.selectedProfile();
       if (selected) {
         await firstValueFrom(this.api.update(selected.id, request));
-        this.feedbackService.show('success', 'Product fiscal profile updated.');
+        this.feedbackService.show('success', 'Perfil fiscal de producto actualizado.');
       } else {
         await firstValueFrom(this.api.create(request));
-        this.feedbackService.show('success', 'Product fiscal profile created.');
+        this.feedbackService.show('success', 'Perfil fiscal de producto creado.');
       }
 
       await this.search();

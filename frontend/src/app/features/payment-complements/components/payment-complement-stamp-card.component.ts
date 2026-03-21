@@ -10,23 +10,23 @@ import { StatusBadgeComponent } from '../../../shared/components/status-badge.co
     <section class="panel">
       <div class="header">
         <div>
-          <p class="eyebrow">Complement stamp evidence</p>
-          <h3>Payment complement #{{ stamp().paymentComplementDocumentId }}</h3>
+          <p class="eyebrow">Evidencia de timbrado del complemento</p>
+          <h3>Complemento de pago #{{ stamp().paymentComplementDocumentId }}</h3>
         </div>
         <app-status-badge [label]="stamp().status" [tone]="stamp().status === 'Succeeded' || stamp().status === 'Stamped' ? 'success' : 'warning'" />
       </div>
       <dl class="grid">
-        <div><dt>UUID</dt><dd>{{ stamp().uuid || 'Pending' }}</dd></div>
-        <div><dt>Provider</dt><dd>{{ stamp().providerName }}</dd></div>
-        <div><dt>Stamped at</dt><dd>{{ stamp().stampedAtUtc ? (stamp().stampedAtUtc | date: 'medium') : 'Pending' }}</dd></div>
-        <div><dt>XML hash</dt><dd>{{ stamp().xmlHash || 'N/A' }}</dd></div>
+        <div><dt>UUID</dt><dd>{{ stamp().uuid || 'Pendiente' }}</dd></div>
+        <div><dt>Proveedor</dt><dd>{{ stamp().providerName }}</dd></div>
+        <div><dt>Timbrado el</dt><dd>{{ stamp().stampedAtUtc ? (stamp().stampedAtUtc | date: 'medium') : 'Pendiente' }}</dd></div>
+        <div><dt>Hash XML</dt><dd>{{ stamp().xmlHash || 'N/D' }}</dd></div>
       </dl>
       @if (stamp().providerMessage || stamp().errorMessage) {
         <p class="message">{{ stamp().providerMessage || stamp().errorMessage }}</p>
       }
       <div class="actions">
-        <button type="button" class="secondary" (click)="detailsRequested.emit()">View evidence details</button>
-        <button type="button" (click)="xmlRequested.emit()">View XML</button>
+        <button type="button" class="secondary" (click)="detailsRequested.emit()">Ver detalle de evidencia</button>
+        <button type="button" (click)="xmlRequested.emit()">Ver XML</button>
       </div>
     </section>
   `,

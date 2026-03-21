@@ -6,20 +6,20 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
     <section class="panel" aria-live="polite">
       <div class="header">
         <div>
-          <p class="eyebrow">XML evidence</p>
+          <p class="eyebrow">Evidencia XML</p>
           <h3>{{ title() }}</h3>
         </div>
-        <button type="button" class="secondary" (click)="close.emit()">Close</button>
+        <button type="button" class="secondary" (click)="close.emit()">Cerrar</button>
       </div>
 
       @if (loading()) {
-        <p class="helper">Loading XML evidence...</p>
+        <p class="helper">Cargando evidencia XML...</p>
       } @else if (errorMessage()) {
         <p class="error">{{ errorMessage() }}</p>
       } @else if (xmlContent()) {
         <pre>{{ xmlContent() }}</pre>
       } @else {
-        <p class="helper">No XML evidence is available.</p>
+        <p class="helper">No hay evidencia XML disponible.</p>
       }
     </section>
   `,
@@ -36,7 +36,7 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class XmlViewerPanelComponent {
-  readonly title = input('Stamped XML');
+  readonly title = input('XML timbrado');
   readonly loading = input(false);
   readonly xmlContent = input<string | null>(null);
   readonly errorMessage = input<string | null>(null);

@@ -17,6 +17,8 @@ import { FiscalStampEvidenceCardComponent } from '../components/fiscal-stamp-evi
 import { FiscalCancellationCardComponent } from '../components/fiscal-cancellation-card.component';
 import { FiscalStampEvidenceDetailComponent } from '../components/fiscal-stamp-evidence-detail.component';
 import { XmlViewerPanelComponent } from '../../../shared/components/xml-viewer-panel.component';
+import { getDisplayLabel } from '../../../shared/ui/display-labels';
+import { extractApiErrorMessage } from '../../../core/http/api-error-message';
 
 @Component({
   selector: 'app-fiscal-document-operations-page',
@@ -24,28 +26,28 @@ import { XmlViewerPanelComponent } from '../../../shared/components/xml-viewer-p
   template: `
     <section class="page">
       <header>
-        <p class="eyebrow">Fiscal document operations</p>
-        <h2>Prepare, stamp, inspect, cancel, and refresh status</h2>
+        <p class="eyebrow">Operaciones de documento fiscal</p>
+        <h2>Preparar, timbrar, consultar, cancelar y actualizar estatus</h2>
       </header>
 
       @if (!fiscalDocument()) {
         <section class="card">
-          <h3>Prepare fiscal document</h3>
-          <p class="helper">Billing document id: <strong>{{ billingDocumentId() || 'Missing' }}</strong></p>
+          <h3>Preparar documento fiscal</h3>
+          <p class="helper">Id de documento de facturación: <strong>{{ billingDocumentId() || 'Faltante' }}</strong></p>
 
           <form class="form-grid" (ngSubmit)="prepare()">
             <label>
-              <span>Receiver search</span>
+              <span>Búsqueda de receptor</span>
               <div class="row">
-                <input [(ngModel)]="receiverQuery" name="receiverQuery" placeholder="RFC or legal name" />
-                <button type="button" class="secondary" (click)="searchReceivers()">Search</button>
+                <input [(ngModel)]="receiverQuery" name="receiverQuery" placeholder="RFC o razón social" />
+                <button type="button" class="secondary" (click)="searchReceivers()">Buscar</button>
               </div>
             </label>
 
             <label>
-              <span>Receiver</span>
+              <span>Receptor</span>
               <select [(ngModel)]="selectedReceiverId" name="selectedReceiverId" required>
-                <option [ngValue]="null">Select receiver</option>
+                <option [ngValue]="null">Selecciona un receptor</option>
                 @for (receiver of receiverResults(); track receiver.id) {
                   <option [ngValue]="receiver.id">{{ receiver.rfc }} · {{ receiver.legalName }}</option>
                 }
@@ -53,36 +55,36 @@ import { XmlViewerPanelComponent } from '../../../shared/components/xml-viewer-p
             </label>
 
             <label>
-              <span>Active issuer</span>
+              <span>Emisor activo</span>
               <input [value]="activeIssuerLabel()" disabled />
             </label>
 
             <label>
-              <span>Payment method SAT</span>
+              <span>Método de pago SAT</span>
               <input [(ngModel)]="paymentMethodSat" name="paymentMethodSat" required />
             </label>
 
             <label>
-              <span>Payment form SAT</span>
+              <span>Forma de pago SAT</span>
               <input [(ngModel)]="paymentFormSat" name="paymentFormSat" required />
             </label>
 
             <label>
-              <span>Payment condition</span>
+              <span>Condición de pago</span>
               <input [(ngModel)]="paymentCondition" name="paymentCondition" />
             </label>
 
             <label class="checkbox">
               <input [(ngModel)]="isCreditSale" name="isCreditSale" type="checkbox" />
-              <span>Credit sale</span>
+              <span>Venta a crédito</span>
             </label>
 
             <label>
-              <span>Credit days</span>
+              <span>Días de crédito</span>
               <input [(ngModel)]="creditDays" name="creditDays" type="number" min="1" />
             </label>
 
-            <button type="submit" [disabled]="loadingPrepare()"> {{ loadingPrepare() ? 'Preparing...' : 'Prepare fiscal document' }} </button>
+            <button type="submit" [disabled]="loadingPrepare()"> {{ loadingPrepare() ? 'Preparando...' : 'Preparar documento fiscal' }} </button>
           </form>
         </section>
       }
@@ -91,18 +93,18 @@ import { XmlViewerPanelComponent } from '../../../shared/components/xml-viewer-p
         <app-fiscal-document-card [document]="currentDocument" />
 
         <section class="card actions">
-          <h3>Operations</h3>
+          <h3>Operaciones</h3>
           <div class="button-row">
             @if (permissionService.canStampFiscal()) {
-              <button type="button" (click)="stamp()" [disabled]="loadingOperation() || currentDocument.status === 'Stamped'">Stamp</button>
+              <button type="button" (click)="stamp()" [disabled]="loadingOperation() || currentDocument.status === 'Stamped'">Timbrar</button>
             }
             @if (permissionService.canCancelFiscal()) {
-              <button type="button" class="danger" (click)="cancel()" [disabled]="loadingOperation() || currentDocument.status !== 'Stamped'">Cancel</button>
+              <button type="button" class="danger" (click)="cancel()" [disabled]="loadingOperation() || currentDocument.status !== 'Stamped'">Cancelar</button>
             }
             @if (permissionService.canCancelFiscal()) {
-              <button type="button" class="secondary" (click)="refreshStatus()" [disabled]="loadingOperation()">Refresh status</button>
+              <button type="button" class="secondary" (click)="refreshStatus()" [disabled]="loadingOperation()">Actualizar estatus</button>
             }
-            <a [routerLink]="['/app/accounts-receivable']" [queryParams]="{ fiscalDocumentId: currentDocument.id }">Open AR and payments</a>
+            <a [routerLink]="['/app/accounts-receivable']" [queryParams]="{ fiscalDocumentId: currentDocument.id }">Abrir cuentas por cobrar y pagos</a>
           </div>
 
           @if (lastOperationMessage()) {
@@ -122,14 +124,14 @@ import { XmlViewerPanelComponent } from '../../../shared/components/xml-viewer-p
         }
       } @else if (fiscalDocument()) {
         <section class="card">
-          <h3>Stamp evidence</h3>
-          <p class="helper">No stamp evidence is available yet. Stamp the fiscal document first to view persisted metadata and XML.</p>
+          <h3>Evidencia de timbrado</h3>
+          <p class="helper">Aún no hay evidencia de timbrado disponible. Primero timbra el documento fiscal para consultar metadatos persistidos y XML.</p>
         </section>
       }
 
       @if (showStampXmlPanel()) {
         <app-xml-viewer-panel
-          title="Fiscal document XML"
+          title="XML del documento fiscal"
           [loading]="loadingStampXml()"
           [xmlContent]="stampXmlContent()"
           [errorMessage]="stampXmlError()"
@@ -195,7 +197,7 @@ export class FiscalDocumentOperationsPageComponent {
 
   protected readonly activeIssuerLabel = computed(() => {
     const issuer = this.activeIssuer();
-    return issuer ? `${issuer.rfc} · ${issuer.legalName}` : 'Loading active issuer...';
+    return issuer ? `${issuer.rfc} · ${issuer.legalName}` : 'Cargando emisor activo...';
   });
 
   constructor() {
@@ -212,7 +214,7 @@ export class FiscalDocumentOperationsPageComponent {
   protected async prepare(): Promise<void> {
     const billingDocumentId = this.billingDocumentId();
     if (!billingDocumentId || !this.selectedReceiverId) {
-      this.feedbackService.show('error', 'Select a receiver and open this page from a billing document.');
+      this.feedbackService.show('error', 'Selecciona un receptor y abre esta página desde un documento de facturación.');
       return;
     }
 
@@ -229,12 +231,12 @@ export class FiscalDocumentOperationsPageComponent {
       }));
 
       if (!response.fiscalDocumentId) {
-        this.feedbackService.show('error', response.errorMessage || 'Fiscal document could not be prepared.');
+        this.feedbackService.show('error', response.errorMessage || 'No se pudo preparar el documento fiscal.');
         return;
       }
 
       await this.loadFiscalDocument(response.fiscalDocumentId);
-      this.feedbackService.show('success', 'Fiscal document prepared.');
+      this.feedbackService.show('success', 'Documento fiscal preparado.');
     } catch (error) {
       this.feedbackService.show('error', extractErrorMessage(error));
     } finally {
@@ -250,7 +252,7 @@ export class FiscalDocumentOperationsPageComponent {
 
     await this.runOperation(async () => {
       const response = await firstValueFrom(this.api.stampFiscalDocument(fiscalDocumentId, { retryRejected: false }));
-      this.lastOperationMessage.set(response.errorMessage || `Stamp outcome: ${response.outcome}`);
+      this.lastOperationMessage.set(response.errorMessage || `Resultado del timbrado: ${getDisplayLabel(response.outcome)}`);
       await this.loadFiscalDocument(fiscalDocumentId);
       await this.loadStamp(fiscalDocumentId);
     });
@@ -258,13 +260,13 @@ export class FiscalDocumentOperationsPageComponent {
 
   protected async cancel(): Promise<void> {
     const fiscalDocumentId = this.fiscalDocumentId();
-    if (!fiscalDocumentId || !window.confirm('Cancel this stamped fiscal document? This action is operationally sensitive.')) {
+    if (!fiscalDocumentId || !window.confirm('¿Cancelar este documento fiscal timbrado? Esta acción es operativamente sensible.')) {
       return;
     }
 
     await this.runOperation(async () => {
       const response = await firstValueFrom(this.api.cancelFiscalDocument(fiscalDocumentId, { cancellationReasonCode: '02' }));
-      this.lastOperationMessage.set(response.errorMessage || `Cancellation outcome: ${response.outcome}`);
+      this.lastOperationMessage.set(response.errorMessage || `Resultado de la cancelación: ${getDisplayLabel(response.outcome)}`);
       await this.loadFiscalDocument(fiscalDocumentId);
       await this.loadCancellation(fiscalDocumentId);
     });
@@ -278,7 +280,9 @@ export class FiscalDocumentOperationsPageComponent {
 
     await this.runOperation(async () => {
       const response = await firstValueFrom(this.api.refreshStatus(fiscalDocumentId));
-      this.lastOperationMessage.set(response.providerMessage || response.errorMessage || `Latest external status: ${response.lastKnownExternalStatus ?? 'Unknown'}`);
+      this.lastOperationMessage.set(
+        response.providerMessage || response.errorMessage || `Último estatus externo: ${getDisplayLabel(response.lastKnownExternalStatus ?? 'Unknown')}`
+      );
       await this.loadFiscalDocument(fiscalDocumentId);
       await this.loadStamp(fiscalDocumentId);
       await this.loadCancellation(fiscalDocumentId, false);
@@ -320,7 +324,7 @@ export class FiscalDocumentOperationsPageComponent {
     try {
       this.activeIssuer.set(await firstValueFrom(this.api.getActiveIssuer()));
     } catch {
-      this.feedbackService.show('warning', 'Active issuer profile could not be loaded.');
+      this.feedbackService.show('warning', 'No se pudo cargar el perfil activo del emisor.');
     }
   }
 
@@ -340,7 +344,7 @@ export class FiscalDocumentOperationsPageComponent {
     } catch {
       this.stampEvidence.set(null);
       if (notifyOnMissing) {
-        this.feedbackService.show('info', 'No stamp evidence is available yet.');
+        this.feedbackService.show('info', 'Aún no hay evidencia de timbrado disponible.');
       }
     }
   }
@@ -351,7 +355,7 @@ export class FiscalDocumentOperationsPageComponent {
     } catch {
       this.cancellation.set(null);
       if (notifyOnMissing) {
-        this.feedbackService.show('info', 'No cancellation evidence is available yet.');
+        this.feedbackService.show('info', 'Aún no hay evidencia de cancelación disponible.');
       }
     }
   }
@@ -378,12 +382,5 @@ function parseNumber(value: string | null): number | null {
 }
 
 function extractErrorMessage(error: unknown): string {
-  if (typeof error === 'object' && error && 'error' in error) {
-    const payload = (error as { error?: { errorMessage?: string } }).error;
-    if (payload?.errorMessage) {
-      return payload.errorMessage;
-    }
-  }
-
-  return 'The operation could not be completed.';
+  return extractApiErrorMessage(error);
 }

@@ -4,6 +4,7 @@ import { SessionService } from '../auth/session.service';
 import { PermissionService } from '../auth/permission.service';
 import { NAVIGATION_ITEMS } from './navigation.config';
 import { FeedbackBannerComponent } from '../ui/feedback-banner.component';
+import { getRoleDisplayLabel } from '../../shared/ui/display-labels';
 
 @Component({
   selector: 'app-shell',
@@ -13,7 +14,7 @@ import { FeedbackBannerComponent } from '../ui/feedback-banner.component';
       <aside class="sidebar">
         <div class="brand">
           <p class="eyebrow">Pineda Facturacion</p>
-          <h1>Operations Console</h1>
+          <h1>Consola operativa</h1>
         </div>
 
         <nav>
@@ -24,8 +25,8 @@ import { FeedbackBannerComponent } from '../ui/feedback-banner.component';
 
         <div class="user-card">
           <p class="user-name">{{ sessionService.currentUser().displayName || sessionService.currentUser().username }}</p>
-          <p class="user-meta">{{ sessionService.roles().join(', ') || 'No roles' }}</p>
-          <button type="button" (click)="logout()">Log out</button>
+          <p class="user-meta">{{ roleLabels() || 'Sin roles' }}</p>
+          <button type="button" (click)="logout()">Cerrar sesión</button>
         </div>
       </aside>
 
@@ -62,6 +63,7 @@ export class AppShellComponent {
   protected readonly navigation = computed(() =>
     NAVIGATION_ITEMS.filter((item) => this.permissionService.hasAnyRole(item.roles))
   );
+  protected readonly roleLabels = computed(() => this.sessionService.roles().map((role) => getRoleDisplayLabel(role)).join(', '));
 
   protected logout(): void {
     void this.sessionService.logout();

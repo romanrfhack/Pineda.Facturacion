@@ -9,6 +9,7 @@ This step adds the first Angular 21 operations frontend on top of the secured ba
 - payment-complement operations
 - audit visibility
 - evidence and XML viewing for stamped fiscal documents and payment complements
+- Spanish-first operator-facing UI text across the secured frontend
 
 This step does not add new backend business flows.
 
@@ -62,6 +63,21 @@ Current policy alignment in UI:
   - read-only operational view
 
 The UI hides or disables actions based on current role, but backend authorization remains the final source of truth.
+
+## Language note
+The current UI is normalized to Spanish for operator-facing text, while technical acronyms such as RFC, UUID, XML, SAT, PAC, CFDI, IVA, CSD, and JWT remain unchanged.
+
+Chosen operator-facing terms:
+- `Órdenes`
+- `Documentos fiscales`
+- `Cuentas por cobrar`
+- `Complementos de pago`
+- `Catálogos`
+- `Auditoría`
+- `Estatus`
+- `Razón social`
+
+See [035-frontend-spanish-localization.md](/home/romanrfhack/code/Pineda.Facturacion/docs/035-frontend-spanish-localization.md).
 
 ## Pages and modules
 - `LoginPage`

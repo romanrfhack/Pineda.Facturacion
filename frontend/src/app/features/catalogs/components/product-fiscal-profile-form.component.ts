@@ -8,43 +8,43 @@ import { ProductFiscalProfile, UpsertProductFiscalProfileRequest } from '../mode
   template: `
     <form class="form-grid" (ngSubmit)="submitForm()">
       <label>
-        <span>Internal code</span>
+        <span>Código interno</span>
         <input [(ngModel)]="draft.internalCode" name="internalCode" required />
       </label>
 
       <label>
-        <span>Description</span>
+        <span>Descripción</span>
         <input [(ngModel)]="draft.description" name="description" required />
       </label>
 
       <label>
-        <span>SAT product/service code</span>
+        <span>Código SAT producto/servicio</span>
         <input [(ngModel)]="draft.satProductServiceCode" name="satProductServiceCode" required />
       </label>
 
       <label>
-        <span>SAT unit code</span>
+        <span>Código SAT de unidad</span>
         <input [(ngModel)]="draft.satUnitCode" name="satUnitCode" required />
       </label>
 
       <label>
-        <span>Tax object code</span>
+        <span>Código de objeto de impuesto</span>
         <input [(ngModel)]="draft.taxObjectCode" name="taxObjectCode" required />
       </label>
 
       <label>
-        <span>VAT rate</span>
+        <span>Tasa de IVA</span>
         <input [(ngModel)]="draft.vatRate" name="vatRate" type="number" min="0" step="0.0001" required />
       </label>
 
       <label>
-        <span>Default unit text</span>
+        <span>Texto de unidad predeterminado</span>
         <input [(ngModel)]="draft.defaultUnitText" name="defaultUnitText" />
       </label>
 
       <label class="checkbox">
         <input [(ngModel)]="draft.isActive" name="isActive" type="checkbox" />
-        <span>Active</span>
+        <span>Activo</span>
       </label>
 
       @if (errorMessage()) {
@@ -69,7 +69,7 @@ import { ProductFiscalProfile, UpsertProductFiscalProfileRequest } from '../mode
 })
 export class ProductFiscalProfileFormComponent implements OnChanges {
   readonly profile = input<ProductFiscalProfile | null>(null);
-  readonly submitLabel = input('Save product fiscal profile');
+  readonly submitLabel = input('Guardar perfil fiscal de producto');
   readonly readOnly = input(false);
   readonly errorMessage = input<string | null>(null);
   readonly submitted = output<UpsertProductFiscalProfileRequest>();

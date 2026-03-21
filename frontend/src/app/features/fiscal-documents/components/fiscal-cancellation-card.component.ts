@@ -9,14 +9,14 @@ import { StatusBadgeComponent } from '../../../shared/components/status-badge.co
   template: `
     <section class="panel">
       <div class="header">
-        <h3>Cancellation</h3>
+        <h3>Cancelación</h3>
         <app-status-badge [label]="cancellation().status" [tone]="cancellation().status === 'Cancelled' ? 'success' : 'danger'" />
       </div>
       <dl class="grid">
-        <div><dt>Reason</dt><dd>{{ cancellation().cancellationReasonCode }}</dd></div>
-        <div><dt>Replacement UUID</dt><dd>{{ cancellation().replacementUuid || 'N/A' }}</dd></div>
-        <div><dt>Requested</dt><dd>{{ cancellation().requestedAtUtc | date: 'medium' }}</dd></div>
-        <div><dt>Cancelled</dt><dd>{{ cancellation().cancelledAtUtc ? (cancellation().cancelledAtUtc | date: 'medium') : 'Pending' }}</dd></div>
+        <div><dt>Motivo</dt><dd>{{ cancellation().cancellationReasonCode }}</dd></div>
+        <div><dt>UUID de reemplazo</dt><dd>{{ cancellation().replacementUuid || 'N/D' }}</dd></div>
+        <div><dt>Solicitado</dt><dd>{{ cancellation().requestedAtUtc | date: 'medium' }}</dd></div>
+        <div><dt>Cancelado</dt><dd>{{ cancellation().cancelledAtUtc ? (cancellation().cancelledAtUtc | date: 'medium') : 'Pendiente' }}</dd></div>
       </dl>
       @if (cancellation().providerMessage || cancellation().errorMessage) {
         <p class="message">{{ cancellation().providerMessage || cancellation().errorMessage }}</p>

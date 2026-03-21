@@ -8,35 +8,35 @@ import { AuditEventItem } from '../models/audit.models';
   template: `
     @if (event(); as current) {
       <section class="card">
-        <h3>Audit event detail</h3>
+        <h3>Detalle del evento de auditoría</h3>
         <div class="grid">
-          <p><strong>Occurred:</strong> {{ current.occurredAtUtc | date:'yyyy-MM-dd HH:mm:ss' }}</p>
-          <p><strong>Actor:</strong> {{ current.actorUsername || 'Anonymous' }}</p>
-          <p><strong>Action:</strong> {{ current.actionType }}</p>
-          <p><strong>Entity:</strong> {{ current.entityType }} {{ current.entityId || '' }}</p>
-          <p><strong>Outcome:</strong> {{ current.outcome }}</p>
-          <p><strong>Correlation id:</strong> {{ current.correlationId }}</p>
-          <p><strong>IP address:</strong> {{ current.ipAddress || 'N/A' }}</p>
-          <p><strong>User agent:</strong> {{ current.userAgent || 'N/A' }}</p>
+          <p><strong>Ocurrió:</strong> {{ current.occurredAtUtc | date:'yyyy-MM-dd HH:mm:ss' }}</p>
+          <p><strong>Actor:</strong> {{ current.actorUsername || 'Anónimo' }}</p>
+          <p><strong>Acción:</strong> {{ current.actionType }}</p>
+          <p><strong>Entidad:</strong> {{ current.entityType }} {{ current.entityId || '' }}</p>
+          <p><strong>Resultado:</strong> {{ getDisplayLabel(current.outcome) }}</p>
+          <p><strong>Id de correlación:</strong> {{ current.correlationId }}</p>
+          <p><strong>Dirección IP:</strong> {{ current.ipAddress || 'N/D' }}</p>
+          <p><strong>Agente de usuario:</strong> {{ current.userAgent || 'N/D' }}</p>
         </div>
 
         @if (current.errorMessage) {
           <div class="detail-block">
-            <h4>Error message</h4>
+            <h4>Mensaje de error</h4>
             <pre>{{ current.errorMessage }}</pre>
           </div>
         }
 
         @if (current.requestSummaryJson) {
           <div class="detail-block">
-            <h4>Request summary</h4>
+            <h4>Resumen de solicitud</h4>
             <pre>{{ current.requestSummaryJson }}</pre>
           </div>
         }
 
         @if (current.responseSummaryJson) {
           <div class="detail-block">
-            <h4>Response summary</h4>
+            <h4>Resumen de respuesta</h4>
             <pre>{{ current.responseSummaryJson }}</pre>
           </div>
         }
@@ -54,4 +54,6 @@ import { AuditEventItem } from '../models/audit.models';
 })
 export class AuditEventDetailComponent {
   readonly event = input<AuditEventItem | null>(null);
+  protected readonly getDisplayLabel = getDisplayLabel;
 }
+import { getDisplayLabel } from '../../../shared/ui/display-labels';

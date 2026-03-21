@@ -80,7 +80,7 @@ export class SessionService {
         return {
           outcome: 'InvalidCredentials',
           isSuccess: false,
-          errorMessage: 'Invalid credentials.'
+          errorMessage: 'Credenciales inválidas.'
         };
       }
 
@@ -94,7 +94,7 @@ export class SessionService {
     this.clearSession(redirect);
   }
 
-  async handleUnauthorized(message = 'Your session is no longer valid. Please sign in again.'): Promise<void> {
+  async handleUnauthorized(message = 'Tu sesión ya no es válida. Inicia sesión nuevamente.'): Promise<void> {
     this.feedbackService.show('warning', message);
     this.clearSession(true);
   }

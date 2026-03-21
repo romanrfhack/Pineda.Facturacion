@@ -5,6 +5,7 @@ import { OrdersApiService } from '../infrastructure/orders-api.service';
 import { CreateBillingDocumentResponse, ImportLegacyOrderResponse } from '../models/orders.models';
 import { BillingDocumentCardComponent } from '../components/billing-document-card.component';
 import { FeedbackService } from '../../../core/ui/feedback.service';
+import { extractApiErrorMessage } from '../../../core/http/api-error-message';
 
 @Component({
   selector: 'app-orders-operations-page',
@@ -12,28 +13,28 @@ import { FeedbackService } from '../../../core/ui/feedback.service';
   template: `
     <section class="page">
       <header>
-        <p class="eyebrow">Orders and billing preparation</p>
-        <h2>Import a legacy order and start the fiscal path</h2>
+        <p class="eyebrow">Órdenes y preparación de facturación</p>
+        <h2>Importa una orden legada e inicia el flujo fiscal</h2>
       </header>
 
       <section class="card">
         <form class="form-grid" (ngSubmit)="importOrder()">
           <label>
-            <span>Legacy order id</span>
+            <span>Id de orden legada</span>
             <input [(ngModel)]="legacyOrderId" name="legacyOrderId" placeholder="LEG-1001" required />
           </label>
 
           <label>
-            <span>Billing document type</span>
+            <span>Tipo de documento de facturación</span>
             <select [(ngModel)]="documentType" name="documentType">
-              <option value="I">Invoice</option>
+              <option value="I">Factura</option>
             </select>
           </label>
 
           <div class="actions">
-            <button type="submit" [disabled]="loadingImport()"> {{ loadingImport() ? 'Importing...' : 'Import order' }} </button>
+            <button type="submit" [disabled]="loadingImport()"> {{ loadingImport() ? 'Importando...' : 'Importar orden' }} </button>
             <button type="button" class="secondary" (click)="createBillingDocument()" [disabled]="!importedOrder() || loadingBilling()">
-              {{ loadingBilling() ? 'Creating...' : 'Create billing document' }}
+              {{ loadingBilling() ? 'Creando...' : 'Crear documento de facturación' }}
             </button>
           </div>
         </form>
@@ -85,7 +86,7 @@ export class OrdersOperationsPageComponent {
     try {
       const response = await firstValueFrom(this.ordersApi.importLegacyOrder(this.legacyOrderId.trim()));
       this.importedOrder.set(response);
-      this.feedbackService.show('success', response.isIdempotent ? 'Order was already imported. Snapshot reused.' : 'Legacy order imported successfully.');
+      this.feedbackService.show('success', response.isIdempotent ? 'La orden ya había sido importada. Se reutilizó el snapshot.' : 'La orden legada se importó correctamente.');
     } catch (error) {
       this.localError.set(extractErrorMessage(error));
     } finally {
@@ -96,7 +97,7 @@ export class OrdersOperationsPageComponent {
   protected async createBillingDocument(): Promise<void> {
     const importedOrder = this.importedOrder();
     if (!importedOrder?.salesOrderId) {
-      this.localError.set('Import a sales order before creating a billing document.');
+      this.localError.set('Importa una orden de venta antes de crear el documento de facturación.');
       return;
     }
 
@@ -106,7 +107,7 @@ export class OrdersOperationsPageComponent {
     try {
       const response = await firstValueFrom(this.ordersApi.createBillingDocument(importedOrder.salesOrderId, { documentType: this.documentType }));
       this.billingDocument.set(response);
-      this.feedbackService.show('success', 'Billing document created.');
+      this.feedbackService.show('success', 'Documento de facturación creado.');
     } catch (error) {
       this.localError.set(extractErrorMessage(error));
     } finally {
@@ -116,12 +117,5 @@ export class OrdersOperationsPageComponent {
 }
 
 function extractErrorMessage(error: unknown): string {
-  if (typeof error === 'object' && error && 'error' in error) {
-    const payload = (error as { error?: { errorMessage?: string } }).error;
-    if (payload?.errorMessage) {
-      return payload.errorMessage;
-    }
-  }
-
-  return 'The operation could not be completed.';
+  return extractApiErrorMessage(error);
 }

@@ -13,7 +13,7 @@ describe('AuditFiltersComponent', () => {
     fixture.detectChanges();
 
     const clearButton = Array.from(fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>)
-      .find((button) => button.textContent?.includes('Clear')) as HTMLButtonElement;
+      .find((button) => button.textContent?.includes('Limpiar')) as HTMLButtonElement;
     clearButton.click();
 
     expect(cleared).toHaveBeenCalled();

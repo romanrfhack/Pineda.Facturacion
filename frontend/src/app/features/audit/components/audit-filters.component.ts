@@ -8,17 +8,17 @@ import { AuditEventFilters } from '../models/audit.models';
   template: `
     <form class="form-grid" (ngSubmit)="submitFilters()">
       <label><span>Actor</span><input [(ngModel)]="draft.actorUsername" name="actorUsername" /></label>
-      <label><span>Action type</span><input [(ngModel)]="draft.actionType" name="actionType" /></label>
-      <label><span>Entity type</span><input [(ngModel)]="draft.entityType" name="entityType" /></label>
-      <label><span>Entity id</span><input [(ngModel)]="draft.entityId" name="entityId" /></label>
-      <label><span>Outcome</span><input [(ngModel)]="draft.outcome" name="outcome" /></label>
-      <label><span>Correlation id</span><input [(ngModel)]="draft.correlationId" name="correlationId" /></label>
-      <label><span>From UTC</span><input [(ngModel)]="draft.fromUtc" name="fromUtc" type="datetime-local" /></label>
-      <label><span>To UTC</span><input [(ngModel)]="draft.toUtc" name="toUtc" type="datetime-local" /></label>
-      <label><span>Page size</span><input [(ngModel)]="draft.pageSize" name="pageSize" type="number" min="1" max="100" /></label>
+      <label><span>Tipo de acción</span><input [(ngModel)]="draft.actionType" name="actionType" /></label>
+      <label><span>Tipo de entidad</span><input [(ngModel)]="draft.entityType" name="entityType" /></label>
+      <label><span>Id de entidad</span><input [(ngModel)]="draft.entityId" name="entityId" /></label>
+      <label><span>Resultado</span><input [(ngModel)]="draft.outcome" name="outcome" /></label>
+      <label><span>Id de correlación</span><input [(ngModel)]="draft.correlationId" name="correlationId" /></label>
+      <label><span>Desde UTC</span><input [(ngModel)]="draft.fromUtc" name="fromUtc" type="datetime-local" /></label>
+      <label><span>Hasta UTC</span><input [(ngModel)]="draft.toUtc" name="toUtc" type="datetime-local" /></label>
+      <label><span>Tamaño de página</span><input [(ngModel)]="draft.pageSize" name="pageSize" type="number" min="1" max="100" /></label>
       <div class="actions">
-        <button type="submit">Apply filters</button>
-        <button type="button" class="secondary" (click)="clearFilters()">Clear</button>
+        <button type="submit">Aplicar filtros</button>
+        <button type="button" class="secondary" (click)="clearFilters()">Limpiar</button>
       </div>
     </form>
   `,

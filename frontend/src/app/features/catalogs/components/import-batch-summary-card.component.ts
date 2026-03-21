@@ -6,20 +6,20 @@ import { ImportBatchSummary } from '../models/catalogs.models';
   template: `
     @if (summary(); as current) {
       <section class="card">
-        <h3>Batch summary</h3>
+        <h3>Resumen del lote</h3>
         <div class="summary-grid">
-          <p><strong>Batch:</strong> {{ current.batchId }}</p>
-          <p><strong>Status:</strong> {{ current.status }}</p>
-          <p><strong>Source file:</strong> {{ current.sourceFileName || 'N/A' }}</p>
-          <p><strong>Total rows:</strong> {{ current.totalRows }}</p>
-          <p><strong>Valid rows:</strong> {{ current.validRows }}</p>
-          <p><strong>Invalid rows:</strong> {{ current.invalidRows }}</p>
-          <p><strong>Ignored rows:</strong> {{ current.ignoredRows }}</p>
-          <p><strong>Existing master matches:</strong> {{ current.existingMasterMatches }}</p>
-          <p><strong>Duplicate rows:</strong> {{ current.duplicateRowsInFile }}</p>
-          <p><strong>Applied rows:</strong> {{ current.appliedRows }}</p>
-          <p><strong>Apply failed rows:</strong> {{ current.applyFailedRows }}</p>
-          <p><strong>Apply skipped rows:</strong> {{ current.applySkippedRows }}</p>
+          <p><strong>Lote:</strong> {{ current.batchId }}</p>
+          <p><strong>Estatus:</strong> {{ getDisplayLabel(current.status) }}</p>
+          <p><strong>Archivo origen:</strong> {{ current.sourceFileName || 'N/D' }}</p>
+          <p><strong>Total de filas:</strong> {{ current.totalRows }}</p>
+          <p><strong>Filas válidas:</strong> {{ current.validRows }}</p>
+          <p><strong>Filas inválidas:</strong> {{ current.invalidRows }}</p>
+          <p><strong>Filas ignoradas:</strong> {{ current.ignoredRows }}</p>
+          <p><strong>Coincidencias existentes:</strong> {{ current.existingMasterMatches }}</p>
+          <p><strong>Filas duplicadas:</strong> {{ current.duplicateRowsInFile }}</p>
+          <p><strong>Filas aplicadas:</strong> {{ current.appliedRows }}</p>
+          <p><strong>Filas con error al aplicar:</strong> {{ current.applyFailedRows }}</p>
+          <p><strong>Filas omitidas al aplicar:</strong> {{ current.applySkippedRows }}</p>
         </div>
 
         @if (current.errorMessage) {
@@ -38,4 +38,6 @@ import { ImportBatchSummary } from '../models/catalogs.models';
 })
 export class ImportBatchSummaryCardComponent {
   readonly summary = input<ImportBatchSummary | null>(null);
+  protected readonly getDisplayLabel = getDisplayLabel;
 }
+import { getDisplayLabel } from '../../../shared/ui/display-labels';

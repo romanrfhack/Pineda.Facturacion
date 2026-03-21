@@ -14,8 +14,8 @@ import { AuditEventDetailComponent } from '../components/audit-event-detail.comp
   template: `
     <section class="page">
       <header>
-        <p class="eyebrow">Audit</p>
-        <h2>Read-only audit viewer</h2>
+        <p class="eyebrow">Auditoría</p>
+        <h2>Visor de auditoría de solo lectura</h2>
       </header>
 
       <section class="card">
@@ -28,11 +28,11 @@ import { AuditEventDetailComponent } from '../components/audit-event-detail.comp
 
       <section class="card">
         @if (loading()) {
-          <p class="helper">Loading audit events...</p>
+          <p class="helper">Cargando eventos de auditoría...</p>
         } @else if (errorMessage()) {
           <p class="error">{{ errorMessage() }}</p>
         } @else {
-          <p class="helper">Showing {{ events().length }} of {{ totalCount() }} events.</p>
+          <p class="helper">Mostrando {{ events().length }} de {{ totalCount() }} eventos.</p>
           <app-audit-events-table [events]="events()" (selected)="selectEvent($event)" />
         }
       </section>
@@ -85,7 +85,7 @@ export class AuditEventsPageComponent {
       const response = await firstValueFrom(this.api.list(this.filters()));
       this.consumeResponse(response);
     } catch (error) {
-      const message = extractApiErrorMessage(error, 'Audit events could not be loaded.');
+      const message = extractApiErrorMessage(error, 'No se pudieron cargar los eventos de auditoría.');
       this.errorMessage.set(message);
       this.feedbackService.show('error', message);
       this.events.set([]);

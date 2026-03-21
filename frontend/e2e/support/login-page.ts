@@ -8,8 +8,8 @@ export class LoginPage {
   }
 
   async signIn(username: string, password: string): Promise<void> {
-    await this.page.getByLabel('Username').fill(username);
-    await this.page.getByLabel('Password').fill(password);
-    await this.page.getByRole('button', { name: 'Sign in' }).click();
+    await this.page.getByLabel('Usuario').fill(username);
+    await this.page.getByLabel('Contraseña').fill(password);
+    await this.page.getByRole('button', { name: 'Iniciar sesión' }).click();
   }
 }

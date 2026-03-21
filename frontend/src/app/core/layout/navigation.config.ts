@@ -8,32 +8,32 @@ export interface NavigationItem {
 
 export const NAVIGATION_ITEMS: NavigationItem[] = [
   {
-    label: 'Orders',
+    label: 'Órdenes',
     route: '/app/orders',
     roles: [AppRole.Admin, AppRole.FiscalSupervisor, AppRole.FiscalOperator, AppRole.Auditor]
   },
   {
-    label: 'Fiscal Documents',
+    label: 'Documentos fiscales',
     route: '/app/fiscal-documents',
     roles: [AppRole.Admin, AppRole.FiscalSupervisor, AppRole.FiscalOperator, AppRole.Auditor]
   },
   {
-    label: 'Accounts Receivable',
+    label: 'Cuentas por cobrar',
     route: '/app/accounts-receivable',
     roles: [AppRole.Admin, AppRole.FiscalSupervisor, AppRole.FiscalOperator, AppRole.Auditor]
   },
   {
-    label: 'Payment Complements',
+    label: 'Complementos de pago',
     route: '/app/payment-complements',
     roles: [AppRole.Admin, AppRole.FiscalSupervisor, AppRole.FiscalOperator, AppRole.Auditor]
   },
   {
-    label: 'Catalogs',
+    label: 'Catálogos',
     route: '/app/catalogs',
     roles: [AppRole.Admin, AppRole.FiscalSupervisor, AppRole.FiscalOperator, AppRole.Auditor]
   },
   {
-    label: 'Audit',
+    label: 'Auditoría',
     route: '/app/audit',
     roles: [AppRole.Admin, AppRole.FiscalSupervisor, AppRole.Auditor]
   }

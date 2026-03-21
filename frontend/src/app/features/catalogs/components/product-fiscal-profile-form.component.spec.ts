@@ -25,7 +25,7 @@ describe('ProductFiscalProfileFormComponent', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).toContain('SAT data is required.');
-    expect(fixture.nativeElement.textContent).toContain('Internal code');
-    expect(fixture.nativeElement.textContent).toContain('VAT rate');
+    expect(fixture.nativeElement.textContent).toContain('Código interno');
+    expect(fixture.nativeElement.textContent).toContain('Tasa de IVA');
   });
 });

@@ -132,7 +132,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       getStamp: vi.fn().mockReturnValue(throwError(() => ({ status: 404 })))
     });
 
-    expect(fixture.nativeElement.textContent).toContain('No stamp evidence is available yet');
+    expect(fixture.nativeElement.textContent).toContain('Aún no hay evidencia de timbrado disponible');
   });
 
   it('opens and closes the XML viewer on demand', async () => {
@@ -143,13 +143,13 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.textContent).toContain('Fiscal document XML');
+    expect(fixture.nativeElement.textContent).toContain('XML del documento fiscal');
     expect(fixture.nativeElement.textContent).toContain('<cfdi:Comprobante Version="4.0" />');
 
     fixture.componentInstance['closeStampXml']();
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.textContent).not.toContain('Fiscal document XML');
+    expect(fixture.nativeElement.textContent).not.toContain('XML del documento fiscal');
   });
 
   it('shows an XML error state when the XML endpoint fails', async () => {
@@ -162,6 +162,6 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.textContent).toContain('Forbidden');
+    expect(fixture.nativeElement.textContent).toContain('Acceso denegado.');
   });
 });

@@ -11,15 +11,14 @@ test('supervisor prepares and stamps a payment complement from a deterministic p
   await expect(page).toHaveURL(/\/app\/orders$/);
 
   await page.goto('/app/payment-complements?paymentId=702');
-  await page.getByRole('button', { name: 'Prepare payment complement' }).click();
+  await page.getByRole('button', { name: 'Preparar complemento de pago' }).click();
 
-  await expect(page.getByText('Payment complement snapshot')).toBeVisible();
+  await expect(page.getByText('Snapshot del complemento de pago')).toBeVisible();
   await expect(page.getByText('UUID-FISCAL-411')).toBeVisible();
-  await expect(page.getByText('Readyforstamping')).toBeVisible();
+  await expect(page.getByText('Listo para timbrar')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Stamp' }).click();
+  await page.getByRole('button', { name: 'Timbrar' }).click();
 
   await expect(page.getByText('UUID-PC-702')).toBeVisible();
-  await expect(page.getByText('Stamped successfully')).toBeVisible();
-  await expect(page.locator('app-payment-complement-card')).toContainText('Stamped');
+  await expect(page.locator('app-payment-complement-card')).toContainText('Timbrado');
 });

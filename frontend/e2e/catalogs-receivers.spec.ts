@@ -10,21 +10,21 @@ test('login then create receiver and find it in search results', async ({ page }
   await loginPage.signIn('supervisor', 'Secret123!');
   await expect(page).toHaveURL(/\/app\/orders$/);
 
-  await page.getByRole('link', { name: 'Catalogs' }).click();
+  await page.getByRole('link', { name: 'Catálogos' }).click();
   await expect(page).toHaveURL(/\/app\/catalogs$/);
-  await page.getByRole('link', { name: 'Fiscal receivers' }).click();
+  await page.getByRole('link', { name: 'Receptores fiscales' }).click();
   await expect(page).toHaveURL(/\/app\/catalogs\/receivers$/);
 
-  await page.getByRole('button', { name: 'New receiver' }).click();
+  await page.getByRole('button', { name: 'Nuevo receptor' }).click();
   await page.getByRole('textbox', { name: 'RFC' }).fill('CCC010101CCC');
-  await page.getByRole('textbox', { name: 'Legal name' }).fill('Receiver Catalog UI');
-  await page.getByRole('textbox', { name: 'Fiscal regime code' }).fill('601');
-  await page.getByRole('textbox', { name: 'Default CFDI use' }).fill('G03');
-  await page.getByRole('textbox', { name: 'Postal code' }).fill('03100');
-  await page.getByRole('button', { name: 'Create receiver' }).click();
+  await page.getByRole('textbox', { name: 'Razón social' }).fill('Receiver Catalog UI');
+  await page.getByRole('textbox', { name: 'Código de régimen fiscal' }).fill('601');
+  await page.getByRole('textbox', { name: 'Uso CFDI predeterminado' }).fill('G03');
+  await page.getByRole('textbox', { name: 'Código postal' }).fill('03100');
+  await page.getByRole('button', { name: 'Crear receptor' }).click();
 
-  await page.getByRole('textbox', { name: 'Search receivers' }).fill('CCC010101CCC');
-  await page.getByRole('button', { name: 'Search' }).click();
+  await page.getByRole('textbox', { name: 'Buscar receptores' }).fill('CCC010101CCC');
+  await page.getByRole('button', { name: 'Buscar' }).click();
 
   await expect(page.getByText('CCC010101CCC')).toBeVisible();
   await expect(page.getByText('Receiver Catalog UI')).toBeVisible();

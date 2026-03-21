@@ -10,17 +10,17 @@ import { FeedbackService } from '../../../core/ui/feedback.service';
   template: `
     <section class="login-page">
       <form class="login-card" (ngSubmit)="submit()">
-        <p class="eyebrow">Back-office access</p>
-        <h1>Sign in</h1>
-        <p class="hint">Use a local account with the role required for the fiscal operation you need to perform.</p>
+        <p class="eyebrow">Acceso administrativo</p>
+        <h1>Iniciar sesión</h1>
+        <p class="hint">Usa una cuenta local con el rol requerido para la operación fiscal que necesitas realizar.</p>
 
         <label>
-          <span>Username</span>
+          <span>Usuario</span>
           <input [(ngModel)]="username" name="username" autocomplete="username" required />
         </label>
 
         <label>
-          <span>Password</span>
+          <span>Contraseña</span>
           <input [(ngModel)]="password" name="password" type="password" autocomplete="current-password" required />
         </label>
 
@@ -29,7 +29,7 @@ import { FeedbackService } from '../../../core/ui/feedback.service';
         }
 
         <button type="submit" [disabled]="sessionService.loggingIn()">
-          {{ sessionService.loggingIn() ? 'Signing in...' : 'Sign in' }}
+          {{ sessionService.loggingIn() ? 'Ingresando...' : 'Iniciar sesión' }}
         </button>
       </form>
     </section>
@@ -68,11 +68,11 @@ export class LoginPageComponent {
     });
 
     if (!response.isSuccess) {
-      this.errorMessage.set(response.errorMessage || 'Invalid credentials.');
+      this.errorMessage.set(response.errorMessage || 'Credenciales inválidas.');
       return;
     }
 
-    this.feedbackService.show('success', 'Session established.');
+    this.feedbackService.show('success', 'Sesión iniciada.');
     await this.router.navigate([this.sessionService.getDefaultAppRoute()]);
   }
 }

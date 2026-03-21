@@ -15,6 +15,8 @@ import { PaymentComplementStampCardComponent } from '../components/payment-compl
 import { PaymentComplementCancellationCardComponent } from '../components/payment-complement-cancellation-card.component';
 import { PaymentComplementStampEvidenceDetailComponent } from '../components/payment-complement-stamp-evidence-detail.component';
 import { XmlViewerPanelComponent } from '../../../shared/components/xml-viewer-panel.component';
+import { getDisplayLabel } from '../../../shared/ui/display-labels';
+import { extractApiErrorMessage } from '../../../core/http/api-error-message';
 
 @Component({
   selector: 'app-payment-complements-page',
@@ -22,15 +24,15 @@ import { XmlViewerPanelComponent } from '../../../shared/components/xml-viewer-p
   template: `
     <section class="page">
       <header>
-        <p class="eyebrow">Payment complements</p>
-        <h2>Prepare, stamp, cancel, and refresh complement status</h2>
+        <p class="eyebrow">Complementos de pago</p>
+        <h2>Preparar, timbrar, cancelar y actualizar estatus del complemento</h2>
       </header>
 
       @if (paymentId()) {
         <section class="card">
-          <h3>Payment event #{{ paymentId() }}</h3>
+          <h3>Evento de pago #{{ paymentId() }}</h3>
           @if (permissionService.canManagePayments()) {
-            <button type="button" (click)="prepare()" [disabled]="loading()">Prepare payment complement</button>
+            <button type="button" (click)="prepare()" [disabled]="loading()">Preparar complemento de pago</button>
           }
         </section>
       }
@@ -41,9 +43,9 @@ import { XmlViewerPanelComponent } from '../../../shared/components/xml-viewer-p
         <section class="card actions">
           <div class="button-row">
             @if (permissionService.canStampFiscal()) {
-              <button type="button" (click)="stamp()" [disabled]="loading() || currentComplement.status === 'Stamped'">Stamp</button>
-              <button type="button" class="danger" (click)="cancel()" [disabled]="loading() || currentComplement.status !== 'Stamped'">Cancel</button>
-              <button type="button" class="secondary" (click)="refreshStatus()" [disabled]="loading()">Refresh status</button>
+              <button type="button" (click)="stamp()" [disabled]="loading() || currentComplement.status === 'Stamped'">Timbrar</button>
+              <button type="button" class="danger" (click)="cancel()" [disabled]="loading() || currentComplement.status !== 'Stamped'">Cancelar</button>
+              <button type="button" class="secondary" (click)="refreshStatus()" [disabled]="loading()">Actualizar estatus</button>
             }
           </div>
         </section>
@@ -60,14 +62,14 @@ import { XmlViewerPanelComponent } from '../../../shared/components/xml-viewer-p
         }
       } @else if (complement()) {
         <section class="card">
-          <h3>Complement stamp evidence</h3>
-          <p class="helper">No stamp evidence is available yet. Stamp the payment complement first to view persisted metadata and XML.</p>
+          <h3>Evidencia de timbrado del complemento</h3>
+          <p class="helper">Aún no hay evidencia de timbrado disponible. Primero timbra el complemento de pago para consultar metadatos persistidos y XML.</p>
         </section>
       }
 
       @if (showStampXmlPanel()) {
         <app-xml-viewer-panel
-          title="Payment complement XML"
+          title="XML del complemento de pago"
           [loading]="loadingStampXml()"
           [xmlContent]="stampXmlContent()"
           [errorMessage]="stampXmlError()"
@@ -126,12 +128,12 @@ export class PaymentComplementsPageComponent {
     await this.run(async () => {
       const response = await firstValueFrom(this.arApi.preparePaymentComplement(paymentId));
       if (!response.paymentComplementId) {
-        this.feedbackService.show('error', response.errorMessage || 'Complement could not be prepared.');
+        this.feedbackService.show('error', response.errorMessage || 'No se pudo preparar el complemento.');
         return;
       }
 
       await this.loadComplementByPayment(paymentId);
-      this.feedbackService.show('success', 'Payment complement prepared.');
+      this.feedbackService.show('success', 'Complemento de pago preparado.');
     });
   }
 
@@ -143,7 +145,7 @@ export class PaymentComplementsPageComponent {
 
     await this.run(async () => {
       const response = await firstValueFrom(this.paymentComplementsApi.stamp(complement.id));
-      this.feedbackService.show(response.isSuccess ? 'success' : 'warning', response.errorMessage || response.outcome);
+      this.feedbackService.show(response.isSuccess ? 'success' : 'warning', response.errorMessage || getDisplayLabel(response.outcome));
       await this.loadComplementByPayment(complement.accountsReceivablePaymentId);
       await this.loadStamp(complement.id);
     });
@@ -151,13 +153,13 @@ export class PaymentComplementsPageComponent {
 
   protected async cancel(): Promise<void> {
     const complement = this.complement();
-    if (!complement || !window.confirm('Cancel this stamped payment complement?')) {
+    if (!complement || !window.confirm('¿Cancelar este complemento de pago timbrado?')) {
       return;
     }
 
     await this.run(async () => {
       const response = await firstValueFrom(this.paymentComplementsApi.cancel(complement.id));
-      this.feedbackService.show(response.isSuccess ? 'success' : 'warning', response.errorMessage || response.outcome);
+      this.feedbackService.show(response.isSuccess ? 'success' : 'warning', response.errorMessage || getDisplayLabel(response.outcome));
       await this.loadComplementByPayment(complement.accountsReceivablePaymentId);
       await this.loadCancellation(complement.id);
     });
@@ -171,7 +173,10 @@ export class PaymentComplementsPageComponent {
 
     await this.run(async () => {
       const response = await firstValueFrom(this.paymentComplementsApi.refreshStatus(complement.id));
-      this.feedbackService.show(response.isSuccess ? 'success' : 'warning', response.providerMessage || response.errorMessage || response.outcome);
+      this.feedbackService.show(
+        response.isSuccess ? 'success' : 'warning',
+        response.providerMessage || response.errorMessage || getDisplayLabel(response.outcome)
+      );
       await this.loadComplementByPayment(complement.accountsReceivablePaymentId);
       await this.loadStamp(complement.id);
       await this.loadCancellation(complement.id);
@@ -260,12 +265,5 @@ function parseNumber(value: string | null): number | null {
 }
 
 function extractErrorMessage(error: unknown): string {
-  if (typeof error === 'object' && error && 'error' in error) {
-    const payload = (error as { error?: { errorMessage?: string } }).error;
-    if (payload?.errorMessage) {
-      return payload.errorMessage;
-    }
-  }
-
-  return 'The operation could not be completed.';
+  return extractApiErrorMessage(error);
 }

@@ -10,31 +10,31 @@ import { StatusBadgeComponent } from '../../../shared/components/status-badge.co
     <section class="card">
       <div class="header">
         <div>
-          <p class="eyebrow">Imported sales snapshot</p>
-          <h3>Legacy order {{ imported().legacyOrderId }}</h3>
+          <p class="eyebrow">Snapshot de venta importado</p>
+          <h3>Orden legada {{ imported().legacyOrderId }}</h3>
         </div>
         <app-status-badge [label]="imported().importStatus || imported().outcome" tone="success" />
       </div>
 
       <dl class="grid">
-        <div><dt>Sales order id</dt><dd>{{ imported().salesOrderId }}</dd></div>
-        <div><dt>Import record</dt><dd>{{ imported().legacyImportRecordId }}</dd></div>
-        <div><dt>Source</dt><dd>{{ imported().sourceSystem }} / {{ imported().sourceTable }}</dd></div>
-        <div><dt>Idempotent</dt><dd>{{ imported().isIdempotent ? 'Yes' : 'No' }}</dd></div>
+        <div><dt>Id de orden de venta</dt><dd>{{ imported().salesOrderId }}</dd></div>
+        <div><dt>Registro de importación</dt><dd>{{ imported().legacyImportRecordId }}</dd></div>
+        <div><dt>Origen</dt><dd>{{ imported().sourceSystem }} / {{ imported().sourceTable }}</dd></div>
+        <div><dt>Idempotente</dt><dd>{{ imported().isIdempotent ? 'Sí' : 'No' }}</dd></div>
       </dl>
 
       @if (billing(); as currentBilling) {
         <div class="secondary">
           <div class="header">
             <div>
-              <p class="eyebrow">Billing document</p>
+              <p class="eyebrow">Documento de facturación</p>
               <h3>#{{ currentBilling.billingDocumentId }}</h3>
             </div>
             <app-status-badge [label]="currentBilling.billingDocumentStatus || currentBilling.outcome" tone="warning" />
           </div>
 
           <a [routerLink]="['/app/fiscal-documents']" [queryParams]="{ billingDocumentId: currentBilling.billingDocumentId }">
-            Continue to fiscal preparation
+            Continuar a preparación fiscal
           </a>
         </div>
       }

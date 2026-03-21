@@ -13,32 +13,32 @@ import { FiscalReceiver, UpsertFiscalReceiverRequest } from '../models/catalogs.
       </label>
 
       <label>
-        <span>Legal name</span>
+        <span>Razón social</span>
         <input [(ngModel)]="draft.legalName" name="legalName" required />
       </label>
 
       <label>
-        <span>Fiscal regime code</span>
+        <span>Código de régimen fiscal</span>
         <input [(ngModel)]="draft.fiscalRegimeCode" name="fiscalRegimeCode" required />
       </label>
 
       <label>
-        <span>Default CFDI use</span>
+        <span>Uso CFDI predeterminado</span>
         <input [(ngModel)]="draft.cfdiUseCodeDefault" name="cfdiUseCodeDefault" required />
       </label>
 
       <label>
-        <span>Postal code</span>
+        <span>Código postal</span>
         <input [(ngModel)]="draft.postalCode" name="postalCode" required />
       </label>
 
       <label>
-        <span>Country code</span>
+        <span>Código de país</span>
         <input [(ngModel)]="draft.countryCode" name="countryCode" />
       </label>
 
       <label>
-        <span>Foreign tax registration</span>
+        <span>Registro fiscal extranjero</span>
         <input [(ngModel)]="draft.foreignTaxRegistration" name="foreignTaxRegistration" />
       </label>
 
@@ -48,18 +48,18 @@ import { FiscalReceiver, UpsertFiscalReceiverRequest } from '../models/catalogs.
       </label>
 
       <label>
-        <span>Phone</span>
+        <span>Teléfono</span>
         <input [(ngModel)]="draft.phone" name="phone" />
       </label>
 
       <label>
-        <span>Search alias</span>
+        <span>Alias de búsqueda</span>
         <input [(ngModel)]="draft.searchAlias" name="searchAlias" />
       </label>
 
       <label class="checkbox">
         <input [(ngModel)]="draft.isActive" name="isActive" type="checkbox" />
-        <span>Active</span>
+        <span>Activo</span>
       </label>
 
       @if (errorMessage()) {
@@ -84,7 +84,7 @@ import { FiscalReceiver, UpsertFiscalReceiverRequest } from '../models/catalogs.
 })
 export class FiscalReceiverFormComponent implements OnChanges {
   readonly receiver = input<FiscalReceiver | null>(null);
-  readonly submitLabel = input('Save receiver');
+  readonly submitLabel = input('Guardar receptor');
   readonly readOnly = input(false);
   readonly errorMessage = input<string | null>(null);
   readonly submitted = output<UpsertFiscalReceiverRequest>();

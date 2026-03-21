@@ -7,17 +7,17 @@ import { ApplyAccountsReceivablePaymentRequest, ApplyAccountsReceivablePaymentRo
   imports: [FormsModule],
   template: `
     <section class="panel">
-      <h3>Apply payment</h3>
+      <h3>Aplicar pago</h3>
       @for (row of rows(); track $index) {
         <div class="row">
-          <label><span>AR invoice id</span><input [(ngModel)]="row.accountsReceivableInvoiceId" [name]="'invoice-' + $index" type="number" min="1" required /></label>
-          <label><span>Applied amount</span><input [(ngModel)]="row.appliedAmount" [name]="'amount-' + $index" type="number" min="0.01" step="0.01" required /></label>
-          <button type="button" class="secondary" (click)="removeRow($index)" [disabled]="rows().length === 1">Remove</button>
+          <label><span>Id de cuenta por cobrar</span><input [(ngModel)]="row.accountsReceivableInvoiceId" [name]="'invoice-' + $index" type="number" min="1" required /></label>
+          <label><span>Monto aplicado</span><input [(ngModel)]="row.appliedAmount" [name]="'amount-' + $index" type="number" min="0.01" step="0.01" required /></label>
+          <button type="button" class="secondary" (click)="removeRow($index)" [disabled]="rows().length === 1">Quitar</button>
         </div>
       }
       <div class="actions">
-        <button type="button" class="secondary" (click)="addRow()">Add row</button>
-        <button type="button" (click)="submitRows()" [disabled]="loading()"> {{ loading() ? 'Applying...' : 'Apply payment' }} </button>
+        <button type="button" class="secondary" (click)="addRow()">Agregar fila</button>
+        <button type="button" (click)="submitRows()" [disabled]="loading()"> {{ loading() ? 'Aplicando...' : 'Aplicar pago' }} </button>
       </div>
     </section>
   `,

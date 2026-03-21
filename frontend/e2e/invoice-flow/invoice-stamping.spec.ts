@@ -10,24 +10,24 @@ test('supervisor completes invoice stamping journey and sees stamp evidence', as
   await loginPage.signIn('supervisor', 'Secret123!');
   await expect(page).toHaveURL(/\/app\/orders$/);
 
-  await page.getByLabel('Legacy order id').fill('LEG-7101');
-  await page.getByRole('button', { name: 'Import order' }).click();
-  await expect(page.getByText('Legacy order LEG-7101')).toBeVisible();
+  await page.getByLabel('Id de orden legada').fill('LEG-7101');
+  await page.getByRole('button', { name: 'Importar orden' }).click();
+  await expect(page.getByText('Orden legada LEG-7101')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Create billing document' }).click();
-  await page.getByRole('link', { name: 'Continue to fiscal preparation' }).click();
+  await page.getByRole('button', { name: 'Crear documento de facturación' }).click();
+  await page.getByRole('link', { name: 'Continuar a preparación fiscal' }).click();
 
   await expect(page).toHaveURL(/\/app\/fiscal-documents\?billingDocumentId=301$/);
-  await page.getByRole('button', { name: 'Search' }).click();
+  await page.getByRole('button', { name: 'Buscar' }).click();
   await page.locator('select[name="selectedReceiverId"]').selectOption({ label: 'BBB010101BBB · Receiver One' });
-  await page.getByRole('button', { name: 'Prepare fiscal document' }).click();
+  await page.getByRole('button', { name: 'Preparar documento fiscal' }).click();
 
-  await expect(page.locator('app-fiscal-document-card')).toContainText('Readyforstamping');
-  await expect(page.getByText('No stamp evidence is available yet')).toBeVisible();
+  await expect(page.locator('app-fiscal-document-card')).toContainText('Listo para timbrar');
+  await expect(page.getByText('Aún no hay evidencia de timbrado disponible')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Stamp' }).click();
+  await page.getByRole('button', { name: 'Timbrar' }).click();
 
-  await expect(page.locator('app-fiscal-document-card').getByText('Stamped')).toBeVisible();
+  await expect(page.locator('app-fiscal-document-card').getByText('Timbrado')).toBeVisible();
   await expect(page.getByText('UUID-FISCAL-7101')).toBeVisible();
   await expect(page.getByText('FacturaloPlus')).toBeVisible();
   await expect(page.getByText('TRACK-FISCAL-7101')).toBeVisible();

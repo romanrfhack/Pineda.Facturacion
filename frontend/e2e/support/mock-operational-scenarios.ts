@@ -68,7 +68,7 @@ export async function mockInvoiceStampingJourney(page: Page): Promise<void> {
   await page.route('**/api/fiscal-documents/401/stamp', async (route) => {
     if (route.request().method() === 'GET') {
       if (!stampEvidence) {
-        await route.fulfill({ status: 404, json: { errorMessage: 'Not found' } });
+        await route.fulfill({ status: 404, json: { errorMessage: 'No encontrado.' } });
         return;
       }
 
@@ -99,7 +99,7 @@ export async function mockInvoiceStampingJourney(page: Page): Promise<void> {
   });
 
   await page.route('**/api/fiscal-documents/401/cancellation', async (route) => {
-    await route.fulfill({ status: 404, json: { errorMessage: 'Not found' } });
+    await route.fulfill({ status: 404, json: { errorMessage: 'No encontrado.' } });
   });
 }
 
@@ -118,14 +118,14 @@ export async function mockAccountsReceivableJourney(page: Page): Promise<void> {
 
   await mockSession(page, {
     username: 'operator',
-    displayName: 'Operator',
+    displayName: 'Operador',
     role: 'FiscalOperator'
   });
 
   await page.route('**/api/fiscal-documents/401/accounts-receivable', async (route) => {
     if (route.request().method() === 'GET') {
       if (!invoiceExists) {
-        await route.fulfill({ status: 404, json: { errorMessage: 'Not found' } });
+        await route.fulfill({ status: 404, json: { errorMessage: 'No encontrado.' } });
         return;
       }
 
@@ -164,7 +164,7 @@ export async function mockAccountsReceivableJourney(page: Page): Promise<void> {
 
   await page.route('**/api/accounts-receivable/payments/701', async (route) => {
     if (!payment) {
-      await route.fulfill({ status: 404, json: { errorMessage: 'Not found' } });
+      await route.fulfill({ status: 404, json: { errorMessage: 'No encontrado.' } });
       return;
     }
 
@@ -226,7 +226,7 @@ export async function mockPaymentComplementJourney(page: Page): Promise<void> {
 
   await page.route('**/api/accounts-receivable/payments/702/payment-complement', async (route) => {
     if (!complementExists) {
-      await route.fulfill({ status: 404, json: { errorMessage: 'Not found' } });
+      await route.fulfill({ status: 404, json: { errorMessage: 'No encontrado.' } });
       return;
     }
 
@@ -251,7 +251,7 @@ export async function mockPaymentComplementJourney(page: Page): Promise<void> {
   await page.route('**/api/payment-complements/802/stamp', async (route) => {
     if (route.request().method() === 'GET') {
       if (!stampEvidence) {
-        await route.fulfill({ status: 404, json: { errorMessage: 'Not found' } });
+        await route.fulfill({ status: 404, json: { errorMessage: 'No encontrado.' } });
         return;
       }
 
@@ -282,7 +282,7 @@ export async function mockPaymentComplementJourney(page: Page): Promise<void> {
   });
 
   await page.route('**/api/payment-complements/802/cancellation', async (route) => {
-    await route.fulfill({ status: 404, json: { errorMessage: 'Not found' } });
+    await route.fulfill({ status: 404, json: { errorMessage: 'No encontrado.' } });
   });
 }
 
@@ -294,7 +294,7 @@ export async function mockMixedReceiversComplementFailure(page: Page): Promise<v
   });
 
   await page.route('**/api/accounts-receivable/payments/703/payment-complement', async (route) => {
-    await route.fulfill({ status: 404, json: { errorMessage: 'Not found' } });
+    await route.fulfill({ status: 404, json: { errorMessage: 'No encontrado.' } });
   });
 
   await page.route('**/api/accounts-receivable/payments/703/payment-complements', async (route) => {
@@ -312,7 +312,7 @@ export async function mockMixedReceiversComplementFailure(page: Page): Promise<v
 export async function mockOperatorReadOnlyFiscalDocument(page: Page): Promise<void> {
   await mockSession(page, {
     username: 'operator',
-    displayName: 'Operator',
+    displayName: 'Operador',
     role: 'FiscalOperator'
   });
 
@@ -330,7 +330,7 @@ export async function mockOperatorReadOnlyFiscalDocument(page: Page): Promise<vo
     });
   });
   await page.route('**/api/fiscal-documents/405/cancellation', async (route) => {
-    await route.fulfill({ status: 404, json: { errorMessage: 'Not found' } });
+    await route.fulfill({ status: 404, json: { errorMessage: 'No encontrado.' } });
   });
 }
 
@@ -347,7 +347,7 @@ export async function mockStampUnavailableFiscalDocument(page: Page): Promise<vo
   });
   await page.route('**/api/fiscal-documents/406/stamp', async (route) => {
     if (route.request().method() === 'GET') {
-      await route.fulfill({ status: 404, json: { errorMessage: 'Not found' } });
+      await route.fulfill({ status: 404, json: { errorMessage: 'No encontrado.' } });
       return;
     }
 
@@ -363,7 +363,7 @@ export async function mockStampUnavailableFiscalDocument(page: Page): Promise<vo
     });
   });
   await page.route('**/api/fiscal-documents/406/cancellation', async (route) => {
-    await route.fulfill({ status: 404, json: { errorMessage: 'Not found' } });
+    await route.fulfill({ status: 404, json: { errorMessage: 'No encontrado.' } });
   });
 }
 
@@ -500,7 +500,7 @@ function buildStampEvidence(input: { fiscalDocumentId: number; uuid: string; sta
     uuid: input.uuid,
     stampedAtUtc: input.stampedAtUtc,
     providerCode: '200',
-    providerMessage: 'Stamped successfully',
+    providerMessage: 'Timbrado correctamente',
     errorCode: null,
     errorMessage: null,
     xmlHash: 'XML-HASH-FISCAL',
@@ -626,7 +626,7 @@ function buildPaymentComplementStampEvidence(input: {
     uuid: input.uuid,
     stampedAtUtc: input.stampedAtUtc,
     providerCode: '200',
-    providerMessage: 'Stamped successfully',
+    providerMessage: 'Timbrado correctamente',
     errorCode: null,
     errorMessage: null,
     xmlHash: 'XML-HASH-PC',

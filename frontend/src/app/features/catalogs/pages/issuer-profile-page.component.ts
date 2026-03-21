@@ -13,48 +13,48 @@ import { IssuerProfile, UpsertIssuerProfileRequest } from '../models/catalogs.mo
   template: `
     <section class="page">
       <header>
-        <p class="eyebrow">Catalogs / Issuer profile</p>
-        <h2>Active issuer profile</h2>
+        <p class="eyebrow">Catálogos / Perfil del emisor</p>
+        <h2>Perfil activo del emisor</h2>
       </header>
 
       @if (loading()) {
-        <p class="helper">Loading issuer profile...</p>
+        <p class="helper">Cargando perfil del emisor...</p>
       } @else {
         <section class="card">
           <div class="indicator-grid">
-            <p><strong>Certificate reference:</strong> {{ draft.hasCertificateReference ? 'Present' : 'Missing' }}</p>
-            <p><strong>Private key reference:</strong> {{ draft.hasPrivateKeyReference ? 'Present' : 'Missing' }}</p>
-            <p><strong>Password reference:</strong> {{ draft.hasPrivateKeyPasswordReference ? 'Present' : 'Missing' }}</p>
+            <p><strong>Referencia de certificado:</strong> {{ draft.hasCertificateReference ? 'Capturada' : 'Faltante' }}</p>
+            <p><strong>Referencia de llave privada:</strong> {{ draft.hasPrivateKeyReference ? 'Capturada' : 'Faltante' }}</p>
+            <p><strong>Referencia de contraseña:</strong> {{ draft.hasPrivateKeyPasswordReference ? 'Capturada' : 'Faltante' }}</p>
           </div>
 
           @if (issuer()) {
-            <p class="helper">Secret-related reference fields are never shown. Re-enter references explicitly when updating the issuer profile.</p>
+            <p class="helper">Los campos de referencia relacionados con secretos nunca se muestran. Vuelve a capturar las referencias explícitamente al actualizar el perfil del emisor.</p>
           }
 
           <form class="form-grid" (ngSubmit)="save()">
-            <label><span>Legal name</span><input [(ngModel)]="draft.legalName" name="legalName" [disabled]="readOnly()" required /></label>
+            <label><span>Razón social</span><input [(ngModel)]="draft.legalName" name="legalName" [disabled]="readOnly()" required /></label>
             <label><span>RFC</span><input [(ngModel)]="draft.rfc" name="rfc" [disabled]="readOnly()" required /></label>
-            <label><span>Fiscal regime code</span><input [(ngModel)]="draft.fiscalRegimeCode" name="fiscalRegimeCode" [disabled]="readOnly()" required /></label>
-            <label><span>Postal code</span><input [(ngModel)]="draft.postalCode" name="postalCode" [disabled]="readOnly()" required /></label>
+            <label><span>Código de régimen fiscal</span><input [(ngModel)]="draft.fiscalRegimeCode" name="fiscalRegimeCode" [disabled]="readOnly()" required /></label>
+            <label><span>Código postal</span><input [(ngModel)]="draft.postalCode" name="postalCode" [disabled]="readOnly()" required /></label>
             <label><span>CFDI version</span><input [(ngModel)]="draft.cfdiVersion" name="cfdiVersion" [disabled]="readOnly()" required /></label>
-            <label><span>PAC environment</span><input [(ngModel)]="draft.pacEnvironment" name="pacEnvironment" [disabled]="readOnly()" required /></label>
-            <label><span>Certificate reference</span><input [(ngModel)]="draft.certificateReference" name="certificateReference" [disabled]="readOnly()" required /></label>
-            <label><span>Private key reference</span><input [(ngModel)]="draft.privateKeyReference" name="privateKeyReference" [disabled]="readOnly()" required /></label>
-            <label><span>Password reference</span><input [(ngModel)]="draft.privateKeyPasswordReference" name="privateKeyPasswordReference" [disabled]="readOnly()" required /></label>
+            <label><span>Ambiente PAC</span><input [(ngModel)]="draft.pacEnvironment" name="pacEnvironment" [disabled]="readOnly()" required /></label>
+            <label><span>Referencia de certificado</span><input [(ngModel)]="draft.certificateReference" name="certificateReference" [disabled]="readOnly()" required /></label>
+            <label><span>Referencia de llave privada</span><input [(ngModel)]="draft.privateKeyReference" name="privateKeyReference" [disabled]="readOnly()" required /></label>
+            <label><span>Referencia de contraseña</span><input [(ngModel)]="draft.privateKeyPasswordReference" name="privateKeyPasswordReference" [disabled]="readOnly()" required /></label>
             <label class="checkbox">
               <input [(ngModel)]="draft.isActive" name="isActive" type="checkbox" [disabled]="readOnly()" />
-              <span>Active</span>
+              <span>Activo</span>
             </label>
 
             @if (errorMessage()) {
               <p class="error">{{ errorMessage() }}</p>
             }
 
-            <button type="submit" [disabled]="saving() || readOnly()">{{ issuer() ? 'Update issuer profile' : 'Create issuer profile' }}</button>
+            <button type="submit" [disabled]="saving() || readOnly()">{{ issuer() ? 'Actualizar perfil del emisor' : 'Crear perfil del emisor' }}</button>
           </form>
 
           @if (readOnly()) {
-            <p class="helper">Your role can inspect the issuer profile but cannot update it.</p>
+            <p class="helper">Tu rol puede consultar el perfil del emisor, pero no actualizarlo.</p>
           }
         </section>
       }
@@ -115,7 +115,7 @@ export class IssuerProfilePageComponent {
       return;
     }
 
-    if (this.issuer() && !window.confirm('Update the active issuer profile?')) {
+    if (this.issuer() && !window.confirm('¿Actualizar el perfil activo del emisor?')) {
       return;
     }
 
@@ -142,7 +142,7 @@ export class IssuerProfilePageComponent {
         await firstValueFrom(this.api.create(payload));
       }
 
-      this.feedbackService.show('success', current ? 'Issuer profile updated.' : 'Issuer profile created.');
+      this.feedbackService.show('success', current ? 'Perfil del emisor actualizado.' : 'Perfil del emisor creado.');
       await this.load();
     } catch (error) {
       this.errorMessage.set(extractApiErrorMessage(error));
@@ -174,7 +174,7 @@ export class IssuerProfilePageComponent {
       };
     } catch (error) {
       this.issuer.set(null);
-      this.errorMessage.set(extractApiErrorMessage(error, 'Active issuer profile is not available yet.'));
+      this.errorMessage.set(extractApiErrorMessage(error, 'El perfil activo del emisor aún no está disponible.'));
     } finally {
       this.loading.set(false);
     }

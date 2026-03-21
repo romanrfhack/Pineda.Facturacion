@@ -7,14 +7,14 @@ import { CreateAccountsReceivablePaymentRequest } from '../models/accounts-recei
   imports: [FormsModule],
   template: `
     <section class="panel">
-      <h3>Create payment</h3>
+      <h3>Crear pago</h3>
       <form class="form-grid" (ngSubmit)="submit.emit(model)">
-        <label><span>Payment date</span><input [(ngModel)]="model.paymentDateUtc" name="paymentDateUtc" type="datetime-local" required /></label>
-        <label><span>Payment form SAT</span><input [(ngModel)]="model.paymentFormSat" name="paymentFormSat" required /></label>
-        <label><span>Amount</span><input [(ngModel)]="model.amount" name="amount" type="number" min="0.01" step="0.01" required /></label>
-        <label><span>Reference</span><input [(ngModel)]="model.reference" name="reference" /></label>
-        <label><span>Notes</span><input [(ngModel)]="model.notes" name="notes" /></label>
-        <button type="submit" [disabled]="loading()"> {{ loading() ? 'Saving...' : 'Create payment' }} </button>
+        <label><span>Fecha de pago</span><input [(ngModel)]="model.paymentDateUtc" name="paymentDateUtc" type="datetime-local" required /></label>
+        <label><span>Forma de pago SAT</span><input [(ngModel)]="model.paymentFormSat" name="paymentFormSat" required /></label>
+        <label><span>Monto</span><input [(ngModel)]="model.amount" name="amount" type="number" min="0.01" step="0.01" required /></label>
+        <label><span>Referencia</span><input [(ngModel)]="model.reference" name="reference" /></label>
+        <label><span>Notas</span><input [(ngModel)]="model.notes" name="notes" /></label>
+        <button type="submit" [disabled]="loading()"> {{ loading() ? 'Guardando...' : 'Crear pago' }} </button>
       </form>
     </section>
   `,

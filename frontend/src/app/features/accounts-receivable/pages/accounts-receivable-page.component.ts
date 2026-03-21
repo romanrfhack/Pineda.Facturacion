@@ -13,6 +13,7 @@ import {
 import { AccountsReceivableCardComponent } from '../components/accounts-receivable-card.component';
 import { PaymentCreateFormComponent } from '../components/payment-create-form.component';
 import { PaymentApplicationFormComponent } from '../components/payment-application-form.component';
+import { extractApiErrorMessage } from '../../../core/http/api-error-message';
 
 @Component({
   selector: 'app-accounts-receivable-page',
@@ -20,15 +21,15 @@ import { PaymentApplicationFormComponent } from '../components/payment-applicati
   template: `
     <section class="page">
       <header>
-        <p class="eyebrow">Accounts receivable and payments</p>
-        <h2>Create AR invoices, record payments, and apply balances</h2>
+        <p class="eyebrow">Cuentas por cobrar y pagos</p>
+        <h2>Crear cuentas por cobrar, registrar pagos y aplicar saldos</h2>
       </header>
 
       @if (fiscalDocumentId()) {
         <section class="card">
-          <h3>AR invoice from fiscal document #{{ fiscalDocumentId() }}</h3>
+          <h3>Cuenta por cobrar del documento fiscal #{{ fiscalDocumentId() }}</h3>
           @if (permissionService.canManagePayments()) {
-            <button type="button" (click)="createInvoice()" [disabled]="loading()">Create AR invoice</button>
+            <button type="button" (click)="createInvoice()" [disabled]="loading()">Crear cuenta por cobrar</button>
           }
         </section>
       }
@@ -43,16 +44,16 @@ import { PaymentApplicationFormComponent } from '../components/payment-applicati
 
       @if (payment(); as currentPayment) {
         <section class="card">
-          <h3>Payment #{{ currentPayment.id }}</h3>
-          <p class="helper">Amount {{ currentPayment.amount }} MXN · Remaining {{ currentPayment.remainingAmount }} MXN</p>
+          <h3>Pago #{{ currentPayment.id }}</h3>
+          <p class="helper">Monto {{ currentPayment.amount }} MXN · Remanente {{ currentPayment.remainingAmount }} MXN</p>
           @if (currentPayment.applications.length) {
             <table class="applications">
               <thead>
                 <tr>
-                  <th>AR invoice</th>
-                  <th>Applied</th>
-                  <th>Previous balance</th>
-                  <th>New balance</th>
+                  <th>Cuenta por cobrar</th>
+                  <th>Aplicado</th>
+                  <th>Saldo previo</th>
+                  <th>Saldo nuevo</th>
                 </tr>
               </thead>
               <tbody>
@@ -70,7 +71,7 @@ import { PaymentApplicationFormComponent } from '../components/payment-applicati
           @if (permissionService.canManagePayments()) {
             <app-payment-application-form [loading]="loading()" (submit)="applyPayment($event)" />
             <div class="links">
-              <a [routerLink]="['/app/payment-complements']" [queryParams]="{ paymentId: currentPayment.id }">Open payment complement flow</a>
+              <a [routerLink]="['/app/payment-complements']" [queryParams]="{ paymentId: currentPayment.id }">Abrir flujo de complemento de pago</a>
             </div>
           }
         </section>
@@ -121,7 +122,7 @@ export class AccountsReceivablePageComponent {
       const response = await firstValueFrom(this.api.createInvoiceFromFiscalDocument(fiscalDocumentId));
       if (response.accountsReceivableInvoice) {
         this.invoice.set(response.accountsReceivableInvoice);
-        this.feedbackService.show('success', 'Accounts receivable invoice created.');
+        this.feedbackService.show('success', 'Cuenta por cobrar creada.');
       }
     });
   }
@@ -135,7 +136,7 @@ export class AccountsReceivablePageComponent {
       const response = await firstValueFrom(this.api.createPayment(payload));
       if (response.payment) {
         this.payment.set(response.payment);
-        this.feedbackService.show('success', 'Payment recorded.');
+        this.feedbackService.show('success', 'Pago registrado.');
       }
     });
   }
@@ -143,7 +144,7 @@ export class AccountsReceivablePageComponent {
   protected async applyPayment(request: ApplyAccountsReceivablePaymentRequest): Promise<void> {
     const currentPayment = this.payment();
     if (!currentPayment) {
-      this.feedbackService.show('error', 'Create or load a payment before applying it.');
+      this.feedbackService.show('error', 'Crea o carga un pago antes de aplicarlo.');
       return;
     }
 
@@ -157,7 +158,7 @@ export class AccountsReceivablePageComponent {
         await this.loadInvoice(this.fiscalDocumentId()!);
       }
 
-      this.feedbackService.show('success', 'Payment application recorded.');
+      this.feedbackService.show('success', 'Aplicación de pago registrada.');
     });
   }
 
@@ -199,12 +200,5 @@ function parseNumber(value: string | null): number | null {
 }
 
 function extractErrorMessage(error: unknown): string {
-  if (typeof error === 'object' && error && 'error' in error) {
-    const payload = (error as { error?: { errorMessage?: string } }).error;
-    if (payload?.errorMessage) {
-      return payload.errorMessage;
-    }
-  }
-
-  return 'The operation could not be completed.';
+  return extractApiErrorMessage(error);
 }

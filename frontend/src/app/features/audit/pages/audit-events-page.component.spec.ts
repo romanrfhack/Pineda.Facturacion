@@ -51,7 +51,7 @@ describe('AuditEventsPageComponent', () => {
 
     expect(fixture.nativeElement.textContent).toContain('FiscalDocument.Stamp');
     expect(fixture.nativeElement.textContent).toContain('corr-001');
-    expect(fixture.nativeElement.textContent).toContain('Request summary');
+    expect(fixture.nativeElement.textContent).toContain('Resumen de solicitud');
   });
 
   it('shows error state when loading fails', async () => {
@@ -76,6 +76,6 @@ describe('AuditEventsPageComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.textContent).toContain('Forbidden');
+    expect(fixture.nativeElement.textContent).toContain('Acceso denegado.');
   });
 });

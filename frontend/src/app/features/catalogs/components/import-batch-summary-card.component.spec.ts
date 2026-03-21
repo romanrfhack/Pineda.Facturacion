@@ -27,8 +27,8 @@ describe('ImportBatchSummaryCardComponent', () => {
     });
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.textContent).toContain('Batch: 12');
-    expect(fixture.nativeElement.textContent).toContain('Valid rows: 15');
-    expect(fixture.nativeElement.textContent).toContain('Duplicate rows: 1');
+    expect(fixture.nativeElement.textContent).toContain('Lote: 12');
+    expect(fixture.nativeElement.textContent).toContain('Filas válidas: 15');
+    expect(fixture.nativeElement.textContent).toContain('Filas duplicadas: 1');
   });
 });

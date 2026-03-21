@@ -15,12 +15,12 @@ export const apiErrorInterceptor: HttpInterceptorFn = (req, next) => {
     catchError((error: HttpErrorResponse) => {
       if (error.status === 401 && req.url !== buildApiUrl('/auth/login')) {
         tokenStorage.clear();
-        feedbackService.show('warning', 'Your session is no longer valid. Please sign in again.');
+        feedbackService.show('warning', 'Tu sesión ya no es válida. Inicia sesión nuevamente.');
         void router.navigate(['/login']);
       } else if (error.status === 403) {
-        feedbackService.show('error', 'You are authenticated but do not have permission to perform this action.');
+        feedbackService.show('error', 'Tu usuario está autenticado, pero no tiene permisos para realizar esta acción.');
       } else if (error.status >= 500) {
-        feedbackService.show('error', 'The server could not complete the request. Try again or contact support.');
+        feedbackService.show('error', 'El servidor no pudo completar la solicitud. Intenta de nuevo o contacta a soporte.');
       }
 
       return throwError(() => error);

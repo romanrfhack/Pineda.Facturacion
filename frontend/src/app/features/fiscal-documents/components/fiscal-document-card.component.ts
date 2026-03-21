@@ -10,28 +10,28 @@ import { StatusBadgeComponent } from '../../../shared/components/status-badge.co
     <section class="panel">
       <div class="header">
         <div>
-          <p class="eyebrow">Fiscal snapshot</p>
-          <h3>Fiscal document #{{ document().id }}</h3>
+          <p class="eyebrow">Snapshot fiscal</p>
+          <h3>Documento fiscal #{{ document().id }}</h3>
         </div>
         <app-status-badge [label]="document().status" [tone]="document().status === 'Stamped' ? 'success' : document().status.includes('Rejected') ? 'danger' : 'warning'" />
       </div>
 
       <dl class="grid">
-        <div><dt>Receiver</dt><dd>{{ document().receiverLegalName }} ({{ document().receiverRfc }})</dd></div>
-        <div><dt>Issuer</dt><dd>{{ document().issuerLegalName }} ({{ document().issuerRfc }})</dd></div>
-        <div><dt>Issued</dt><dd>{{ document().issuedAtUtc | date: 'medium' }}</dd></div>
-        <div><dt>Payment</dt><dd>{{ document().paymentMethodSat }} / {{ document().paymentFormSat }}</dd></div>
-        <div><dt>Credit sale</dt><dd>{{ document().isCreditSale ? 'Yes' : 'No' }}</dd></div>
+        <div><dt>Receptor</dt><dd>{{ document().receiverLegalName }} ({{ document().receiverRfc }})</dd></div>
+        <div><dt>Emisor</dt><dd>{{ document().issuerLegalName }} ({{ document().issuerRfc }})</dd></div>
+        <div><dt>Emitido</dt><dd>{{ document().issuedAtUtc | date: 'medium' }}</dd></div>
+        <div><dt>Pago</dt><dd>{{ document().paymentMethodSat }} / {{ document().paymentFormSat }}</dd></div>
+        <div><dt>Venta a crédito</dt><dd>{{ document().isCreditSale ? 'Sí' : 'No' }}</dd></div>
         <div><dt>Total</dt><dd>{{ document().total | number: '1.2-2' }} {{ document().currencyCode }}</dd></div>
       </dl>
 
       <table>
         <thead>
           <tr>
-            <th>Line</th>
-            <th>Code</th>
-            <th>Description</th>
-            <th>Qty</th>
+            <th>Partida</th>
+            <th>Código</th>
+            <th>Descripción</th>
+            <th>Cant.</th>
             <th>Total</th>
             <th>SAT</th>
           </tr>

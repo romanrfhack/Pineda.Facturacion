@@ -7,6 +7,7 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
 import { ImportBatchSummaryCardComponent } from '../components/import-batch-summary-card.component';
 import { FiscalImportsApiService } from '../infrastructure/fiscal-imports-api.service';
 import { ApplyImportBatchResponse, ImportApplyMode, ImportBatchSummary, ReceiverImportRow } from '../models/catalogs.models';
+import { getDisplayLabel } from '../../../shared/ui/display-labels';
 
 @Component({
   selector: 'app-receiver-imports-page',
@@ -14,33 +15,33 @@ import { ApplyImportBatchResponse, ImportApplyMode, ImportBatchSummary, Receiver
   template: `
     <section class="page">
       <header>
-        <p class="eyebrow">Catalogs / Receiver imports</p>
-        <h2>Preview and apply receiver import batches</h2>
+        <p class="eyebrow">Catálogos / Importaciones de receptores</p>
+        <h2>Vista previa y aplicación de lotes de receptores</h2>
       </header>
 
       <section class="card">
         <div class="toolbar">
           <label>
-            <span>Load batch by id</span>
+            <span>Cargar lote por id</span>
             <input [(ngModel)]="batchIdInput" name="batchIdInput" type="number" min="1" />
           </label>
           <div class="actions">
-            <button type="button" class="secondary" (click)="loadBatch()">Load batch</button>
+            <button type="button" class="secondary" (click)="loadBatch()">Cargar lote</button>
           </div>
         </div>
 
         @if (permissionService.canWriteMasterData()) {
           <div class="upload-grid">
             <label>
-              <span>Preview .xlsx file</span>
+              <span>Vista previa de archivo .xlsx</span>
               <input type="file" accept=".xlsx" (change)="onFileSelected($event)" />
             </label>
             <button type="button" (click)="preview()" [disabled]="previewing() || !selectedFile()">
-              {{ previewing() ? 'Previewing...' : 'Preview receiver import' }}
+              {{ previewing() ? 'Generando vista previa...' : 'Vista previa de importación de receptores' }}
             </button>
           </div>
         } @else {
-          <p class="helper">Your role can inspect batches but cannot preview or apply imports.</p>
+          <p class="helper">Tu rol puede consultar lotes, pero no generar vistas previas ni aplicar importaciones.</p>
         }
 
         @if (errorMessage()) {
@@ -52,68 +53,68 @@ import { ApplyImportBatchResponse, ImportApplyMode, ImportBatchSummary, Receiver
 
       @if (summary()) {
         <section class="card">
-          <h3>Apply batch</h3>
+          <h3>Aplicar lote</h3>
           <div class="form-grid">
             <label>
-              <span>Apply mode</span>
+              <span>Modo de aplicación</span>
               <select [(ngModel)]="applyMode" name="applyMode" [disabled]="!permissionService.canWriteMasterData()">
-                <option value="CreateOnly">Create only</option>
-                <option value="CreateAndUpdate">Create and update</option>
+                <option value="CreateOnly">Solo crear</option>
+                <option value="CreateAndUpdate">Crear y actualizar</option>
               </select>
             </label>
 
             <label>
-              <span>Selected row numbers</span>
+              <span>Números de fila seleccionados</span>
               <input [(ngModel)]="selectedRowsText" name="selectedRowsText" placeholder="1,2,7" [disabled]="!permissionService.canWriteMasterData()" />
             </label>
 
             <label class="checkbox">
               <input [(ngModel)]="stopOnFirstError" name="stopOnFirstError" type="checkbox" [disabled]="!permissionService.canWriteMasterData()" />
-              <span>Stop on first error</span>
+              <span>Detener en el primer error</span>
             </label>
 
             <button type="button" (click)="apply()" [disabled]="applying() || !permissionService.canWriteMasterData()">
-              {{ applying() ? 'Applying...' : 'Apply receiver batch' }}
+              {{ applying() ? 'Aplicando...' : 'Aplicar lote de receptores' }}
             </button>
           </div>
 
           @if (applyResult()) {
             <p class="helper">
-              Applied {{ applyResult()!.appliedRows }}, skipped {{ applyResult()!.skippedRows }}, failed {{ applyResult()!.failedRows }}, already applied {{ applyResult()!.alreadyAppliedRows }}.
+              Aplicadas {{ applyResult()!.appliedRows }}, omitidas {{ applyResult()!.skippedRows }}, con error {{ applyResult()!.failedRows }}, ya aplicadas {{ applyResult()!.alreadyAppliedRows }}.
             </p>
           }
         </section>
 
         <section class="card">
-          <h3>Batch rows</h3>
+          <h3>Filas del lote</h3>
           @if (!rows().length) {
-            <p class="helper">No row data loaded yet.</p>
+            <p class="helper">Aún no hay datos de filas cargados.</p>
           } @else {
             <div class="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Row</th>
-                    <th>Status</th>
-                    <th>Suggested action</th>
+                    <th>Fila</th>
+                    <th>Estatus</th>
+                    <th>Acción sugerida</th>
                     <th>RFC</th>
-                    <th>Legal name</th>
-                    <th>Validation errors</th>
-                    <th>Existing id</th>
-                    <th>Apply status</th>
+                    <th>Razón social</th>
+                    <th>Errores de validación</th>
+                    <th>Id existente</th>
+                    <th>Estatus de aplicación</th>
                   </tr>
                 </thead>
                 <tbody>
                   @for (row of rows(); track row.rowNumber) {
                     <tr>
                       <td>{{ row.rowNumber }}</td>
-                      <td>{{ row.status }}</td>
-                      <td>{{ row.suggestedAction }}</td>
-                      <td>{{ row.normalizedRfc || 'N/A' }}</td>
-                      <td>{{ row.normalizedLegalName || 'N/A' }}</td>
-                      <td>{{ row.validationErrors.join(', ') || 'None' }}</td>
-                      <td>{{ row.existingMasterEntityId || 'N/A' }}</td>
-                      <td>{{ row.applyStatus }}</td>
+                      <td>{{ getDisplayLabel(row.status) }}</td>
+                      <td>{{ getDisplayLabel(row.suggestedAction) }}</td>
+                      <td>{{ row.normalizedRfc || 'N/D' }}</td>
+                      <td>{{ row.normalizedLegalName || 'N/D' }}</td>
+                      <td>{{ row.validationErrors.join(', ') || 'Ninguno' }}</td>
+                      <td>{{ row.existingMasterEntityId || 'N/D' }}</td>
+                      <td>{{ getDisplayLabel(row.applyStatus) }}</td>
                     </tr>
                   }
                 </tbody>
@@ -161,6 +162,7 @@ export class ReceiverImportsPageComponent {
   protected applyMode: ImportApplyMode = 'CreateOnly';
   protected selectedRowsText = '';
   protected stopOnFirstError = false;
+  protected readonly getDisplayLabel = getDisplayLabel;
 
   protected onFileSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
@@ -183,7 +185,7 @@ export class ReceiverImportsPageComponent {
       if (summary.batchId) {
         await this.loadRows(summary.batchId);
       }
-      this.feedbackService.show('success', 'Receiver import preview created.');
+      this.feedbackService.show('success', 'Vista previa de importación de receptores creada.');
     } catch (error) {
       this.errorMessage.set(extractApiErrorMessage(error));
     } finally {
@@ -212,7 +214,7 @@ export class ReceiverImportsPageComponent {
       return;
     }
 
-    if (!window.confirm('Apply this receiver import batch to master data?')) {
+    if (!window.confirm('¿Aplicar este lote de receptores a los datos maestros?')) {
       return;
     }
 
@@ -225,7 +227,7 @@ export class ReceiverImportsPageComponent {
         stopOnFirstError: this.stopOnFirstError
       }));
       this.applyResult.set(result);
-      this.feedbackService.show('success', 'Receiver import batch applied.');
+      this.feedbackService.show('success', 'Lote de importación de receptores aplicado.');
       await this.loadBatch();
     } catch (error) {
       this.errorMessage.set(extractApiErrorMessage(error));

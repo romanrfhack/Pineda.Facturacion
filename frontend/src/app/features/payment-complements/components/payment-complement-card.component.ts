@@ -10,22 +10,22 @@ import { StatusBadgeComponent } from '../../../shared/components/status-badge.co
     <section class="panel">
       <div class="header">
         <div>
-          <p class="eyebrow">Payment complement snapshot</p>
+          <p class="eyebrow">Snapshot del complemento de pago</p>
           <h3>#{{ complement().id }}</h3>
         </div>
         <app-status-badge [label]="complement().status" [tone]="complement().status === 'Stamped' ? 'success' : complement().status.includes('Rejected') ? 'danger' : 'warning'" />
       </div>
 
       <dl class="grid">
-        <div><dt>Payment id</dt><dd>{{ complement().accountsReceivablePaymentId }}</dd></div>
-        <div><dt>Total payments</dt><dd>{{ complement().totalPaymentsAmount | number: '1.2-2' }} {{ complement().currencyCode }}</dd></div>
-        <div><dt>Receiver</dt><dd>{{ complement().receiverLegalName }} ({{ complement().receiverRfc }})</dd></div>
-        <div><dt>Issued</dt><dd>{{ complement().issuedAtUtc | date: 'medium' }}</dd></div>
+        <div><dt>Id de pago</dt><dd>{{ complement().accountsReceivablePaymentId }}</dd></div>
+        <div><dt>Total de pagos</dt><dd>{{ complement().totalPaymentsAmount | number: '1.2-2' }} {{ complement().currencyCode }}</dd></div>
+        <div><dt>Receptor</dt><dd>{{ complement().receiverLegalName }} ({{ complement().receiverRfc }})</dd></div>
+        <div><dt>Emitido</dt><dd>{{ complement().issuedAtUtc | date: 'medium' }}</dd></div>
       </dl>
 
       <table>
         <thead>
-          <tr><th>UUID</th><th>Installment</th><th>Previous</th><th>Paid</th><th>Remaining</th></tr>
+          <tr><th>UUID</th><th>Parcialidad</th><th>Saldo previo</th><th>Pagado</th><th>Saldo remanente</th></tr>
         </thead>
         <tbody>
           @for (row of complement().relatedDocuments; track row.id) {

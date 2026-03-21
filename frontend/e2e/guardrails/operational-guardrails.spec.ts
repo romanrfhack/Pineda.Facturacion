@@ -15,9 +15,9 @@ test('operator sees read-only fiscal document actions', async ({ page }) => {
 
   await page.goto('/app/fiscal-documents/405');
   await expect(page.getByText('UUID-FISCAL-RO')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Stamp' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Cancel' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Refresh status' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Timbrar' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Cancelar' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Actualizar estatus' })).toHaveCount(0);
 });
 
 test('supervisor sees provider unavailable feedback when invoice stamp fails', async ({ page }) => {
@@ -28,9 +28,9 @@ test('supervisor sees provider unavailable feedback when invoice stamp fails', a
   await loginPage.signIn('supervisor', 'Secret123!');
 
   await page.goto('/app/fiscal-documents/406');
-  await expect(page.getByText('No stamp evidence is available yet')).toBeVisible();
-  await page.getByRole('button', { name: 'Stamp' }).click();
-  await expect(page.getByText('PAC provider is unavailable. Retry after checking status.')).toBeVisible();
+  await expect(page.getByText('Aún no hay evidencia de timbrado disponible')).toBeVisible();
+  await page.getByRole('button', { name: 'Timbrar' }).click();
+  await expect(page.getByText('PAC no disponible. Intenta de nuevo después de verificar el estatus.')).toBeVisible();
 });
 
 test('mixed receivers validation is shown during payment complement preparation', async ({ page }) => {
@@ -41,6 +41,6 @@ test('mixed receivers validation is shown during payment complement preparation'
   await loginPage.signIn('supervisor', 'Secret123!');
 
   await page.goto('/app/payment-complements?paymentId=703', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Prepare payment complement' }).click();
-  await expect(page.getByText('Applied invoices belong to different receivers.')).toBeVisible();
+  await page.getByRole('button', { name: 'Preparar complemento de pago' }).click();
+  await expect(page.getByText('Las facturas aplicadas pertenecen a receptores distintos.')).toBeVisible();
 });

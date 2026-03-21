@@ -60,7 +60,7 @@ describe('ReceiverImportsPageComponent', () => {
     fixture.detectChanges();
 
     const applyButton = Array.from(fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>)
-      .find((button) => button.textContent?.includes('Apply receiver batch')) as HTMLButtonElement;
+      .find((button) => button.textContent?.includes('Aplicar lote de receptores')) as HTMLButtonElement;
 
     expect(applyButton.disabled).toBe(true);
   });

@@ -7,6 +7,7 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
 import { ImportBatchSummaryCardComponent } from '../components/import-batch-summary-card.component';
 import { FiscalImportsApiService } from '../infrastructure/fiscal-imports-api.service';
 import { ApplyImportBatchResponse, ImportApplyMode, ImportBatchSummary, ProductImportRow } from '../models/catalogs.models';
+import { getDisplayLabel } from '../../../shared/ui/display-labels';
 
 @Component({
   selector: 'app-product-imports-page',
@@ -14,29 +15,29 @@ import { ApplyImportBatchResponse, ImportApplyMode, ImportBatchSummary, ProductI
   template: `
     <section class="page">
       <header>
-        <p class="eyebrow">Catalogs / Product imports</p>
-        <h2>Preview and apply product fiscal profile batches</h2>
+        <p class="eyebrow">Catálogos / Importaciones de productos</p>
+        <h2>Vista previa y aplicación de lotes de perfiles fiscales de producto</h2>
       </header>
 
       <section class="card">
         <div class="toolbar">
           <label>
-            <span>Load batch by id</span>
+            <span>Cargar lote por id</span>
             <input [(ngModel)]="batchIdInput" name="batchIdInput" type="number" min="1" />
           </label>
-          <button type="button" class="secondary" (click)="loadBatch()">Load batch</button>
+          <button type="button" class="secondary" (click)="loadBatch()">Cargar lote</button>
         </div>
 
         @if (permissionService.canWriteMasterData()) {
           <div class="form-grid">
-            <label><span>Preview .xlsx file</span><input type="file" accept=".xlsx" (change)="onFileSelected($event)" /></label>
-            <label><span>Default tax object code</span><input [(ngModel)]="defaultTaxObjectCode" name="defaultTaxObjectCode" /></label>
-            <label><span>Default VAT rate</span><input [(ngModel)]="defaultVatRate" name="defaultVatRate" type="number" min="0" step="0.0001" /></label>
-            <label><span>Default unit text</span><input [(ngModel)]="defaultUnitText" name="defaultUnitText" /></label>
-            <button type="button" (click)="preview()" [disabled]="previewing() || !selectedFile()">{{ previewing() ? 'Previewing...' : 'Preview product import' }}</button>
+            <label><span>Vista previa de archivo .xlsx</span><input type="file" accept=".xlsx" (change)="onFileSelected($event)" /></label>
+            <label><span>Código de objeto de impuesto predeterminado</span><input [(ngModel)]="defaultTaxObjectCode" name="defaultTaxObjectCode" /></label>
+            <label><span>Tasa de IVA predeterminada</span><input [(ngModel)]="defaultVatRate" name="defaultVatRate" type="number" min="0" step="0.0001" /></label>
+            <label><span>Texto de unidad predeterminado</span><input [(ngModel)]="defaultUnitText" name="defaultUnitText" /></label>
+            <button type="button" (click)="preview()" [disabled]="previewing() || !selectedFile()">{{ previewing() ? 'Generando vista previa...' : 'Vista previa de importación de productos' }}</button>
           </div>
         } @else {
-          <p class="helper">Your role can inspect batches but cannot preview or apply imports.</p>
+          <p class="helper">Tu rol puede consultar lotes, pero no generar vistas previas ni aplicar importaciones.</p>
         }
 
         @if (errorMessage()) {
@@ -48,70 +49,70 @@ import { ApplyImportBatchResponse, ImportApplyMode, ImportBatchSummary, ProductI
 
       @if (summary()) {
         <section class="card">
-          <h3>Apply batch</h3>
+          <h3>Aplicar lote</h3>
           <div class="form-grid">
             <label>
-              <span>Apply mode</span>
+              <span>Modo de aplicación</span>
               <select [(ngModel)]="applyMode" name="applyMode" [disabled]="!permissionService.canWriteMasterData()">
-                <option value="CreateOnly">Create only</option>
-                <option value="CreateAndUpdate">Create and update</option>
+                <option value="CreateOnly">Solo crear</option>
+                <option value="CreateAndUpdate">Crear y actualizar</option>
               </select>
             </label>
 
             <label>
-              <span>Selected row numbers</span>
+              <span>Números de fila seleccionados</span>
               <input [(ngModel)]="selectedRowsText" name="selectedRowsText" placeholder="1,2,7" [disabled]="!permissionService.canWriteMasterData()" />
             </label>
 
             <label class="checkbox">
               <input [(ngModel)]="stopOnFirstError" name="stopOnFirstError" type="checkbox" [disabled]="!permissionService.canWriteMasterData()" />
-              <span>Stop on first error</span>
+              <span>Detener en el primer error</span>
             </label>
 
             <button type="button" (click)="apply()" [disabled]="applying() || !permissionService.canWriteMasterData()">
-              {{ applying() ? 'Applying...' : 'Apply product batch' }}
+              {{ applying() ? 'Aplicando...' : 'Aplicar lote de productos' }}
             </button>
           </div>
 
           @if (applyResult()) {
             <p class="helper">
-              Applied {{ applyResult()!.appliedRows }}, skipped {{ applyResult()!.skippedRows }}, failed {{ applyResult()!.failedRows }}, already applied {{ applyResult()!.alreadyAppliedRows }}.
+              Aplicadas {{ applyResult()!.appliedRows }}, omitidas {{ applyResult()!.skippedRows }}, con error {{ applyResult()!.failedRows }}, ya aplicadas {{ applyResult()!.alreadyAppliedRows }}.
             </p>
           }
         </section>
 
         <section class="card">
-          <h3>Batch rows</h3>
+          <h3>Filas del lote</h3>
           @if (!rows().length) {
-            <p class="helper">No row data loaded yet.</p>
+            <p class="helper">Aún no hay datos de filas cargados.</p>
           } @else {
             <div class="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Row</th>
-                    <th>Status</th>
-                    <th>Suggested action</th>
-                    <th>Internal code</th>
-                    <th>Description</th>
-                    <th>Tax object</th>
-                    <th>VAT</th>
-                    <th>Validation errors</th>
-                    <th>Apply status</th>
+                    <th>Fila</th>
+                    <th>Estatus</th>
+                    <th>Acción sugerida</th>
+                    <th>Código interno</th>
+                    <th>Descripción</th>
+                    <th>Objeto de impuesto</th>
+                    <th>IVA</th>
+                    <th>Errores de validación</th>
+                    <th>Estatus de aplicación</th>
                   </tr>
                 </thead>
                 <tbody>
                   @for (row of rows(); track row.rowNumber) {
                     <tr>
                       <td>{{ row.rowNumber }}</td>
-                      <td>{{ row.status }}</td>
-                      <td>{{ row.suggestedAction }}</td>
-                      <td>{{ row.normalizedInternalCode || 'N/A' }}</td>
-                      <td>{{ row.normalizedDescription || 'N/A' }}</td>
-                      <td>{{ row.normalizedTaxObjectCode || 'Needs enrichment' }}</td>
-                      <td>{{ row.normalizedVatRate ?? 'Needs enrichment' }}</td>
-                      <td>{{ row.validationErrors.join(', ') || 'None' }}</td>
-                      <td>{{ row.applyStatus }}</td>
+                      <td>{{ getDisplayLabel(row.status) }}</td>
+                      <td>{{ getDisplayLabel(row.suggestedAction) }}</td>
+                      <td>{{ row.normalizedInternalCode || 'N/D' }}</td>
+                      <td>{{ row.normalizedDescription || 'N/D' }}</td>
+                      <td>{{ row.normalizedTaxObjectCode || 'Requiere complemento' }}</td>
+                      <td>{{ row.normalizedVatRate ?? 'Requiere complemento' }}</td>
+                      <td>{{ row.validationErrors.join(', ') || 'Ninguno' }}</td>
+                      <td>{{ getDisplayLabel(row.applyStatus) }}</td>
                     </tr>
                   }
                 </tbody>
@@ -162,6 +163,7 @@ export class ProductImportsPageComponent {
   protected defaultTaxObjectCode = '';
   protected defaultVatRate: number | null = null;
   protected defaultUnitText = '';
+  protected readonly getDisplayLabel = getDisplayLabel;
 
   protected onFileSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
@@ -188,7 +190,7 @@ export class ProductImportsPageComponent {
       if (summary.batchId) {
         await this.loadRows(summary.batchId);
       }
-      this.feedbackService.show('success', 'Product import preview created.');
+      this.feedbackService.show('success', 'Vista previa de importación de productos creada.');
     } catch (error) {
       this.errorMessage.set(extractApiErrorMessage(error));
     } finally {
@@ -217,7 +219,7 @@ export class ProductImportsPageComponent {
       return;
     }
 
-    if (!window.confirm('Apply this product import batch to master data?')) {
+    if (!window.confirm('¿Aplicar este lote de productos a los datos maestros?')) {
       return;
     }
 
@@ -230,7 +232,7 @@ export class ProductImportsPageComponent {
         stopOnFirstError: this.stopOnFirstError
       }));
       this.applyResult.set(result);
-      this.feedbackService.show('success', 'Product import batch applied.');
+      this.feedbackService.show('success', 'Lote de importación de productos aplicado.');
       await this.loadBatch();
     } catch (error) {
       this.errorMessage.set(extractApiErrorMessage(error));

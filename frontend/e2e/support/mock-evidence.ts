@@ -11,7 +11,7 @@ export async function mockFiscalEvidenceBackend(page: Page): Promise<void> {
         user: {
           id: 2,
           username: 'auditor',
-          displayName: 'Audit Reader',
+          displayName: 'Auditor',
           roles: ['Auditor'],
           isAuthenticated: true
         }
@@ -24,7 +24,7 @@ export async function mockFiscalEvidenceBackend(page: Page): Promise<void> {
       json: {
         id: 2,
         username: 'auditor',
-        displayName: 'Audit Reader',
+        displayName: 'Auditor',
         roles: ['Auditor'],
         isAuthenticated: true
       }
@@ -123,7 +123,7 @@ export async function mockFiscalEvidenceBackend(page: Page): Promise<void> {
         uuid: 'UUID-FISCAL-1',
         stampedAtUtc: '2026-03-20T12:00:00Z',
         providerCode: '200',
-        providerMessage: 'Stamped successfully',
+        providerMessage: 'Timbrado correctamente',
         errorCode: null,
         errorMessage: null,
         xmlHash: 'XML-HASH-FISCAL',
@@ -143,6 +143,6 @@ export async function mockFiscalEvidenceBackend(page: Page): Promise<void> {
   });
 
   await page.route('**/api/fiscal-documents/40/cancellation', async (route) => {
-    await route.fulfill({ status: 404, json: { errorMessage: 'Not found' } });
+    await route.fulfill({ status: 404, json: { errorMessage: 'No encontrado.' } });
   });
 }

@@ -9,19 +9,19 @@ import { FiscalStampResponse } from '../models/fiscal-documents.models';
     <section class="panel">
       <div class="header">
         <div>
-          <p class="eyebrow">Stamp detail</p>
-          <h3>Fiscal document #{{ stamp().fiscalDocumentId }}</h3>
+          <p class="eyebrow">Detalle de timbrado</p>
+          <h3>Documento fiscal #{{ stamp().fiscalDocumentId }}</h3>
         </div>
       </div>
 
       <dl class="grid">
-        <div><dt>Stamp id</dt><dd>{{ stamp().id }}</dd></div>
-        <div><dt>Provider operation</dt><dd>{{ stamp().providerOperation || 'N/A' }}</dd></div>
-        <div><dt>Tracking id</dt><dd>{{ stamp().providerTrackingId || 'N/A' }}</dd></div>
-        <div><dt>QR text / URL</dt><dd>{{ stamp().qrCodeTextOrUrl || 'N/A' }}</dd></div>
-        <div><dt>Original string</dt><dd class="mono">{{ stamp().originalString || 'N/A' }}</dd></div>
-        <div><dt>Created</dt><dd>{{ stamp().createdAtUtc | date: 'medium' }}</dd></div>
-        <div><dt>Updated</dt><dd>{{ stamp().updatedAtUtc | date: 'medium' }}</dd></div>
+        <div><dt>Id de timbre</dt><dd>{{ stamp().id }}</dd></div>
+        <div><dt>Operación del proveedor</dt><dd>{{ stamp().providerOperation || 'N/D' }}</dd></div>
+        <div><dt>Id de tracking</dt><dd>{{ stamp().providerTrackingId || 'N/D' }}</dd></div>
+        <div><dt>Texto / URL QR</dt><dd>{{ stamp().qrCodeTextOrUrl || 'N/D' }}</dd></div>
+        <div><dt>Cadena original</dt><dd class="mono">{{ stamp().originalString || 'N/D' }}</dd></div>
+        <div><dt>Creado</dt><dd>{{ stamp().createdAtUtc | date: 'medium' }}</dd></div>
+        <div><dt>Actualizado</dt><dd>{{ stamp().updatedAtUtc | date: 'medium' }}</dd></div>
       </dl>
     </section>
   `,

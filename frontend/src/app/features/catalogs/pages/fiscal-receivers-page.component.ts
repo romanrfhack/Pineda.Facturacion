@@ -14,21 +14,21 @@ import { FiscalReceiver, FiscalReceiverSearchItem, UpsertFiscalReceiverRequest }
   template: `
     <section class="page">
       <header>
-        <p class="eyebrow">Catalogs / Fiscal receivers</p>
-        <h2>Receiver master data</h2>
+        <p class="eyebrow">Catálogos / Receptores fiscales</p>
+        <h2>Datos maestros de receptores</h2>
       </header>
 
       <section class="card">
         <div class="toolbar">
           <label>
-            <span>Search receivers</span>
-            <input [(ngModel)]="query" name="query" placeholder="RFC or legal name" />
+            <span>Buscar receptores</span>
+            <input [(ngModel)]="query" name="query" placeholder="RFC o razón social" />
           </label>
 
           <div class="actions">
-            <button type="button" (click)="search()" [disabled]="loadingList()">{{ loadingList() ? 'Searching...' : 'Search' }}</button>
+            <button type="button" (click)="search()" [disabled]="loadingList()">{{ loadingList() ? 'Buscando...' : 'Buscar' }}</button>
             @if (permissionService.canWriteMasterData()) {
-              <button type="button" class="secondary" (click)="startCreate()">New receiver</button>
+              <button type="button" class="secondary" (click)="startCreate()">Nuevo receptor</button>
             }
           </div>
         </div>
@@ -36,18 +36,18 @@ import { FiscalReceiver, FiscalReceiverSearchItem, UpsertFiscalReceiverRequest }
         @if (listError()) {
           <p class="error">{{ listError() }}</p>
         } @else if (!receivers().length) {
-          <p class="helper">No receivers loaded yet. Search by RFC or legal name.</p>
+          <p class="helper">Aún no hay receptores cargados. Busca por RFC o razón social.</p>
         } @else {
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
                   <th>RFC</th>
-                  <th>Legal name</th>
-                  <th>Postal code</th>
-                  <th>Regime</th>
-                  <th>CFDI use</th>
-                  <th>Status</th>
+                  <th>Razón social</th>
+                  <th>Código postal</th>
+                  <th>Régimen</th>
+                  <th>Uso CFDI</th>
+                  <th>Estatus</th>
                   <th></th>
                 </tr>
               </thead>
@@ -59,8 +59,8 @@ import { FiscalReceiver, FiscalReceiverSearchItem, UpsertFiscalReceiverRequest }
                     <td>{{ receiver.postalCode }}</td>
                     <td>{{ receiver.fiscalRegimeCode }}</td>
                     <td>{{ receiver.cfdiUseCodeDefault }}</td>
-                    <td>{{ receiver.isActive ? 'Active' : 'Inactive' }}</td>
-                    <td><button type="button" class="link" (click)="selectReceiver(receiver)">Inspect</button></td>
+                    <td>{{ receiver.isActive ? 'Activo' : 'Inactivo' }}</td>
+                    <td><button type="button" class="link" (click)="selectReceiver(receiver)">Consultar</button></td>
                   </tr>
                 }
               </tbody>
@@ -70,11 +70,11 @@ import { FiscalReceiver, FiscalReceiverSearchItem, UpsertFiscalReceiverRequest }
       </section>
 
       <section class="card">
-        <h3>{{ selectedReceiver() ? 'Receiver details' : 'New receiver' }}</h3>
+        <h3>{{ selectedReceiver() ? 'Detalle del receptor' : 'Nuevo receptor' }}</h3>
         <app-fiscal-receiver-form
           [receiver]="selectedReceiver()"
           [readOnly]="!permissionService.canWriteMasterData()"
-          [submitLabel]="selectedReceiver() ? 'Update receiver' : 'Create receiver'"
+          [submitLabel]="selectedReceiver() ? 'Actualizar receptor' : 'Crear receptor'"
           [errorMessage]="formError()"
           (submitted)="save($event)"
         />
@@ -149,10 +149,10 @@ export class FiscalReceiversPageComponent {
       const selected = this.selectedReceiver();
       if (selected) {
         await firstValueFrom(this.api.update(selected.id, request));
-        this.feedbackService.show('success', 'Receiver updated.');
+        this.feedbackService.show('success', 'Receptor actualizado.');
       } else {
         await firstValueFrom(this.api.create(request));
-        this.feedbackService.show('success', 'Receiver created.');
+        this.feedbackService.show('success', 'Receptor creado.');
       }
 
       await this.search();

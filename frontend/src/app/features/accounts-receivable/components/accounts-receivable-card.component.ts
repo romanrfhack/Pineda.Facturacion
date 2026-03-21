@@ -10,16 +10,16 @@ import { StatusBadgeComponent } from '../../../shared/components/status-badge.co
     <section class="panel">
       <div class="header">
         <div>
-          <p class="eyebrow">Accounts receivable invoice</p>
+          <p class="eyebrow">Cuenta por cobrar</p>
           <h3>#{{ invoice().id }}</h3>
         </div>
         <app-status-badge [label]="invoice().status" [tone]="invoice().status === 'Paid' ? 'success' : invoice().status === 'PartiallyPaid' ? 'warning' : 'neutral'" />
       </div>
       <dl class="grid">
         <div><dt>Total</dt><dd>{{ invoice().total | number: '1.2-2' }} {{ invoice().currencyCode }}</dd></div>
-        <div><dt>Paid</dt><dd>{{ invoice().paidTotal | number: '1.2-2' }}</dd></div>
-        <div><dt>Outstanding</dt><dd>{{ invoice().outstandingBalance | number: '1.2-2' }}</dd></div>
-        <div><dt>Due</dt><dd>{{ invoice().dueAtUtc ? (invoice().dueAtUtc | date: 'mediumDate') : 'N/A' }}</dd></div>
+        <div><dt>Pagado</dt><dd>{{ invoice().paidTotal | number: '1.2-2' }}</dd></div>
+        <div><dt>Pendiente</dt><dd>{{ invoice().outstandingBalance | number: '1.2-2' }}</dd></div>
+        <div><dt>Vencimiento</dt><dd>{{ invoice().dueAtUtc ? (invoice().dueAtUtc | date: 'mediumDate') : 'N/D' }}</dd></div>
       </dl>
     </section>
   `,

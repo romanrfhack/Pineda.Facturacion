@@ -12,9 +12,9 @@ test('login then open audit viewer apply filter and inspect detail', async ({ pa
   await expect(page.getByRole('cell', { name: 'FiscalDocument.Stamp' })).toBeVisible();
 
   await page.getByRole('textbox', { name: 'Actor' }).fill('admin');
-  await page.getByRole('button', { name: 'Apply filters' }).click();
+  await page.getByRole('button', { name: 'Aplicar filtros' }).click();
 
   await expect(page.getByRole('cell', { name: 'corr-audit-001' })).toBeVisible();
-  await page.getByRole('button', { name: 'Details' }).first().click();
-  await expect(page.getByText('Request summary')).toBeVisible();
+  await page.getByRole('button', { name: 'Detalle' }).first().click();
+  await expect(page.getByText('Resumen de solicitud')).toBeVisible();
 });
