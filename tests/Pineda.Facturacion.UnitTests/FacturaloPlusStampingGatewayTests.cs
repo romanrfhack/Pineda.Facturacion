@@ -70,6 +70,7 @@ public class FacturaloPlusStampingGatewayTests
         using var json = JsonDocument.Parse(decodedJson);
         var comprobante = json.RootElement.GetProperty("Comprobante");
         Assert.Equal("4.0", comprobante.GetProperty("Version").GetString());
+        Assert.Equal("2026-03-21T12:00:00", comprobante.GetProperty("Fecha").GetString());
         Assert.Equal("I", comprobante.GetProperty("TipoDeComprobante").GetString());
         Assert.Equal("PPD", comprobante.GetProperty("MetodoPago").GetString());
         Assert.Equal("99", comprobante.GetProperty("FormaPago").GetString());

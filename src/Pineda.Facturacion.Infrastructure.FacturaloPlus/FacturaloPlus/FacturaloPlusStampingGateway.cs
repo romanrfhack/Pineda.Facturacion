@@ -180,7 +180,7 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
                 Version = request.CfdiVersion,
                 Serie = request.Series,
                 Folio = request.Folio,
-                Fecha = request.IssuedAtUtc,
+                Fecha = request.IssuedAtUtc.ToString("yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture),
                 Moneda = request.CurrencyCode,
                 TipoDeComprobante = request.DocumentType,
                 MetodoPago = request.PaymentMethodSat,
@@ -424,7 +424,7 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
         [JsonPropertyName("Folio")]
         public string? Folio { get; init; }
         [JsonPropertyName("Fecha")]
-        public DateTime Fecha { get; init; }
+        public string Fecha { get; init; } = string.Empty;
         [JsonPropertyName("Moneda")]
         public string Moneda { get; init; } = string.Empty;
         [JsonPropertyName("TipoCambio")]
