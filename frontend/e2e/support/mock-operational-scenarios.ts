@@ -49,6 +49,23 @@ export async function mockInvoiceStampingJourney(page: Page): Promise<void> {
     });
   });
 
+  await page.route('**/api/billing-documents/301', async (route) => {
+    await route.fulfill({
+      json: {
+        billingDocumentId: 301,
+        salesOrderId: 201,
+        legacyOrderId: 'LEG-7101',
+        status: 'Draft',
+        documentType: 'I',
+        currencyCode: 'MXN',
+        total: 100,
+        createdAtUtc: '2026-03-20T12:00:00Z',
+        fiscalDocumentId: fiscalDocumentStatus === 'ReadyForStamping' ? null : 401,
+        fiscalDocumentStatus: fiscalDocumentStatus === 'ReadyForStamping' ? null : fiscalDocumentStatus
+      }
+    });
+  });
+
   await page.route('**/api/billing-documents/301/fiscal-documents', async (route) => {
     await route.fulfill({
       json: {
@@ -120,6 +137,23 @@ export async function mockAccountsReceivableJourney(page: Page): Promise<void> {
     username: 'operator',
     displayName: 'Operador',
     role: 'FiscalOperator'
+  });
+
+  await page.route('**/api/billing-documents/301', async (route) => {
+    await route.fulfill({
+      json: {
+        billingDocumentId: 301,
+        salesOrderId: 201,
+        legacyOrderId: 'LEG-7101',
+        status: 'Draft',
+        documentType: 'I',
+        currencyCode: 'MXN',
+        total: 100,
+        createdAtUtc: '2026-03-20T12:00:00Z',
+        fiscalDocumentId: 401,
+        fiscalDocumentStatus: 'Stamped'
+      }
+    });
   });
 
   await page.route('**/api/fiscal-documents/401/accounts-receivable', async (route) => {
@@ -224,6 +258,23 @@ export async function mockPaymentComplementJourney(page: Page): Promise<void> {
     role: 'FiscalSupervisor'
   });
 
+  await page.route('**/api/billing-documents/301', async (route) => {
+    await route.fulfill({
+      json: {
+        billingDocumentId: 301,
+        salesOrderId: 201,
+        legacyOrderId: 'LEG-7101',
+        status: 'Draft',
+        documentType: 'I',
+        currencyCode: 'MXN',
+        total: 100,
+        createdAtUtc: '2026-03-20T12:00:00Z',
+        fiscalDocumentId: 401,
+        fiscalDocumentStatus: 'Stamped'
+      }
+    });
+  });
+
   await page.route('**/api/accounts-receivable/payments/702/payment-complement', async (route) => {
     if (!complementExists) {
       await route.fulfill({ status: 404, json: { errorMessage: 'No encontrado.' } });
@@ -317,6 +368,22 @@ export async function mockOperatorReadOnlyFiscalDocument(page: Page): Promise<vo
   });
 
   await mockIssuerAndReceiverLookup(page);
+  await page.route('**/api/billing-documents/301', async (route) => {
+    await route.fulfill({
+      json: {
+        billingDocumentId: 301,
+        salesOrderId: 201,
+        legacyOrderId: 'LEG-7101',
+        status: 'Draft',
+        documentType: 'I',
+        currencyCode: 'MXN',
+        total: 100,
+        createdAtUtc: '2026-03-20T12:00:00Z',
+        fiscalDocumentId: 405,
+        fiscalDocumentStatus: 'Stamped'
+      }
+    });
+  });
   await page.route('**/api/fiscal-documents/405', async (route) => {
     await route.fulfill({ json: buildFiscalDocument(405, 'Stamped') });
   });
@@ -342,6 +409,22 @@ export async function mockStampUnavailableFiscalDocument(page: Page): Promise<vo
   });
 
   await mockIssuerAndReceiverLookup(page);
+  await page.route('**/api/billing-documents/301', async (route) => {
+    await route.fulfill({
+      json: {
+        billingDocumentId: 301,
+        salesOrderId: 201,
+        legacyOrderId: 'LEG-7101',
+        status: 'Draft',
+        documentType: 'I',
+        currencyCode: 'MXN',
+        total: 100,
+        createdAtUtc: '2026-03-20T12:00:00Z',
+        fiscalDocumentId: 406,
+        fiscalDocumentStatus: 'ReadyForStamping'
+      }
+    });
+  });
   await page.route('**/api/fiscal-documents/406', async (route) => {
     await route.fulfill({ json: buildFiscalDocument(406, 'ReadyForStamping') });
   });
@@ -367,7 +450,7 @@ export async function mockStampUnavailableFiscalDocument(page: Page): Promise<vo
   });
 }
 
-async function mockSession(page: Page, options: SessionOptions): Promise<void> {
+export async function mockSession(page: Page, options: SessionOptions): Promise<void> {
   const user = {
     id: 1,
     username: options.username,

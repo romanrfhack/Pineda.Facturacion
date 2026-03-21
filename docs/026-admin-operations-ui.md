@@ -173,6 +173,14 @@ In fiscal-document preparation, receiver selection now uses a single autocomplet
 
 This replaces the previous two-step search-plus-select flow.
 
+## Billing document continuity
+The Orders and Fiscal Documents areas now keep continuity around billing documents:
+- when billing-document creation succeeds, the UI navigates directly to fiscal-document preparation with the `billingDocumentId`
+- when billing-document creation returns `Conflict`, the UI reuses the returned `billingDocumentId` and opens the existing document instead of leaving the operator blocked
+- the fiscal-documents screen includes a compact billing-document selector that can load an existing billing document by billing id, sales-order id, or legacy-order id
+
+This uses the existing create response plus a small billing-document lookup/search read surface.
+
 ## Destructive-action confirmations
 The UI requires explicit confirmation before:
 - invoice cancellation

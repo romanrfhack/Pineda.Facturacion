@@ -94,6 +94,23 @@ export async function mockHappyPathBackend(page: Page): Promise<void> {
     });
   });
 
+  await page.route('**/api/billing-documents/30', async (route) => {
+    await route.fulfill({
+      json: {
+        billingDocumentId: 30,
+        salesOrderId: 20,
+        legacyOrderId: 'LEG-7001',
+        status: 'Draft',
+        documentType: 'I',
+        currencyCode: 'MXN',
+        total: 100,
+        createdAtUtc: new Date().toISOString(),
+        fiscalDocumentId: null,
+        fiscalDocumentStatus: null
+      }
+    });
+  });
+
   await page.route('**/api/billing-documents/30/fiscal-documents', async (route) => {
     await route.fulfill({
       json: {

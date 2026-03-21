@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { ActivatedRoute, convertToParamMap } from '@angular/router';
+import { ActivatedRoute, convertToParamMap, Router } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { FiscalDocumentOperationsPageComponent } from './fiscal-document-operations-page.component';
 import { FiscalDocumentsApiService } from '../infrastructure/fiscal-documents-api.service';
@@ -23,6 +23,19 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         isActive: true
       })),
       searchReceivers: vi.fn().mockReturnValue(of([])),
+      getBillingDocumentById: vi.fn().mockReturnValue(of({
+        billingDocumentId: 30,
+        salesOrderId: 20,
+        legacyOrderId: 'LEG-1001',
+        status: 'Draft',
+        documentType: 'I',
+        currencyCode: 'MXN',
+        total: 100,
+        createdAtUtc: '2026-03-20T12:00:00Z',
+        fiscalDocumentId: null,
+        fiscalDocumentStatus: null
+      })),
+      searchBillingDocuments: vi.fn().mockReturnValue(of([])),
       prepareFiscalDocument: vi.fn(),
       getFiscalDocumentById: vi.fn().mockReturnValue(of({
         id: 40,
@@ -114,6 +127,10 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         {
           provide: FeedbackService,
           useValue: { show: vi.fn() }
+        },
+        {
+          provide: Router,
+          useValue: { navigate: vi.fn().mockResolvedValue(true) }
         },
         {
           provide: PermissionService,
@@ -251,5 +268,87 @@ describe('FiscalDocumentOperationsPageComponent', () => {
 
     expect(fixture.nativeElement.textContent).toContain('Acceso denegado.');
     vi.useRealTimers();
+  });
+
+  it('loads billing document context from query params', async () => {
+    const getBillingDocumentById = vi.fn().mockReturnValue(of({
+      billingDocumentId: 30,
+      salesOrderId: 20,
+      legacyOrderId: 'LEG-1001',
+      status: 'Draft',
+      documentType: 'I',
+      currencyCode: 'MXN',
+      total: 100,
+      createdAtUtc: '2026-03-20T12:00:00Z',
+      fiscalDocumentId: null,
+      fiscalDocumentStatus: null
+    }));
+
+    const fixture = await configure(
+      { getBillingDocumentById },
+      { id: null, billingDocumentId: '30' }
+    );
+
+    expect(getBillingDocumentById).toHaveBeenCalledWith(30);
+    expect(fixture.nativeElement.textContent).toContain('Documento #30');
+    expect(fixture.nativeElement.textContent).toContain('LEG-1001');
+  });
+
+  it('searches and loads an existing billing document from the selector', async () => {
+    const searchBillingDocuments = vi.fn().mockReturnValue(of([
+      {
+        billingDocumentId: 31,
+        salesOrderId: 21,
+        legacyOrderId: 'LEG-2002',
+        status: 'Draft',
+        documentType: 'I',
+        currencyCode: 'MXN',
+        total: 150,
+        createdAtUtc: '2026-03-20T12:00:00Z',
+        fiscalDocumentId: null,
+        fiscalDocumentStatus: null
+      }
+    ]));
+    const getBillingDocumentById = vi.fn().mockReturnValue(of({
+      billingDocumentId: 31,
+      salesOrderId: 21,
+      legacyOrderId: 'LEG-2002',
+      status: 'Draft',
+      documentType: 'I',
+      currencyCode: 'MXN',
+      total: 150,
+      createdAtUtc: '2026-03-20T12:00:00Z',
+      fiscalDocumentId: null,
+      fiscalDocumentStatus: null
+    }));
+
+    const fixture = await configure(
+      { searchBillingDocuments, getBillingDocumentById },
+      { id: null }
+    );
+
+    fixture.componentInstance['billingDocumentQuery'] = 'LEG-2002';
+    await fixture.componentInstance['searchBillingDocuments']();
+    fixture.detectChanges();
+
+    expect(searchBillingDocuments).toHaveBeenCalledWith('LEG-2002');
+    expect(fixture.nativeElement.textContent).toContain('Documento #31');
+
+    await fixture.componentInstance['selectBillingDocument']({
+      billingDocumentId: 31,
+      salesOrderId: 21,
+      legacyOrderId: 'LEG-2002',
+      status: 'Draft',
+      documentType: 'I',
+      currencyCode: 'MXN',
+      total: 150,
+      createdAtUtc: '2026-03-20T12:00:00Z',
+      fiscalDocumentId: null,
+      fiscalDocumentStatus: null
+    });
+    fixture.detectChanges();
+
+    expect(getBillingDocumentById).toHaveBeenCalledWith(31);
+    expect(fixture.nativeElement.textContent).toContain('Documento seleccionado');
   });
 });

@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { buildApiUrl } from '../../../core/config/api-url';
 import {
+  BillingDocumentLookupResponse,
   CancelFiscalDocumentRequest,
   CancelFiscalDocumentResponse,
   FiscalCancellationResponse,
@@ -27,6 +28,14 @@ export class FiscalDocumentsApiService {
 
   searchReceivers(query: string): Observable<FiscalReceiverSearchResponse[]> {
     return this.http.get<FiscalReceiverSearchResponse[]>(buildApiUrl(`/fiscal/receivers/search?q=${encodeURIComponent(query)}`));
+  }
+
+  getBillingDocumentById(billingDocumentId: number): Observable<BillingDocumentLookupResponse> {
+    return this.http.get<BillingDocumentLookupResponse>(buildApiUrl(`/billing-documents/${billingDocumentId}`));
+  }
+
+  searchBillingDocuments(query: string): Observable<BillingDocumentLookupResponse[]> {
+    return this.http.get<BillingDocumentLookupResponse[]>(buildApiUrl(`/billing-documents/search?q=${encodeURIComponent(query)}`));
   }
 
   prepareFiscalDocument(billingDocumentId: number, request: PrepareFiscalDocumentRequest): Observable<PrepareFiscalDocumentResponse> {

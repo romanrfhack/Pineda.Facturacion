@@ -42,4 +42,26 @@ describe('FiscalDocumentsApiService', () => {
     req.flush('<cfdi:Comprobante />');
     httpTesting.verify();
   });
+
+  it('gets billing document context by id', () => {
+    const service = TestBed.inject(FiscalDocumentsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.getBillingDocumentById(30).subscribe();
+
+    const req = httpTesting.expectOne('/api/billing-documents/30');
+    expect(req.request.method).toBe('GET');
+    httpTesting.verify();
+  });
+
+  it('searches billing documents by query', () => {
+    const service = TestBed.inject(FiscalDocumentsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.searchBillingDocuments('LEG-1001').subscribe();
+
+    const req = httpTesting.expectOne('/api/billing-documents/search?q=LEG-1001');
+    expect(req.request.method).toBe('GET');
+    httpTesting.verify();
+  });
 });

@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Pineda.Facturacion.Application.UseCases.AccountsReceivable;
 using Pineda.Facturacion.Application.UseCases.Audit;
 using Pineda.Facturacion.Application.UseCases.Auth;
+using Pineda.Facturacion.Application.UseCases.BillingDocuments;
 using Pineda.Facturacion.Application.UseCases.CreateBillingDocument;
 using Pineda.Facturacion.Application.UseCases.FiscalReceivers;
 using Pineda.Facturacion.Application.UseCases.FiscalDocuments;
@@ -23,6 +24,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<LoginService>();
         services.AddScoped<GetCurrentUserService>();
         services.AddScoped<CreateBillingDocumentService>();
+        services.AddScoped<GetBillingDocumentLookupByIdService>();
+        services.AddScoped<SearchBillingDocumentsService>();
         services.AddScoped<CreateAccountsReceivableInvoiceFromFiscalDocumentService>();
         services.AddScoped<GetAccountsReceivableInvoiceByFiscalDocumentIdService>();
         services.AddScoped<CreateAccountsReceivablePaymentService>();

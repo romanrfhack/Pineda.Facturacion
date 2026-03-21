@@ -1,9 +1,10 @@
 import { ChangeDetectionStrategy, Component, OnDestroy, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { FiscalDocumentsApiService } from '../infrastructure/fiscal-documents-api.service';
 import {
+  BillingDocumentLookupResponse,
   FiscalCancellationResponse,
   FiscalDocumentResponse,
   FiscalReceiverSearchResponse,
@@ -30,10 +31,69 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
         <h2>Preparar, timbrar, consultar, cancelar y actualizar estatus</h2>
       </header>
 
-      @if (!fiscalDocument()) {
+      <section class="card">
+        <h3>Seleccionar documento de facturación</h3>
+        <p class="helper">Busca por id de documento, id de orden o id legado para continuar con el flujo fiscal.</p>
+
+        <form class="context-search" (ngSubmit)="searchBillingDocuments()">
+          <label class="search-label">
+            <span>Búsqueda de documento</span>
+            <div class="search-row">
+              <input
+                [(ngModel)]="billingDocumentQuery"
+                name="billingDocumentQuery"
+                placeholder="Id de documento, id de orden o id legado"
+              />
+              <button type="submit" class="secondary" [disabled]="loadingBillingDocumentSearch()">
+                {{ loadingBillingDocumentSearch() ? 'Buscando...' : 'Buscar' }}
+              </button>
+            </div>
+          </label>
+        </form>
+
+        @if (billingDocumentSearchError()) {
+          <p class="error">{{ billingDocumentSearchError() }}</p>
+        }
+
+        @if (billingDocumentSearchResults().length) {
+          <section class="context-results">
+            @for (billingDocument of billingDocumentSearchResults(); track billingDocument.billingDocumentId) {
+              <button type="button" class="context-result" (click)="selectBillingDocument(billingDocument)">
+                <strong>Documento #{{ billingDocument.billingDocumentId }}</strong>
+                <span>Orden {{ billingDocument.salesOrderId }} · Legado {{ billingDocument.legacyOrderId }}</span>
+                <small>Estatus {{ getDisplayLabel(billingDocument.status) }} · {{ billingDocument.currencyCode }} {{ billingDocument.total }}</small>
+              </button>
+            }
+          </section>
+        } @else if (billingDocumentSearchTouched() && !loadingBillingDocumentSearch()) {
+          <p class="helper">No se encontraron coincidencias.</p>
+        }
+
+        @if (billingDocumentContext(); as currentBillingDocument) {
+          <section class="billing-context">
+            <div>
+              <p class="selected-title">Documento seleccionado</p>
+              <strong>Documento #{{ currentBillingDocument.billingDocumentId }}</strong>
+              <span>Orden {{ currentBillingDocument.salesOrderId }} · Legado {{ currentBillingDocument.legacyOrderId }}</span>
+              <span>Estatus {{ getDisplayLabel(currentBillingDocument.status) }} · {{ currentBillingDocument.currencyCode }} {{ currentBillingDocument.total }}</span>
+            </div>
+
+            <div class="context-actions">
+              @if (currentBillingDocument.fiscalDocumentId) {
+                <button type="button" class="secondary" (click)="openExistingFiscalDocument(currentBillingDocument)">
+                  Abrir documento fiscal existente
+                </button>
+              }
+              <button type="button" class="secondary" (click)="clearBillingDocumentSelection()">Cambiar documento</button>
+            </div>
+          </section>
+        }
+      </section>
+
+      @if (!fiscalDocument() && billingDocumentContext()) {
         <section class="card">
           <h3>Preparar documento fiscal</h3>
-          <p class="helper">Id de documento de facturación: <strong>{{ billingDocumentId() || 'Faltante' }}</strong></p>
+          <p class="helper">Id de documento de facturación: <strong>{{ billingDocumentId() }}</strong></p>
 
           <form class="form-grid" (ngSubmit)="prepare()">
             <section class="receiver-selector">
@@ -119,6 +179,11 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
             <button type="submit" [disabled]="loadingPrepare()"> {{ loadingPrepare() ? 'Preparando...' : 'Preparar documento fiscal' }} </button>
           </form>
         </section>
+      } @else if (!fiscalDocument()) {
+        <section class="card">
+          <h3>Selecciona un documento de facturación</h3>
+          <p class="helper">Carga un documento de facturación para preparar su documento fiscal o abrir el documento fiscal ya existente.</p>
+        </section>
       }
 
       @if (fiscalDocument(); as currentDocument) {
@@ -182,10 +247,20 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
     .eyebrow { margin:0; text-transform:uppercase; letter-spacing:0.12em; font-size:0.72rem; color:#8a6a32; }
     h2 { margin:0.3rem 0 0; }
     .helper { color:#5f6b76; }
+    .context-search, .search-label { display:grid; gap:0.75rem; }
+    .search-row { display:flex; gap:0.75rem; align-items:end; }
     .form-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:1rem; align-items:start; }
     label { display:grid; gap:0.35rem; }
     input, select, button { font:inherit; }
     input, select { border:1px solid #c9d1da; border-radius:0.8rem; padding:0.75rem 0.9rem; }
+    .context-results { display:grid; gap:0.5rem; margin-top:1rem; }
+    .context-result { width:100%; display:grid; gap:0.15rem; text-align:left; border:1px solid #ece5d7; border-radius:0.8rem; background:#fff; color:#182533; padding:0.75rem 0.9rem; cursor:pointer; }
+    .context-result:hover { background:#f7f2e7; }
+    .context-result small { color:#5f6b76; }
+    .billing-context { display:flex; justify-content:space-between; gap:1rem; align-items:center; margin-top:1rem; border:1px solid #d8d1c2; border-radius:0.9rem; background:#fffaf0; padding:0.85rem 1rem; }
+    .billing-context div { display:grid; gap:0.2rem; }
+    .billing-context span { color:#5f6b76; }
+    .context-actions { display:flex; flex-wrap:wrap; gap:0.75rem; justify-content:flex-end; }
     .receiver-selector { grid-column:1 / -1; display:grid; gap:0.75rem; }
     .suggestions { border:1px solid #d8d1c2; border-radius:0.9rem; background:#fcfbf8; padding:0.5rem; }
     .suggestions ul { list-style:none; margin:0; padding:0; display:grid; gap:0.35rem; }
@@ -205,6 +280,8 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
     button:disabled { opacity:0.6; cursor:wait; }
     .error { margin:0; color:#7a2020; }
     @media (max-width: 720px) {
+      .search-row { flex-direction:column; align-items:stretch; }
+      .billing-context { flex-direction:column; align-items:stretch; }
       .selected-receiver { flex-direction:column; align-items:stretch; }
     }
   `],
@@ -213,14 +290,21 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
 export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   private readonly api = inject(FiscalDocumentsApiService);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly feedbackService = inject(FeedbackService);
   protected readonly permissionService = inject(PermissionService);
+  protected readonly getDisplayLabel = getDisplayLabel;
 
   protected readonly billingDocumentId = signal<number | null>(parseNumber(this.route.snapshot.queryParamMap.get('billingDocumentId')));
   protected readonly fiscalDocumentId = signal<number | null>(parseNumber(this.route.snapshot.paramMap.get('id')));
   protected readonly loadingPrepare = signal(false);
   protected readonly loadingOperation = signal(false);
   protected readonly activeIssuer = signal<IssuerProfileResponse | null>(null);
+  protected readonly billingDocumentContext = signal<BillingDocumentLookupResponse | null>(null);
+  protected readonly loadingBillingDocumentSearch = signal(false);
+  protected readonly billingDocumentSearchResults = signal<BillingDocumentLookupResponse[]>([]);
+  protected readonly billingDocumentSearchError = signal<string | null>(null);
+  protected readonly billingDocumentSearchTouched = signal(false);
   protected readonly receiverResults = signal<FiscalReceiverSearchResponse[]>([]);
   protected readonly selectedReceiver = signal<FiscalReceiverSearchResponse | null>(null);
   protected readonly fiscalDocument = signal<FiscalDocumentResponse | null>(null);
@@ -237,6 +321,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected readonly receiverSearchTouched = signal(false);
 
   protected readonly receiverQuery = signal('');
+  protected billingDocumentQuery = '';
   protected selectedReceiverId: number | null = null;
   protected paymentMethodSat = 'PPD';
   protected paymentFormSat = '99';
@@ -260,6 +345,8 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     void this.loadIssuer();
     if (this.fiscalDocumentId()) {
       void this.loadFiscalDocument(this.fiscalDocumentId()!);
+    } else if (this.billingDocumentId()) {
+      void this.loadBillingDocumentContext(this.billingDocumentId()!);
     }
   }
 
@@ -311,6 +398,54 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
 
   protected receiverTrackBy(index: number, receiver: FiscalReceiverSearchResponse): number {
     return receiver.id;
+  }
+
+  protected async searchBillingDocuments(): Promise<void> {
+    const query = this.billingDocumentQuery.trim();
+    this.billingDocumentSearchTouched.set(true);
+    this.billingDocumentSearchError.set(null);
+
+    if (!query) {
+      this.billingDocumentSearchResults.set([]);
+      return;
+    }
+
+    this.loadingBillingDocumentSearch.set(true);
+    try {
+      this.billingDocumentSearchResults.set(await firstValueFrom(this.api.searchBillingDocuments(query)));
+    } catch (error) {
+      this.billingDocumentSearchResults.set([]);
+      this.billingDocumentSearchError.set(extractApiErrorMessage(error, 'No fue posible buscar documentos de facturación.'));
+    } finally {
+      this.loadingBillingDocumentSearch.set(false);
+    }
+  }
+
+  protected async selectBillingDocument(billingDocument: BillingDocumentLookupResponse): Promise<void> {
+    this.billingDocumentSearchResults.set([]);
+    this.billingDocumentSearchTouched.set(false);
+    await this.loadBillingDocumentContext(billingDocument.billingDocumentId, true);
+  }
+
+  protected async openExistingFiscalDocument(billingDocument: BillingDocumentLookupResponse): Promise<void> {
+    if (!billingDocument.fiscalDocumentId) {
+      return;
+    }
+
+    await this.loadFiscalDocument(billingDocument.fiscalDocumentId, true);
+  }
+
+  protected async clearBillingDocumentSelection(): Promise<void> {
+    this.billingDocumentContext.set(null);
+    this.billingDocumentId.set(null);
+    this.billingDocumentQuery = '';
+    this.billingDocumentSearchResults.set([]);
+    this.billingDocumentSearchTouched.set(false);
+    this.fiscalDocument.set(null);
+    this.stampEvidence.set(null);
+    this.cancellation.set(null);
+    this.fiscalDocumentId.set(null);
+    await this.router.navigate(['/app/fiscal-documents'], { queryParams: {} });
   }
 
   private async searchReceivers(query: string): Promise<void> {
@@ -447,14 +582,44 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     }
   }
 
-  private async loadFiscalDocument(fiscalDocumentId: number): Promise<void> {
+  private async loadFiscalDocument(fiscalDocumentId: number, syncRoute = false): Promise<void> {
     this.fiscalDocumentId.set(fiscalDocumentId);
     this.showStampDetail.set(false);
     this.closeStampXml();
     const document = await firstValueFrom(this.api.getFiscalDocumentById(fiscalDocumentId));
     this.fiscalDocument.set(document);
+    await this.loadBillingDocumentContext(document.billingDocumentId, false);
+
+    if (syncRoute) {
+      await this.router.navigate(['/app/fiscal-documents', fiscalDocumentId], {
+        queryParams: { billingDocumentId: document.billingDocumentId }
+      });
+    }
+
     await this.loadStamp(fiscalDocumentId, false);
     await this.loadCancellation(fiscalDocumentId, false);
+  }
+
+  private async loadBillingDocumentContext(billingDocumentId: number, syncRoute = false): Promise<void> {
+    try {
+      const billingDocument = await firstValueFrom(this.api.getBillingDocumentById(billingDocumentId));
+      this.billingDocumentContext.set(billingDocument);
+      this.billingDocumentId.set(billingDocument.billingDocumentId);
+      this.billingDocumentQuery = `${billingDocument.billingDocumentId}`;
+
+      if (syncRoute) {
+        await this.router.navigate(['/app/fiscal-documents'], {
+          queryParams: { billingDocumentId: billingDocument.billingDocumentId }
+        });
+      }
+
+      if (billingDocument.fiscalDocumentId && !this.fiscalDocument()) {
+        await this.loadFiscalDocument(billingDocument.fiscalDocumentId, syncRoute);
+      }
+    } catch (error) {
+      this.billingDocumentContext.set(null);
+      this.billingDocumentSearchError.set(extractApiErrorMessage(error, 'No fue posible cargar el documento de facturación.'));
+    }
   }
 
   private async loadStamp(fiscalDocumentId: number, notifyOnMissing = false): Promise<void> {

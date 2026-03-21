@@ -27,14 +27,18 @@ import { StatusBadgeComponent } from '../../../shared/components/status-badge.co
         <div class="secondary">
           <div class="header">
             <div>
-              <p class="eyebrow">Documento de facturación</p>
+              <p class="eyebrow">{{ currentBilling.outcome === 'Conflict' ? 'Documento existente' : 'Documento de facturación' }}</p>
               <h3>#{{ currentBilling.billingDocumentId }}</h3>
             </div>
             <app-status-badge [label]="currentBilling.billingDocumentStatus || currentBilling.outcome" tone="warning" />
           </div>
 
+          @if (currentBilling.outcome === 'Conflict') {
+            <p class="helper">La orden ya contaba con este documento. Puedes reutilizarlo para continuar con el flujo fiscal.</p>
+          }
+
           <a [routerLink]="['/app/fiscal-documents']" [queryParams]="{ billingDocumentId: currentBilling.billingDocumentId }">
-            Continuar a preparación fiscal
+            {{ currentBilling.outcome === 'Conflict' ? 'Abrir documento existente' : 'Continuar con documento fiscal' }}
           </a>
         </div>
       }
@@ -49,6 +53,7 @@ import { StatusBadgeComponent } from '../../../shared/components/status-badge.co
     .grid { margin:1rem 0 0; display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:0.75rem; }
     dt { font-size:0.82rem; color:#6d6d6d; }
     dd { margin:0.2rem 0 0; font-weight:600; }
+    .helper { margin:0.85rem 0 0; color:#5f6b76; }
     a { display:inline-flex; margin-top:1rem; color:#182533; font-weight:600; text-decoration:none; }
   `],
   changeDetection: ChangeDetectionStrategy.OnPush

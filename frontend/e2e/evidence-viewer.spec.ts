@@ -18,6 +18,6 @@ test('login then inspect stamped fiscal evidence and open XML', async ({ page })
   await expect(page.getByRole('heading', { name: 'XML del documento fiscal' })).toBeVisible();
   await expect(page.locator('pre')).toContainText('cfdi:Comprobante');
 
-  await page.getByRole('button', { name: 'Cerrar', exact: true }).click();
+  await page.locator('app-xml-viewer-panel').getByRole('button', { name: 'Cerrar', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'XML del documento fiscal' })).not.toBeVisible();
 });

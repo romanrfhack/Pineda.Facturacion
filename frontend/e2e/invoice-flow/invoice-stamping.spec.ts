@@ -15,8 +15,6 @@ test('supervisor completes invoice stamping journey and sees stamp evidence', as
   await expect(page.getByText('Orden legada LEG-7101')).toBeVisible();
 
   await page.getByRole('button', { name: 'Crear documento de facturación' }).click();
-  await page.getByRole('link', { name: 'Continuar a preparación fiscal' }).click();
-
   await expect(page).toHaveURL(/\/app\/fiscal-documents\?billingDocumentId=301$/);
   await page.getByRole('textbox', { name: 'Buscar receptor' }).fill('BBB010101BBB');
   await expect(page.getByRole('button', { name: 'BBB010101BBB Receiver One Código postal 02000' })).toBeVisible();

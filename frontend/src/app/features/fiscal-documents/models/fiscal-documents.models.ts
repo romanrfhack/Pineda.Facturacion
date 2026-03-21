@@ -22,6 +22,19 @@ export interface FiscalReceiverSearchResponse {
   isActive: boolean;
 }
 
+export interface BillingDocumentLookupResponse {
+  billingDocumentId: number;
+  salesOrderId: number;
+  legacyOrderId: string;
+  status: string;
+  documentType: string;
+  currencyCode: string;
+  total: number;
+  createdAtUtc: string;
+  fiscalDocumentId?: number | null;
+  fiscalDocumentStatus?: string | null;
+}
+
 export interface PrepareFiscalDocumentRequest {
   fiscalReceiverId: number;
   issuerProfileId?: number | null;

@@ -126,6 +126,58 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
+    public async Task BillingDocument_Lookup_And_Search_Return_Context_ForOperationalReuse()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        var seed = await factory.SeedStandardFiscalMasterDataAsync();
+
+        factory.LegacyOrderReader.Orders["LEG-1002A"] = CreateLegacyOrder("LEG-1002A", "SKU-1", 100m);
+
+        var importBody = await (await client.PostAsync("/api/orders/LEG-1002A/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+        var salesOrderId = importBody!.SalesOrderId!.Value;
+
+        var billingBody = await (await client.PostAsJsonAsync($"/api/sales-orders/{salesOrderId}/billing-documents", new SalesOrdersEndpoints.CreateBillingDocumentRequest
+        {
+            DocumentType = "I"
+        })).Content.ReadFromJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>();
+
+        Assert.NotNull(billingBody);
+        Assert.NotNull(billingBody!.BillingDocumentId);
+
+        var lookupResponse = await client.GetAsync($"/api/billing-documents/{billingBody.BillingDocumentId}");
+        Assert.Equal(HttpStatusCode.OK, lookupResponse.StatusCode);
+        var lookupBody = await lookupResponse.Content.ReadFromJsonAsync<BillingDocumentsEndpoints.BillingDocumentLookupResponse>();
+        Assert.NotNull(lookupBody);
+        Assert.Equal("ORD-LEG-1002A", lookupBody!.LegacyOrderId);
+        Assert.Null(lookupBody.FiscalDocumentId);
+
+        var searchResponse = await client.GetAsync("/api/billing-documents/search?q=LEG-1002A");
+        Assert.Equal(HttpStatusCode.OK, searchResponse.StatusCode);
+        var searchBody = await searchResponse.Content.ReadFromJsonAsync<BillingDocumentsEndpoints.BillingDocumentLookupResponse[]>();
+        Assert.NotNull(searchBody);
+        Assert.Contains(searchBody!, x => x.BillingDocumentId == billingBody.BillingDocumentId);
+
+        await client.PostAsJsonAsync($"/api/billing-documents/{billingBody.BillingDocumentId}/fiscal-documents", new BillingDocumentsEndpoints.PrepareFiscalDocumentRequest
+        {
+            FiscalReceiverId = seed.ReceiverId,
+            IssuerProfileId = seed.IssuerId,
+            PaymentMethodSat = "PPD",
+            PaymentFormSat = "99",
+            PaymentCondition = "CREDITO",
+            IsCreditSale = true,
+            CreditDays = 7
+        });
+
+        var lookupAfterPrepare = await (await client.GetAsync($"/api/billing-documents/{billingBody.BillingDocumentId}"))
+            .Content.ReadFromJsonAsync<BillingDocumentsEndpoints.BillingDocumentLookupResponse>();
+
+        Assert.NotNull(lookupAfterPrepare);
+        Assert.NotNull(lookupAfterPrepare!.FiscalDocumentId);
+    }
+
+    [Fact]
     public async Task FiscalImportPreviewEndpoints_DoNotRequireAntiforgeryMiddleware_ForAuthenticatedMultipartRequests()
     {
         await using var factory = new MvpApiFactory();

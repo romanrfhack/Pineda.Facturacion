@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Http.HttpResults;
 using Pineda.Facturacion.Api.Security;
 using Pineda.Facturacion.Application.Abstractions.Security;
+using Pineda.Facturacion.Application.UseCases.BillingDocuments;
 using Pineda.Facturacion.Application.UseCases.FiscalDocuments;
 using Pineda.Facturacion.Application.Security;
 
@@ -16,6 +17,17 @@ public static class BillingDocumentsEndpoints
             .WithTags("BillingDocuments")
             .RequireAuthorization(AuthorizationPolicyNames.OperatorOrAbove);
 
+        group.MapGet("/{billingDocumentId:long}", GetBillingDocumentByIdAsync)
+            .WithName("GetBillingDocumentById")
+            .WithSummary("Get a billing document lookup summary")
+            .Produces<BillingDocumentLookupResponse>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
+
+        group.MapGet("/search", SearchBillingDocumentsAsync)
+            .WithName("SearchBillingDocuments")
+            .WithSummary("Search billing documents by billing id, sales order id, or legacy order id")
+            .Produces<IReadOnlyList<BillingDocumentLookupResponse>>(StatusCodes.Status200OK);
+
         group.MapPost("/{billingDocumentId:long}/fiscal-documents", PrepareFiscalDocumentAsync)
             .WithName("PrepareFiscalDocument")
             .WithSummary("Prepare a fiscal snapshot from a billing document")
@@ -25,6 +37,26 @@ public static class BillingDocumentsEndpoints
             .Produces<PrepareFiscalDocumentResponse>(StatusCodes.Status400BadRequest);
 
         return endpoints;
+    }
+
+    private static async Task<Results<Ok<BillingDocumentLookupResponse>, NotFound>> GetBillingDocumentByIdAsync(
+        long billingDocumentId,
+        GetBillingDocumentLookupByIdService service,
+        CancellationToken cancellationToken)
+    {
+        var billingDocument = await service.ExecuteAsync(billingDocumentId, cancellationToken);
+        return billingDocument is null
+            ? TypedResults.NotFound()
+            : TypedResults.Ok(MapBillingDocumentLookup(billingDocument));
+    }
+
+    private static async Task<Ok<BillingDocumentLookupResponse[]>> SearchBillingDocumentsAsync(
+        string q,
+        SearchBillingDocumentsService service,
+        CancellationToken cancellationToken)
+    {
+        var results = await service.ExecuteAsync(q, 5, cancellationToken);
+        return TypedResults.Ok(results.Select(MapBillingDocumentLookup).ToArray());
     }
 
     private static async Task<Results<Ok<PrepareFiscalDocumentResponse>, NotFound<PrepareFiscalDocumentResponse>, Conflict<PrepareFiscalDocumentResponse>, BadRequest<PrepareFiscalDocumentResponse>>> PrepareFiscalDocumentAsync(
@@ -112,5 +144,36 @@ public static class BillingDocumentsEndpoints
         public long BillingDocumentId { get; init; }
         public long? FiscalDocumentId { get; init; }
         public string? Status { get; init; }
+    }
+
+    public sealed class BillingDocumentLookupResponse
+    {
+        public long BillingDocumentId { get; init; }
+        public long SalesOrderId { get; init; }
+        public string LegacyOrderId { get; init; } = string.Empty;
+        public string Status { get; init; } = string.Empty;
+        public string DocumentType { get; init; } = string.Empty;
+        public string CurrencyCode { get; init; } = string.Empty;
+        public decimal Total { get; init; }
+        public DateTime CreatedAtUtc { get; init; }
+        public long? FiscalDocumentId { get; init; }
+        public string? FiscalDocumentStatus { get; init; }
+    }
+
+    private static BillingDocumentLookupResponse MapBillingDocumentLookup(Application.Abstractions.Persistence.BillingDocumentLookupModel billingDocument)
+    {
+        return new BillingDocumentLookupResponse
+        {
+            BillingDocumentId = billingDocument.BillingDocumentId,
+            SalesOrderId = billingDocument.SalesOrderId,
+            LegacyOrderId = billingDocument.LegacyOrderId,
+            Status = billingDocument.Status,
+            DocumentType = billingDocument.DocumentType,
+            CurrencyCode = billingDocument.CurrencyCode,
+            Total = billingDocument.Total,
+            CreatedAtUtc = billingDocument.CreatedAtUtc,
+            FiscalDocumentId = billingDocument.FiscalDocumentId,
+            FiscalDocumentStatus = billingDocument.FiscalDocumentStatus
+        };
     }
 }

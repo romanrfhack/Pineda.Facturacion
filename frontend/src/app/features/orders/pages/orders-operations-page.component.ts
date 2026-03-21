@@ -1,5 +1,7 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
+import { HttpErrorResponse } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { OrdersApiService } from '../infrastructure/orders-api.service';
 import { CreateBillingDocumentResponse, ImportLegacyOrderResponse } from '../models/orders.models';
@@ -69,6 +71,7 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
 export class OrdersOperationsPageComponent {
   private readonly ordersApi = inject(OrdersApiService);
   private readonly feedbackService = inject(FeedbackService);
+  private readonly router = inject(Router);
 
   protected legacyOrderId = '';
   protected documentType = 'I';
@@ -108,14 +111,48 @@ export class OrdersOperationsPageComponent {
       const response = await firstValueFrom(this.ordersApi.createBillingDocument(importedOrder.salesOrderId, { documentType: this.documentType }));
       this.billingDocument.set(response);
       this.feedbackService.show('success', 'Documento de facturación creado.');
+      await this.openBillingDocument(response.billingDocumentId);
     } catch (error) {
-      this.localError.set(extractErrorMessage(error));
+      const conflictResponse = extractBillingDocumentResponse(error);
+      if (conflictResponse?.billingDocumentId && conflictResponse.outcome === 'Conflict') {
+        this.billingDocument.set(conflictResponse);
+        this.feedbackService.show('info', 'La orden ya cuenta con un documento de facturación. Se abrirá el documento existente.');
+        await this.openBillingDocument(conflictResponse.billingDocumentId);
+      } else {
+        this.localError.set(extractErrorMessage(error));
+      }
     } finally {
       this.loadingBilling.set(false);
     }
+  }
+
+  private async openBillingDocument(billingDocumentId?: number | null): Promise<void> {
+    if (!billingDocumentId) {
+      return;
+    }
+
+    await this.router.navigate(['/app/fiscal-documents'], { queryParams: { billingDocumentId } });
   }
 }
 
 function extractErrorMessage(error: unknown): string {
   return extractApiErrorMessage(error);
+}
+
+function extractBillingDocumentResponse(error: unknown): CreateBillingDocumentResponse | null {
+  if (!(error instanceof HttpErrorResponse) || typeof error.error !== 'object' || !error.error) {
+    return null;
+  }
+
+  const payload = error.error as Partial<CreateBillingDocumentResponse>;
+  return typeof payload.billingDocumentId === 'number' && typeof payload.outcome === 'string'
+    ? {
+        outcome: payload.outcome,
+        isSuccess: !!payload.isSuccess,
+        errorMessage: payload.errorMessage ?? null,
+        salesOrderId: payload.salesOrderId ?? 0,
+        billingDocumentId: payload.billingDocumentId,
+        billingDocumentStatus: payload.billingDocumentStatus ?? null
+      }
+    : null;
 }
