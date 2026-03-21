@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Net;
-using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -58,25 +57,16 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
             return ValidationFailed("Fiscal document private key reference could not be resolved.");
         }
 
-        var privateKeyPasswordValue = await _secretReferenceResolver.ResolveAsync(request.PrivateKeyPasswordReference, cancellationToken);
-        if (string.IsNullOrWhiteSpace(privateKeyPasswordValue))
-        {
-            return ValidationFailed("Fiscal document private key password reference could not be resolved.");
-        }
-
         var redactedSummary = BuildRedactedRequestSummary(request);
         var providerRequestHash = ComputeSha256(JsonSerializer.Serialize(redactedSummary, JsonOptions));
-        var payload = BuildPayload(request, certificateValue, privateKeyValue, privateKeyPasswordValue);
+        var payload = BuildPayload(request);
+        var payloadJson = JsonSerializer.Serialize(payload, JsonOptions);
+        var formPayload = BuildFormPayload(apiKey, payloadJson, privateKeyValue, certificateValue);
 
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _options.StampPath)
         {
-            Content = JsonContent.Create(payload, options: JsonOptions)
+            Content = new FormUrlEncodedContent(formPayload)
         };
-
-        if (!string.IsNullOrWhiteSpace(apiKey) && !string.IsNullOrWhiteSpace(_options.ApiKeyHeaderName))
-        {
-            httpRequest.Headers.TryAddWithoutValidation(_options.ApiKeyHeaderName, apiKey);
-        }
 
         HttpResponseMessage response;
         string responseContent;
@@ -162,10 +152,7 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
     }
 
     private static FacturaloPlusStampingPayload BuildPayload(
-        FiscalStampingRequest request,
-        string certificateValue,
-        string privateKeyValue,
-        string privateKeyPasswordValue)
+        FiscalStampingRequest request)
     {
         return new FacturaloPlusStampingPayload
         {
@@ -224,12 +211,21 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
                     UnitText = x.UnitText
                 })
                 .ToList(),
-            Certificate = new FacturaloPlusCertificateMaterial
-            {
-                Certificate = certificateValue,
-                PrivateKey = privateKeyValue,
-                PrivateKeyPassword = privateKeyPasswordValue
-            }
+        };
+    }
+
+    private static IReadOnlyDictionary<string, string> BuildFormPayload(
+        string? apiKey,
+        string payloadJson,
+        string privateKeyPem,
+        string certificatePem)
+    {
+        return new Dictionary<string, string>
+        {
+            ["apikey"] = apiKey ?? string.Empty,
+            ["jsonB64"] = Convert.ToBase64String(Encoding.UTF8.GetBytes(payloadJson)),
+            ["keyPEM"] = privateKeyPem,
+            ["cerPEM"] = certificatePem
         };
     }
 
@@ -378,7 +374,6 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
         public FacturaloPlusStampingReceiver Receiver { get; init; } = new();
         public FacturaloPlusStampingTotals Totals { get; init; } = new();
         public List<FacturaloPlusStampingItem> Items { get; init; } = [];
-        public FacturaloPlusCertificateMaterial Certificate { get; init; } = new();
     }
 
     private class FacturaloPlusStampingParty
@@ -420,13 +415,6 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
         public string TaxObjectCode { get; init; } = string.Empty;
         public decimal VatRate { get; init; }
         public string? UnitText { get; init; }
-    }
-
-    private sealed class FacturaloPlusCertificateMaterial
-    {
-        public string Certificate { get; init; } = string.Empty;
-        public string PrivateKey { get; init; } = string.Empty;
-        public string PrivateKeyPassword { get; init; } = string.Empty;
     }
 
     private sealed class FacturaloPlusStampingResponse
