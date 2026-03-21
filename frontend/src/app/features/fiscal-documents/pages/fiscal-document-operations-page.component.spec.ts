@@ -89,7 +89,12 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     };
   }
 
-  async function configure(apiOverrides?: Partial<Record<keyof FiscalDocumentsApiService, unknown>>) {
+  async function configure(
+    apiOverrides?: Partial<Record<keyof FiscalDocumentsApiService, unknown>>,
+    routeOptions?: { id?: string | null; billingDocumentId?: string | null }
+  ) {
+    const routeId = routeOptions && 'id' in routeOptions ? routeOptions.id : '40';
+
     await TestBed.configureTestingModule({
       imports: [FiscalDocumentOperationsPageComponent],
       providers: [
@@ -97,8 +102,8 @@ describe('FiscalDocumentOperationsPageComponent', () => {
           provide: ActivatedRoute,
           useValue: {
             snapshot: {
-              queryParamMap: convertToParamMap({}),
-              paramMap: convertToParamMap({ id: '40' })
+              queryParamMap: convertToParamMap(routeOptions?.billingDocumentId ? { billingDocumentId: routeOptions.billingDocumentId } : {}),
+              paramMap: convertToParamMap(routeId ? { id: routeId } : {})
             }
           }
         },
@@ -163,5 +168,88 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).toContain('Acceso denegado.');
+  });
+
+  it('debounces receiver search and renders suggestions', async () => {
+    vi.useFakeTimers();
+    const searchReceivers = vi.fn().mockReturnValue(of([
+      {
+        id: 9,
+        rfc: 'BBB010101BBB',
+        legalName: 'Receiver One',
+        postalCode: '02000',
+        fiscalRegimeCode: '601',
+        cfdiUseCodeDefault: 'G03',
+        isActive: true
+      }
+    ]));
+
+    const fixture = await configure(
+      {
+        searchReceivers
+      },
+      { id: null, billingDocumentId: '30' }
+    );
+
+    fixture.componentInstance['onReceiverQueryChange']('BBB');
+    await vi.advanceTimersByTimeAsync(249);
+    expect(searchReceivers).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    await Promise.resolve();
+    fixture.detectChanges();
+
+    expect(searchReceivers).toHaveBeenCalledWith('BBB');
+    expect(fixture.nativeElement.textContent).toContain('BBB010101BBB');
+    expect(fixture.nativeElement.textContent).toContain('Receiver One');
+    vi.useRealTimers();
+  });
+
+  it('selecting a suggestion sets the receiver and shows the selected summary', async () => {
+    const fixture = await configure(undefined, { id: null, billingDocumentId: '30' });
+
+    fixture.componentInstance['selectReceiver']({
+      id: 9,
+      rfc: 'BBB010101BBB',
+      legalName: 'Receiver One',
+      postalCode: '02000',
+      fiscalRegimeCode: '601',
+      cfdiUseCodeDefault: 'G03',
+      isActive: true
+    });
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['selectedReceiverId']).toBe(9);
+    expect(fixture.nativeElement.textContent).toContain('Receptor seleccionado');
+    expect(fixture.nativeElement.textContent).toContain('BBB010101BBB · Receiver One');
+  });
+
+  it('shows no-results state for receiver autocomplete', async () => {
+    const fixture = await configure(undefined, { id: null, billingDocumentId: '30' });
+
+    fixture.componentInstance['receiverQuery'].set('ZZ');
+    fixture.componentInstance['receiverSearchTouched'].set(true);
+    fixture.componentInstance['receiverResults'].set([]);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Sin coincidencias.');
+  });
+
+  it('shows autocomplete error state when receiver search fails', async () => {
+    vi.useFakeTimers();
+    const fixture = await configure(
+      {
+        searchReceivers: vi.fn().mockReturnValue(throwError(() => ({ error: { errorMessage: 'Forbidden' } })))
+      },
+      { id: null, billingDocumentId: '30' }
+    );
+
+    fixture.componentInstance['onReceiverQueryChange']('BBB');
+    await vi.advanceTimersByTimeAsync(250);
+    await Promise.resolve();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Acceso denegado.');
+    vi.useRealTimers();
   });
 });

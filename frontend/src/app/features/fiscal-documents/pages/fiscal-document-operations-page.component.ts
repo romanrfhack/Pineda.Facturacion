@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnDestroy, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
@@ -36,23 +36,55 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
           <p class="helper">Id de documento de facturación: <strong>{{ billingDocumentId() || 'Faltante' }}</strong></p>
 
           <form class="form-grid" (ngSubmit)="prepare()">
-            <label>
-              <span>Búsqueda de receptor</span>
-              <div class="row">
-                <input [(ngModel)]="receiverQuery" name="receiverQuery" placeholder="RFC o razón social" />
-                <button type="button" class="secondary" (click)="searchReceivers()">Buscar</button>
-              </div>
-            </label>
+            <section class="receiver-selector">
+              <label>
+                <span>Buscar receptor</span>
+                <input
+                  [ngModel]="receiverQuery()"
+                  (ngModelChange)="onReceiverQueryChange($event)"
+                  name="receiverQuery"
+                  autocomplete="off"
+                  placeholder="Escribe RFC o razón social"
+                />
+              </label>
 
-            <label>
-              <span>Receptor</span>
-              <select [(ngModel)]="selectedReceiverId" name="selectedReceiverId" required>
-                <option [ngValue]="null">Selecciona un receptor</option>
-                @for (receiver of receiverResults(); track receiver.id) {
-                  <option [ngValue]="receiver.id">{{ receiver.rfc }} · {{ receiver.legalName }}</option>
-                }
-              </select>
-            </label>
+              @if (showReceiverSuggestions()) {
+                <section class="suggestions" aria-label="Sugerencias de receptores">
+                  @if (searchingReceivers()) {
+                    <p class="helper">Buscando receptores...</p>
+                  } @else if (receiverSearchError()) {
+                    <p class="error">{{ receiverSearchError() }}</p>
+                  } @else if (!receiverResults().length) {
+                    <p class="helper">Sin coincidencias.</p>
+                  } @else {
+                    <ul>
+                      @for (receiver of receiverResults(); track receiverTrackBy($index, receiver)) {
+                        <li>
+                          <button type="button" class="suggestion-button" (click)="selectReceiver(receiver)">
+                            <strong>{{ receiver.rfc }}</strong>
+                            <span>{{ receiver.legalName }}</span>
+                            <small>Código postal {{ receiver.postalCode }}</small>
+                          </button>
+                        </li>
+                      }
+                    </ul>
+                  }
+                </section>
+              } @else if (!selectedReceiver()) {
+                <p class="helper">Escribe al menos 2 caracteres para buscar por RFC o razón social.</p>
+              }
+
+              @if (selectedReceiver(); as currentReceiver) {
+                <section class="selected-receiver">
+                  <div>
+                    <p class="selected-title">Receptor seleccionado</p>
+                    <strong>{{ currentReceiver.rfc }} · {{ currentReceiver.legalName }}</strong>
+                    <span>Código postal {{ currentReceiver.postalCode }} · Régimen {{ currentReceiver.fiscalRegimeCode }}</span>
+                  </div>
+                  <button type="button" class="secondary" (click)="clearSelectedReceiver()">Cambiar</button>
+                </section>
+              }
+            </section>
 
             <label>
               <span>Emisor activo</span>
@@ -150,11 +182,20 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
     .eyebrow { margin:0; text-transform:uppercase; letter-spacing:0.12em; font-size:0.72rem; color:#8a6a32; }
     h2 { margin:0.3rem 0 0; }
     .helper { color:#5f6b76; }
-    .form-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:1rem; align-items:end; }
+    .form-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:1rem; align-items:start; }
     label { display:grid; gap:0.35rem; }
     input, select, button { font:inherit; }
     input, select { border:1px solid #c9d1da; border-radius:0.8rem; padding:0.75rem 0.9rem; }
-    .row { display:flex; gap:0.75rem; }
+    .receiver-selector { grid-column:1 / -1; display:grid; gap:0.75rem; }
+    .suggestions { border:1px solid #d8d1c2; border-radius:0.9rem; background:#fcfbf8; padding:0.5rem; }
+    .suggestions ul { list-style:none; margin:0; padding:0; display:grid; gap:0.35rem; }
+    .suggestion-button { width:100%; display:grid; gap:0.15rem; text-align:left; border:1px solid #ece5d7; border-radius:0.8rem; background:#fff; color:#182533; padding:0.75rem 0.9rem; cursor:pointer; }
+    .suggestion-button:hover { background:#f7f2e7; }
+    .suggestion-button small { color:#5f6b76; }
+    .selected-receiver { display:flex; justify-content:space-between; gap:1rem; align-items:center; border:1px solid #d8d1c2; border-radius:0.9rem; background:#fffaf0; padding:0.85rem 1rem; }
+    .selected-receiver div { display:grid; gap:0.2rem; }
+    .selected-receiver span { color:#5f6b76; }
+    .selected-title { margin:0; text-transform:uppercase; letter-spacing:0.08em; font-size:0.72rem; color:#8a6a32; }
     .checkbox { display:flex; align-items:center; gap:0.5rem; }
     .checkbox input { width:auto; }
     .button-row { display:flex; flex-wrap:wrap; gap:0.75rem; align-items:center; }
@@ -162,10 +203,14 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
     button.secondary { background:#d8c49b; color:#182533; }
     button.danger { background:#7a2020; }
     button:disabled { opacity:0.6; cursor:wait; }
+    .error { margin:0; color:#7a2020; }
+    @media (max-width: 720px) {
+      .selected-receiver { flex-direction:column; align-items:stretch; }
+    }
   `],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class FiscalDocumentOperationsPageComponent {
+export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   private readonly api = inject(FiscalDocumentsApiService);
   private readonly route = inject(ActivatedRoute);
   private readonly feedbackService = inject(FeedbackService);
@@ -177,6 +222,7 @@ export class FiscalDocumentOperationsPageComponent {
   protected readonly loadingOperation = signal(false);
   protected readonly activeIssuer = signal<IssuerProfileResponse | null>(null);
   protected readonly receiverResults = signal<FiscalReceiverSearchResponse[]>([]);
+  protected readonly selectedReceiver = signal<FiscalReceiverSearchResponse | null>(null);
   protected readonly fiscalDocument = signal<FiscalDocumentResponse | null>(null);
   protected readonly stampEvidence = signal<FiscalStampResponse | null>(null);
   protected readonly cancellation = signal<FiscalCancellationResponse | null>(null);
@@ -186,8 +232,11 @@ export class FiscalDocumentOperationsPageComponent {
   protected readonly loadingStampXml = signal(false);
   protected readonly stampXmlContent = signal<string | null>(null);
   protected readonly stampXmlError = signal<string | null>(null);
+  protected readonly searchingReceivers = signal(false);
+  protected readonly receiverSearchError = signal<string | null>(null);
+  protected readonly receiverSearchTouched = signal(false);
 
-  protected receiverQuery = '';
+  protected readonly receiverQuery = signal('');
   protected selectedReceiverId: number | null = null;
   protected paymentMethodSat = 'PPD';
   protected paymentFormSat = '99';
@@ -199,6 +248,13 @@ export class FiscalDocumentOperationsPageComponent {
     const issuer = this.activeIssuer();
     return issuer ? `${issuer.rfc} · ${issuer.legalName}` : 'Cargando emisor activo...';
   });
+  protected readonly showReceiverSuggestions = computed(() =>
+    !this.selectedReceiver()
+    && this.receiverQuery().trim().length >= 2
+    && (this.searchingReceivers() || this.receiverResults().length > 0 || !!this.receiverSearchError() || this.receiverSearchTouched())
+  );
+
+  private receiverSearchTimer: number | null = null;
 
   constructor() {
     void this.loadIssuer();
@@ -207,8 +263,71 @@ export class FiscalDocumentOperationsPageComponent {
     }
   }
 
-  protected async searchReceivers(): Promise<void> {
-    this.receiverResults.set(await firstValueFrom(this.api.searchReceivers(this.receiverQuery || '')));
+  ngOnDestroy(): void {
+    if (this.receiverSearchTimer) {
+      window.clearTimeout(this.receiverSearchTimer);
+    }
+  }
+
+  protected onReceiverQueryChange(value: string): void {
+    this.receiverQuery.set(value);
+    this.selectedReceiverId = null;
+    this.selectedReceiver.set(null);
+    this.receiverSearchError.set(null);
+    this.receiverSearchTouched.set(false);
+
+    if (this.receiverSearchTimer) {
+      window.clearTimeout(this.receiverSearchTimer);
+      this.receiverSearchTimer = null;
+    }
+
+    const trimmed = value.trim();
+    if (trimmed.length < 2) {
+      this.receiverResults.set([]);
+      return;
+    }
+
+    this.receiverSearchTimer = window.setTimeout(() => {
+      void this.searchReceivers(trimmed);
+    }, 250);
+  }
+
+  protected selectReceiver(receiver: FiscalReceiverSearchResponse): void {
+    this.selectedReceiver.set(receiver);
+    this.selectedReceiverId = receiver.id;
+    this.receiverQuery.set(`${receiver.rfc} · ${receiver.legalName}`);
+    this.receiverResults.set([]);
+    this.receiverSearchError.set(null);
+  }
+
+  protected clearSelectedReceiver(): void {
+    this.selectedReceiver.set(null);
+    this.selectedReceiverId = null;
+    this.receiverQuery.set('');
+    this.receiverResults.set([]);
+    this.receiverSearchError.set(null);
+    this.receiverSearchTouched.set(false);
+  }
+
+  protected receiverTrackBy(index: number, receiver: FiscalReceiverSearchResponse): number {
+    return receiver.id;
+  }
+
+  private async searchReceivers(query: string): Promise<void> {
+    this.searchingReceivers.set(true);
+    this.receiverSearchError.set(null);
+
+    try {
+      const results = await firstValueFrom(this.api.searchReceivers(query));
+      this.receiverResults.set(results.slice(0, 5));
+      this.receiverSearchTouched.set(true);
+    } catch (error) {
+      this.receiverResults.set([]);
+      this.receiverSearchTouched.set(true);
+      this.receiverSearchError.set(extractApiErrorMessage(error, 'No fue posible buscar receptores.'));
+    } finally {
+      this.searchingReceivers.set(false);
+    }
   }
 
   protected async prepare(): Promise<void> {

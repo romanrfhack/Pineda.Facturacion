@@ -164,6 +164,15 @@ The UI surfaces:
 - current balances
 - latest-known external status when refreshed
 
+## Receiver selection note
+In fiscal-document preparation, receiver selection now uses a single autocomplete interaction:
+- the operator types RFC or razón social
+- the UI debounces and queries the existing fiscal-receiver search endpoint
+- up to 5 suggestions are shown
+- selecting one suggestion immediately sets the receiver used for preparation
+
+This replaces the previous two-step search-plus-select flow.
+
 ## Destructive-action confirmations
 The UI requires explicit confirmation before:
 - invoice cancellation

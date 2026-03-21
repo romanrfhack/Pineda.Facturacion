@@ -18,8 +18,9 @@ test('supervisor completes invoice stamping journey and sees stamp evidence', as
   await page.getByRole('link', { name: 'Continuar a preparación fiscal' }).click();
 
   await expect(page).toHaveURL(/\/app\/fiscal-documents\?billingDocumentId=301$/);
-  await page.getByRole('button', { name: 'Buscar' }).click();
-  await page.locator('select[name="selectedReceiverId"]').selectOption({ label: 'BBB010101BBB · Receiver One' });
+  await page.getByRole('textbox', { name: 'Buscar receptor' }).fill('BBB010101BBB');
+  await expect(page.getByRole('button', { name: 'BBB010101BBB Receiver One Código postal 02000' })).toBeVisible();
+  await page.getByRole('button', { name: 'BBB010101BBB Receiver One Código postal 02000' }).click();
   await page.getByRole('button', { name: 'Preparar documento fiscal' }).click();
 
   await expect(page.locator('app-fiscal-document-card')).toContainText('Listo para timbrar');
