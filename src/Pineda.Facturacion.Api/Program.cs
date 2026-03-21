@@ -12,6 +12,12 @@ using Pineda.Facturacion.Infrastructure.LegacyRead.DependencyInjection;
 using Pineda.Facturacion.Infrastructure.Options;
 
 var builder = WebApplication.CreateBuilder(args);
+
+if (builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Sandbox"))
+{
+    builder.Configuration.AddUserSecrets<Program>(optional: true);
+}
+
 var enableSwagger = builder.Configuration.GetValue<bool?>("OpenApi:EnableSwagger") ?? IsSwaggerEnabledByEnvironment(builder.Environment);
 
 builder.Services.AddEndpointsApiExplorer();
