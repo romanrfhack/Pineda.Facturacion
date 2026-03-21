@@ -126,6 +126,32 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
+    public async Task FiscalImportPreviewEndpoints_DoNotRequireAntiforgeryMiddleware_ForAuthenticatedMultipartRequests()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        using var receiverContent = new MultipartFormDataContent();
+        var receiverFile = new ByteArrayContent([1, 2, 3, 4]);
+        receiverFile.Headers.ContentType = new MediaTypeHeaderValue("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        receiverContent.Add(receiverFile, "file", "receivers.xlsx");
+
+        var receiverResponse = await client.PostAsync("/api/fiscal/imports/receivers/preview", receiverContent);
+        Assert.Equal(HttpStatusCode.BadRequest, receiverResponse.StatusCode);
+
+        using var productContent = new MultipartFormDataContent();
+        var productFile = new ByteArrayContent([1, 2, 3, 4]);
+        productFile.Headers.ContentType = new MediaTypeHeaderValue("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        productContent.Add(productFile, "File", "products.xlsx");
+        productContent.Add(new StringContent("02"), "DefaultTaxObjectCode");
+        productContent.Add(new StringContent("0.16"), "DefaultVatRate");
+        productContent.Add(new StringContent("Pieza"), "DefaultUnitText");
+
+        var productResponse = await client.PostAsync("/api/fiscal/imports/products/preview", productContent);
+        Assert.Equal(HttpStatusCode.BadRequest, productResponse.StatusCode);
+    }
+
+    [Fact]
     public async Task StampFiscalDocument_GetStampEvidence_AndDuplicateStampConflict()
     {
         await using var factory = new MvpApiFactory();

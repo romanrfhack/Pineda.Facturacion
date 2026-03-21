@@ -84,12 +84,17 @@ Run backend locally:
 Run frontend locally:
 - `bash scripts/run-frontend.sh`
 
+Frontend local dev proxy:
+- Angular dev server proxies `/api/*` to `https://localhost:7278`
+- `frontend/src/environments/environment.ts` can keep `apiBaseUrl = "/api"` for local development
+- the proxy is defined in `frontend/proxy.conf.json`
+
 Typical local flow:
 1. configure local connection strings and JWT values
 2. optionally keep `ASPNETCORE_ENVIRONMENT=Local` or use `Development`
 3. run migrations
-4. start backend
-5. start frontend
+4. start backend on `https://localhost:7278`
+5. start frontend on `http://localhost:4200`
 6. sign in with a seeded non-production user if enabled
 7. optionally use `/swagger` for backend-only manual endpoint checks in `Development`, `Local`, or `Sandbox`
 

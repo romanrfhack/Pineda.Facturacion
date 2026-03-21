@@ -22,6 +22,7 @@ public static class FiscalImportEndpoints
 
         group.MapPost("/receivers/preview", PreviewFiscalReceiverImportAsync)
             .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
+            .DisableAntiforgery()
             .WithName("PreviewFiscalReceiverImport")
             .WithSummary("Preview fiscal receiver import from Excel")
             .Accepts<IFormFile>("multipart/form-data")
@@ -50,6 +51,7 @@ public static class FiscalImportEndpoints
 
         group.MapPost("/products/preview", PreviewProductFiscalProfileImportAsync)
             .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
+            .DisableAntiforgery()
             .WithName("PreviewProductFiscalProfileImport")
             .WithSummary("Preview product fiscal profile import from Excel")
             .Accepts<PreviewProductFiscalProfileImportRequest>("multipart/form-data")
