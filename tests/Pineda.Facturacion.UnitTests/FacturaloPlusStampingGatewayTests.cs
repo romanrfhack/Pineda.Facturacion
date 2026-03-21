@@ -93,6 +93,7 @@ public class FacturaloPlusStampingGatewayTests
         Assert.Equal("PPD", comprobante.GetProperty("MetodoPago").GetString());
         Assert.Equal("99", comprobante.GetProperty("FormaPago").GetString());
         Assert.Equal("01", comprobante.GetProperty("Exportacion").GetString());
+        Assert.Equal("01000", comprobante.GetProperty("LugarExpedicion").GetString());
         Assert.Equal("30001000000500003416", comprobante.GetProperty("NoCertificado").GetString());
         Assert.Equal(certificateBase64, comprobante.GetProperty("Certificado").GetString());
         Assert.Equal("AAA010101AAA", comprobante.GetProperty("Emisor").GetProperty("Rfc").GetString());

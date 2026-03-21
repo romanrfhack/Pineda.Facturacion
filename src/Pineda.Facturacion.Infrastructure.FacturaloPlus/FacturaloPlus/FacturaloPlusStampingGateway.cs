@@ -200,6 +200,7 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
                 FormaPago = request.PaymentFormSat,
                 CondicionesDePago = request.PaymentCondition,
                 Exportacion = "01",
+                LugarExpedicion = request.IssuerPostalCode,
                 TipoCambio = request.ExchangeRate == 1m ? null : request.ExchangeRate,
                 SubTotal = request.Subtotal,
                 Descuento = request.DiscountTotal > 0 ? request.DiscountTotal : null,
@@ -479,6 +480,8 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
         public string? CondicionesDePago { get; init; }
         [JsonPropertyName("Exportacion")]
         public string Exportacion { get; init; } = string.Empty;
+        [JsonPropertyName("LugarExpedicion")]
+        public string LugarExpedicion { get; init; } = string.Empty;
         [JsonPropertyName("SubTotal")]
         public decimal SubTotal { get; init; }
         [JsonPropertyName("Descuento")]
