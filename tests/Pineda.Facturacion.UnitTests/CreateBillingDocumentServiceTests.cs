@@ -85,10 +85,10 @@ public class CreateBillingDocumentServiceTests
         Assert.Equal(salesOrder.PaymentCondition, added.PaymentCondition);
         Assert.Equal("MXN", added.CurrencyCode);
         Assert.Equal(1m, added.ExchangeRate);
-        Assert.Equal(salesOrder.Subtotal, added.Subtotal);
-        Assert.Equal(salesOrder.DiscountTotal, added.DiscountTotal);
-        Assert.Equal(salesOrder.TaxTotal, added.TaxTotal);
-        Assert.Equal(salesOrder.Total, added.Total);
+        Assert.Equal(95m, added.Subtotal);
+        Assert.Equal(5m, added.DiscountTotal);
+        Assert.Equal(15.2m, added.TaxTotal);
+        Assert.Equal(110.2m, added.Total);
         Assert.Equal(1, unitOfWork.SaveChangesCallCount);
 
         var item = Assert.Single(added.Items);
@@ -96,6 +96,9 @@ public class CreateBillingDocumentServiceTests
         Assert.Equal("SKU-1", item.Sku);
         Assert.Equal("SKU-1", item.ProductInternalCode);
         Assert.Equal("Articulo demo", item.Description);
+        Assert.Equal(0.16m, item.TaxRate);
+        Assert.Equal(15.2m, item.TaxAmount);
+        Assert.Equal(95m, item.LineTotal);
         Assert.Equal("02", item.TaxObjectCode);
     }
 

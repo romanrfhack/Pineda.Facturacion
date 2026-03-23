@@ -114,7 +114,7 @@ public class CreateBillingDocumentService
                 $"Current MVP BillingDocument creation supports MXN only. Sales order '{salesOrder.Id}' has currency '{normalizedCurrencyCode}'.");
         }
 
-        return new BillingDocument
+        var billingDocument = new BillingDocument
         {
             SalesOrderId = salesOrder.Id,
             DocumentType = documentType,
@@ -122,10 +122,6 @@ public class CreateBillingDocumentService
             PaymentCondition = salesOrder.PaymentCondition,
             CurrencyCode = normalizedCurrencyCode,
             ExchangeRate = 1m,
-            Subtotal = salesOrder.Subtotal,
-            DiscountTotal = salesOrder.DiscountTotal,
-            TaxTotal = salesOrder.TaxTotal,
-            Total = salesOrder.Total,
             CreatedAtUtc = now,
             UpdatedAtUtc = now,
             Items = salesOrder.Items.Select(item => new BillingDocumentItem
@@ -139,13 +135,16 @@ public class CreateBillingDocumentService
                 Quantity = item.Quantity,
                 UnitPrice = item.UnitPrice,
                 DiscountAmount = item.DiscountAmount,
-                TaxRate = item.TaxRate,
-                TaxAmount = item.TaxAmount,
-                LineTotal = item.LineTotal,
+                TaxRate = StandardVat16Calculator.StandardVatRate,
+                TaxAmount = 0m,
+                LineTotal = 0m,
                 SatProductServiceCode = item.SatProductServiceCode,
                 SatUnitCode = item.SatUnitCode,
                 TaxObjectCode = DefaultTaxObjectCode
             }).ToList()
         };
+
+        StandardVat16Calculator.ApplyStandardVat(billingDocument);
+        return billingDocument;
     }
 }

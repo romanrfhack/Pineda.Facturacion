@@ -11,4 +11,6 @@ public sealed class BootstrapSeedOptions
     public bool SeedDefaultTestUsers { get; set; }
 
     public string DefaultTestUserPassword { get; set; } = string.Empty;
+
+    public bool ApplyStandardVat16BackfillOnStartup { get; set; }
 }

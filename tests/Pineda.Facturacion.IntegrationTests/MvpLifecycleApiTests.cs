@@ -794,7 +794,7 @@ internal sealed class MvpApiFactory : WebApplicationFactory<Program>, IAsyncDisp
                 SatProductServiceCode = "01010101",
                 SatUnitCode = "H87",
                 TaxObjectCode = "02",
-                VatRate = 0m,
+                VatRate = 0.16m,
                 DefaultUnitText = "Pieza",
                 IsActive = true,
                 CreatedAtUtc = DateTime.UtcNow,

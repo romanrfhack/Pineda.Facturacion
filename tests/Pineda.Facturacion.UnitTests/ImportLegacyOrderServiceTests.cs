@@ -129,7 +129,16 @@ public class ImportLegacyOrderServiceTests
         Assert.NotNull(importRecordRepository.Updated);
         Assert.NotNull(salesOrderRepository.Added);
         Assert.Equal(2, unitOfWork.SaveChangesCallCount);
-        Assert.Single(salesOrderRepository.Added!.Items);
+        var salesOrder = Assert.IsType<SalesOrder>(salesOrderRepository.Added);
+        Assert.Equal(100m, salesOrder.Subtotal);
+        Assert.Equal(0m, salesOrder.DiscountTotal);
+        Assert.Equal(16m, salesOrder.TaxTotal);
+        Assert.Equal(116m, salesOrder.Total);
+
+        var item = Assert.Single(salesOrder.Items);
+        Assert.Equal(0.16m, item.TaxRate);
+        Assert.Equal(16m, item.TaxAmount);
+        Assert.Equal(100m, item.LineTotal);
     }
 
     private static ImportLegacyOrderService CreateService(
@@ -163,8 +172,8 @@ public class ImportLegacyOrderServiceTests
             CurrencyCode = "MXN",
             Subtotal = 100,
             DiscountTotal = 0,
-            TaxTotal = 16,
-            Total = 116,
+            TaxTotal = 0,
+            Total = 100,
             Items =
             [
                 new LegacyOrderItemReadModel
@@ -178,9 +187,9 @@ public class ImportLegacyOrderServiceTests
                     Quantity = 1,
                     UnitPrice = 100,
                     DiscountAmount = 0,
-                    TaxRate = 0.16m,
-                    TaxAmount = 16,
-                    LineTotal = 116,
+                    TaxRate = 0m,
+                    TaxAmount = 0m,
+                    LineTotal = 100m,
                     SatProductServiceCode = "01010101",
                     SatUnitCode = "H87"
                 }

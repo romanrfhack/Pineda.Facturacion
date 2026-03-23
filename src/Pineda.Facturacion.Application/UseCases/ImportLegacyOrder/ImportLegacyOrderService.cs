@@ -1,6 +1,7 @@
 using Pineda.Facturacion.Application.Abstractions.Hashing;
 using Pineda.Facturacion.Application.Abstractions.Legacy;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
+using Pineda.Facturacion.Application.Common;
 using Pineda.Facturacion.Domain.Entities;
 using Pineda.Facturacion.Domain.Enums;
 
@@ -171,7 +172,7 @@ public class ImportLegacyOrderService
         Models.Legacy.LegacyOrderReadModel legacyOrder,
         long legacyImportRecordId)
     {
-        return new SalesOrder
+        var salesOrder = new SalesOrder
         {
             LegacyImportRecordId = legacyImportRecordId,
             LegacyOrderNumber = legacyOrder.LegacyOrderNumber,
@@ -183,10 +184,6 @@ public class ImportLegacyOrderService
             PriceListCode = legacyOrder.PriceListCode,
             DeliveryType = legacyOrder.DeliveryType,
             CurrencyCode = legacyOrder.CurrencyCode,
-            Subtotal = legacyOrder.Subtotal,
-            DiscountTotal = legacyOrder.DiscountTotal,
-            TaxTotal = legacyOrder.TaxTotal,
-            Total = legacyOrder.Total,
             SnapshotTakenAtUtc = DateTime.UtcNow,
             Status = SalesOrderStatus.SnapshotCreated,
             Items = legacyOrder.Items.Select(item => new SalesOrderItem
@@ -200,12 +197,15 @@ public class ImportLegacyOrderService
                 Quantity = item.Quantity,
                 UnitPrice = item.UnitPrice,
                 DiscountAmount = item.DiscountAmount,
-                TaxRate = item.TaxRate,
-                TaxAmount = item.TaxAmount,
-                LineTotal = item.LineTotal,
+                TaxRate = StandardVat16Calculator.StandardVatRate,
+                TaxAmount = 0m,
+                LineTotal = 0m,
                 SatProductServiceCode = item.SatProductServiceCode,
                 SatUnitCode = item.SatUnitCode
             }).ToList()
         };
+
+        StandardVat16Calculator.ApplyStandardVat(salesOrder);
+        return salesOrder;
     }
 }
