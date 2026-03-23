@@ -28,4 +28,33 @@ describe('ProductFiscalProfileFormComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Código interno');
     expect(fixture.nativeElement.textContent).toContain('Tasa de IVA');
   });
+
+  it('keeps user-entered draft values when only the error message changes', async () => {
+    await TestBed.configureTestingModule({
+      imports: [ProductFiscalProfileFormComponent]
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(ProductFiscalProfileFormComponent);
+    fixture.componentRef.setInput('initialValue', {
+      internalCode: 'MTE-4259',
+      description: 'Producto faltante',
+      satProductServiceCode: '01010101',
+      satUnitCode: 'H87',
+      taxObjectCode: '02',
+      vatRate: 0.16,
+      defaultUnitText: 'PIEZA',
+      isActive: true
+    });
+    fixture.detectChanges();
+
+    const descriptionInput = fixture.nativeElement.querySelector('input[name="description"]') as HTMLInputElement;
+    descriptionInput.value = 'Producto corregido';
+    descriptionInput.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+
+    fixture.componentRef.setInput('errorMessage', 'No fue posible guardar.');
+    fixture.detectChanges();
+
+    expect((fixture.nativeElement.querySelector('input[name="description"]') as HTMLInputElement).value).toBe('Producto corregido');
+  });
 });

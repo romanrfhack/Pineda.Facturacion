@@ -5,6 +5,7 @@ import { FiscalDocumentOperationsPageComponent } from './fiscal-document-operati
 import { FiscalDocumentsApiService } from '../infrastructure/fiscal-documents-api.service';
 import { FeedbackService } from '../../../core/ui/feedback.service';
 import { PermissionService } from '../../../core/auth/permission.service';
+import { ProductFiscalProfilesApiService } from '../../catalogs/infrastructure/product-fiscal-profiles-api.service';
 
 describe('FiscalDocumentOperationsPageComponent', () => {
   function createApi(overrides?: Partial<Record<keyof FiscalDocumentsApiService, unknown>>) {
@@ -104,7 +105,8 @@ describe('FiscalDocumentOperationsPageComponent', () => {
 
   async function configure(
     apiOverrides?: Partial<Record<keyof FiscalDocumentsApiService, unknown>>,
-    routeOptions?: { id?: string | null; billingDocumentId?: string | null }
+    routeOptions?: { id?: string | null; billingDocumentId?: string | null },
+    productApiOverrides?: Partial<Record<keyof ProductFiscalProfilesApiService, unknown>>
   ) {
     const routeId = routeOptions && 'id' in routeOptions ? routeOptions.id : '40';
 
@@ -129,6 +131,17 @@ describe('FiscalDocumentOperationsPageComponent', () => {
           useValue: { show: vi.fn() }
         },
         {
+          provide: ProductFiscalProfilesApiService,
+          useValue: {
+            create: vi.fn().mockReturnValue(of({
+              outcome: 'Created',
+              isSuccess: true,
+              id: 15
+            })),
+            ...productApiOverrides
+          }
+        },
+        {
           provide: Router,
           useValue: { navigate: vi.fn().mockResolvedValue(true) }
         },
@@ -136,7 +149,8 @@ describe('FiscalDocumentOperationsPageComponent', () => {
           provide: PermissionService,
           useValue: {
             canStampFiscal: vi.fn().mockReturnValue(true),
-            canCancelFiscal: vi.fn().mockReturnValue(true)
+            canCancelFiscal: vi.fn().mockReturnValue(true),
+            canWriteMasterData: vi.fn().mockReturnValue(true)
           }
         }
       ]
@@ -350,5 +364,138 @@ describe('FiscalDocumentOperationsPageComponent', () => {
 
     expect(getBillingDocumentById).toHaveBeenCalledWith(31);
     expect(fixture.nativeElement.textContent).toContain('Documento seleccionado');
+  });
+
+  it('shows recovery action when preparation fails due to missing product fiscal profile', async () => {
+    const prepareFiscalDocument = vi.fn().mockReturnValue(of({
+      outcome: 'MissingProductFiscalProfile',
+      isSuccess: false,
+      errorMessage: "No active product fiscal profile exists for item line '1' and internal code 'MTE-4259'.",
+      billingDocumentId: 30,
+      fiscalDocumentId: null,
+      status: null
+    }));
+    const feedback = { show: vi.fn() };
+
+    await TestBed.configureTestingModule({
+      imports: [FiscalDocumentOperationsPageComponent],
+      providers: [
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            snapshot: {
+              queryParamMap: convertToParamMap({ billingDocumentId: '30' }),
+              paramMap: convertToParamMap({})
+            }
+          }
+        },
+        { provide: FiscalDocumentsApiService, useValue: createApi({ prepareFiscalDocument }) },
+        { provide: ProductFiscalProfilesApiService, useValue: { create: vi.fn().mockReturnValue(of({ outcome: 'Created', isSuccess: true, id: 15 })) } },
+        { provide: FeedbackService, useValue: feedback },
+        { provide: Router, useValue: { navigate: vi.fn().mockResolvedValue(true) } },
+        {
+          provide: PermissionService,
+          useValue: {
+            canStampFiscal: vi.fn().mockReturnValue(true),
+            canCancelFiscal: vi.fn().mockReturnValue(true),
+            canWriteMasterData: vi.fn().mockReturnValue(true)
+          }
+        }
+      ]
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(FiscalDocumentOperationsPageComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.componentInstance['selectedReceiverId'] = 9;
+    await fixture.componentInstance['prepare']();
+    fixture.detectChanges();
+
+    expect(prepareFiscalDocument).toHaveBeenCalled();
+    expect(fixture.nativeElement.textContent).toContain('Falta el perfil fiscal del producto MTE-4259');
+    expect(fixture.nativeElement.textContent).toContain('Agregar producto fiscal');
+    expect(feedback.show).toHaveBeenCalledWith('warning', 'Falta el perfil fiscal del producto MTE-4259. Debes darlo de alta para continuar.');
+  });
+
+  it('creates the missing product fiscal profile and retries preparation', async () => {
+    const prepareFiscalDocument = vi
+      .fn()
+      .mockReturnValueOnce(of({
+        outcome: 'MissingProductFiscalProfile',
+        isSuccess: false,
+        errorMessage: "No active product fiscal profile exists for item line '1' and internal code 'MTE-4259'.",
+        billingDocumentId: 30,
+        fiscalDocumentId: null,
+        status: null
+      }))
+      .mockReturnValueOnce(of({
+        outcome: 'Prepared',
+        isSuccess: true,
+        errorMessage: null,
+        billingDocumentId: 30,
+        fiscalDocumentId: 40,
+        status: 'ReadyForStamping'
+      }));
+    const create = vi.fn().mockReturnValue(of({ outcome: 'Created', isSuccess: true, id: 15 }));
+    const feedback = { show: vi.fn() };
+
+    await TestBed.configureTestingModule({
+      imports: [FiscalDocumentOperationsPageComponent],
+      providers: [
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            snapshot: {
+              queryParamMap: convertToParamMap({ billingDocumentId: '30' }),
+              paramMap: convertToParamMap({})
+            }
+          }
+        },
+        { provide: FiscalDocumentsApiService, useValue: createApi({ prepareFiscalDocument }) },
+        { provide: ProductFiscalProfilesApiService, useValue: { create } },
+        { provide: FeedbackService, useValue: feedback },
+        { provide: Router, useValue: { navigate: vi.fn().mockResolvedValue(true) } },
+        {
+          provide: PermissionService,
+          useValue: {
+            canStampFiscal: vi.fn().mockReturnValue(true),
+            canCancelFiscal: vi.fn().mockReturnValue(true),
+            canWriteMasterData: vi.fn().mockReturnValue(true)
+          }
+        }
+      ]
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(FiscalDocumentOperationsPageComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.componentInstance['selectedReceiverId'] = 9;
+
+    await fixture.componentInstance['prepare']();
+    fixture.componentInstance['openMissingProductProfileForm']();
+    await fixture.componentInstance['saveMissingProductProfile']({
+      internalCode: 'MTE-4259',
+      description: 'MTE-4259',
+      satProductServiceCode: '01010101',
+      satUnitCode: 'H87',
+      taxObjectCode: '02',
+      vatRate: 0.16,
+      defaultUnitText: 'PIEZA',
+      isActive: true
+    });
+
+    expect(create).toHaveBeenCalledWith({
+      internalCode: 'MTE-4259',
+      description: 'MTE-4259',
+      satProductServiceCode: '01010101',
+      satUnitCode: 'H87',
+      taxObjectCode: '02',
+      vatRate: 0.16,
+      defaultUnitText: 'PIEZA',
+      isActive: true
+    });
+    expect(prepareFiscalDocument).toHaveBeenCalledTimes(2);
+    expect(feedback.show).toHaveBeenCalledWith('success', 'Perfil fiscal del producto MTE-4259 creado.');
+    expect(feedback.show).toHaveBeenCalledWith('success', 'Documento fiscal preparado.');
   });
 });

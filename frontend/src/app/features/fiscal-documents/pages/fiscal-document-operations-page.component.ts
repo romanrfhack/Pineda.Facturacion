@@ -9,7 +9,8 @@ import {
   FiscalDocumentResponse,
   FiscalReceiverSearchResponse,
   FiscalStampResponse,
-  IssuerProfileResponse
+  IssuerProfileResponse,
+  PrepareFiscalDocumentRequest
 } from '../models/fiscal-documents.models';
 import { FeedbackService } from '../../../core/ui/feedback.service';
 import { PermissionService } from '../../../core/auth/permission.service';
@@ -20,10 +21,14 @@ import { FiscalStampEvidenceDetailComponent } from '../components/fiscal-stamp-e
 import { XmlViewerPanelComponent } from '../../../shared/components/xml-viewer-panel.component';
 import { getDisplayLabel } from '../../../shared/ui/display-labels';
 import { extractApiErrorMessage } from '../../../core/http/api-error-message';
+import { ProductFiscalProfileFormComponent } from '../../catalogs/components/product-fiscal-profile-form.component';
+import { ProductFiscalProfilesApiService } from '../../catalogs/infrastructure/product-fiscal-profiles-api.service';
+import { UpsertProductFiscalProfileRequest } from '../../catalogs/models/catalogs.models';
+import { MissingProductFiscalProfileContext, resolveMissingProductFiscalProfileContext } from '../application/missing-product-fiscal-profile';
 
 @Component({
   selector: 'app-fiscal-document-operations-page',
-  imports: [FormsModule, RouterLink, FiscalDocumentCardComponent, FiscalStampEvidenceCardComponent, FiscalCancellationCardComponent, FiscalStampEvidenceDetailComponent, XmlViewerPanelComponent],
+  imports: [FormsModule, RouterLink, FiscalDocumentCardComponent, FiscalStampEvidenceCardComponent, FiscalCancellationCardComponent, FiscalStampEvidenceDetailComponent, XmlViewerPanelComponent, ProductFiscalProfileFormComponent],
   template: `
     <section class="page">
       <header>
@@ -176,8 +181,47 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
               <input [(ngModel)]="creditDays" name="creditDays" type="number" min="1" />
             </label>
 
-            <button type="submit" [disabled]="loadingPrepare()"> {{ loadingPrepare() ? 'Preparando...' : 'Preparar documento fiscal' }} </button>
+            <button type="submit" [disabled]="loadingPrepare() || savingMissingProductProfile()"> {{ loadingPrepare() ? 'Preparando...' : 'Preparar documento fiscal' }} </button>
           </form>
+
+          @if (missingProductFiscalProfile(); as missingProduct) {
+            <section class="recovery-panel">
+              <div class="recovery-summary">
+                <div>
+                  <p class="selected-title">Recuperación requerida</p>
+                  <strong>Falta el perfil fiscal del producto {{ missingProduct.internalCode }}.</strong>
+                  <span>Debes darlo de alta para continuar.</span>
+                  @if (missingProduct.lineNumber) {
+                    <span>Línea {{ missingProduct.lineNumber }} del documento de facturación.</span>
+                  }
+                </div>
+
+                <div class="context-actions">
+                  @if (permissionService.canWriteMasterData()) {
+                    <button type="button" class="secondary" (click)="openMissingProductProfileForm()" [disabled]="savingMissingProductProfile()">
+                      Agregar producto fiscal
+                    </button>
+                  }
+                  <button type="button" class="secondary" (click)="dismissMissingProductFiscalProfile()" [disabled]="savingMissingProductProfile()">
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+
+              @if (showMissingProductProfileForm()) {
+                <section class="card nested-card">
+                  <h4>Alta de perfil fiscal de producto</h4>
+                  <app-product-fiscal-profile-form
+                    [initialValue]="missingProduct.draft"
+                    [submitLabel]="'Guardar y reintentar'"
+                    [submitting]="savingMissingProductProfile()"
+                    [errorMessage]="missingProductProfileError()"
+                    (submitted)="saveMissingProductProfile($event)"
+                  />
+                </section>
+              }
+            </section>
+          }
         </section>
       } @else if (!fiscalDocument()) {
         <section class="card">
@@ -270,6 +314,11 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
     .selected-receiver { display:flex; justify-content:space-between; gap:1rem; align-items:center; border:1px solid #d8d1c2; border-radius:0.9rem; background:#fffaf0; padding:0.85rem 1rem; }
     .selected-receiver div { display:grid; gap:0.2rem; }
     .selected-receiver span { color:#5f6b76; }
+    .recovery-panel { display:grid; gap:0.75rem; margin-top:1rem; border:1px solid #e6d7b4; border-radius:0.9rem; background:#fff8ea; padding:1rem; }
+    .recovery-summary { display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; }
+    .recovery-summary div { display:grid; gap:0.2rem; }
+    .recovery-summary span { color:#5f6b76; }
+    .nested-card { padding:0; border:none; background:transparent; }
     .selected-title { margin:0; text-transform:uppercase; letter-spacing:0.08em; font-size:0.72rem; color:#8a6a32; }
     .checkbox { display:flex; align-items:center; gap:0.5rem; }
     .checkbox input { width:auto; }
@@ -283,6 +332,7 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
       .search-row { flex-direction:column; align-items:stretch; }
       .billing-context { flex-direction:column; align-items:stretch; }
       .selected-receiver { flex-direction:column; align-items:stretch; }
+      .recovery-summary { flex-direction:column; align-items:stretch; }
     }
   `],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -292,12 +342,14 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly feedbackService = inject(FeedbackService);
+  private readonly productFiscalProfilesApi = inject(ProductFiscalProfilesApiService);
   protected readonly permissionService = inject(PermissionService);
   protected readonly getDisplayLabel = getDisplayLabel;
 
   protected readonly billingDocumentId = signal<number | null>(parseNumber(this.route.snapshot.queryParamMap.get('billingDocumentId')));
   protected readonly fiscalDocumentId = signal<number | null>(parseNumber(this.route.snapshot.paramMap.get('id')));
   protected readonly loadingPrepare = signal(false);
+  protected readonly savingMissingProductProfile = signal(false);
   protected readonly loadingOperation = signal(false);
   protected readonly activeIssuer = signal<IssuerProfileResponse | null>(null);
   protected readonly billingDocumentContext = signal<BillingDocumentLookupResponse | null>(null);
@@ -319,6 +371,10 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected readonly searchingReceivers = signal(false);
   protected readonly receiverSearchError = signal<string | null>(null);
   protected readonly receiverSearchTouched = signal(false);
+  protected readonly missingProductFiscalProfile = signal<MissingProductFiscalProfileContext | null>(null);
+  protected readonly showMissingProductProfileForm = signal(false);
+  protected readonly missingProductProfileError = signal<string | null>(null);
+  private readonly pendingPrepareRequest = signal<PrepareFiscalDocumentRequest | null>(null);
 
   protected readonly receiverQuery = signal('');
   protected billingDocumentQuery = '';
@@ -436,6 +492,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   }
 
   protected async clearBillingDocumentSelection(): Promise<void> {
+    this.dismissMissingProductFiscalProfile();
     this.billingDocumentContext.set(null);
     this.billingDocumentId.set(null);
     this.billingDocumentQuery = '';
@@ -472,26 +529,90 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       return;
     }
 
-    this.loadingPrepare.set(true);
+    const request: PrepareFiscalDocumentRequest = {
+      fiscalReceiverId: this.selectedReceiverId,
+      issuerProfileId: this.activeIssuer()?.id ?? null,
+      paymentMethodSat: this.paymentMethodSat,
+      paymentFormSat: this.paymentFormSat,
+      paymentCondition: this.paymentCondition,
+      isCreditSale: this.isCreditSale,
+      creditDays: this.creditDays
+    };
+
+    this.pendingPrepareRequest.set(request);
+    await this.executePrepare(request);
+  }
+
+  protected openMissingProductProfileForm(): void {
+    this.showMissingProductProfileForm.set(true);
+    this.missingProductProfileError.set(null);
+  }
+
+  protected dismissMissingProductFiscalProfile(clearPendingPrepareRequest = true): void {
+    this.missingProductFiscalProfile.set(null);
+    this.showMissingProductProfileForm.set(false);
+    this.missingProductProfileError.set(null);
+    if (clearPendingPrepareRequest) {
+      this.pendingPrepareRequest.set(null);
+    }
+  }
+
+  protected async saveMissingProductProfile(request: UpsertProductFiscalProfileRequest): Promise<void> {
+    if (!this.permissionService.canWriteMasterData() || this.savingMissingProductProfile()) {
+      return;
+    }
+
+    this.savingMissingProductProfile.set(true);
+    this.missingProductProfileError.set(null);
+
     try {
-      const response = await firstValueFrom(this.api.prepareFiscalDocument(billingDocumentId, {
-        fiscalReceiverId: this.selectedReceiverId,
-        issuerProfileId: this.activeIssuer()?.id ?? null,
-        paymentMethodSat: this.paymentMethodSat,
-        paymentFormSat: this.paymentFormSat,
-        paymentCondition: this.paymentCondition,
-        isCreditSale: this.isCreditSale,
-        creditDays: this.creditDays
-      }));
+      await firstValueFrom(this.productFiscalProfilesApi.create(request));
+      this.feedbackService.show('success', `Perfil fiscal del producto ${request.internalCode} creado.`);
+      const pendingRequest = this.pendingPrepareRequest();
+      this.dismissMissingProductFiscalProfile(false);
+      if (pendingRequest) {
+        await this.executePrepare(pendingRequest);
+      }
+    } catch (error) {
+      this.showMissingProductProfileForm.set(true);
+      this.missingProductProfileError.set(extractApiErrorMessage(error, 'No fue posible crear el perfil fiscal del producto.'));
+    } finally {
+      this.savingMissingProductProfile.set(false);
+    }
+  }
+
+  private async executePrepare(request: PrepareFiscalDocumentRequest): Promise<void> {
+    const billingDocumentId = this.billingDocumentId();
+    if (!billingDocumentId) {
+      return;
+    }
+
+    this.loadingPrepare.set(true);
+    this.dismissMissingProductFiscalProfile(false);
+
+    try {
+      const response = await firstValueFrom(this.api.prepareFiscalDocument(billingDocumentId, request));
+
+      if (response.outcome === 'MissingProductFiscalProfile') {
+        const missingProfile = resolveMissingProductFiscalProfileContext(response);
+        if (missingProfile) {
+          this.missingProductFiscalProfile.set(missingProfile);
+          this.feedbackService.show('warning', `Falta el perfil fiscal del producto ${missingProfile.internalCode}. Debes darlo de alta para continuar.`);
+          return;
+        }
+      }
 
       if (!response.fiscalDocumentId) {
+        this.pendingPrepareRequest.set(null);
         this.feedbackService.show('error', response.errorMessage || 'No se pudo preparar el documento fiscal.');
         return;
       }
 
+      this.pendingPrepareRequest.set(null);
       await this.loadFiscalDocument(response.fiscalDocumentId);
       this.feedbackService.show('success', 'Documento fiscal preparado.');
     } catch (error) {
+      this.pendingPrepareRequest.set(null);
       this.feedbackService.show('error', extractErrorMessage(error));
     } finally {
       this.loadingPrepare.set(false);
@@ -603,6 +724,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   private async loadBillingDocumentContext(billingDocumentId: number, syncRoute = false): Promise<void> {
     try {
       const billingDocument = await firstValueFrom(this.api.getBillingDocumentById(billingDocumentId));
+      this.dismissMissingProductFiscalProfile();
       this.billingDocumentContext.set(billingDocument);
       this.billingDocumentId.set(billingDocument.billingDocumentId);
       this.billingDocumentQuery = `${billingDocument.billingDocumentId}`;

@@ -51,7 +51,7 @@ import { ProductFiscalProfile, UpsertProductFiscalProfileRequest } from '../mode
         <p class="error">{{ errorMessage() }}</p>
       }
 
-      <button type="submit" [disabled]="readOnly()">{{ submitLabel() }}</button>
+      <button type="submit" [disabled]="readOnly() || submitting()">{{ submitting() ? 'Guardando...' : submitLabel() }}</button>
     </form>
   `,
   styles: [`
@@ -69,15 +69,28 @@ import { ProductFiscalProfile, UpsertProductFiscalProfileRequest } from '../mode
 })
 export class ProductFiscalProfileFormComponent implements OnChanges {
   readonly profile = input<ProductFiscalProfile | null>(null);
+  readonly initialValue = input<UpsertProductFiscalProfileRequest | null>(null);
   readonly submitLabel = input('Guardar perfil fiscal de producto');
   readonly readOnly = input(false);
+  readonly submitting = input(false);
   readonly errorMessage = input<string | null>(null);
   readonly submitted = output<UpsertProductFiscalProfileRequest>();
 
   protected draft: UpsertProductFiscalProfileRequest = emptyProductProfile();
+  private lastProfileSignature: string | null = null;
+  private lastInitialValueSignature: string | null = null;
 
   ngOnChanges(): void {
     const profile = this.profile();
+    const profileSignature = profile ? JSON.stringify(profile) : null;
+    const initialValueSignature = this.initialValue() ? JSON.stringify(this.initialValue()) : null;
+
+    if (profileSignature === this.lastProfileSignature && initialValueSignature === this.lastInitialValueSignature) {
+      return;
+    }
+
+    this.lastProfileSignature = profileSignature;
+    this.lastInitialValueSignature = initialValueSignature;
     this.draft = profile
       ? {
           internalCode: profile.internalCode,
@@ -89,10 +102,17 @@ export class ProductFiscalProfileFormComponent implements OnChanges {
           defaultUnitText: profile.defaultUnitText,
           isActive: profile.isActive
         }
-      : emptyProductProfile();
+      : {
+          ...emptyProductProfile(),
+          ...(this.initialValue() ?? {})
+        };
   }
 
   protected submitForm(): void {
+    if (this.readOnly() || this.submitting()) {
+      return;
+    }
+
     this.submitted.emit({
       ...this.draft,
       internalCode: this.draft.internalCode.trim(),
