@@ -1,4 +1,4 @@
-import { parseMissingProductFiscalProfileError, resolveMissingProductFiscalProfileContext } from './missing-product-fiscal-profile';
+import { extractMissingProductFiscalProfileContext, parseMissingProductFiscalProfileError, resolveMissingProductFiscalProfileContext } from './missing-product-fiscal-profile';
 
 describe('missing-product-fiscal-profile helper', () => {
   it('extracts line number and internal code from the backend error message', () => {
@@ -27,6 +27,34 @@ describe('missing-product-fiscal-profile helper', () => {
       draft: {
         internalCode: 'MTE-4259',
         description: 'MTE-4259',
+        satProductServiceCode: '01010101',
+        satUnitCode: 'H87',
+        taxObjectCode: '02',
+        vatRate: 0.16,
+        defaultUnitText: 'PIEZA',
+        isActive: true
+      }
+    });
+  });
+
+  it('extracts recovery context from HttpErrorResponse-like payload', () => {
+    expect(extractMissingProductFiscalProfileContext({
+      status: 400,
+      error: {
+        outcome: 'MissingProductFiscalProfile',
+        isSuccess: false,
+        errorMessage: "No active product fiscal profile exists for item line '2' and internal code 'ABC-123'.",
+        billingDocumentId: 3,
+        fiscalDocumentId: null,
+        status: null
+      }
+    })).toEqual({
+      internalCode: 'ABC-123',
+      lineNumber: 2,
+      description: 'ABC-123',
+      draft: {
+        internalCode: 'ABC-123',
+        description: 'ABC-123',
         satProductServiceCode: '01010101',
         satUnitCode: 'H87',
         taxObjectCode: '02',

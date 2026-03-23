@@ -24,7 +24,7 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
 import { ProductFiscalProfileFormComponent } from '../../catalogs/components/product-fiscal-profile-form.component';
 import { ProductFiscalProfilesApiService } from '../../catalogs/infrastructure/product-fiscal-profiles-api.service';
 import { UpsertProductFiscalProfileRequest } from '../../catalogs/models/catalogs.models';
-import { MissingProductFiscalProfileContext, resolveMissingProductFiscalProfileContext } from '../application/missing-product-fiscal-profile';
+import { extractMissingProductFiscalProfileContext, MissingProductFiscalProfileContext } from '../application/missing-product-fiscal-profile';
 
 @Component({
   selector: 'app-fiscal-document-operations-page',
@@ -202,7 +202,7 @@ import { MissingProductFiscalProfileContext, resolveMissingProductFiscalProfileC
                       Agregar producto fiscal
                     </button>
                   }
-                  <button type="button" class="secondary" (click)="dismissMissingProductFiscalProfile()" [disabled]="savingMissingProductProfile()">
+                  <button type="button" class="secondary" (click)="closeMissingProductProfileForm()" [disabled]="savingMissingProductProfile()">
                     Cancelar
                   </button>
                 </div>
@@ -492,7 +492,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   }
 
   protected async clearBillingDocumentSelection(): Promise<void> {
-    this.dismissMissingProductFiscalProfile();
+    this.clearMissingProductFiscalProfileState();
     this.billingDocumentContext.set(null);
     this.billingDocumentId.set(null);
     this.billingDocumentQuery = '';
@@ -548,13 +548,16 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     this.missingProductProfileError.set(null);
   }
 
-  protected dismissMissingProductFiscalProfile(clearPendingPrepareRequest = true): void {
+  protected closeMissingProductProfileForm(): void {
+    this.showMissingProductProfileForm.set(false);
+    this.missingProductProfileError.set(null);
+  }
+
+  private clearMissingProductFiscalProfileState(): void {
     this.missingProductFiscalProfile.set(null);
     this.showMissingProductProfileForm.set(false);
     this.missingProductProfileError.set(null);
-    if (clearPendingPrepareRequest) {
-      this.pendingPrepareRequest.set(null);
-    }
+    this.pendingPrepareRequest.set(null);
   }
 
   protected async saveMissingProductProfile(request: UpsertProductFiscalProfileRequest): Promise<void> {
@@ -569,7 +572,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       await firstValueFrom(this.productFiscalProfilesApi.create(request));
       this.feedbackService.show('success', `Perfil fiscal del producto ${request.internalCode} creado.`);
       const pendingRequest = this.pendingPrepareRequest();
-      this.dismissMissingProductFiscalProfile(false);
+      this.closeMissingProductProfileForm();
       if (pendingRequest) {
         await this.executePrepare(pendingRequest);
       }
@@ -588,19 +591,10 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     }
 
     this.loadingPrepare.set(true);
-    this.dismissMissingProductFiscalProfile(false);
+    this.closeMissingProductProfileForm();
 
     try {
       const response = await firstValueFrom(this.api.prepareFiscalDocument(billingDocumentId, request));
-
-      if (response.outcome === 'MissingProductFiscalProfile') {
-        const missingProfile = resolveMissingProductFiscalProfileContext(response);
-        if (missingProfile) {
-          this.missingProductFiscalProfile.set(missingProfile);
-          this.feedbackService.show('warning', `Falta el perfil fiscal del producto ${missingProfile.internalCode}. Debes darlo de alta para continuar.`);
-          return;
-        }
-      }
 
       if (!response.fiscalDocumentId) {
         this.pendingPrepareRequest.set(null);
@@ -608,10 +602,18 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
         return;
       }
 
-      this.pendingPrepareRequest.set(null);
+      this.clearMissingProductFiscalProfileState();
       await this.loadFiscalDocument(response.fiscalDocumentId);
       this.feedbackService.show('success', 'Documento fiscal preparado.');
     } catch (error) {
+      const missingProfile = extractMissingProductFiscalProfileContext(error);
+      if (missingProfile) {
+        this.missingProductFiscalProfile.set(missingProfile);
+        this.showMissingProductProfileForm.set(true);
+        this.feedbackService.show('warning', `Falta el perfil fiscal del producto ${missingProfile.internalCode}. Debes darlo de alta para continuar.`);
+        return;
+      }
+
       this.pendingPrepareRequest.set(null);
       this.feedbackService.show('error', extractErrorMessage(error));
     } finally {
@@ -724,7 +726,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   private async loadBillingDocumentContext(billingDocumentId: number, syncRoute = false): Promise<void> {
     try {
       const billingDocument = await firstValueFrom(this.api.getBillingDocumentById(billingDocumentId));
-      this.dismissMissingProductFiscalProfile();
+      this.clearMissingProductFiscalProfileState();
       this.billingDocumentContext.set(billingDocument);
       this.billingDocumentId.set(billingDocument.billingDocumentId);
       this.billingDocumentQuery = `${billingDocument.billingDocumentId}`;

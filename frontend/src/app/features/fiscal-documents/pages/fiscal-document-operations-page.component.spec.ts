@@ -366,15 +366,18 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Documento seleccionado');
   });
 
-  it('shows recovery action when preparation fails due to missing product fiscal profile', async () => {
-    const prepareFiscalDocument = vi.fn().mockReturnValue(of({
-      outcome: 'MissingProductFiscalProfile',
-      isSuccess: false,
-      errorMessage: "No active product fiscal profile exists for item line '1' and internal code 'MTE-4259'.",
-      billingDocumentId: 30,
-      fiscalDocumentId: null,
-      status: null
-    }));
+  it('opens the recovery form automatically when preparation fails due to missing product fiscal profile via HttpErrorResponse', async () => {
+    const prepareFiscalDocument = vi.fn().mockReturnValue(throwError(() => ({
+      status: 400,
+      error: {
+        outcome: 'MissingProductFiscalProfile',
+        isSuccess: false,
+        errorMessage: "No active product fiscal profile exists for item line '1' and internal code 'MTE-4259'.",
+        billingDocumentId: 30,
+        fiscalDocumentId: null,
+        status: null
+      }
+    })));
     const feedback = { show: vi.fn() };
 
     await TestBed.configureTestingModule({
@@ -414,20 +417,24 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(prepareFiscalDocument).toHaveBeenCalled();
     expect(fixture.nativeElement.textContent).toContain('Falta el perfil fiscal del producto MTE-4259');
     expect(fixture.nativeElement.textContent).toContain('Agregar producto fiscal');
+    expect(fixture.nativeElement.textContent).toContain('Guardar y reintentar');
     expect(feedback.show).toHaveBeenCalledWith('warning', 'Falta el perfil fiscal del producto MTE-4259. Debes darlo de alta para continuar.');
   });
 
   it('creates the missing product fiscal profile and retries preparation', async () => {
     const prepareFiscalDocument = vi
       .fn()
-      .mockReturnValueOnce(of({
-        outcome: 'MissingProductFiscalProfile',
-        isSuccess: false,
-        errorMessage: "No active product fiscal profile exists for item line '1' and internal code 'MTE-4259'.",
-        billingDocumentId: 30,
-        fiscalDocumentId: null,
-        status: null
-      }))
+      .mockReturnValueOnce(throwError(() => ({
+        status: 400,
+        error: {
+          outcome: 'MissingProductFiscalProfile',
+          isSuccess: false,
+          errorMessage: "No active product fiscal profile exists for item line '1' and internal code 'MTE-4259'.",
+          billingDocumentId: 30,
+          fiscalDocumentId: null,
+          status: null
+        }
+      })))
       .mockReturnValueOnce(of({
         outcome: 'Prepared',
         isSuccess: true,
@@ -472,7 +479,6 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     fixture.componentInstance['selectedReceiverId'] = 9;
 
     await fixture.componentInstance['prepare']();
-    fixture.componentInstance['openMissingProductProfileForm']();
     await fixture.componentInstance['saveMissingProductProfile']({
       internalCode: 'MTE-4259',
       description: 'MTE-4259',
@@ -497,5 +503,85 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(prepareFiscalDocument).toHaveBeenCalledTimes(2);
     expect(feedback.show).toHaveBeenCalledWith('success', 'Perfil fiscal del producto MTE-4259 creado.');
     expect(feedback.show).toHaveBeenCalledWith('success', 'Documento fiscal preparado.');
+  });
+
+  it('keeps a visible recovery action after the user cancels the auto-opened form', async () => {
+    const prepareFiscalDocument = vi.fn().mockReturnValue(throwError(() => ({
+      status: 400,
+      error: {
+        outcome: 'MissingProductFiscalProfile',
+        isSuccess: false,
+        errorMessage: "No active product fiscal profile exists for item line '1' and internal code 'MTE-4259'.",
+        billingDocumentId: 30,
+        fiscalDocumentId: null,
+        status: null
+      }
+    })));
+
+    const fixture = await configure(
+      { prepareFiscalDocument },
+      { id: null, billingDocumentId: '30' }
+    );
+
+    fixture.componentInstance['selectedReceiverId'] = 9;
+    await fixture.componentInstance['prepare']();
+    fixture.componentInstance['closeMissingProductProfileForm']();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Falta el perfil fiscal del producto MTE-4259');
+    expect(fixture.nativeElement.textContent).toContain('Agregar producto fiscal');
+    expect(fixture.nativeElement.textContent).not.toContain('Guardar y reintentar');
+  });
+
+  it('opens recovery again for the next missing product after a successful save', async () => {
+    const prepareFiscalDocument = vi
+      .fn()
+      .mockReturnValueOnce(throwError(() => ({
+        status: 400,
+        error: {
+          outcome: 'MissingProductFiscalProfile',
+          isSuccess: false,
+          errorMessage: "No active product fiscal profile exists for item line '1' and internal code 'MTE-4259'.",
+          billingDocumentId: 30,
+          fiscalDocumentId: null,
+          status: null
+        }
+      })))
+      .mockReturnValueOnce(throwError(() => ({
+        status: 400,
+        error: {
+          outcome: 'MissingProductFiscalProfile',
+          isSuccess: false,
+          errorMessage: "No active product fiscal profile exists for item line '2' and internal code 'PS-317'.",
+          billingDocumentId: 30,
+          fiscalDocumentId: null,
+          status: null
+        }
+      })));
+    const create = vi.fn().mockReturnValue(of({ outcome: 'Created', isSuccess: true, id: 15 }));
+
+    const fixture = await configure(
+      { prepareFiscalDocument },
+      { id: null, billingDocumentId: '30' },
+      { create }
+    );
+
+    fixture.componentInstance['selectedReceiverId'] = 9;
+    await fixture.componentInstance['prepare']();
+    await fixture.componentInstance['saveMissingProductProfile']({
+      internalCode: 'MTE-4259',
+      description: 'MTE-4259',
+      satProductServiceCode: '01010101',
+      satUnitCode: 'H87',
+      taxObjectCode: '02',
+      vatRate: 0.16,
+      defaultUnitText: 'PIEZA',
+      isActive: true
+    });
+    fixture.detectChanges();
+
+    expect(prepareFiscalDocument).toHaveBeenCalledTimes(2);
+    expect(fixture.nativeElement.textContent).toContain('Falta el perfil fiscal del producto PS-317');
+    expect(fixture.nativeElement.textContent).toContain('Guardar y reintentar');
   });
 });

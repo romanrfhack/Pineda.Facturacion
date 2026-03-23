@@ -42,6 +42,31 @@ export function resolveMissingProductFiscalProfileContext(
   };
 }
 
+export function extractMissingProductFiscalProfileContext(
+  error: unknown,
+  options?: {
+    fallbackDescription?: string | null;
+  }
+): MissingProductFiscalProfileContext | null {
+  if (typeof error !== 'object' || !error || !('error' in error)) {
+    return null;
+  }
+
+  const payload = (error as { error?: Partial<PrepareFiscalDocumentResponse> }).error;
+  if (!payload || payload.outcome !== 'MissingProductFiscalProfile') {
+    return null;
+  }
+
+  return resolveMissingProductFiscalProfileContext({
+    outcome: payload.outcome,
+    isSuccess: payload.isSuccess ?? false,
+    errorMessage: payload.errorMessage ?? null,
+    billingDocumentId: payload.billingDocumentId ?? 0,
+    fiscalDocumentId: payload.fiscalDocumentId ?? null,
+    status: payload.status ?? null
+  }, options);
+}
+
 export function parseMissingProductFiscalProfileError(errorMessage?: string | null): {
   lineNumber?: number | null;
   internalCode?: string | null;
