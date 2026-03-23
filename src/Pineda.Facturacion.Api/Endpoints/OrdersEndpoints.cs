@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Pineda.Facturacion.Api.Security;
 using Pineda.Facturacion.Application.Abstractions.Security;
 using Pineda.Facturacion.Application.UseCases.ImportLegacyOrder;
+using Pineda.Facturacion.Application.UseCases.Orders;
 using Pineda.Facturacion.Application.Security;
 
 namespace Pineda.Facturacion.Api.Endpoints;
@@ -19,6 +20,13 @@ public static class OrdersEndpoints
             .WithTags("Orders")
             .RequireAuthorization(AuthorizationPolicyNames.OperatorOrAbove);
 
+        group.MapGet("/legacy", SearchLegacyOrdersAsync)
+            .WithName("SearchLegacyOrders")
+            .WithSummary("Search legacy orders by date range")
+            .WithDescription("Queries legacy orders in read-only mode using a bounded date range and paged results.")
+            .Produces<SearchLegacyOrdersResponse>(StatusCodes.Status200OK)
+            .Produces<SearchLegacyOrdersResponse>(StatusCodes.Status400BadRequest);
+
         group.MapPost("/{legacyOrderId}/import", ImportOrderAsync)
             .WithName("ImportLegacyOrder")
             .WithSummary("Import a legacy order snapshot")
@@ -28,6 +36,78 @@ public static class OrdersEndpoints
             .Produces<ImportLegacyOrderResponse>(StatusCodes.Status409Conflict);
 
         return endpoints;
+    }
+
+    private static async Task<Results<Ok<SearchLegacyOrdersResponse>, BadRequest<SearchLegacyOrdersResponse>>> SearchLegacyOrdersAsync(
+        DateOnly? fromDate,
+        DateOnly? toDate,
+        int? page,
+        int? pageSize,
+        SearchLegacyOrdersService service,
+        CancellationToken cancellationToken)
+    {
+        if (fromDate is null || toDate is null)
+        {
+            return TypedResults.BadRequest(CreateValidationFailure("La fecha inicial y la fecha final son obligatorias."));
+        }
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        if (fromDate > toDate)
+        {
+            return TypedResults.BadRequest(CreateValidationFailure("La fecha inicial no puede ser mayor que la fecha final."));
+        }
+
+        if (toDate > today)
+        {
+            return TypedResults.BadRequest(CreateValidationFailure("La fecha final no puede ser mayor al día actual."));
+        }
+
+        var normalizedPage = page.GetValueOrDefault(1);
+        var normalizedPageSize = pageSize.GetValueOrDefault(10);
+
+        if (normalizedPage < 1)
+        {
+            return TypedResults.BadRequest(CreateValidationFailure("La página debe ser mayor o igual a 1."));
+        }
+
+        if (normalizedPageSize is < 1 or > 10)
+        {
+            return TypedResults.BadRequest(CreateValidationFailure("El tamaño de página debe estar entre 1 y 10."));
+        }
+
+        var result = await service.ExecuteAsync(
+            new SearchLegacyOrdersFilter
+            {
+                FromDateUtc = fromDate.Value.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
+                ToDateUtcExclusive = toDate.Value.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
+                Page = normalizedPage,
+                PageSize = normalizedPageSize
+            },
+            cancellationToken);
+
+        return TypedResults.Ok(new SearchLegacyOrdersResponse
+        {
+            IsSuccess = true,
+            Page = result.Page,
+            PageSize = result.PageSize,
+            TotalCount = result.TotalCount,
+            TotalPages = result.TotalCount == 0 ? 0 : (int)Math.Ceiling(result.TotalCount / (double)result.PageSize),
+            Items = result.Items.Select(item => new SearchLegacyOrderItemResponse
+            {
+                LegacyOrderId = item.LegacyOrderId,
+                OrderDateUtc = item.OrderDateUtc,
+                CustomerName = item.CustomerName,
+                Total = item.Total,
+                LegacyOrderType = item.LegacyOrderType,
+                IsImported = item.IsImported,
+                SalesOrderId = item.SalesOrderId,
+                BillingDocumentId = item.BillingDocumentId,
+                BillingDocumentStatus = item.BillingDocumentStatus,
+                FiscalDocumentId = item.FiscalDocumentId,
+                FiscalDocumentStatus = item.FiscalDocumentStatus,
+                ImportStatus = item.ImportStatus
+            }).ToArray()
+        });
     }
 
     private static async Task<Results<Ok<ImportLegacyOrderResponse>, NotFound<ImportLegacyOrderResponse>, Conflict<ImportLegacyOrderResponse>>> ImportOrderAsync(
@@ -103,6 +183,64 @@ public static class OrdersEndpoints
         public long? LegacyImportRecordId { get; init; }
 
         public long? SalesOrderId { get; init; }
+
+        public string? ImportStatus { get; init; }
+    }
+
+    private static SearchLegacyOrdersResponse CreateValidationFailure(string errorMessage)
+    {
+        return new SearchLegacyOrdersResponse
+        {
+            IsSuccess = false,
+            ErrorMessage = errorMessage,
+            Items = [],
+            Page = 1,
+            PageSize = 10,
+            TotalCount = 0,
+            TotalPages = 0
+        };
+    }
+
+    public sealed class SearchLegacyOrdersResponse
+    {
+        public bool IsSuccess { get; init; }
+
+        public string? ErrorMessage { get; init; }
+
+        public IReadOnlyList<SearchLegacyOrderItemResponse> Items { get; init; } = [];
+
+        public int TotalCount { get; init; }
+
+        public int TotalPages { get; init; }
+
+        public int Page { get; init; }
+
+        public int PageSize { get; init; }
+    }
+
+    public sealed class SearchLegacyOrderItemResponse
+    {
+        public string LegacyOrderId { get; init; } = string.Empty;
+
+        public DateTime OrderDateUtc { get; init; }
+
+        public string CustomerName { get; init; } = string.Empty;
+
+        public decimal Total { get; init; }
+
+        public string? LegacyOrderType { get; init; }
+
+        public bool IsImported { get; init; }
+
+        public long? SalesOrderId { get; init; }
+
+        public long? BillingDocumentId { get; init; }
+
+        public string? BillingDocumentStatus { get; init; }
+
+        public long? FiscalDocumentId { get; init; }
+
+        public string? FiscalDocumentStatus { get; init; }
 
         public string? ImportStatus { get; init; }
     }

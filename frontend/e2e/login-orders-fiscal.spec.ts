@@ -10,8 +10,8 @@ test('login then import order then create billing then open fiscal preparation',
   await loginPage.signIn('supervisor', 'Secret123!');
   await expect(page).toHaveURL(/\/app\/orders$/);
 
-  await page.getByLabel('Id de orden legada').fill('LEG-7001');
-  await page.getByRole('button', { name: 'Importar orden' }).click();
+  await expect(page.getByText('LEG-7001')).toBeVisible();
+  await page.getByRole('button', { name: 'Importar orden' }).first().click();
   await expect(page.getByText('Orden legada LEG-7001')).toBeVisible();
 
   await page.getByRole('button', { name: 'Crear documento de facturación' }).click();

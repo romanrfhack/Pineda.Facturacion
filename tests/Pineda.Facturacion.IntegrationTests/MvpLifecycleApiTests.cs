@@ -25,6 +25,65 @@ namespace Pineda.Facturacion.IntegrationTests;
 public class MvpLifecycleApiTests
 {
     [Fact]
+    public async Task SearchLegacyOrders_ReturnsPagedResults_AndMarksImportedOrders()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        factory.LegacyOrderReader.SearchResults =
+        [
+            new LegacyOrderListItemReadModel
+            {
+                LegacyOrderId = "LEG-3001",
+                OrderDateUtc = new DateTime(2026, 03, 23, 12, 0, 0, DateTimeKind.Utc),
+                CustomerName = "Cliente Uno",
+                Total = 116m,
+                LegacyOrderType = "F"
+            },
+            new LegacyOrderListItemReadModel
+            {
+                LegacyOrderId = "LEG-3002",
+                OrderDateUtc = new DateTime(2026, 03, 23, 9, 0, 0, DateTimeKind.Utc),
+                CustomerName = "Cliente Dos",
+                Total = 232m,
+                LegacyOrderType = "F"
+            }
+        ];
+        factory.LegacyOrderReader.Orders["LEG-3001"] = CreateLegacyOrder("LEG-3001", "SKU-1", 100m);
+
+        var importResponse = await client.PostAsync("/api/orders/LEG-3001/import", null);
+        Assert.Equal(HttpStatusCode.OK, importResponse.StatusCode);
+
+        var searchResponse = await client.GetAsync("/api/orders/legacy?fromDate=2026-03-23&toDate=2026-03-23&page=1&pageSize=10");
+        Assert.Equal(HttpStatusCode.OK, searchResponse.StatusCode);
+
+        var body = await searchResponse.Content.ReadFromJsonAsync<OrdersEndpoints.SearchLegacyOrdersResponse>();
+        Assert.NotNull(body);
+        Assert.True(body!.IsSuccess);
+        Assert.Equal(2, body.TotalCount);
+        Assert.Equal(1, body.Page);
+        Assert.Equal(10, body.PageSize);
+        Assert.True(body.Items[0].OrderDateUtc >= body.Items[1].OrderDateUtc);
+        Assert.True(body.Items.Single(x => x.LegacyOrderId == "LEG-3001").IsImported);
+        Assert.False(body.Items.Single(x => x.LegacyOrderId == "LEG-3002").IsImported);
+    }
+
+    [Fact]
+    public async Task SearchLegacyOrders_ReturnsBadRequest_ForInvalidRange()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        var response = await client.GetAsync("/api/orders/legacy?fromDate=2026-03-24&toDate=2026-03-23&page=1&pageSize=10");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        var body = await response.Content.ReadFromJsonAsync<OrdersEndpoints.SearchLegacyOrdersResponse>();
+        Assert.NotNull(body);
+        Assert.False(body!.IsSuccess);
+        Assert.Contains("fecha inicial", body.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Import_CreateBilling_AndPrepareFiscalDocument_HappyPath()
     {
         await using var factory = new MvpApiFactory();
@@ -901,11 +960,34 @@ internal sealed class MvpApiFactory : WebApplicationFactory<Program>, IAsyncDisp
 internal sealed class FakeLegacyOrderReader : ILegacyOrderReader
 {
     public Dictionary<string, LegacyOrderReadModel> Orders { get; } = [];
+    public IReadOnlyList<LegacyOrderListItemReadModel> SearchResults { get; set; } = [];
 
     public Task<LegacyOrderReadModel?> GetByIdAsync(string legacyOrderId, CancellationToken cancellationToken = default)
     {
         Orders.TryGetValue(legacyOrderId, out var order);
         return Task.FromResult(order);
+    }
+
+    public Task<LegacyOrderPageReadModel> SearchAsync(LegacyOrderSearchReadModel search, CancellationToken cancellationToken = default)
+    {
+        var filtered = SearchResults
+            .Where(x => x.OrderDateUtc >= search.FromDateUtc && x.OrderDateUtc < search.ToDateUtcExclusive)
+            .OrderByDescending(x => x.OrderDateUtc)
+            .ThenByDescending(x => x.LegacyOrderId)
+            .ToArray();
+
+        var paged = filtered
+            .Skip((search.Page - 1) * search.PageSize)
+            .Take(search.PageSize)
+            .ToArray();
+
+        return Task.FromResult(new LegacyOrderPageReadModel
+        {
+            Items = paged,
+            TotalCount = filtered.Length,
+            Page = search.Page,
+            PageSize = search.PageSize
+        });
     }
 }
 

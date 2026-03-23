@@ -205,6 +205,17 @@ public class ImportLegacyOrderServiceTests
         {
             return Task.FromResult(Result);
         }
+
+        public Task<LegacyOrderPageReadModel> SearchAsync(LegacyOrderSearchReadModel search, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(new LegacyOrderPageReadModel
+            {
+                Items = [],
+                TotalCount = 0,
+                Page = search.Page,
+                PageSize = search.PageSize
+            });
+        }
     }
 
     private sealed class FakeContentHashGenerator : IContentHashGenerator

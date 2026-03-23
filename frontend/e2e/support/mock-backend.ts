@@ -65,6 +65,34 @@ export async function mockHappyPathBackend(page: Page): Promise<void> {
     });
   });
 
+  await page.route('**/api/orders/legacy**', async (route) => {
+    await route.fulfill({
+      json: {
+        isSuccess: true,
+        totalCount: 1,
+        totalPages: 1,
+        page: 1,
+        pageSize: 10,
+        items: [
+          {
+            legacyOrderId: 'LEG-7001',
+            orderDateUtc: new Date().toISOString(),
+            customerName: 'Receiver One',
+            total: 116,
+            legacyOrderType: 'F',
+            isImported: false,
+            salesOrderId: null,
+            billingDocumentId: null,
+            billingDocumentStatus: null,
+            fiscalDocumentId: null,
+            fiscalDocumentStatus: null,
+            importStatus: null
+          }
+        ]
+      }
+    });
+  });
+
   await page.route('**/api/orders/LEG-7001/import', async (route) => {
     await route.fulfill({
       json: {
@@ -103,7 +131,7 @@ export async function mockHappyPathBackend(page: Page): Promise<void> {
         status: 'Draft',
         documentType: 'I',
         currencyCode: 'MXN',
-        total: 100,
+        total: 116,
         createdAtUtc: new Date().toISOString(),
         fiscalDocumentId: null,
         fiscalDocumentStatus: null
@@ -158,8 +186,8 @@ export async function mockHappyPathBackend(page: Page): Promise<void> {
         receiverForeignTaxRegistration: null,
         subtotal: 100,
         discountTotal: 0,
-        taxTotal: 0,
-        total: 100,
+        taxTotal: 16,
+        total: 116,
         items: [
           {
             id: 400,
@@ -172,12 +200,12 @@ export async function mockHappyPathBackend(page: Page): Promise<void> {
             unitPrice: 100,
             discountAmount: 0,
             subtotal: 100,
-            taxTotal: 0,
-            total: 100,
+            taxTotal: 16,
+            total: 116,
             satProductServiceCode: '01010101',
             satUnitCode: 'H87',
             taxObjectCode: '02',
-            vatRate: 0,
+            vatRate: 0.16,
             unitText: 'Pieza'
           }
         ]

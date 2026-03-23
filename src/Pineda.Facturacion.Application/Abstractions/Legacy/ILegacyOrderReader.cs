@@ -5,4 +5,6 @@ namespace Pineda.Facturacion.Application.Abstractions.Legacy;
 public interface ILegacyOrderReader
 {
     Task<LegacyOrderReadModel?> GetByIdAsync(string legacyOrderId, CancellationToken cancellationToken = default);
+
+    Task<LegacyOrderPageReadModel> SearchAsync(LegacyOrderSearchReadModel search, CancellationToken cancellationToken = default);
 }

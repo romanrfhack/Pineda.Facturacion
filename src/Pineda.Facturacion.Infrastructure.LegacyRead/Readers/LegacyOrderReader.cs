@@ -9,6 +9,8 @@ namespace Pineda.Facturacion.Infrastructure.LegacyRead.Readers;
 
 public class LegacyOrderReader : ILegacyOrderReader
 {
+    private static readonly string[] OrderDateColumnCandidates = ["Fecha", "FechaPedido", "FecPedido", "fecha", "fechaPedido"];
+
     private const string HeaderSql = """
         SELECT
             p.noPedido AS LegacyOrderId,
@@ -69,7 +71,18 @@ public class LegacyOrderReader : ILegacyOrderReader
         ORDER BY d.cveArticulo, d.cveMarcaArticulo, d.SuPrecio, d.Cantidad, d.uniMedida;
         """;
 
+    private const string OrderDateColumnSql = """
+        SELECT COLUMN_NAME
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'pedidos'
+          AND COLUMN_NAME IN ('Fecha', 'FechaPedido', 'FecPedido', 'fecha', 'fechaPedido')
+        ORDER BY FIELD(COLUMN_NAME, 'Fecha', 'FechaPedido', 'FecPedido', 'fecha', 'fechaPedido')
+        LIMIT 1;
+        """;
+
     private readonly string _connectionString;
+    private string? _orderDateColumnName;
 
     public LegacyOrderReader(LegacyReadOptions options)
     {
@@ -97,6 +110,27 @@ public class LegacyOrderReader : ILegacyOrderReader
 
         header.Items = await ReadItemsAsync(connection, legacyOrderId, cancellationToken);
         return header;
+    }
+
+    public async Task<LegacyOrderPageReadModel> SearchAsync(LegacyOrderSearchReadModel search, CancellationToken cancellationToken = default)
+    {
+        await using var connection = new MySqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        var orderDateColumn = await ResolveOrderDateColumnAsync(connection, cancellationToken);
+        var countSql = BuildCountSql(orderDateColumn);
+        var listSql = BuildListSql(orderDateColumn);
+
+        var totalCount = await CountAsync(connection, countSql, search, cancellationToken);
+        var items = await ReadPageAsync(connection, listSql, search, cancellationToken);
+
+        return new LegacyOrderPageReadModel
+        {
+            Items = items,
+            TotalCount = totalCount,
+            Page = search.Page,
+            PageSize = search.PageSize
+        };
     }
 
     private static async Task<LegacyOrderReadModel?> ReadHeaderAsync(
@@ -173,6 +207,113 @@ public class LegacyOrderReader : ILegacyOrderReader
         return items;
     }
 
+    private async Task<string> ResolveOrderDateColumnAsync(MySqlConnection connection, CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(_orderDateColumnName))
+        {
+            return _orderDateColumnName;
+        }
+
+        await using var command = new MySqlCommand(OrderDateColumnSql, connection);
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        var columnName = Convert.ToString(result, CultureInfo.InvariantCulture);
+
+        if (string.IsNullOrWhiteSpace(columnName))
+        {
+            throw new InvalidOperationException("No supported legacy order date column was found in table 'pedidos'.");
+        }
+
+        _orderDateColumnName = columnName;
+        return columnName;
+    }
+
+    private static string BuildCountSql(string orderDateColumn)
+    {
+        return $"""
+            SELECT COUNT(*)
+            FROM pedidos p
+            INNER JOIN clientes c
+                ON p.noCliente = c.noCliente
+            WHERE p.{orderDateColumn} >= @fromDateUtc
+              AND p.{orderDateColumn} < @toDateUtcExclusive
+              AND p.noCliente <> 0
+              AND p.MontoPedido <> 0.00
+              AND p.refPedido IS NOT NULL;
+            """;
+    }
+
+    private static string BuildListSql(string orderDateColumn)
+    {
+        return $"""
+            SELECT
+                p.noPedido AS LegacyOrderId,
+                p.{orderDateColumn} AS OrderDateUtc,
+                p.TipoPedido AS LegacyOrderType,
+                COALESCE(
+                    NULLIF(TRIM(c.XRazonSocial), ''),
+                    NULLIF(TRIM(CONCAT_WS(' ', NULLIF(c.Nombre, ''), NULLIF(c.Paterno, ''), NULLIF(c.Materno, ''))), ''),
+                    NULLIF(TRIM(c.Cliente), ''),
+                    CONCAT('Cliente ', p.noCliente)
+                ) AS CustomerName,
+                p.MontoPedido AS Total
+            FROM pedidos p
+            INNER JOIN clientes c
+                ON p.noCliente = c.noCliente
+            WHERE p.{orderDateColumn} >= @fromDateUtc
+              AND p.{orderDateColumn} < @toDateUtcExclusive
+              AND p.noCliente <> 0
+              AND p.MontoPedido <> 0.00
+              AND p.refPedido IS NOT NULL
+            ORDER BY p.{orderDateColumn} DESC, p.noPedido DESC
+            LIMIT @skip, @take;
+            """;
+    }
+
+    private static async Task<int> CountAsync(
+        MySqlConnection connection,
+        string sql,
+        LegacyOrderSearchReadModel search,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new MySqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@fromDateUtc", search.FromDateUtc);
+        command.Parameters.AddWithValue("@toDateUtcExclusive", search.ToDateUtcExclusive);
+
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return Convert.ToInt32(result, CultureInfo.InvariantCulture);
+    }
+
+    private static async Task<IReadOnlyList<LegacyOrderListItemReadModel>> ReadPageAsync(
+        MySqlConnection connection,
+        string sql,
+        LegacyOrderSearchReadModel search,
+        CancellationToken cancellationToken)
+    {
+        var items = new List<LegacyOrderListItemReadModel>();
+
+        await using var command = new MySqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@fromDateUtc", search.FromDateUtc);
+        command.Parameters.AddWithValue("@toDateUtcExclusive", search.ToDateUtcExclusive);
+        command.Parameters.AddWithValue("@skip", (search.Page - 1) * search.PageSize);
+        command.Parameters.AddWithValue("@take", search.PageSize);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            items.Add(new LegacyOrderListItemReadModel
+            {
+                LegacyOrderId = GetRequiredString(reader, "LegacyOrderId"),
+                OrderDateUtc = GetRequiredDateTime(reader, "OrderDateUtc"),
+                CustomerName = GetRequiredString(reader, "CustomerName"),
+                Total = GetRequiredDecimal(reader, "Total"),
+                LegacyOrderType = GetNullableString(reader, "LegacyOrderType")
+            });
+        }
+
+        return items;
+    }
+
     private static string GetRequiredString(MySqlDataReader reader, string columnName)
     {
         var value = GetStringValue(reader, columnName);
@@ -214,6 +355,19 @@ public class LegacyOrderReader : ILegacyOrderReader
 
         var value = reader.GetValue(ordinal);
         return Convert.ToDecimal(value, CultureInfo.InvariantCulture);
+    }
+
+    private static DateTime GetRequiredDateTime(MySqlDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+
+        if (reader.IsDBNull(ordinal))
+        {
+            throw new InvalidOperationException($"Column '{columnName}' returned null, but a date/time value was required.");
+        }
+
+        var value = reader.GetValue(ordinal);
+        return Convert.ToDateTime(value, CultureInfo.InvariantCulture);
     }
 
     private static string BuildDescription(string? articleName, string? articleSpecification)

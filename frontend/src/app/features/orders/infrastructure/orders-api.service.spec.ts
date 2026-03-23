@@ -20,4 +20,26 @@ describe('OrdersApiService', () => {
     expect(req.request.method).toBe('POST');
     httpTesting.verify();
   });
+
+  it('queries the paged legacy orders endpoint', () => {
+    const service = TestBed.inject(OrdersApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.searchLegacyOrders({
+      fromDate: '2026-03-23',
+      toDate: '2026-03-23',
+      page: 1,
+      pageSize: 10
+    }).subscribe();
+
+    const req = httpTesting.expectOne((request) =>
+      request.url === '/api/orders/legacy'
+      && request.params.get('fromDate') === '2026-03-23'
+      && request.params.get('toDate') === '2026-03-23'
+      && request.params.get('page') === '1'
+      && request.params.get('pageSize') === '10');
+
+    expect(req.request.method).toBe('GET');
+    httpTesting.verify();
+  });
 });
