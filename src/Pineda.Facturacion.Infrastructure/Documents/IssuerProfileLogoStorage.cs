@@ -10,8 +10,7 @@ public sealed class IssuerProfileLogoStorage : IIssuerProfileLogoStorage
     private static readonly IReadOnlyDictionary<string, FileSignature> SupportedFormats = new Dictionary<string, FileSignature>(StringComparer.OrdinalIgnoreCase)
     {
         ["image/png"] = new(".png", [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
-        ["image/jpeg"] = new(".jpg", [0xFF, 0xD8, 0xFF]),
-        ["image/webp"] = new(".webp", [0x52, 0x49, 0x46, 0x46])
+        ["image/jpeg"] = new(".jpg", [0xFF, 0xD8, 0xFF])
     };
 
     private readonly string _rootPath;
@@ -58,7 +57,7 @@ public sealed class IssuerProfileLogoStorage : IIssuerProfileLogoStorage
         var detectedFormat = DetectFormat(content);
         if (detectedFormat is null)
         {
-            return Failure("Solo se permiten imágenes PNG, JPG, JPEG o WEBP válidas.");
+            return Failure("Solo se permiten imágenes PNG, JPG o JPEG válidas.");
         }
 
         if (!string.IsNullOrWhiteSpace(declaredContentType)
@@ -133,26 +132,8 @@ public sealed class IssuerProfileLogoStorage : IIssuerProfileLogoStorage
 
     private static DetectedFormat? DetectFormat(byte[] content)
     {
-        if (content.Length >= 12
-            && content[0] == 0x52
-            && content[1] == 0x49
-            && content[2] == 0x46
-            && content[3] == 0x46
-            && content[8] == 0x57
-            && content[9] == 0x45
-            && content[10] == 0x42
-            && content[11] == 0x50)
-        {
-            return new DetectedFormat(".webp", "image/webp");
-        }
-
         foreach (var supported in SupportedFormats)
         {
-            if (supported.Key.Equals("image/webp", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
             if (content.AsSpan().StartsWith(supported.Value.Signature))
             {
                 return new DetectedFormat(supported.Value.Extension, supported.Key);

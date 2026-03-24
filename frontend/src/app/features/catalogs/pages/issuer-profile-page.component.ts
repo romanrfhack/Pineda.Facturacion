@@ -8,7 +8,7 @@ import { IssuerProfileApiService } from '../infrastructure/issuer-profile-api.se
 import { IssuerProfile, UpsertIssuerProfileRequest } from '../models/catalogs.models';
 
 const MAX_LOGO_FILE_SIZE_BYTES = 1_048_576;
-const ALLOWED_LOGO_CONTENT_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
+const ALLOWED_LOGO_CONTENT_TYPES = new Set(['image/png', 'image/jpeg']);
 
 @Component({
   selector: 'app-issuer-profile-page',
@@ -49,7 +49,7 @@ const ALLOWED_LOGO_CONTENT_TYPES = new Set(['image/png', 'image/jpeg', 'image/we
             <section class="logo-card">
               <div class="logo-copy">
                 <span class="logo-title">Logotipo del emisor</span>
-                <p class="helper">Formatos permitidos: PNG, JPG, JPEG o WEBP. Tamaño máximo: 1 MB.</p>
+                <p class="helper">Formatos permitidos: PNG, JPG o JPEG. Tamaño máximo: 1 MB.</p>
                 @if (removeLogoRequested()) {
                   <p class="helper">El logotipo se eliminará al guardar el perfil.</p>
                 } @else if (logoFileName()) {
@@ -71,7 +71,7 @@ const ALLOWED_LOGO_CONTENT_TYPES = new Set(['image/png', 'image/jpeg', 'image/we
                 <label class="file-button" [class.disabled]="saving() || readOnly()">
                   <input
                     type="file"
-                    accept="image/png,image/jpeg,image/webp"
+                    accept="image/png,image/jpeg"
                     [disabled]="saving() || readOnly()"
                     (change)="onLogoSelected($event)" />
                   <span>{{ hasLogoConfigured() ? 'Reemplazar logotipo' : 'Subir logotipo' }}</span>
@@ -371,7 +371,7 @@ export class IssuerProfilePageComponent implements OnDestroy {
 
 function validateLogoFile(file: File): string | null {
   if (!ALLOWED_LOGO_CONTENT_TYPES.has(file.type)) {
-    return 'Solo se permiten imágenes PNG, JPG, JPEG o WEBP.';
+    return 'Solo se permiten imágenes PNG, JPG o JPEG.';
   }
 
   if (file.size <= 0) {

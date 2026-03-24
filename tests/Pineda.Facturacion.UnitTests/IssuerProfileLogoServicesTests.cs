@@ -66,6 +66,24 @@ public class IssuerProfileLogoServicesTests
     }
 
     [Fact]
+    public async Task UploadIssuerProfileLogo_Rejects_Webp_Format()
+    {
+        var service = new UploadIssuerProfileLogoService(
+            new FakeIssuerProfileRepository { Existing = CreateIssuerProfile() },
+            CreateStorage(CreateTempPath()),
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(
+            4,
+            "logo.webp",
+            "image/webp",
+            [0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50]);
+
+        Assert.Equal(UploadIssuerProfileLogoOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("PNG", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task UploadIssuerProfileLogo_Rejects_Images_That_Exceed_Max_Size()
     {
         var storage = new IssuerProfileLogoStorage(

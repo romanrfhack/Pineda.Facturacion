@@ -35,7 +35,7 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
         var document = XDocument.Parse(fiscalStamp.XmlContent, LoadOptions.PreserveWhitespace);
         var model = PdfViewModel.Create(fiscalDocument, fiscalStamp, document);
         var logo = await TryLoadIssuerLogoAsync(fiscalDocument.IssuerProfileId, cancellationToken);
-        return FiscalPdfDocument.Create(model, logo);
+        return FiscalPdfDocument.Create(model, logo, TryBuildQrAsset(model.QrPayload));
     }
 
     private async Task<PdfImageAsset?> TryLoadIssuerLogoAsync(long issuerProfileId, CancellationToken cancellationToken)
@@ -67,6 +67,37 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
         }
     }
 
+    private static PdfImageAsset? TryBuildQrAsset(string? payload)
+    {
+        var qr = SimpleQrCodeGenerator.TryEncode(payload ?? string.Empty);
+        if (qr is null)
+        {
+            return null;
+        }
+
+        const int quietZoneModules = 4;
+        const int pixelsPerModule = 4;
+        var imageSize = (qr.Size + (quietZoneModules * 2)) * pixelsPerModule;
+        var rgb = new byte[imageSize * imageSize * 3];
+
+        for (var y = 0; y < imageSize; y++)
+        {
+            for (var x = 0; x < imageSize; x++)
+            {
+                var moduleX = (x / pixelsPerModule) - quietZoneModules;
+                var moduleY = (y / pixelsPerModule) - quietZoneModules;
+                var dark = qr.GetModule(moduleX, moduleY);
+                var value = dark ? (byte)0 : (byte)255;
+                var offset = (y * imageSize + x) * 3;
+                rgb[offset] = value;
+                rgb[offset + 1] = value;
+                rgb[offset + 2] = value;
+            }
+        }
+
+        return PdfImageAsset.CreateRgb(imageSize, imageSize, rgb);
+    }
+
     private sealed class PdfViewModel
     {
         public required string DocumentTitle { get; init; }
@@ -91,6 +122,7 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
         public required string Taxes { get; init; }
         public required string Total { get; init; }
         public required string? Qr { get; init; }
+        public required string? QrPayload { get; init; }
         public required string? OriginalString { get; init; }
         public required string? SatCertificate { get; init; }
         public required IReadOnlyList<PdfConceptRow> Concepts { get; init; }
@@ -126,13 +158,42 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
                 Discount = GetAttribute(comprobante, "Descuento") ?? fiscalDocument.DiscountTotal.ToString("0.00", CultureInfo.InvariantCulture),
                 Taxes = ResolveTransferredTaxes(document, fiscalDocument).ToString("0.00", CultureInfo.InvariantCulture),
                 Total = GetAttribute(comprobante, "Total") ?? fiscalDocument.Total.ToString("0.00", CultureInfo.InvariantCulture),
-                Qr = fiscalStamp.QrCodeTextOrUrl,
+                Qr = ResolveQrText(fiscalStamp, comprobante, timbre, emisor, receptor),
+                QrPayload = ResolveQrPayload(fiscalStamp, comprobante, timbre, emisor, receptor),
                 OriginalString = fiscalStamp.OriginalString,
                 SatCertificate = GetAttribute(timbre, "NoCertificadoSAT"),
                 Concepts = conceptos.Count == 0
                     ? [new PdfConceptRow("N/D", "N/D", "No se encontraron conceptos en el XML timbrado.", "0", "0")]
                     : conceptos.Select(MapConcept).ToArray()
             };
+        }
+
+        private static string? ResolveQrText(FiscalStamp fiscalStamp, XElement? comprobante, XElement? timbre, XElement? emisor, XElement? receptor)
+            => fiscalStamp.QrCodeTextOrUrl ?? ResolveQrPayload(fiscalStamp, comprobante, timbre, emisor, receptor);
+
+        private static string? ResolveQrPayload(FiscalStamp fiscalStamp, XElement? comprobante, XElement? timbre, XElement? emisor, XElement? receptor)
+        {
+            if (!string.IsNullOrWhiteSpace(fiscalStamp.QrCodeTextOrUrl))
+            {
+                return fiscalStamp.QrCodeTextOrUrl.Trim();
+            }
+
+            var uuid = GetAttribute(timbre, "UUID");
+            var issuerRfc = GetAttribute(emisor, "Rfc");
+            var receiverRfc = GetAttribute(receptor, "Rfc");
+            var total = GetAttribute(comprobante, "Total");
+            var sello = GetAttribute(comprobante, "Sello");
+            if (string.IsNullOrWhiteSpace(uuid)
+                || string.IsNullOrWhiteSpace(issuerRfc)
+                || string.IsNullOrWhiteSpace(receiverRfc)
+                || string.IsNullOrWhiteSpace(total)
+                || string.IsNullOrWhiteSpace(sello)
+                || sello.Length < 8)
+            {
+                return null;
+            }
+
+            return $"https://verificacfdi.facturaelectronica.sat.gob.mx/default.aspx?id={Uri.EscapeDataString(uuid)}&re={Uri.EscapeDataString(issuerRfc)}&rr={Uri.EscapeDataString(receiverRfc)}&tt={Uri.EscapeDataString(total)}&fe={Uri.EscapeDataString(sello[^8..])}";
         }
 
         private static PdfConceptRow MapConcept(XElement concept)
@@ -184,19 +245,19 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
         private readonly PdfPageBuilder _page = new(PageWidth, PageHeight);
         private float _cursorY = PageHeight - Margin;
 
-        public static byte[] Create(PdfViewModel model, PdfImageAsset? logo)
+        public static byte[] Create(PdfViewModel model, PdfImageAsset? logo, PdfImageAsset? qr)
         {
-            return new FiscalPdfDocument().Build(model, logo);
+            return new FiscalPdfDocument().Build(model, logo, qr);
         }
 
-        private byte[] Build(PdfViewModel model, PdfImageAsset? logo)
+        private byte[] Build(PdfViewModel model, PdfImageAsset? logo, PdfImageAsset? qr)
         {
             DrawHeader(model, logo);
             DrawPartySection("Emisor", model.IssuerName, model.IssuerRfc, model.IssuerRegime, model.PlaceOfIssue, Margin, 250f);
             DrawPartySection("Receptor", model.ReceiverName, model.ReceiverRfc, model.ReceiverRegime, $"Uso CFDI: {model.ReceiverUse} | C.P.: {model.ReceiverPostalCode}", Margin + 262f, 270f);
             DrawConceptTable(model.Concepts);
             DrawTotals(model);
-            DrawTimbre(model);
+            DrawTimbre(model, qr);
             return _page.Build();
         }
 
@@ -341,27 +402,40 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
             _cursorY = summaryY - 92f - SectionGap;
         }
 
-        private void DrawTimbre(PdfViewModel model)
+        private void DrawTimbre(PdfViewModel model, PdfImageAsset? qr)
         {
-            var sectionHeight = 124f;
+            var sectionHeight = 140f;
             _page.FillRectangle(Margin, _cursorY - sectionHeight, PageWidth - (Margin * 2), sectionHeight, PdfColor.White);
             _page.StrokeRectangle(Margin, _cursorY - sectionHeight, PageWidth - (Margin * 2), sectionHeight, new PdfColor(218, 213, 204), 0.8f);
             _page.FillRectangle(Margin, _cursorY - 20f, PageWidth - (Margin * 2), 20f, new PdfColor(238, 235, 228));
             _page.DrawText("Datos del timbre y representación digital", Margin + 10f, _cursorY - 14f, 10f, PdfFont.Bold, new PdfColor(22, 30, 42));
 
-            _page.DrawText($"UUID: {model.Uuid}", Margin + 10f, _cursorY - 38f, 9.5f, PdfFont.Regular, new PdfColor(76, 84, 96));
-            _page.DrawText($"Fecha de timbrado: {model.StampedAt}", Margin + 10f, _cursorY - 52f, 9.5f, PdfFont.Regular, new PdfColor(76, 84, 96));
+            const float qrBoxSize = 92f;
+            var qrBoxX = Margin + 10f;
+            var qrBoxY = _cursorY - 118f;
+            var detailsX = qr is null ? Margin + 10f : qrBoxX + qrBoxSize + 18f;
+
+            if (qr is not null)
+            {
+                _page.FillRectangle(qrBoxX, qrBoxY, qrBoxSize, qrBoxSize, PdfColor.White);
+                _page.StrokeRectangle(qrBoxX, qrBoxY, qrBoxSize, qrBoxSize, new PdfColor(218, 213, 204), 0.8f);
+                _page.DrawImage(qr, qrBoxX + 6f, qrBoxY + 6f, qrBoxSize - 12f, qrBoxSize - 12f);
+            }
+
+            _page.DrawText($"UUID: {model.Uuid}", detailsX, _cursorY - 38f, 9.5f, PdfFont.Regular, new PdfColor(76, 84, 96));
+            _page.DrawText($"Fecha de timbrado: {model.StampedAt}", detailsX, _cursorY - 52f, 9.5f, PdfFont.Regular, new PdfColor(76, 84, 96));
             if (!string.IsNullOrWhiteSpace(model.SatCertificate))
             {
-                _page.DrawText($"No. certificado SAT: {model.SatCertificate}", Margin + 10f, _cursorY - 66f, 9.5f, PdfFont.Regular, new PdfColor(76, 84, 96));
+                _page.DrawText($"No. certificado SAT: {model.SatCertificate}", detailsX, _cursorY - 66f, 9.5f, PdfFont.Regular, new PdfColor(76, 84, 96));
             }
 
             if (!string.IsNullOrWhiteSpace(model.Qr))
             {
-                _page.DrawText("Consulta SAT / QR:", Margin + 10f, _cursorY - 84f, 9f, PdfFont.Bold, new PdfColor(22, 30, 42));
-                foreach (var line in WrapText(model.Qr!, 72).Take(2))
+                _page.DrawText("Consulta SAT / QR:", detailsX, _cursorY - 84f, 9f, PdfFont.Bold, new PdfColor(22, 30, 42));
+                var qrLines = WrapText(model.Qr!, qr is null ? 72 : 34).Take(2).ToArray();
+                for (var index = 0; index < qrLines.Length; index++)
                 {
-                    _page.DrawText(line, Margin + 10f, _cursorY - 96f - (Array.IndexOf(WrapText(model.Qr!, 72).Take(2).ToArray(), line) * 10f), 8f, PdfFont.Regular, new PdfColor(76, 84, 96));
+                    _page.DrawText(qrLines[index], detailsX, _cursorY - 96f - (index * 10f), 8f, PdfFont.Regular, new PdfColor(76, 84, 96));
                 }
             }
 
@@ -580,6 +654,24 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
             }
 
             return null;
+        }
+
+        public static PdfImageAsset CreateRgb(int width, int height, byte[] rgbData)
+        {
+            using var output = new MemoryStream();
+            using (var flate = new ZLibStream(output, CompressionLevel.SmallestSize, leaveOpen: true))
+            {
+                flate.Write(rgbData, 0, rgbData.Length);
+            }
+
+            return new PdfImageAsset
+            {
+                Width = width,
+                Height = height,
+                Filter = "FlateDecode",
+                ColorSpace = "DeviceRGB",
+                Data = output.ToArray()
+            };
         }
 
         public PdfObject BuildObject(int id)

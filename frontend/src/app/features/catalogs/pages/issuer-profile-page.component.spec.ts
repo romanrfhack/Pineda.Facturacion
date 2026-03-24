@@ -81,7 +81,7 @@ describe('IssuerProfilePageComponent', () => {
     fixture.componentInstance['onLogoSelected']({ target: { files: [invalidFile], value: '' } } as unknown as Event);
     fixture.detectChanges();
 
-    expect(fixture.componentInstance['logoError']()).toContain('Solo se permiten imágenes PNG, JPG, JPEG o WEBP');
+    expect(fixture.componentInstance['logoError']()).toContain('Solo se permiten imágenes PNG, JPG o JPEG');
   });
 
   it('updates the issuer profile and uploads a replacement logo', async () => {

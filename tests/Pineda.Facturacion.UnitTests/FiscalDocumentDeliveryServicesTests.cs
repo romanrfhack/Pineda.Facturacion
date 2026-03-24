@@ -111,7 +111,8 @@ public class FiscalDocumentDeliveryServicesTests
         Assert.StartsWith("%PDF-1.4", pdfText, StringComparison.Ordinal);
         Assert.Contains("Representacion impresa del CFDI", pdfText, StringComparison.Ordinal);
         Assert.Contains("Datos del timbre y representacion digital", pdfText, StringComparison.Ordinal);
-        Assert.Contains("/Subtype /Image", pdfText, StringComparison.Ordinal);
+        Assert.Equal(2, CountOccurrences(pdfText, "/Subtype /Image"));
+        Assert.Contains("Consulta SAT / QR:", pdfText, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -125,8 +126,41 @@ public class FiscalDocumentDeliveryServicesTests
         var pdfText = System.Text.Encoding.ASCII.GetString(bytes);
 
         Assert.StartsWith("%PDF-1.4", pdfText, StringComparison.Ordinal);
-        Assert.DoesNotContain("/Subtype /Image", pdfText, StringComparison.Ordinal);
+        Assert.Equal(1, CountOccurrences(pdfText, "/Subtype /Image"));
         Assert.Contains("CFDI", pdfText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task FiscalDocumentPdfRenderer_Still_Generates_When_Qr_Cannot_Be_Built()
+    {
+        var renderer = new FiscalDocumentPdfRenderer(
+            new FakeIssuerProfileRepository { Existing = new IssuerProfile { Id = 1, LogoStoragePath = "missing/logo.png" } },
+            new FakeIssuerProfileLogoStorage());
+
+        var bytes = await renderer.RenderAsync(
+            CreateFiscalDocument(),
+            CreateFiscalStamp(
+                xmlContent: """
+                    <?xml version="1.0" encoding="utf-8"?>
+                    <cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" Version="4.0" Serie="A" Folio="8" Fecha="2026-03-24T06:00:00" SubTotal="100.00" Total="116.00" Moneda="MXN" MetodoPago="PUE" FormaPago="03" LugarExpedicion="01000">
+                      <cfdi:Emisor Rfc="AAA010101AAA" Nombre="Emisor SA" RegimenFiscal="601" />
+                      <cfdi:Receptor Rfc="BBB010101BBB" Nombre="Cliente SA" UsoCFDI="G03" RegimenFiscalReceptor="601" DomicilioFiscalReceptor="02000" />
+                      <cfdi:Conceptos>
+                        <cfdi:Concepto ClaveProdServ="01010101" Cantidad="1" ClaveUnidad="H87" Descripcion="Producto" ValorUnitario="100.00" Importe="100.00" ObjetoImp="02" />
+                      </cfdi:Conceptos>
+                      <cfdi:Complemento>
+                        <tfd:TimbreFiscalDigital UUID="4cb4eed3-3d93-4938-8872-028106881e4c" FechaTimbrado="2026-03-24T06:05:59" NoCertificadoSAT="00001000000500001234" Version="1.1" />
+                      </cfdi:Complemento>
+                    </cfdi:Comprobante>
+                    """,
+                uuid: "4cb4eed3-3d93-4938-8872-028106881e4c",
+                qrCodeTextOrUrl: null));
+
+        var pdfText = System.Text.Encoding.ASCII.GetString(bytes);
+
+        Assert.StartsWith("%PDF-1.4", pdfText, StringComparison.Ordinal);
+        Assert.Equal(0, CountOccurrences(pdfText, "/Subtype /Image"));
+        Assert.DoesNotContain("Consulta SAT / QR:", pdfText, StringComparison.Ordinal);
     }
 
     private static FiscalDocument CreateFiscalDocument()
@@ -164,7 +198,7 @@ public class FiscalDocumentDeliveryServicesTests
         FiscalStampStatus status = FiscalStampStatus.Succeeded,
         string? xmlContent = """
             <?xml version="1.0" encoding="utf-8"?>
-            <cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" Version="4.0" Serie="A" Folio="8" Fecha="2026-03-24T06:00:00" SubTotal="100.00" Total="116.00" Moneda="MXN" MetodoPago="PUE" FormaPago="03" LugarExpedicion="01000">
+            <cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" Version="4.0" Serie="A" Folio="8" Fecha="2026-03-24T06:00:00" SubTotal="100.00" Total="116.00" Moneda="MXN" MetodoPago="PUE" FormaPago="03" LugarExpedicion="01000" Sello="SE1234567890ABCDEF1234567890ABCDEF">
               <cfdi:Emisor Rfc="AAA010101AAA" Nombre="Emisor SA" RegimenFiscal="601" />
               <cfdi:Receptor Rfc="BBB010101BBB" Nombre="Cliente SA" UsoCFDI="G03" RegimenFiscalReceptor="601" DomicilioFiscalReceptor="02000" />
               <cfdi:Conceptos>
@@ -176,7 +210,8 @@ public class FiscalDocumentDeliveryServicesTests
               </cfdi:Complemento>
             </cfdi:Comprobante>
             """,
-        string? uuid = "4cb4eed3-3d93-4938-8872-028106881e4c")
+        string? uuid = "4cb4eed3-3d93-4938-8872-028106881e4c",
+        string? qrCodeTextOrUrl = "https://sat.example/qr")
     {
         return new FiscalStamp
         {
@@ -188,8 +223,21 @@ public class FiscalDocumentDeliveryServicesTests
             Uuid = uuid,
             StampedAtUtc = new DateTime(2026, 3, 24, 12, 5, 59, DateTimeKind.Utc),
             XmlContent = xmlContent,
-            QrCodeTextOrUrl = "https://sat.example/qr"
+            QrCodeTextOrUrl = qrCodeTextOrUrl
         };
+    }
+
+    private static int CountOccurrences(string text, string value)
+    {
+        var count = 0;
+        var index = 0;
+        while ((index = text.IndexOf(value, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += value.Length;
+        }
+
+        return count;
     }
 
     private sealed class FakeFiscalDocumentRepository : IFiscalDocumentRepository

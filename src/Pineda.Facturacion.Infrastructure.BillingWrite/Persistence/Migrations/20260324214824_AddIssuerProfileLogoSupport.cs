@@ -5,8 +5,10 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
 {
+    /// <inheritdoc />
     public partial class AddIssuerProfileLogoSupport : Migration
     {
+        /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.AddColumn<string>(
@@ -40,6 +42,7 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
                 nullable: true);
         }
 
+        /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropColumn(
