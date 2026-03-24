@@ -111,6 +111,7 @@ public class FiscalDocumentDeliveryServicesTests
         Assert.StartsWith("%PDF-1.4", pdfText, StringComparison.Ordinal);
         Assert.Contains("Representacion impresa del CFDI", pdfText, StringComparison.Ordinal);
         Assert.Contains("Datos del timbre y representacion digital", pdfText, StringComparison.Ordinal);
+        Assert.Contains("CIENTO DIECISEIS PESOS 00/100 M.N.", pdfText, StringComparison.Ordinal);
         Assert.Equal(2, CountOccurrences(pdfText, "/Subtype /Image"));
         Assert.Contains("Consulta SAT / QR:", pdfText, StringComparison.Ordinal);
     }
@@ -161,6 +162,42 @@ public class FiscalDocumentDeliveryServicesTests
         Assert.StartsWith("%PDF-1.4", pdfText, StringComparison.Ordinal);
         Assert.Equal(0, CountOccurrences(pdfText, "/Subtype /Image"));
         Assert.DoesNotContain("Consulta SAT / QR:", pdfText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task FiscalDocumentPdfRenderer_Renders_Multiple_Concepts_In_Table()
+    {
+        var renderer = new FiscalDocumentPdfRenderer(new FakeIssuerProfileRepository(), new FakeIssuerProfileLogoStorage());
+        var bytes = await renderer.RenderAsync(
+            CreateFiscalDocument(),
+            CreateFiscalStamp(
+                xmlContent: """
+                    <?xml version="1.0" encoding="utf-8"?>
+                    <cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" Version="4.0" Serie="A" Folio="8" Fecha="2026-03-24T06:00:00" SubTotal="100.00" Total="116.00" Moneda="MXN" MetodoPago="PUE" FormaPago="03" LugarExpedicion="01000" Sello="SE1234567890ABCDEF1234567890ABCDEF" NoCertificado="30001000000500003416">
+                      <cfdi:Emisor Rfc="AAA010101AAA" Nombre="Emisor SA" RegimenFiscal="601" />
+                      <cfdi:Receptor Rfc="BBB010101BBB" Nombre="Cliente SA" UsoCFDI="G03" RegimenFiscalReceptor="601" DomicilioFiscalReceptor="02000" />
+                      <cfdi:Conceptos>
+                        <cfdi:Concepto ClaveProdServ="01010101" NoIdentificacion="SKU-1" Cantidad="1" ClaveUnidad="H87" Unidad="PIEZA" Descripcion="Producto uno muy importante" ValorUnitario="40.00" Importe="40.00" ObjetoImp="02" />
+                        <cfdi:Concepto ClaveProdServ="01010102" NoIdentificacion="SKU-2" Cantidad="2" ClaveUnidad="H87" Unidad="PIEZA" Descripcion="Producto dos de prueba" ValorUnitario="30.00" Importe="60.00" ObjetoImp="02" />
+                      </cfdi:Conceptos>
+                      <cfdi:Impuestos TotalImpuestosTrasladados="16.00">
+                        <cfdi:Traslados>
+                          <cfdi:Traslado Base="100.00" Impuesto="002" TipoFactor="Tasa" TasaOCuota="0.160000" Importe="16.00" />
+                        </cfdi:Traslados>
+                      </cfdi:Impuestos>
+                      <cfdi:Complemento>
+                        <tfd:TimbreFiscalDigital UUID="4cb4eed3-3d93-4938-8872-028106881e4c" FechaTimbrado="2026-03-24T06:05:59" NoCertificadoSAT="00001000000500001234" SelloSAT="SELLOSAT1234567890" Version="1.1" />
+                      </cfdi:Complemento>
+                    </cfdi:Comprobante>
+                    """));
+
+        var pdfText = System.Text.Encoding.ASCII.GetString(bytes);
+
+        Assert.Contains("Producto uno muy importante", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Producto dos de prueba", pdfText, StringComparison.Ordinal);
+        Assert.Contains("SKU-1", pdfText, StringComparison.Ordinal);
+        Assert.Contains("SKU-2", pdfText, StringComparison.Ordinal);
+        Assert.Contains("002 Tasa 0.160000: 16.00", pdfText, StringComparison.Ordinal);
     }
 
     private static FiscalDocument CreateFiscalDocument()
