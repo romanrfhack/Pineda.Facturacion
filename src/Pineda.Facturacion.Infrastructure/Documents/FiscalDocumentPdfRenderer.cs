@@ -1,14 +1,28 @@
 using System.Globalization;
+using System.IO.Compression;
 using System.Text;
 using System.Xml.Linq;
 using Pineda.Facturacion.Application.Abstractions.Documents;
+using Pineda.Facturacion.Application.Abstractions.Persistence;
+using Pineda.Facturacion.Application.Abstractions.Storage;
 using Pineda.Facturacion.Domain.Entities;
 
 namespace Pineda.Facturacion.Infrastructure.Documents;
 
-public class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
+public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
 {
-    public byte[] Render(FiscalDocument fiscalDocument, FiscalStamp fiscalStamp)
+    private readonly IIssuerProfileRepository _issuerProfileRepository;
+    private readonly IIssuerProfileLogoStorage _logoStorage;
+
+    public FiscalDocumentPdfRenderer(
+        IIssuerProfileRepository issuerProfileRepository,
+        IIssuerProfileLogoStorage logoStorage)
+    {
+        _issuerProfileRepository = issuerProfileRepository;
+        _logoStorage = logoStorage;
+    }
+
+    public async Task<byte[]> RenderAsync(FiscalDocument fiscalDocument, FiscalStamp fiscalStamp, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(fiscalDocument);
         ArgumentNullException.ThrowIfNull(fiscalStamp);
@@ -18,88 +32,121 @@ public class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
             throw new InvalidOperationException("Stamped XML is required to build the final CFDI PDF.");
         }
 
-        var lines = BuildLines(fiscalDocument, fiscalStamp, XDocument.Parse(fiscalStamp.XmlContent, LoadOptions.PreserveWhitespace));
-        return SimplePdfDocument.Create(lines);
+        var document = XDocument.Parse(fiscalStamp.XmlContent, LoadOptions.PreserveWhitespace);
+        var model = PdfViewModel.Create(fiscalDocument, fiscalStamp, document);
+        var logo = await TryLoadIssuerLogoAsync(fiscalDocument.IssuerProfileId, cancellationToken);
+        return FiscalPdfDocument.Create(model, logo);
     }
 
-    private static IReadOnlyList<string> BuildLines(FiscalDocument fiscalDocument, FiscalStamp fiscalStamp, XDocument document)
+    private async Task<PdfImageAsset?> TryLoadIssuerLogoAsync(long issuerProfileId, CancellationToken cancellationToken)
     {
-        var comprobante = document.Descendants().FirstOrDefault(static node => node.Name.LocalName == "Comprobante");
-        var emisor = document.Descendants().FirstOrDefault(static node => node.Name.LocalName == "Emisor");
-        var receptor = document.Descendants().FirstOrDefault(static node => node.Name.LocalName == "Receptor");
-        var timbre = document.Descendants().FirstOrDefault(static node => node.Name.LocalName == "TimbreFiscalDigital");
-        var conceptos = document.Descendants().Where(static node => node.Name.LocalName == "Concepto").ToList();
-
-        var lines = new List<string>
+        if (issuerProfileId <= 0)
         {
-            "Representacion impresa del CFDI",
-            string.Empty,
-            $"UUID: {GetAttribute(timbre, "UUID") ?? fiscalStamp.Uuid ?? "N/D"}",
-            $"Serie/Folio: {CombineDocumentNumber(GetAttribute(comprobante, "Serie"), GetAttribute(comprobante, "Folio"))}",
-            $"Fecha de emision: {GetAttribute(comprobante, "Fecha") ?? FormatUtc(fiscalDocument.IssuedAtUtc)}",
-            $"Fecha de timbrado: {GetAttribute(timbre, "FechaTimbrado") ?? FormatUtc(fiscalStamp.StampedAtUtc)}",
-            $"Metodo de pago: {GetAttribute(comprobante, "MetodoPago") ?? fiscalDocument.PaymentMethodSat}",
-            $"Forma de pago: {GetAttribute(comprobante, "FormaPago") ?? fiscalDocument.PaymentFormSat}",
-            $"Moneda: {GetAttribute(comprobante, "Moneda") ?? fiscalDocument.CurrencyCode}",
-            $"Lugar de expedicion: {GetAttribute(comprobante, "LugarExpedicion") ?? fiscalDocument.IssuerPostalCode}",
-            string.Empty,
-            "Emisor",
-            $"RFC: {GetAttribute(emisor, "Rfc") ?? fiscalDocument.IssuerRfc}",
-            $"Nombre: {GetAttribute(emisor, "Nombre") ?? fiscalDocument.IssuerLegalName}",
-            $"Regimen fiscal: {GetAttribute(emisor, "RegimenFiscal") ?? fiscalDocument.IssuerFiscalRegimeCode}",
-            string.Empty,
-            "Receptor",
-            $"RFC: {GetAttribute(receptor, "Rfc") ?? fiscalDocument.ReceiverRfc}",
-            $"Nombre: {GetAttribute(receptor, "Nombre") ?? fiscalDocument.ReceiverLegalName}",
-            $"Uso CFDI: {GetAttribute(receptor, "UsoCFDI") ?? fiscalDocument.ReceiverCfdiUseCode}",
-            $"Regimen fiscal receptor: {GetAttribute(receptor, "RegimenFiscalReceptor") ?? fiscalDocument.ReceiverFiscalRegimeCode}",
-            $"Codigo postal: {GetAttribute(receptor, "DomicilioFiscalReceptor") ?? fiscalDocument.ReceiverPostalCode}",
-            string.Empty,
-            "Conceptos"
-        };
-
-        if (conceptos.Count == 0)
-        {
-            lines.Add("No se encontraron conceptos en el XML timbrado.");
+            return null;
         }
-        else
+
+        try
         {
-            foreach (var concepto in conceptos)
+            var issuerProfile = await _issuerProfileRepository.GetByIdAsync(issuerProfileId, cancellationToken);
+            if (issuerProfile is null || string.IsNullOrWhiteSpace(issuerProfile.LogoStoragePath))
             {
-                lines.Add($"- {GetAttribute(concepto, "Descripcion") ?? "Concepto"}");
-                lines.Add($"  Clave: {GetAttribute(concepto, "ClaveProdServ") ?? "N/D"} | Unidad: {GetAttribute(concepto, "ClaveUnidad") ?? "N/D"}");
-                lines.Add($"  Cantidad: {GetAttribute(concepto, "Cantidad") ?? "0"} | Valor unitario: {GetAttribute(concepto, "ValorUnitario") ?? "0"}");
-                lines.Add($"  Importe: {GetAttribute(concepto, "Importe") ?? "0"} | Descuento: {GetAttribute(concepto, "Descuento") ?? "0"}");
+                return null;
             }
+
+            var logo = await _logoStorage.ReadAsync(issuerProfile.LogoStoragePath, cancellationToken);
+            if (logo is null || logo.Content.Length == 0)
+            {
+                return null;
+            }
+
+            return PdfImageAsset.TryCreate(logo.Content, issuerProfile.LogoContentType ?? logo.ContentType);
         }
-
-        lines.Add(string.Empty);
-        lines.Add("Totales");
-        lines.Add($"Subtotal: {GetAttribute(comprobante, "SubTotal") ?? fiscalDocument.Subtotal.ToString("0.00", CultureInfo.InvariantCulture)}");
-        lines.Add($"Descuento: {GetAttribute(comprobante, "Descuento") ?? fiscalDocument.DiscountTotal.ToString("0.00", CultureInfo.InvariantCulture)}");
-        lines.Add($"Impuestos: {ResolveTransferredTaxes(document, fiscalDocument).ToString("0.00", CultureInfo.InvariantCulture)}");
-        lines.Add($"Total: {GetAttribute(comprobante, "Total") ?? fiscalDocument.Total.ToString("0.00", CultureInfo.InvariantCulture)}");
-
-        if (!string.IsNullOrWhiteSpace(fiscalStamp.QrCodeTextOrUrl))
+        catch
         {
-            lines.Add(string.Empty);
-            lines.Add($"QR / Representacion digital: {fiscalStamp.QrCodeTextOrUrl}");
+            return null;
         }
-
-        if (!string.IsNullOrWhiteSpace(fiscalStamp.OriginalString))
-        {
-            lines.Add(string.Empty);
-            lines.Add("Cadena original:");
-            lines.Add(fiscalStamp.OriginalString);
-        }
-
-        if (!string.IsNullOrWhiteSpace(GetAttribute(timbre, "NoCertificadoSAT")))
-        {
-            lines.Add($"No. certificado SAT: {GetAttribute(timbre, "NoCertificadoSAT")}");
-        }
-
-        return lines;
     }
+
+    private sealed class PdfViewModel
+    {
+        public required string DocumentTitle { get; init; }
+        public required string Uuid { get; init; }
+        public required string SeriesFolio { get; init; }
+        public required string IssuedAt { get; init; }
+        public required string StampedAt { get; init; }
+        public required string PaymentMethod { get; init; }
+        public required string PaymentForm { get; init; }
+        public required string Currency { get; init; }
+        public required string PlaceOfIssue { get; init; }
+        public required string IssuerName { get; init; }
+        public required string IssuerRfc { get; init; }
+        public required string IssuerRegime { get; init; }
+        public required string ReceiverName { get; init; }
+        public required string ReceiverRfc { get; init; }
+        public required string ReceiverUse { get; init; }
+        public required string ReceiverRegime { get; init; }
+        public required string ReceiverPostalCode { get; init; }
+        public required string Subtotal { get; init; }
+        public required string Discount { get; init; }
+        public required string Taxes { get; init; }
+        public required string Total { get; init; }
+        public required string? Qr { get; init; }
+        public required string? OriginalString { get; init; }
+        public required string? SatCertificate { get; init; }
+        public required IReadOnlyList<PdfConceptRow> Concepts { get; init; }
+
+        public static PdfViewModel Create(FiscalDocument fiscalDocument, FiscalStamp fiscalStamp, XDocument document)
+        {
+            var comprobante = document.Descendants().FirstOrDefault(static node => node.Name.LocalName == "Comprobante");
+            var emisor = document.Descendants().FirstOrDefault(static node => node.Name.LocalName == "Emisor");
+            var receptor = document.Descendants().FirstOrDefault(static node => node.Name.LocalName == "Receptor");
+            var timbre = document.Descendants().FirstOrDefault(static node => node.Name.LocalName == "TimbreFiscalDigital");
+            var conceptos = document.Descendants().Where(static node => node.Name.LocalName == "Concepto").ToList();
+
+            return new PdfViewModel
+            {
+                DocumentTitle = "Representacion impresa del CFDI",
+                Uuid = GetAttribute(timbre, "UUID") ?? fiscalStamp.Uuid ?? "N/D",
+                SeriesFolio = CombineDocumentNumber(GetAttribute(comprobante, "Serie"), GetAttribute(comprobante, "Folio")),
+                IssuedAt = GetAttribute(comprobante, "Fecha") ?? FormatUtc(fiscalDocument.IssuedAtUtc),
+                StampedAt = GetAttribute(timbre, "FechaTimbrado") ?? FormatUtc(fiscalStamp.StampedAtUtc),
+                PaymentMethod = GetAttribute(comprobante, "MetodoPago") ?? fiscalDocument.PaymentMethodSat,
+                PaymentForm = GetAttribute(comprobante, "FormaPago") ?? fiscalDocument.PaymentFormSat,
+                Currency = GetAttribute(comprobante, "Moneda") ?? fiscalDocument.CurrencyCode,
+                PlaceOfIssue = GetAttribute(comprobante, "LugarExpedicion") ?? fiscalDocument.IssuerPostalCode,
+                IssuerName = GetAttribute(emisor, "Nombre") ?? fiscalDocument.IssuerLegalName,
+                IssuerRfc = GetAttribute(emisor, "Rfc") ?? fiscalDocument.IssuerRfc,
+                IssuerRegime = GetAttribute(emisor, "RegimenFiscal") ?? fiscalDocument.IssuerFiscalRegimeCode,
+                ReceiverName = GetAttribute(receptor, "Nombre") ?? fiscalDocument.ReceiverLegalName,
+                ReceiverRfc = GetAttribute(receptor, "Rfc") ?? fiscalDocument.ReceiverRfc,
+                ReceiverUse = GetAttribute(receptor, "UsoCFDI") ?? fiscalDocument.ReceiverCfdiUseCode,
+                ReceiverRegime = GetAttribute(receptor, "RegimenFiscalReceptor") ?? fiscalDocument.ReceiverFiscalRegimeCode,
+                ReceiverPostalCode = GetAttribute(receptor, "DomicilioFiscalReceptor") ?? fiscalDocument.ReceiverPostalCode,
+                Subtotal = GetAttribute(comprobante, "SubTotal") ?? fiscalDocument.Subtotal.ToString("0.00", CultureInfo.InvariantCulture),
+                Discount = GetAttribute(comprobante, "Descuento") ?? fiscalDocument.DiscountTotal.ToString("0.00", CultureInfo.InvariantCulture),
+                Taxes = ResolveTransferredTaxes(document, fiscalDocument).ToString("0.00", CultureInfo.InvariantCulture),
+                Total = GetAttribute(comprobante, "Total") ?? fiscalDocument.Total.ToString("0.00", CultureInfo.InvariantCulture),
+                Qr = fiscalStamp.QrCodeTextOrUrl,
+                OriginalString = fiscalStamp.OriginalString,
+                SatCertificate = GetAttribute(timbre, "NoCertificadoSAT"),
+                Concepts = conceptos.Count == 0
+                    ? [new PdfConceptRow("N/D", "N/D", "No se encontraron conceptos en el XML timbrado.", "0", "0")]
+                    : conceptos.Select(MapConcept).ToArray()
+            };
+        }
+
+        private static PdfConceptRow MapConcept(XElement concept)
+        {
+            return new PdfConceptRow(
+                GetAttribute(concept, "Cantidad") ?? "0",
+                GetAttribute(concept, "ClaveProdServ") ?? "N/D",
+                GetAttribute(concept, "Descripcion") ?? "Concepto",
+                GetAttribute(concept, "ValorUnitario") ?? "0",
+                GetAttribute(concept, "Importe") ?? "0");
+        }
+    }
+
+    private sealed record PdfConceptRow(string Quantity, string ProductCode, string Description, string UnitPrice, string Amount);
 
     private static decimal ResolveTransferredTaxes(XDocument document, FiscalDocument fiscalDocument)
     {
@@ -126,137 +173,762 @@ public class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
         return value?.ToString("yyyy-MM-dd HH:mm:ss 'UTC'", CultureInfo.InvariantCulture) ?? "N/D";
     }
 
-    private static class SimplePdfDocument
+    private sealed class FiscalPdfDocument
     {
-        private const int MaxLinesPerPage = 42;
+        private const float PageWidth = 612f;
+        private const float PageHeight = 792f;
+        private const float Margin = 40f;
+        private const float HeaderHeight = 110f;
+        private const float SectionGap = 14f;
 
-        public static byte[] Create(IReadOnlyList<string> lines)
+        private readonly PdfPageBuilder _page = new(PageWidth, PageHeight);
+        private float _cursorY = PageHeight - Margin;
+
+        public static byte[] Create(PdfViewModel model, PdfImageAsset? logo)
         {
-            var normalizedLines = lines
-                .SelectMany(WrapLine)
-                .Select(NormalizePdfText)
-                .ToList();
+            return new FiscalPdfDocument().Build(model, logo);
+        }
 
-            var pages = normalizedLines
-                .Chunk(MaxLinesPerPage)
-                .Select(BuildContentStream)
-                .ToList();
+        private byte[] Build(PdfViewModel model, PdfImageAsset? logo)
+        {
+            DrawHeader(model, logo);
+            DrawPartySection("Emisor", model.IssuerName, model.IssuerRfc, model.IssuerRegime, model.PlaceOfIssue, Margin, 250f);
+            DrawPartySection("Receptor", model.ReceiverName, model.ReceiverRfc, model.ReceiverRegime, $"Uso CFDI: {model.ReceiverUse} | C.P.: {model.ReceiverPostalCode}", Margin + 262f, 270f);
+            DrawConceptTable(model.Concepts);
+            DrawTotals(model);
+            DrawTimbre(model);
+            return _page.Build();
+        }
 
-            var objects = new List<string>();
-            var contentObjectIds = new List<int>();
-            var pageObjectIds = new List<int>();
+        private void DrawHeader(PdfViewModel model, PdfImageAsset? logo)
+        {
+            var topY = _cursorY;
+            _page.FillRectangle(Margin, topY - HeaderHeight, PageWidth - (Margin * 2), HeaderHeight, new PdfColor(248, 247, 243));
+            _page.StrokeRectangle(Margin, topY - HeaderHeight, PageWidth - (Margin * 2), HeaderHeight, new PdfColor(210, 204, 193), 1f);
 
-            objects.Add("<< /Type /Catalog /Pages 2 0 R >>");
-            objects.Add(string.Empty);
-            objects.Add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+            var logoBoxX = Margin + 12f;
+            var logoBoxY = topY - 86f;
+            var logoBoxW = 112f;
+            var logoBoxH = 62f;
+            _page.FillRectangle(logoBoxX, logoBoxY, logoBoxW, logoBoxH, PdfColor.White);
+            _page.StrokeRectangle(logoBoxX, logoBoxY, logoBoxW, logoBoxH, new PdfColor(224, 220, 210), 0.8f);
 
-            foreach (var pageContent in pages)
+            if (logo is not null)
             {
-                contentObjectIds.Add(objects.Count + 1);
-                objects.Add($"<< /Length {Encoding.ASCII.GetByteCount(pageContent)} >>\nstream\n{pageContent}\nendstream");
-                pageObjectIds.Add(objects.Count + 1);
-                objects.Add($"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents {contentObjectIds[^1]} 0 R >>");
+                var fitted = Fit(logo.Width, logo.Height, logoBoxW - 10f, logoBoxH - 10f);
+                var imageX = logoBoxX + ((logoBoxW - fitted.Width) / 2f);
+                var imageY = logoBoxY + ((logoBoxH - fitted.Height) / 2f);
+                _page.DrawImage(logo, imageX, imageY, fitted.Width, fitted.Height);
+            }
+            else
+            {
+                _page.DrawText("CFDI", logoBoxX + 34f, logoBoxY + 26f, 18f, PdfFont.Bold, new PdfColor(82, 88, 102));
             }
 
-            objects[1] = $"<< /Type /Pages /Count {pageObjectIds.Count} /Kids [{' '}{string.Join(' ', pageObjectIds.Select(id => $"{id} 0 R"))}] >>";
+            _page.DrawText(model.DocumentTitle, Margin + 138f, topY - 28f, 18f, PdfFont.Bold, new PdfColor(22, 30, 42));
+            _page.DrawText(model.IssuerName, Margin + 138f, topY - 50f, 12f, PdfFont.Bold, new PdfColor(22, 30, 42));
+            _page.DrawText($"RFC: {model.IssuerRfc}", Margin + 138f, topY - 66f, 10f, PdfFont.Regular, new PdfColor(76, 84, 96));
+            _page.DrawText($"Régimen: {model.IssuerRegime}", Margin + 138f, topY - 80f, 10f, PdfFont.Regular, new PdfColor(76, 84, 96));
 
-            var builder = new StringBuilder();
-            builder.AppendLine("%PDF-1.4");
+            var infoX = PageWidth - Margin - 196f;
+            var infoY = topY - 16f;
+            _page.FillRectangle(infoX, topY - 94f, 184f, 78f, new PdfColor(255, 255, 255));
+            _page.StrokeRectangle(infoX, topY - 94f, 184f, 78f, new PdfColor(210, 204, 193), 0.8f);
+            DrawKeyValue("Serie / Folio", model.SeriesFolio, infoX + 10f, infoY);
+            DrawKeyValue("UUID", model.Uuid, infoX + 10f, infoY - 22f, 8.5f);
+            DrawKeyValue("Emisión", model.IssuedAt, infoX + 10f, infoY - 44f, 8.5f);
+            DrawKeyValue("Timbrado", model.StampedAt, infoX + 10f, infoY - 66f, 8.5f);
+
+            _cursorY = topY - HeaderHeight - SectionGap;
+        }
+
+        private void DrawPartySection(string title, string name, string rfc, string regime, string extra, float x, float width)
+        {
+            var height = 82f;
+            _page.FillRectangle(x, _cursorY - height, width, height, PdfColor.White);
+            _page.StrokeRectangle(x, _cursorY - height, width, height, new PdfColor(218, 213, 204), 0.8f);
+            _page.FillRectangle(x, _cursorY - 20f, width, 20f, new PdfColor(238, 235, 228));
+            _page.DrawText(title, x + 10f, _cursorY - 14f, 10f, PdfFont.Bold, new PdfColor(22, 30, 42));
+            _page.DrawText(name, x + 10f, _cursorY - 38f, 11f, PdfFont.Bold, new PdfColor(22, 30, 42));
+            _page.DrawText($"RFC: {rfc}", x + 10f, _cursorY - 54f, 9.5f, PdfFont.Regular, new PdfColor(76, 84, 96));
+            _page.DrawText($"Régimen fiscal: {regime}", x + 10f, _cursorY - 68f, 9.5f, PdfFont.Regular, new PdfColor(76, 84, 96));
+            _page.DrawText(extra, x + 10f, _cursorY - 82f, 9.5f, PdfFont.Regular, new PdfColor(76, 84, 96));
+        }
+
+        private void DrawConceptTable(IReadOnlyList<PdfConceptRow> concepts)
+        {
+            _cursorY -= 98f;
+            var tableX = Margin;
+            var tableWidth = PageWidth - (Margin * 2);
+            var headerHeight = 24f;
+            var rowHeight = 28f;
+            var totalHeight = headerHeight + (concepts.Count * rowHeight);
+
+            _page.FillRectangle(tableX, _cursorY - totalHeight, tableWidth, totalHeight, PdfColor.White);
+            _page.StrokeRectangle(tableX, _cursorY - totalHeight, tableWidth, totalHeight, new PdfColor(218, 213, 204), 0.8f);
+            _page.FillRectangle(tableX, _cursorY - headerHeight, tableWidth, headerHeight, new PdfColor(32, 42, 56));
+
+            var columns = new[] { 60f, 95f, 245f, 90f, 82f };
+            var labels = new[] { "Cant.", "Clave", "Descripción", "V. unitario", "Importe" };
+            var cursorX = tableX;
+            for (var index = 0; index < columns.Length; index++)
+            {
+                _page.DrawText(labels[index], cursorX + 6f, _cursorY - 16f, 9f, PdfFont.Bold, PdfColor.White);
+                cursorX += columns[index];
+                if (index < columns.Length - 1)
+                {
+                    _page.DrawLine(cursorX, _cursorY, cursorX, _cursorY - totalHeight, new PdfColor(226, 226, 226), 0.5f);
+                }
+            }
+
+            var rowTop = _cursorY - headerHeight;
+            for (var index = 0; index < concepts.Count; index++)
+            {
+                if (index % 2 == 0)
+                {
+                    _page.FillRectangle(tableX, rowTop - rowHeight, tableWidth, rowHeight, new PdfColor(250, 250, 248));
+                }
+
+                var row = concepts[index];
+                var x = tableX;
+                _page.DrawText(row.Quantity, x + 6f, rowTop - 16f, 9f, PdfFont.Regular, new PdfColor(50, 58, 70));
+                x += columns[0];
+                _page.DrawText(row.ProductCode, x + 6f, rowTop - 16f, 9f, PdfFont.Regular, new PdfColor(50, 58, 70));
+                x += columns[1];
+
+                var descriptionLines = WrapText(row.Description, 42).Take(2).ToArray();
+                _page.DrawText(descriptionLines[0], x + 6f, rowTop - 14f, 9f, PdfFont.Regular, new PdfColor(50, 58, 70));
+                if (descriptionLines.Length > 1)
+                {
+                    _page.DrawText(descriptionLines[1], x + 6f, rowTop - 24f, 8f, PdfFont.Regular, new PdfColor(92, 98, 110));
+                }
+
+                x += columns[2];
+                _page.DrawText(row.UnitPrice, x + 6f, rowTop - 16f, 9f, PdfFont.Regular, new PdfColor(50, 58, 70));
+                x += columns[3];
+                _page.DrawText(row.Amount, x + 6f, rowTop - 16f, 9f, PdfFont.Bold, new PdfColor(50, 58, 70));
+
+                _page.DrawLine(tableX, rowTop - rowHeight, tableX + tableWidth, rowTop - rowHeight, new PdfColor(230, 230, 230), 0.5f);
+                rowTop -= rowHeight;
+            }
+
+            _cursorY = _cursorY - totalHeight - SectionGap;
+        }
+
+        private void DrawTotals(PdfViewModel model)
+        {
+            var summaryY = _cursorY;
+            var leftWidth = 300f;
+            var rightWidth = 232f;
+
+            _page.FillRectangle(Margin, summaryY - 72f, leftWidth, 72f, PdfColor.White);
+            _page.StrokeRectangle(Margin, summaryY - 72f, leftWidth, 72f, new PdfColor(218, 213, 204), 0.8f);
+            _page.FillRectangle(Margin, summaryY - 20f, leftWidth, 20f, new PdfColor(238, 235, 228));
+            _page.DrawText("Datos de pago", Margin + 10f, summaryY - 14f, 10f, PdfFont.Bold, new PdfColor(22, 30, 42));
+            _page.DrawText($"Método de pago: {model.PaymentMethod}", Margin + 10f, summaryY - 38f, 9.5f, PdfFont.Regular, new PdfColor(76, 84, 96));
+            _page.DrawText($"Forma de pago: {model.PaymentForm}", Margin + 10f, summaryY - 52f, 9.5f, PdfFont.Regular, new PdfColor(76, 84, 96));
+            _page.DrawText($"Moneda: {model.Currency}", Margin + 10f, summaryY - 66f, 9.5f, PdfFont.Regular, new PdfColor(76, 84, 96));
+
+            var totalsX = PageWidth - Margin - rightWidth;
+            _page.FillRectangle(totalsX, summaryY - 92f, rightWidth, 92f, new PdfColor(248, 247, 243));
+            _page.StrokeRectangle(totalsX, summaryY - 92f, rightWidth, 92f, new PdfColor(218, 213, 204), 0.8f);
+            DrawRightAlignedKeyValue("Subtotal", model.Subtotal, totalsX + 12f, summaryY - 22f, rightWidth - 24f);
+            DrawRightAlignedKeyValue("Descuento", model.Discount, totalsX + 12f, summaryY - 40f, rightWidth - 24f);
+            DrawRightAlignedKeyValue("Impuestos", model.Taxes, totalsX + 12f, summaryY - 58f, rightWidth - 24f);
+            _page.DrawLine(totalsX + 12f, summaryY - 68f, totalsX + rightWidth - 12f, summaryY - 68f, new PdfColor(200, 194, 184), 0.8f);
+            DrawRightAlignedKeyValue("Total", model.Total, totalsX + 12f, summaryY - 82f, rightWidth - 24f, 13f, PdfFont.Bold, new PdfColor(22, 30, 42));
+
+            _cursorY = summaryY - 92f - SectionGap;
+        }
+
+        private void DrawTimbre(PdfViewModel model)
+        {
+            var sectionHeight = 124f;
+            _page.FillRectangle(Margin, _cursorY - sectionHeight, PageWidth - (Margin * 2), sectionHeight, PdfColor.White);
+            _page.StrokeRectangle(Margin, _cursorY - sectionHeight, PageWidth - (Margin * 2), sectionHeight, new PdfColor(218, 213, 204), 0.8f);
+            _page.FillRectangle(Margin, _cursorY - 20f, PageWidth - (Margin * 2), 20f, new PdfColor(238, 235, 228));
+            _page.DrawText("Datos del timbre y representación digital", Margin + 10f, _cursorY - 14f, 10f, PdfFont.Bold, new PdfColor(22, 30, 42));
+
+            _page.DrawText($"UUID: {model.Uuid}", Margin + 10f, _cursorY - 38f, 9.5f, PdfFont.Regular, new PdfColor(76, 84, 96));
+            _page.DrawText($"Fecha de timbrado: {model.StampedAt}", Margin + 10f, _cursorY - 52f, 9.5f, PdfFont.Regular, new PdfColor(76, 84, 96));
+            if (!string.IsNullOrWhiteSpace(model.SatCertificate))
+            {
+                _page.DrawText($"No. certificado SAT: {model.SatCertificate}", Margin + 10f, _cursorY - 66f, 9.5f, PdfFont.Regular, new PdfColor(76, 84, 96));
+            }
+
+            if (!string.IsNullOrWhiteSpace(model.Qr))
+            {
+                _page.DrawText("Consulta SAT / QR:", Margin + 10f, _cursorY - 84f, 9f, PdfFont.Bold, new PdfColor(22, 30, 42));
+                foreach (var line in WrapText(model.Qr!, 72).Take(2))
+                {
+                    _page.DrawText(line, Margin + 10f, _cursorY - 96f - (Array.IndexOf(WrapText(model.Qr!, 72).Take(2).ToArray(), line) * 10f), 8f, PdfFont.Regular, new PdfColor(76, 84, 96));
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(model.OriginalString))
+            {
+                _page.DrawText("Cadena original:", Margin + 310f, _cursorY - 38f, 9f, PdfFont.Bold, new PdfColor(22, 30, 42));
+                var originalLines = WrapText(model.OriginalString!, 44).Take(5).ToArray();
+                for (var index = 0; index < originalLines.Length; index++)
+                {
+                    _page.DrawText(originalLines[index], Margin + 310f, _cursorY - 52f - (index * 10f), 8f, PdfFont.Regular, new PdfColor(76, 84, 96));
+                }
+            }
+        }
+
+        private void DrawKeyValue(string label, string value, float x, float y, float valueFontSize = 9f)
+        {
+            _page.DrawText(label, x, y, 8f, PdfFont.Bold, new PdfColor(120, 108, 84));
+            _page.DrawText(value, x, y - 10f, valueFontSize, PdfFont.Regular, new PdfColor(50, 58, 70));
+        }
+
+        private void DrawRightAlignedKeyValue(string label, string value, float x, float y, float width, float valueFontSize = 10f, PdfFont? valueFont = null, PdfColor? valueColor = null)
+        {
+            _page.DrawText(label, x, y, 9f, PdfFont.Bold, new PdfColor(120, 108, 84));
+            _page.DrawTextRight(value, x + width, y, valueFontSize, valueFont ?? PdfFont.Regular, valueColor ?? new PdfColor(50, 58, 70));
+        }
+
+        private static (float Width, float Height) Fit(int originalWidth, int originalHeight, float maxWidth, float maxHeight)
+        {
+            var scale = Math.Min(maxWidth / originalWidth, maxHeight / originalHeight);
+            return ((float)(originalWidth * scale), (float)(originalHeight * scale));
+        }
+    }
+
+    private sealed class PdfPageBuilder
+    {
+        private readonly float _pageWidth;
+        private readonly float _pageHeight;
+        private readonly StringBuilder _content = new();
+        private readonly List<PdfImageAsset> _images = [];
+
+        public PdfPageBuilder(float pageWidth, float pageHeight)
+        {
+            _pageWidth = pageWidth;
+            _pageHeight = pageHeight;
+        }
+
+        public void FillRectangle(float x, float y, float width, float height, PdfColor color)
+        {
+            _content.AppendLine($"{color.FillCommand} rg");
+            _content.AppendLine($"{Fmt(x)} {Fmt(y)} {Fmt(width)} {Fmt(height)} re f");
+        }
+
+        public void StrokeRectangle(float x, float y, float width, float height, PdfColor color, float lineWidth)
+        {
+            _content.AppendLine($"{Fmt(lineWidth)} w");
+            _content.AppendLine($"{color.StrokeCommand} RG");
+            _content.AppendLine($"{Fmt(x)} {Fmt(y)} {Fmt(width)} {Fmt(height)} re S");
+        }
+
+        public void DrawLine(float x1, float y1, float x2, float y2, PdfColor color, float lineWidth)
+        {
+            _content.AppendLine($"{Fmt(lineWidth)} w");
+            _content.AppendLine($"{color.StrokeCommand} RG");
+            _content.AppendLine($"{Fmt(x1)} {Fmt(y1)} m {Fmt(x2)} {Fmt(y2)} l S");
+        }
+
+        public void DrawText(string text, float x, float y, float fontSize, PdfFont font, PdfColor color)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return;
+            }
+
+            _content.AppendLine("BT");
+            _content.AppendLine($"/{font.ResourceName} {Fmt(fontSize)} Tf");
+            _content.AppendLine($"{color.FillCommand} rg");
+            _content.AppendLine($"{Fmt(x)} {Fmt(y)} Td");
+            _content.AppendLine($"({EscapePdfString(NormalizePdfText(text))}) Tj");
+            _content.AppendLine("ET");
+        }
+
+        public void DrawTextRight(string text, float x, float y, float fontSize, PdfFont font, PdfColor color)
+        {
+            var width = EstimateTextWidth(text, fontSize, font);
+            DrawText(text, x - width, y, fontSize, font, color);
+        }
+
+        public void DrawImage(PdfImageAsset image, float x, float y, float width, float height)
+        {
+            _images.Add(image);
+            var resourceName = $"Im{_images.Count}";
+            _content.AppendLine("q");
+            _content.AppendLine($"{Fmt(width)} 0 0 {Fmt(height)} {Fmt(x)} {Fmt(y)} cm");
+            _content.AppendLine($"/{resourceName} Do");
+            _content.AppendLine("Q");
+        }
+
+        public byte[] Build()
+        {
+            var objects = new List<PdfObject>();
+            var nextId = 1;
+            var catalogId = nextId++;
+            var pagesId = nextId++;
+            var regularFontId = nextId++;
+            var boldFontId = nextId++;
+
+            objects.Add(PdfObject.FromText(catalogId, $"<< /Type /Catalog /Pages {pagesId} 0 R >>"));
+            objects.Add(PdfObject.FromText(regularFontId, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"));
+            objects.Add(PdfObject.FromText(boldFontId, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>"));
+
+            var imageIds = new List<int>();
+            foreach (var image in _images)
+            {
+                var imageId = nextId++;
+                imageIds.Add(imageId);
+                objects.Add(image.BuildObject(imageId));
+            }
+
+            var contentId = nextId++;
+            var contentText = _content.ToString();
+            objects.Add(PdfObject.FromText(contentId, $"<< /Length {Encoding.ASCII.GetByteCount(contentText)} >>\nstream\n{contentText}\nendstream"));
+
+            var xObjectEntries = imageIds.Count == 0
+                ? string.Empty
+                : $"/XObject << {string.Join(' ', imageIds.Select((id, index) => $"/Im{index + 1} {id} 0 R"))} >>";
+
+            var pageId = nextId++;
+            objects.Add(PdfObject.FromText(
+                pageId,
+                $"<< /Type /Page /Parent {pagesId} 0 R /MediaBox [0 0 {Fmt(_pageWidth)} {Fmt(_pageHeight)}] /Resources << /Font << /F1 {regularFontId} 0 R /F2 {boldFontId} 0 R >> {xObjectEntries} >> /Contents {contentId} 0 R >>"));
+
+            objects.Add(PdfObject.FromText(pagesId, $"<< /Type /Pages /Count 1 /Kids [{pageId} 0 R] >>"));
+
+            objects.Sort((left, right) => left.Id.CompareTo(right.Id));
+            return PdfSerializer.Serialize(objects);
+        }
+    }
+
+    private sealed class PdfObject
+    {
+        public required int Id { get; init; }
+        public required byte[] BodyBytes { get; init; }
+
+        public static PdfObject FromText(int id, string body)
+        {
+            return new PdfObject
+            {
+                Id = id,
+                BodyBytes = Encoding.ASCII.GetBytes(body)
+            };
+        }
+    }
+
+    private static class PdfSerializer
+    {
+        public static byte[] Serialize(IReadOnlyList<PdfObject> objects)
+        {
+            using var stream = new MemoryStream();
+            WriteAscii(stream, "%PDF-1.4\n");
             var offsets = new List<int> { 0 };
 
-            for (var index = 0; index < objects.Count; index++)
+            foreach (var pdfObject in objects)
             {
-                offsets.Add(Encoding.ASCII.GetByteCount(builder.ToString()));
-                builder.Append(index + 1).AppendLine(" 0 obj");
-                builder.AppendLine(objects[index]);
-                builder.AppendLine("endobj");
+                offsets.Add((int)stream.Position);
+                WriteAscii(stream, $"{pdfObject.Id} 0 obj\n");
+                stream.Write(pdfObject.BodyBytes, 0, pdfObject.BodyBytes.Length);
+                WriteAscii(stream, "\nendobj\n");
             }
 
-            var xrefPosition = Encoding.ASCII.GetByteCount(builder.ToString());
-            builder.AppendLine("xref");
-            builder.AppendLine($"0 {objects.Count + 1}");
-            builder.AppendLine("0000000000 65535 f ");
+            var xrefPosition = (int)stream.Position;
+            WriteAscii(stream, $"xref\n0 {objects.Count + 1}\n");
+            WriteAscii(stream, "0000000000 65535 f \n");
 
             foreach (var offset in offsets.Skip(1))
             {
-                builder.Append(offset.ToString("0000000000", CultureInfo.InvariantCulture)).AppendLine(" 00000 n ");
+                WriteAscii(stream, $"{offset.ToString("0000000000", CultureInfo.InvariantCulture)} 00000 n \n");
             }
 
-            builder.AppendLine("trailer");
-            builder.AppendLine($"<< /Size {objects.Count + 1} /Root 1 0 R >>");
-            builder.AppendLine("startxref");
-            builder.AppendLine(xrefPosition.ToString(CultureInfo.InvariantCulture));
-            builder.Append("%%EOF");
-
-            return Encoding.ASCII.GetBytes(builder.ToString());
+            WriteAscii(stream, $"trailer\n<< /Size {objects.Count + 1} /Root 1 0 R >>\n");
+            WriteAscii(stream, $"startxref\n{xrefPosition.ToString(CultureInfo.InvariantCulture)}\n%%EOF");
+            return stream.ToArray();
         }
 
-        private static string BuildContentStream(string[] lines)
+        private static void WriteAscii(Stream stream, string value)
         {
-            var builder = new StringBuilder();
-            builder.AppendLine("BT");
-            builder.AppendLine("/F1 10 Tf");
-            builder.AppendLine("40 760 Td");
-            builder.AppendLine("14 TL");
+            var bytes = Encoding.ASCII.GetBytes(value);
+            stream.Write(bytes, 0, bytes.Length);
+        }
+    }
 
-            foreach (var line in lines)
+    private sealed class PdfImageAsset
+    {
+        public required int Width { get; init; }
+        public required int Height { get; init; }
+        public required string Filter { get; init; }
+        public required string ColorSpace { get; init; }
+        public required byte[] Data { get; init; }
+
+        public static PdfImageAsset? TryCreate(byte[] content, string? contentType)
+        {
+            if (content.Length == 0)
             {
-                builder.Append('(').Append(EscapePdfString(line)).AppendLine(") Tj");
-                builder.AppendLine("T*");
+                return null;
             }
 
-            builder.Append("ET");
-            return builder.ToString();
+            if (contentType?.Contains("jpeg", StringComparison.OrdinalIgnoreCase) == true
+                || content.AsSpan().StartsWith(new byte[] { 0xFF, 0xD8, 0xFF }))
+            {
+                return TryCreateJpeg(content);
+            }
+
+            if (contentType?.Contains("png", StringComparison.OrdinalIgnoreCase) == true
+                || content.AsSpan().StartsWith(new byte[] { 0x89, 0x50, 0x4E, 0x47 }))
+            {
+                return TryCreatePng(content);
+            }
+
+            return null;
         }
 
-        private static IEnumerable<string> WrapLine(string line)
+        public PdfObject BuildObject(int id)
         {
-            if (string.IsNullOrWhiteSpace(line))
+            var header = Encoding.ASCII.GetBytes($"<< /Type /XObject /Subtype /Image /Width {Width} /Height {Height} /ColorSpace /{ColorSpace} /BitsPerComponent 8 /Filter /{Filter} /Length {Data.Length} >>\nstream\n");
+            var footer = Encoding.ASCII.GetBytes("\nendstream");
+            var body = new byte[header.Length + Data.Length + footer.Length];
+            Buffer.BlockCopy(header, 0, body, 0, header.Length);
+            Buffer.BlockCopy(Data, 0, body, header.Length, Data.Length);
+            Buffer.BlockCopy(footer, 0, body, header.Length + Data.Length, footer.Length);
+            return new PdfObject
             {
-                yield return " ";
-                yield break;
+                Id = id,
+                BodyBytes = body
+            };
+        }
+
+        private static PdfImageAsset? TryCreateJpeg(byte[] content)
+        {
+            if (!TryReadJpegSize(content, out var width, out var height))
+            {
+                return null;
             }
 
-            const int maxLength = 95;
-            var remaining = line.Trim();
-
-            while (remaining.Length > maxLength)
+            return new PdfImageAsset
             {
-                var splitIndex = remaining.LastIndexOf(' ', maxLength);
-                if (splitIndex <= 0)
+                Width = width,
+                Height = height,
+                Filter = "DCTDecode",
+                ColorSpace = "DeviceRGB",
+                Data = content
+            };
+        }
+
+        private static PdfImageAsset? TryCreatePng(byte[] content)
+        {
+            try
+            {
+                return PngPdfImageDecoder.Decode(content);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static bool TryReadJpegSize(byte[] bytes, out int width, out int height)
+        {
+            width = 0;
+            height = 0;
+            var index = 2;
+            while (index < bytes.Length - 9)
+            {
+                if (bytes[index] != 0xFF)
                 {
-                    splitIndex = maxLength;
+                    index++;
+                    continue;
                 }
 
-                yield return remaining[..splitIndex].TrimEnd();
-                remaining = remaining[splitIndex..].TrimStart();
+                var marker = bytes[index + 1];
+                if (marker is 0xC0 or 0xC1 or 0xC2 or 0xC3)
+                {
+                    height = (bytes[index + 5] << 8) + bytes[index + 6];
+                    width = (bytes[index + 7] << 8) + bytes[index + 8];
+                    return true;
+                }
+
+                var segmentLength = (bytes[index + 2] << 8) + bytes[index + 3];
+                if (segmentLength <= 0)
+                {
+                    break;
+                }
+
+                index += 2 + segmentLength;
             }
 
-            yield return remaining;
+            return false;
         }
+    }
 
-        private static string NormalizePdfText(string value)
+    private static class PngPdfImageDecoder
+    {
+        public static PdfImageAsset Decode(byte[] content)
         {
-            var normalized = value.Normalize(NormalizationForm.FormKD);
-            var builder = new StringBuilder(normalized.Length);
+            using var stream = new MemoryStream(content);
+            using var reader = new BinaryReader(stream);
 
-            foreach (var character in normalized)
+            var signature = reader.ReadBytes(8);
+            if (!signature.SequenceEqual(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 }))
             {
-                if (character <= sbyte.MaxValue && !char.IsControl(character))
+                throw new InvalidOperationException("Invalid PNG signature.");
+            }
+
+            var width = 0;
+            var height = 0;
+            byte bitDepth = 0;
+            byte colorType = 0;
+            byte interlaceMethod = 0;
+            using var idat = new MemoryStream();
+
+            while (stream.Position < stream.Length)
+            {
+                var length = ReadInt32BigEndian(reader);
+                var chunkType = Encoding.ASCII.GetString(reader.ReadBytes(4));
+                var chunkData = reader.ReadBytes(length);
+                _ = reader.ReadUInt32();
+
+                switch (chunkType)
                 {
-                    builder.Append(character);
+                    case "IHDR":
+                        width = ReadInt32BigEndian(chunkData, 0);
+                        height = ReadInt32BigEndian(chunkData, 4);
+                        bitDepth = chunkData[8];
+                        colorType = chunkData[9];
+                        interlaceMethod = chunkData[12];
+                        break;
+                    case "IDAT":
+                        idat.Write(chunkData);
+                        break;
+                    case "IEND":
+                        stream.Position = stream.Length;
+                        break;
                 }
             }
 
-            return builder.ToString();
+            if (width <= 0 || height <= 0 || bitDepth != 8 || interlaceMethod != 0)
+            {
+                throw new InvalidOperationException("Unsupported PNG format.");
+            }
+
+            using var compressed = new MemoryStream(idat.ToArray());
+            using var zlib = new ZLibStream(compressed, CompressionMode.Decompress);
+            using var decompressed = new MemoryStream();
+            zlib.CopyTo(decompressed);
+            var scanlines = decompressed.ToArray();
+
+            var channels = colorType switch
+            {
+                2 => 3,
+                6 => 4,
+                _ => throw new InvalidOperationException("Unsupported PNG color type.")
+            };
+
+            var stride = width * channels;
+            var raw = new byte[height * stride];
+            var previous = new byte[stride];
+            var offset = 0;
+            var rawOffset = 0;
+
+            for (var row = 0; row < height; row++)
+            {
+                var filter = scanlines[offset++];
+                var current = new byte[stride];
+                Array.Copy(scanlines, offset, current, 0, stride);
+                offset += stride;
+                Unfilter(filter, current, previous, channels);
+                Array.Copy(current, 0, raw, rawOffset, stride);
+                rawOffset += stride;
+                previous = current;
+            }
+
+            var rgb = colorType == 2 ? raw : FlattenRgbaOnWhite(raw);
+            using var output = new MemoryStream();
+            using (var flate = new ZLibStream(output, CompressionLevel.SmallestSize, leaveOpen: true))
+            {
+                flate.Write(rgb, 0, rgb.Length);
+            }
+
+            return new PdfImageAsset
+            {
+                Width = width,
+                Height = height,
+                Filter = "FlateDecode",
+                ColorSpace = "DeviceRGB",
+                Data = output.ToArray()
+            };
         }
 
-        private static string EscapePdfString(string value)
+        private static void Unfilter(byte filter, byte[] current, byte[] previous, int bytesPerPixel)
         {
-            return value
-                .Replace("\\", "\\\\", StringComparison.Ordinal)
-                .Replace("(", "\\(", StringComparison.Ordinal)
-                .Replace(")", "\\)", StringComparison.Ordinal);
+            switch (filter)
+            {
+                case 0:
+                    return;
+                case 1:
+                    for (var i = bytesPerPixel; i < current.Length; i++)
+                    {
+                        current[i] = (byte)(current[i] + current[i - bytesPerPixel]);
+                    }
+
+                    return;
+                case 2:
+                    for (var i = 0; i < current.Length; i++)
+                    {
+                        current[i] = (byte)(current[i] + previous[i]);
+                    }
+
+                    return;
+                case 3:
+                    for (var i = 0; i < current.Length; i++)
+                    {
+                        var left = i >= bytesPerPixel ? current[i - bytesPerPixel] : 0;
+                        var up = previous[i];
+                        current[i] = (byte)(current[i] + ((left + up) / 2));
+                    }
+
+                    return;
+                case 4:
+                    for (var i = 0; i < current.Length; i++)
+                    {
+                        var left = i >= bytesPerPixel ? current[i - bytesPerPixel] : 0;
+                        var up = previous[i];
+                        var upperLeft = i >= bytesPerPixel ? previous[i - bytesPerPixel] : 0;
+                        current[i] = (byte)(current[i] + PaethPredictor(left, up, upperLeft));
+                    }
+
+                    return;
+                default:
+                    throw new InvalidOperationException("Unsupported PNG filter.");
+            }
         }
+
+        private static byte[] FlattenRgbaOnWhite(byte[] rgba)
+        {
+            var rgb = new byte[(rgba.Length / 4) * 3];
+            var target = 0;
+
+            for (var index = 0; index < rgba.Length; index += 4)
+            {
+                var alpha = rgba[index + 3] / 255f;
+                rgb[target++] = BlendOnWhite(rgba[index], alpha);
+                rgb[target++] = BlendOnWhite(rgba[index + 1], alpha);
+                rgb[target++] = BlendOnWhite(rgba[index + 2], alpha);
+            }
+
+            return rgb;
+        }
+
+        private static byte BlendOnWhite(byte component, float alpha)
+        {
+            return (byte)Math.Round((component * alpha) + (255f * (1f - alpha)), MidpointRounding.AwayFromZero);
+        }
+
+        private static int PaethPredictor(int left, int up, int upperLeft)
+        {
+            var prediction = left + up - upperLeft;
+            var distanceLeft = Math.Abs(prediction - left);
+            var distanceUp = Math.Abs(prediction - up);
+            var distanceUpperLeft = Math.Abs(prediction - upperLeft);
+
+            if (distanceLeft <= distanceUp && distanceLeft <= distanceUpperLeft)
+            {
+                return left;
+            }
+
+            return distanceUp <= distanceUpperLeft ? up : upperLeft;
+        }
+
+        private static int ReadInt32BigEndian(BinaryReader reader)
+        {
+            var bytes = reader.ReadBytes(4);
+            return ReadInt32BigEndian(bytes, 0);
+        }
+
+        private static int ReadInt32BigEndian(byte[] bytes, int offset)
+        {
+            return (bytes[offset] << 24)
+                 | (bytes[offset + 1] << 16)
+                 | (bytes[offset + 2] << 8)
+                 | bytes[offset + 3];
+        }
+    }
+
+    private sealed record PdfColor(byte R, byte G, byte B)
+    {
+        public static PdfColor White => new(255, 255, 255);
+
+        public string FillCommand => $"{Fmt(R / 255f)} {Fmt(G / 255f)} {Fmt(B / 255f)}";
+        public string StrokeCommand => FillCommand;
+    }
+
+    private sealed record PdfFont(string ResourceName)
+    {
+        public static PdfFont Regular => new("F1");
+        public static PdfFont Bold => new("F2");
+    }
+
+    private static IEnumerable<string> WrapText(string value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return [];
+        }
+
+        var lines = new List<string>();
+        var remaining = value.Trim();
+        while (remaining.Length > maxLength)
+        {
+            var splitIndex = remaining.LastIndexOf(' ', maxLength);
+            if (splitIndex <= 0)
+            {
+                splitIndex = maxLength;
+            }
+
+            lines.Add(remaining[..splitIndex].TrimEnd());
+            remaining = remaining[splitIndex..].TrimStart();
+        }
+
+        lines.Add(remaining);
+        return lines;
+    }
+
+    private static float EstimateTextWidth(string text, float fontSize, PdfFont font)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return 0f;
+        }
+
+        var multiplier = font == PdfFont.Bold ? 0.56f : 0.52f;
+        return NormalizePdfText(text).Length * fontSize * multiplier;
+    }
+
+    private static string NormalizePdfText(string value)
+    {
+        var normalized = value.Normalize(NormalizationForm.FormKD);
+        var builder = new StringBuilder(normalized.Length);
+
+        foreach (var character in normalized)
+        {
+            if (character <= sbyte.MaxValue && !char.IsControl(character))
+            {
+                builder.Append(character);
+            }
+        }
+
+        return builder.ToString();
+    }
+
+    private static string EscapePdfString(string value)
+    {
+        return value
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("(", "\\(", StringComparison.Ordinal)
+            .Replace(")", "\\)", StringComparison.Ordinal);
+    }
+
+    private static string Fmt(float value)
+    {
+        return value.ToString("0.###", CultureInfo.InvariantCulture);
     }
 }

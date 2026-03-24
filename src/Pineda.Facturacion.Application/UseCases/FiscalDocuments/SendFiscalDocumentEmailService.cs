@@ -74,7 +74,7 @@ public class SendFiscalDocumentEmailService
             ? BuildDefaultBody(fiscalDocument.Series, fiscalDocument.Folio, fiscalStamp.Uuid)
             : command.Body.Trim();
 
-        var pdfContent = _pdfRenderer.Render(fiscalDocument, fiscalStamp);
+        var pdfContent = await _pdfRenderer.RenderAsync(fiscalDocument, fiscalStamp, cancellationToken);
         var xmlFileName = GetFiscalDocumentPdfService.BuildFileName(fiscalDocument.Series, fiscalDocument.Folio, fiscalStamp.Uuid, "xml");
         var pdfFileName = GetFiscalDocumentPdfService.BuildFileName(fiscalDocument.Series, fiscalDocument.Folio, fiscalStamp.Uuid, "pdf");
 

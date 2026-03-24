@@ -49,7 +49,7 @@ public class GetFiscalDocumentPdfService
         {
             Outcome = GetFiscalDocumentPdfOutcome.Found,
             IsSuccess = true,
-            Content = _pdfRenderer.Render(fiscalDocument, fiscalStamp),
+            Content = await _pdfRenderer.RenderAsync(fiscalDocument, fiscalStamp, cancellationToken),
             FileName = BuildFileName(fiscalDocument.Series, fiscalDocument.Folio, fiscalStamp.Uuid, "pdf")
         };
     }

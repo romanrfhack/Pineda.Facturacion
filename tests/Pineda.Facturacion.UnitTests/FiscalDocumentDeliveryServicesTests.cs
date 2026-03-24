@@ -2,6 +2,7 @@ using System.Net.Mail;
 using Pineda.Facturacion.Application.Abstractions.Communication;
 using Pineda.Facturacion.Application.Abstractions.Documents;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
+using Pineda.Facturacion.Application.Abstractions.Storage;
 using Pineda.Facturacion.Application.UseCases.FiscalDocuments;
 using Pineda.Facturacion.Domain.Entities;
 using Pineda.Facturacion.Domain.Enums;
@@ -101,15 +102,31 @@ public class FiscalDocumentDeliveryServicesTests
     }
 
     [Fact]
-    public void FiscalDocumentPdfRenderer_Generates_A_Real_Pdf_From_Stamped_Xml()
+    public async Task FiscalDocumentPdfRenderer_Generates_A_Real_Pdf_From_Stamped_Xml()
     {
-        var renderer = new FiscalDocumentPdfRenderer();
-        var bytes = renderer.Render(CreateFiscalDocument(), CreateFiscalStamp());
+        var renderer = new FiscalDocumentPdfRenderer(new FakeIssuerProfileRepository(), new FakeIssuerProfileLogoStorage());
+        var bytes = await renderer.RenderAsync(CreateFiscalDocument(), CreateFiscalStamp());
         var pdfText = System.Text.Encoding.ASCII.GetString(bytes);
 
         Assert.StartsWith("%PDF-1.4", pdfText, StringComparison.Ordinal);
         Assert.Contains("Representacion impresa del CFDI", pdfText, StringComparison.Ordinal);
-        Assert.Contains("4cb4eed3-3d93-4938-8872-028106881e4c", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Datos del timbre y representacion digital", pdfText, StringComparison.Ordinal);
+        Assert.Contains("/Subtype /Image", pdfText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task FiscalDocumentPdfRenderer_Falls_Back_When_Logo_Is_Not_Available()
+    {
+        var renderer = new FiscalDocumentPdfRenderer(
+            new FakeIssuerProfileRepository { Existing = new IssuerProfile { Id = 1, LogoStoragePath = "missing/logo.png" } },
+            new FakeIssuerProfileLogoStorage());
+
+        var bytes = await renderer.RenderAsync(CreateFiscalDocument(), CreateFiscalStamp());
+        var pdfText = System.Text.Encoding.ASCII.GetString(bytes);
+
+        Assert.StartsWith("%PDF-1.4", pdfText, StringComparison.Ordinal);
+        Assert.DoesNotContain("/Subtype /Image", pdfText, StringComparison.Ordinal);
+        Assert.Contains("CFDI", pdfText, StringComparison.Ordinal);
     }
 
     private static FiscalDocument CreateFiscalDocument()
@@ -118,6 +135,7 @@ public class FiscalDocumentDeliveryServicesTests
         {
             Id = 8,
             BillingDocumentId = 3,
+            IssuerProfileId = 1,
             FiscalReceiverId = 3,
             Status = FiscalDocumentStatus.Stamped,
             Series = "A",
@@ -206,7 +224,62 @@ public class FiscalDocumentDeliveryServicesTests
 
     private sealed class FakeFiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
     {
-        public byte[] Render(FiscalDocument fiscalDocument, FiscalStamp fiscalStamp) => "%PDF-test"u8.ToArray();
+        public Task<byte[]> RenderAsync(FiscalDocument fiscalDocument, FiscalStamp fiscalStamp, CancellationToken cancellationToken = default)
+            => Task.FromResult("%PDF-test"u8.ToArray());
+    }
+
+    private sealed class FakeIssuerProfileRepository : IIssuerProfileRepository
+    {
+        public IssuerProfile? Existing { get; set; } = new()
+        {
+            Id = 1,
+            LogoStoragePath = "issuer/1/logo.png",
+            LogoContentType = "image/png"
+        };
+
+        public Task<IssuerProfile?> GetActiveAsync(CancellationToken cancellationToken = default) => Task.FromResult(Existing);
+        public Task<IssuerProfile?> GetByIdAsync(long issuerProfileId, CancellationToken cancellationToken = default) => Task.FromResult(Existing?.Id == issuerProfileId ? Existing : null);
+        public Task AddAsync(IssuerProfile issuerProfile, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task UpdateAsync(IssuerProfile issuerProfile, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class FakeIssuerProfileLogoStorage : IIssuerProfileLogoStorage
+    {
+        public Task<StoreIssuerProfileLogoResult> SaveAsync(long issuerProfileId, string fileName, string? declaredContentType, byte[] content, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<IssuerProfileLogoBinary?> ReadAsync(string storagePath, CancellationToken cancellationToken = default)
+        {
+            if (storagePath.Contains("missing", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult<IssuerProfileLogoBinary?>(null);
+            }
+
+            return Task.FromResult<IssuerProfileLogoBinary?>(new IssuerProfileLogoBinary
+            {
+                Content = SmallPng(),
+                ContentType = "image/png",
+                FileName = "logo.png"
+            });
+        }
+
+        public Task DeleteAsync(string? storagePath, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        private static byte[] SmallPng()
+        {
+            return
+            [
+                0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+                0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+                0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+                0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+                0x89, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x44, 0x41,
+                0x54, 0x78, 0x9C, 0x63, 0xF8, 0xCF, 0xC0, 0xF0,
+                0x1F, 0x00, 0x05, 0x00, 0x01, 0xFF, 0x89, 0x99,
+                0x3D, 0x1D, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45,
+                0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82
+            ];
+        }
     }
 
     private sealed class FakeEmailSender : IEmailSender
