@@ -87,8 +87,9 @@ public class FacturaloPlusStampingGatewayTests
         var decodedJson = Encoding.UTF8.GetString(Convert.FromBase64String(form["jsonB64"]));
         using var json = JsonDocument.Parse(decodedJson);
         var comprobante = json.RootElement.GetProperty("Comprobante");
+        var expectedLocalFecha = ConvertUtcToMexicoCity(CreateRequest().IssuedAtUtc).ToString("yyyy-MM-dd'T'HH:mm:ss");
         Assert.Equal("4.0", comprobante.GetProperty("Version").GetString());
-        Assert.Equal("2026-03-21T12:00:00", comprobante.GetProperty("Fecha").GetString());
+        Assert.Equal(expectedLocalFecha, comprobante.GetProperty("Fecha").GetString());
         Assert.Equal("I", comprobante.GetProperty("TipoDeComprobante").GetString());
         Assert.Equal("PPD", comprobante.GetProperty("MetodoPago").GetString());
         Assert.Equal("99", comprobante.GetProperty("FormaPago").GetString());
@@ -213,6 +214,134 @@ public class FacturaloPlusStampingGatewayTests
         Assert.Equal("0.160000", conceptoTraslado.GetProperty("TasaOCuota").GetString());
     }
 
+    [Fact]
+    public async Task StampAsync_Uses_Mexico_City_Local_Time_For_ComprobanteFecha()
+    {
+        using var rsa = RSA.Create(2048);
+        var request = new CertificateRequest(
+            "CN=FacturaloPlus Test",
+            rsa,
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
+        var serialBytes = Encoding.ASCII.GetBytes("30001000000500003416");
+        var certificate = request.Create(
+            new X500DistinguishedName("CN=FacturaloPlus Test"),
+            X509SignatureGenerator.CreateForRSA(rsa, RSASignaturePadding.Pkcs1),
+            DateTimeOffset.UtcNow.AddDays(-1),
+            DateTimeOffset.UtcNow.AddYears(1),
+            serialBytes);
+        var certificatePem = new string(PemEncoding.Write("CERTIFICATE", certificate.Export(X509ContentType.Cert)));
+
+        var handler = new RecordingHandler(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""
+                {
+                  "success": true,
+                  "trackingId": "TRACK-1",
+                  "uuid": "UUID-1",
+                  "stampedAtUtc": "2026-03-21T12:00:00Z",
+                  "xmlContent": "<cfdi:Comprobante Version=\"4.0\" />"
+                }
+                """, Encoding.UTF8, "application/json")
+        });
+
+        var client = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://dev.facturaloplus.com/api/rest/servicio/")
+        };
+        var secretResolver = new RecordingSecretResolver(new Dictionary<string, string?>
+        {
+            ["FACTURALOPLUS_API_KEY_REFERENCE"] = "APIKEY-TEST",
+            ["CERT_REF"] = certificatePem,
+            ["KEY_REF"] = "PRIVATE-KEY-PEM"
+        });
+
+        var gateway = new FacturaloPlusStampingGateway(
+            client,
+            Options.Create(new FacturaloPlusOptions
+            {
+                BaseUrl = "https://dev.facturaloplus.com/api/rest/servicio/",
+                StampPath = "timbrarJSON3",
+                ApiKeyReference = "FACTURALOPLUS_API_KEY_REFERENCE"
+            }),
+            secretResolver);
+
+        var requestPayload = CreateRequest();
+        requestPayload.IssuedAtUtc = new DateTime(2026, 3, 24, 15, 26, 9, DateTimeKind.Utc);
+
+        await gateway.StampAsync(requestPayload);
+
+        var form = ParseFormBody(handler.LastBody!);
+        var decodedJson = Encoding.UTF8.GetString(Convert.FromBase64String(form["jsonB64"]));
+        using var json = JsonDocument.Parse(decodedJson);
+        var fecha = json.RootElement.GetProperty("Comprobante").GetProperty("Fecha").GetString();
+
+        Assert.Equal(ConvertUtcToMexicoCity(requestPayload.IssuedAtUtc).ToString("yyyy-MM-dd'T'HH:mm:ss"), fecha);
+        Assert.NotEqual("2026-03-24T15:26:09", fecha);
+    }
+
+    [Fact]
+    public async Task StampAsync_Returns_ValidationFailed_When_LocalCfdiFecha_Is_In_The_Future()
+    {
+        using var rsa = RSA.Create(2048);
+        var request = new CertificateRequest(
+            "CN=FacturaloPlus Test",
+            rsa,
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
+        var serialBytes = Encoding.ASCII.GetBytes("30001000000500003416");
+        var certificate = request.Create(
+            new X500DistinguishedName("CN=FacturaloPlus Test"),
+            X509SignatureGenerator.CreateForRSA(rsa, RSASignaturePadding.Pkcs1),
+            DateTimeOffset.UtcNow.AddDays(-1),
+            DateTimeOffset.UtcNow.AddYears(1),
+            serialBytes);
+        var certificatePem = new string(PemEncoding.Write("CERTIFICATE", certificate.Export(X509ContentType.Cert)));
+
+        var handler = new RecordingHandler(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""
+                {
+                  "success": true,
+                  "trackingId": "TRACK-1",
+                  "uuid": "UUID-1",
+                  "stampedAtUtc": "2026-03-21T12:00:00Z",
+                  "xmlContent": "<cfdi:Comprobante Version=\"4.0\" />"
+                }
+                """, Encoding.UTF8, "application/json")
+        });
+
+        var client = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://dev.facturaloplus.com/api/rest/servicio/")
+        };
+        var secretResolver = new RecordingSecretResolver(new Dictionary<string, string?>
+        {
+            ["FACTURALOPLUS_API_KEY_REFERENCE"] = "APIKEY-TEST",
+            ["CERT_REF"] = certificatePem,
+            ["KEY_REF"] = "PRIVATE-KEY-PEM"
+        });
+
+        var gateway = new FacturaloPlusStampingGateway(
+            client,
+            Options.Create(new FacturaloPlusOptions
+            {
+                BaseUrl = "https://dev.facturaloplus.com/api/rest/servicio/",
+                StampPath = "timbrarJSON3",
+                ApiKeyReference = "FACTURALOPLUS_API_KEY_REFERENCE"
+            }),
+            secretResolver);
+
+        var requestPayload = CreateRequest();
+        requestPayload.IssuedAtUtc = DateTime.UtcNow.AddHours(8);
+
+        var result = await gateway.StampAsync(requestPayload);
+
+        Assert.Equal(FiscalStampingGatewayOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("future local CFDI emission date", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(handler.LastRequest);
+    }
+
     private static FiscalStampingRequest CreateRequest()
     {
         return new FiscalStampingRequest
@@ -283,6 +412,29 @@ public class FacturaloPlusStampingGatewayTests
     private static string DecodeFormComponent(string value)
     {
         return Uri.UnescapeDataString(value.Replace("+", " ", StringComparison.Ordinal));
+    }
+
+    private static DateTime ConvertUtcToMexicoCity(DateTime utcDateTime)
+    {
+        var normalizedUtc = utcDateTime.Kind == DateTimeKind.Utc
+            ? utcDateTime
+            : DateTime.SpecifyKind(utcDateTime, DateTimeKind.Utc);
+
+        foreach (var timeZoneId in new[] { "America/Mexico_City", "Central Standard Time (Mexico)" })
+        {
+            try
+            {
+                return TimeZoneInfo.ConvertTimeFromUtc(normalizedUtc, TimeZoneInfo.FindSystemTimeZoneById(timeZoneId));
+            }
+            catch (TimeZoneNotFoundException)
+            {
+            }
+            catch (InvalidTimeZoneException)
+            {
+            }
+        }
+
+        throw new InvalidOperationException("Mexico City time zone could not be resolved in the test environment.");
     }
 
     private sealed class RecordingHandler : HttpMessageHandler

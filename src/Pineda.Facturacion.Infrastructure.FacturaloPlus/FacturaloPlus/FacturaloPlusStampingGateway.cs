@@ -19,6 +19,12 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
+    private static readonly string[] CfdiTimeZoneIds =
+    [
+        "America/Mexico_City",
+        "Central Standard Time (Mexico)"
+    ];
+    private static readonly TimeSpan FutureCfdiFechaTolerance = TimeSpan.FromMinutes(1);
 
     private readonly HttpClient _httpClient;
     private readonly FacturaloPlusOptions _options;
@@ -71,7 +77,12 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
             return ValidationFailed("Fiscal document certificate PEM could not be parsed.");
         }
 
-        var payload = BuildPayload(request, certificateMetadata);
+        if (!TryBuildComprobanteFecha(request.IssuedAtUtc, out var comprobanteFecha, out var fechaValidationError))
+        {
+            return ValidationFailed(fechaValidationError!);
+        }
+
+        var payload = BuildPayload(request, certificateMetadata, comprobanteFecha!);
         var payloadJson = JsonSerializer.Serialize(payload, JsonOptions);
         var formPayload = BuildFormPayload(apiKey, payloadJson, privateKeyValue, certificateValue);
 
@@ -165,7 +176,8 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
 
     private static FacturaloPlusStampingPayload BuildPayload(
         FiscalStampingRequest request,
-        CertificateMetadata certificateMetadata)
+        CertificateMetadata certificateMetadata,
+        string comprobanteFecha)
     {
         var itemPayloads = request.Items
             .OrderBy(x => x.LineNumber)
@@ -197,7 +209,7 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
                 Version = request.CfdiVersion,
                 Serie = request.Series,
                 Folio = request.Folio,
-                Fecha = request.IssuedAtUtc.ToString("yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture),
+                Fecha = comprobanteFecha,
                 Moneda = request.CurrencyCode,
                 TipoDeComprobante = MapTipoDeComprobante(request.DocumentType),
                 MetodoPago = request.PaymentMethodSat,
@@ -239,6 +251,35 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
                     }
             }
         };
+    }
+
+    private static bool TryBuildComprobanteFecha(
+        DateTime issuedAtUtc,
+        out string? comprobanteFecha,
+        out string? validationError)
+    {
+        comprobanteFecha = null;
+        validationError = null;
+
+        var cfdiTimeZone = ResolveCfdiTimeZone();
+        if (cfdiTimeZone is null)
+        {
+            validationError = "CFDI emission time zone 'America/Mexico_City' could not be resolved.";
+            return false;
+        }
+
+        var normalizedIssuedAtUtc = NormalizeUtc(issuedAtUtc);
+        var localIssuedAt = TrimToSeconds(TimeZoneInfo.ConvertTimeFromUtc(normalizedIssuedAtUtc, cfdiTimeZone));
+        var localNow = TrimToSeconds(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, cfdiTimeZone));
+
+        if (localIssuedAt > localNow.Add(FutureCfdiFechaTolerance))
+        {
+            validationError = $"Fiscal document issued-at UTC resolves to a future local CFDI emission date for '{cfdiTimeZone.Id}'.";
+            return false;
+        }
+
+        comprobanteFecha = localIssuedAt.ToString("yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture);
+        return true;
     }
 
     private static FacturaloPlusComprobanteConcepto BuildConcepto(FiscalStampingRequestItem item)
@@ -289,6 +330,47 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
     private static string FormatTasaOCuota(decimal tasaOcuota)
     {
         return tasaOcuota.ToString("0.000000", CultureInfo.InvariantCulture);
+    }
+
+    private static TimeZoneInfo? ResolveCfdiTimeZone()
+    {
+        foreach (var timeZoneId in CfdiTimeZoneIds)
+        {
+            try
+            {
+                return TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+            }
+            catch (TimeZoneNotFoundException)
+            {
+            }
+            catch (InvalidTimeZoneException)
+            {
+            }
+        }
+
+        return null;
+    }
+
+    private static DateTime NormalizeUtc(DateTime value)
+    {
+        return value.Kind switch
+        {
+            DateTimeKind.Utc => value,
+            DateTimeKind.Local => value.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(value, DateTimeKind.Utc)
+        };
+    }
+
+    private static DateTime TrimToSeconds(DateTime value)
+    {
+        return new DateTime(
+            value.Year,
+            value.Month,
+            value.Day,
+            value.Hour,
+            value.Minute,
+            value.Second,
+            value.Kind);
     }
 
     private static CertificateMetadata ExtractCertificateMetadata(string certificatePem)
