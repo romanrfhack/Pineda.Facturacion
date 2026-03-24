@@ -215,6 +215,194 @@ public class FacturaloPlusStampingGatewayTests
     }
 
     [Fact]
+    public async Task StampAsync_Treats_Code200_With_NestedDataString_And_StampedXml_As_Success()
+    {
+        using var rsa = RSA.Create(2048);
+        var request = new CertificateRequest(
+            "CN=FacturaloPlus Test",
+            rsa,
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
+        var serialBytes = Encoding.ASCII.GetBytes("30001000000500003416");
+        var certificate = request.Create(
+            new X500DistinguishedName("CN=FacturaloPlus Test"),
+            X509SignatureGenerator.CreateForRSA(rsa, RSASignaturePadding.Pkcs1),
+            DateTimeOffset.UtcNow.AddDays(-1),
+            DateTimeOffset.UtcNow.AddYears(1),
+            serialBytes);
+        var certificatePem = new string(PemEncoding.Write("CERTIFICATE", certificate.Export(X509ContentType.Cert)));
+
+        const string stampedXml = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" Version="4.0">
+              <cfdi:Complemento>
+                <tfd:TimbreFiscalDigital UUID="ABC12345-1111-2222-3333-1234567890AB" FechaTimbrado="2026-03-24T10:26:55" SelloSAT="SELLO-SAT" NoCertificadoSAT="00001000000500001234" Version="1.1" />
+              </cfdi:Complemento>
+            </cfdi:Comprobante>
+            """;
+        var nestedDataJson = JsonSerializer.Serialize(new { XML = stampedXml });
+
+        var handler = new RecordingHandler(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                "{\n" +
+                "  \"code\": \"200\",\n" +
+                "  \"message\": \"Solicitud procesada con éxito. - Solicitud de timbrado procesada.\",\n" +
+                "  \"data\": " + JsonSerializer.Serialize(nestedDataJson) + "\n" +
+                "}",
+                Encoding.UTF8,
+                "application/json")
+        });
+
+        var client = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://dev.facturaloplus.com/api/rest/servicio/")
+        };
+        var secretResolver = new RecordingSecretResolver(new Dictionary<string, string?>
+        {
+            ["FACTURALOPLUS_API_KEY_REFERENCE"] = "APIKEY-TEST",
+            ["CERT_REF"] = certificatePem,
+            ["KEY_REF"] = "PRIVATE-KEY-PEM"
+        });
+
+        var gateway = new FacturaloPlusStampingGateway(
+            client,
+            Options.Create(new FacturaloPlusOptions
+            {
+                BaseUrl = "https://dev.facturaloplus.com/api/rest/servicio/",
+                StampPath = "timbrarJSON3",
+                ApiKeyReference = "FACTURALOPLUS_API_KEY_REFERENCE"
+            }),
+            secretResolver);
+
+        var result = await gateway.StampAsync(CreateRequest());
+
+        Assert.Equal(FiscalStampingGatewayOutcome.Stamped, result.Outcome);
+        Assert.Equal("200", result.ProviderCode);
+        Assert.Equal("ABC12345-1111-2222-3333-1234567890AB", result.Uuid);
+        Assert.Equal(stampedXml, result.XmlContent);
+        Assert.NotNull(result.StampedAtUtc);
+        Assert.Contains("200", result.RawResponseSummaryJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task StampAsync_Treats_Code200_With_NestedDataObject_And_FlatUuid_As_Success()
+    {
+        using var rsa = RSA.Create(2048);
+        var request = new CertificateRequest(
+            "CN=FacturaloPlus Test",
+            rsa,
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
+        var serialBytes = Encoding.ASCII.GetBytes("30001000000500003416");
+        var certificate = request.Create(
+            new X500DistinguishedName("CN=FacturaloPlus Test"),
+            X509SignatureGenerator.CreateForRSA(rsa, RSASignaturePadding.Pkcs1),
+            DateTimeOffset.UtcNow.AddDays(-1),
+            DateTimeOffset.UtcNow.AddYears(1),
+            serialBytes);
+        var certificatePem = new string(PemEncoding.Write("CERTIFICATE", certificate.Export(X509ContentType.Cert)));
+
+        var handler = new RecordingHandler(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""
+                {
+                  "code": "200",
+                  "message": "Solicitud procesada con éxito. - Solicitud de timbrado procesada.",
+                  "data": {
+                    "uuid": "UUID-OK-1",
+                    "xml": "<cfdi:Comprobante xmlns:cfdi=\"http://www.sat.gob.mx/cfd/4\" />"
+                  }
+                }
+                """, Encoding.UTF8, "application/json")
+        });
+
+        var client = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://dev.facturaloplus.com/api/rest/servicio/")
+        };
+        var secretResolver = new RecordingSecretResolver(new Dictionary<string, string?>
+        {
+            ["FACTURALOPLUS_API_KEY_REFERENCE"] = "APIKEY-TEST",
+            ["CERT_REF"] = certificatePem,
+            ["KEY_REF"] = "PRIVATE-KEY-PEM"
+        });
+
+        var gateway = new FacturaloPlusStampingGateway(
+            client,
+            Options.Create(new FacturaloPlusOptions
+            {
+                BaseUrl = "https://dev.facturaloplus.com/api/rest/servicio/",
+                StampPath = "timbrarJSON3",
+                ApiKeyReference = "FACTURALOPLUS_API_KEY_REFERENCE"
+            }),
+            secretResolver);
+
+        var result = await gateway.StampAsync(CreateRequest());
+
+        Assert.Equal(FiscalStampingGatewayOutcome.Stamped, result.Outcome);
+        Assert.Equal("UUID-OK-1", result.Uuid);
+        Assert.Contains("Solicitud procesada con éxito", result.ProviderMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task StampAsync_RealProviderRejection_Remains_Rejected()
+    {
+        using var rsa = RSA.Create(2048);
+        var request = new CertificateRequest(
+            "CN=FacturaloPlus Test",
+            rsa,
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
+        var serialBytes = Encoding.ASCII.GetBytes("30001000000500003416");
+        var certificate = request.Create(
+            new X500DistinguishedName("CN=FacturaloPlus Test"),
+            X509SignatureGenerator.CreateForRSA(rsa, RSASignaturePadding.Pkcs1),
+            DateTimeOffset.UtcNow.AddDays(-1),
+            DateTimeOffset.UtcNow.AddYears(1),
+            serialBytes);
+        var certificatePem = new string(PemEncoding.Write("CERTIFICATE", certificate.Export(X509ContentType.Cert)));
+
+        var handler = new RecordingHandler(new HttpResponseMessage(HttpStatusCode.BadRequest)
+        {
+            Content = new StringContent("""
+                {
+                  "code": "CFDI40101",
+                  "message": "El campo Fecha no cumple con el patrón requerido",
+                  "errorCode": "CFDI40101",
+                  "errorMessage": "El campo Fecha no cumple con el patrón requerido"
+                }
+                """, Encoding.UTF8, "application/json")
+        });
+
+        var client = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://dev.facturaloplus.com/api/rest/servicio/")
+        };
+        var secretResolver = new RecordingSecretResolver(new Dictionary<string, string?>
+        {
+            ["FACTURALOPLUS_API_KEY_REFERENCE"] = "APIKEY-TEST",
+            ["CERT_REF"] = certificatePem,
+            ["KEY_REF"] = "PRIVATE-KEY-PEM"
+        });
+
+        var gateway = new FacturaloPlusStampingGateway(
+            client,
+            Options.Create(new FacturaloPlusOptions
+            {
+                BaseUrl = "https://dev.facturaloplus.com/api/rest/servicio/",
+                StampPath = "timbrarJSON3",
+                ApiKeyReference = "FACTURALOPLUS_API_KEY_REFERENCE"
+            }),
+            secretResolver);
+
+        var result = await gateway.StampAsync(CreateRequest());
+
+        Assert.Equal(FiscalStampingGatewayOutcome.Rejected, result.Outcome);
+        Assert.Equal("CFDI40101", result.ErrorCode);
+    }
+
+    [Fact]
     public async Task StampAsync_Uses_Mexico_City_Local_Time_For_ComprobanteFecha()
     {
         using var rsa = RSA.Create(2048);
