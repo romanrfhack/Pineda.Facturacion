@@ -10,10 +10,13 @@ import {
   FiscalDocumentResponse,
   FiscalReceiverSearchResponse,
   FiscalStampResponse,
+  FiscalDocumentEmailDraftResponse,
   IssuerProfileResponse,
   PrepareFiscalDocumentRequest,
   PrepareFiscalDocumentResponse,
   RefreshFiscalDocumentStatusResponse,
+  SendFiscalDocumentEmailRequest,
+  SendFiscalDocumentEmailResponse,
   StampFiscalDocumentRequest,
   StampFiscalDocumentResponse
 } from '../models/fiscal-documents.models';
@@ -56,6 +59,18 @@ export class FiscalDocumentsApiService {
 
   getStampXml(fiscalDocumentId: number): Observable<string> {
     return this.http.get(buildApiUrl(`/fiscal-documents/${fiscalDocumentId}/stamp/xml`), { responseType: 'text' });
+  }
+
+  getStampPdf(fiscalDocumentId: number): Observable<Blob> {
+    return this.http.get(buildApiUrl(`/fiscal-documents/${fiscalDocumentId}/stamp/pdf`), { responseType: 'blob' });
+  }
+
+  getEmailDraft(fiscalDocumentId: number): Observable<FiscalDocumentEmailDraftResponse> {
+    return this.http.get<FiscalDocumentEmailDraftResponse>(buildApiUrl(`/fiscal-documents/${fiscalDocumentId}/email-draft`));
+  }
+
+  sendByEmail(fiscalDocumentId: number, request: SendFiscalDocumentEmailRequest): Observable<SendFiscalDocumentEmailResponse> {
+    return this.http.post<SendFiscalDocumentEmailResponse>(buildApiUrl(`/fiscal-documents/${fiscalDocumentId}/email`), request);
   }
 
   cancelFiscalDocument(fiscalDocumentId: number, request: CancelFiscalDocumentRequest): Observable<CancelFiscalDocumentResponse> {

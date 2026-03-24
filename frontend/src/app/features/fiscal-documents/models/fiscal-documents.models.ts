@@ -151,6 +151,30 @@ export interface FiscalStampResponse {
   updatedAtUtc: string;
 }
 
+export interface FiscalDocumentEmailDraftResponse {
+  outcome: string;
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  defaultRecipientEmail?: string | null;
+  suggestedSubject?: string | null;
+  suggestedBody?: string | null;
+}
+
+export interface SendFiscalDocumentEmailRequest {
+  recipients: string[];
+  subject?: string | null;
+  body?: string | null;
+}
+
+export interface SendFiscalDocumentEmailResponse {
+  outcome: string;
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  fiscalDocumentId: number;
+  recipients: string[];
+  sentAtUtc?: string | null;
+}
+
 export interface CancelFiscalDocumentRequest {
   cancellationReasonCode: string;
   replacementUuid?: string | null;

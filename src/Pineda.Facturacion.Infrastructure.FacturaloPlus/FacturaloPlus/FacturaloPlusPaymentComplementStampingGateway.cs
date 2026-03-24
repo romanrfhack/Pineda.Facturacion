@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Xml.Linq;
 using Microsoft.Extensions.Options;
 using Pineda.Facturacion.Application.Abstractions.Pac;
 using Pineda.Facturacion.Application.Abstractions.Secrets;
@@ -98,23 +99,24 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
         var providerResponse = TryDeserialize(responseContent);
         var rawResponseSummaryJson = BuildRawResponseSummary(response.StatusCode, providerResponse, responseContent);
 
-        if (response.IsSuccessStatusCode && providerResponse?.Success == true && !string.IsNullOrWhiteSpace(providerResponse.Uuid))
+        if (response.IsSuccessStatusCode && IsProviderSuccess(providerResponse) && HasSuccessfulStampEvidence(providerResponse))
         {
+            var successfulProviderResponse = providerResponse!;
             return new PaymentComplementStampingGatewayResult
             {
                 Outcome = PaymentComplementStampingGatewayOutcome.Stamped,
                 ProviderName = _options.ProviderName,
                 ProviderOperation = "payment-complement-stamp",
                 ProviderRequestHash = providerRequestHash,
-                ProviderTrackingId = providerResponse.TrackingId,
-                ProviderCode = providerResponse.Code,
-                ProviderMessage = providerResponse.Message,
-                Uuid = providerResponse.Uuid,
-                StampedAtUtc = providerResponse.StampedAtUtc ?? DateTime.UtcNow,
-                XmlContent = providerResponse.XmlContent,
-                XmlHash = string.IsNullOrWhiteSpace(providerResponse.XmlContent) ? null : ComputeSha256(providerResponse.XmlContent),
-                OriginalString = providerResponse.OriginalString,
-                QrCodeTextOrUrl = providerResponse.QrCodeTextOrUrl,
+                ProviderTrackingId = successfulProviderResponse.TrackingId,
+                ProviderCode = successfulProviderResponse.Code,
+                ProviderMessage = successfulProviderResponse.Message,
+                Uuid = successfulProviderResponse.Uuid,
+                StampedAtUtc = successfulProviderResponse.StampedAtUtc ?? DateTime.UtcNow,
+                XmlContent = successfulProviderResponse.XmlContent,
+                XmlHash = string.IsNullOrWhiteSpace(successfulProviderResponse.XmlContent) ? null : ComputeSha256(successfulProviderResponse.XmlContent),
+                OriginalString = successfulProviderResponse.OriginalString,
+                QrCodeTextOrUrl = successfulProviderResponse.QrCodeTextOrUrl,
                 RawResponseSummaryJson = rawResponseSummaryJson
             };
         }
@@ -252,9 +254,39 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
 
     private static FacturaloPlusProviderResponse? TryDeserialize(string responseContent)
     {
+        if (string.IsNullOrWhiteSpace(responseContent))
+        {
+            return null;
+        }
+
         try
         {
-            return JsonSerializer.Deserialize<FacturaloPlusProviderResponse>(responseContent, JsonOptions);
+            using var document = JsonDocument.Parse(responseContent);
+            var root = document.RootElement;
+            var response = new FacturaloPlusProviderResponse
+            {
+                Success = ReadBoolean(root, "success") ?? false,
+                Code = ReadString(root, "code", "Code"),
+                Message = ReadString(root, "message", "Message"),
+                TrackingId = ReadString(root, "trackingId", "trackingID", "TrackingId"),
+                Uuid = ReadString(root, "uuid", "UUID", "Uuid"),
+                StampedAtUtc = ReadUtcDateTime(root, "stampedAtUtc", "StampedAtUtc", "fechaTimbrado", "FechaTimbrado"),
+                XmlContent = ReadString(root, "xmlContent", "xml", "XML", "XmlContent"),
+                OriginalString = ReadString(root, "originalString", "OriginalString", "cadenaOriginal", "CadenaOriginal", "cadenaOriginalTFD", "CadenaOriginalTFD"),
+                QrCodeTextOrUrl = ReadString(root, "qrCodeTextOrUrl", "QrCodeTextOrUrl", "qrCode", "QRCode", "qr", "QR"),
+                ErrorCode = ReadString(root, "errorCode", "ErrorCode"),
+                ErrorMessage = ReadString(root, "errorMessage", "ErrorMessage")
+            };
+
+            if (TryGetProperty(root, out var dataElement, "data", "Data"))
+            {
+                PopulateFromProviderData(dataElement, response);
+            }
+
+            PopulateStampEvidenceFromXml(response);
+            response.Success = response.Success || string.Equals(response.Code, "200", StringComparison.OrdinalIgnoreCase);
+
+            return response;
         }
         catch (JsonException)
         {
@@ -272,6 +304,8 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
             providerResponse?.Message,
             providerResponse?.TrackingId,
             providerResponse?.Uuid,
+            providerResponse?.StampedAtUtc,
+            providerResponse?.HasSuccessfulStampEvidence,
             providerResponse?.ErrorCode,
             providerResponse?.ErrorMessage,
             BodyPreview = responseContent.Length <= 500 ? responseContent : responseContent[..500]
@@ -308,6 +342,209 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
             ProviderRequestHash = providerRequestHash,
             ErrorMessage = errorMessage
         };
+    }
+
+    private static bool IsProviderSuccess(FacturaloPlusProviderResponse? response)
+    {
+        return response?.Success == true
+            || string.Equals(response?.Code, "200", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool HasSuccessfulStampEvidence(FacturaloPlusProviderResponse? response)
+    {
+        return response is not null
+            && (response.HasSuccessfulStampEvidence
+                || !string.IsNullOrWhiteSpace(response.Uuid));
+    }
+
+    private static void PopulateFromProviderData(JsonElement dataElement, FacturaloPlusProviderResponse response)
+    {
+        if (dataElement.ValueKind == JsonValueKind.String)
+        {
+            var rawValue = dataElement.GetString();
+            if (string.IsNullOrWhiteSpace(rawValue))
+            {
+                return;
+            }
+
+            var trimmed = rawValue.Trim();
+            if (trimmed.StartsWith('{') || trimmed.StartsWith('['))
+            {
+                try
+                {
+                    using var nestedDocument = JsonDocument.Parse(trimmed);
+                    PopulateFromProviderData(nestedDocument.RootElement, response);
+                    return;
+                }
+                catch (JsonException)
+                {
+                }
+            }
+
+            if (trimmed.StartsWith('<'))
+            {
+                response.XmlContent ??= rawValue;
+            }
+
+            return;
+        }
+
+        if (dataElement.ValueKind != JsonValueKind.Object)
+        {
+            return;
+        }
+
+        response.Uuid ??= ReadString(dataElement, "uuid", "UUID", "Uuid", "folioFiscal", "FolioFiscal");
+        response.StampedAtUtc ??= ReadUtcDateTime(dataElement, "stampedAtUtc", "StampedAtUtc", "fechaTimbrado", "FechaTimbrado");
+        response.XmlContent ??= ReadString(dataElement, "xmlContent", "xml", "XML", "XmlContent");
+        response.OriginalString ??= ReadString(dataElement, "originalString", "OriginalString", "cadenaOriginal", "CadenaOriginal", "cadenaOriginalTFD", "CadenaOriginalTFD");
+        response.QrCodeTextOrUrl ??= ReadString(dataElement, "qrCodeTextOrUrl", "QrCodeTextOrUrl", "qrCode", "QRCode", "qr", "QR");
+    }
+
+    private static void PopulateStampEvidenceFromXml(FacturaloPlusProviderResponse response)
+    {
+        if (string.IsNullOrWhiteSpace(response.XmlContent))
+        {
+            return;
+        }
+
+        try
+        {
+            var document = XDocument.Parse(response.XmlContent, LoadOptions.PreserveWhitespace);
+            var timbre = document
+                .Descendants()
+                .FirstOrDefault(static element => string.Equals(element.Name.LocalName, "TimbreFiscalDigital", StringComparison.Ordinal));
+
+            if (timbre is null)
+            {
+                return;
+            }
+
+            response.Uuid ??= GetAttributeValue(timbre, "UUID");
+            response.StampedAtUtc ??= TryParseCfdiLocalDateTimeAsUtc(GetAttributeValue(timbre, "FechaTimbrado"));
+            response.HasSuccessfulStampEvidence = !string.IsNullOrWhiteSpace(response.Uuid) || response.StampedAtUtc is not null;
+        }
+        catch (Exception)
+        {
+        }
+    }
+
+    private static string? GetAttributeValue(XElement element, string localName)
+    {
+        return element.Attributes().FirstOrDefault(attribute => string.Equals(attribute.Name.LocalName, localName, StringComparison.Ordinal))?.Value;
+    }
+
+    private static DateTime? TryParseCfdiLocalDateTimeAsUtc(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        if (ContainsExplicitOffset(value) && DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var offsetValue))
+        {
+            return offsetValue.UtcDateTime;
+        }
+
+        if (!DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.None, out var localDateTime))
+        {
+            return null;
+        }
+
+        foreach (var timeZoneId in new[] { "America/Mexico_City", "Central Standard Time (Mexico)" })
+        {
+            try
+            {
+                var cfdiTimeZone = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+                var unspecifiedLocalDateTime = DateTime.SpecifyKind(localDateTime, DateTimeKind.Unspecified);
+                return TimeZoneInfo.ConvertTimeToUtc(unspecifiedLocalDateTime, cfdiTimeZone);
+            }
+            catch (TimeZoneNotFoundException)
+            {
+            }
+            catch (InvalidTimeZoneException)
+            {
+            }
+        }
+
+        return null;
+    }
+
+    private static bool ContainsExplicitOffset(string value)
+    {
+        return value.EndsWith("Z", StringComparison.OrdinalIgnoreCase)
+            || value.Contains('+', StringComparison.Ordinal)
+            || value.LastIndexOf('-', value.Length - 1) > value.IndexOf('T');
+    }
+
+    private static string? ReadString(JsonElement element, params string[] propertyNames)
+    {
+        if (!TryGetProperty(element, out var property, propertyNames))
+        {
+            return null;
+        }
+
+        return property.ValueKind switch
+        {
+            JsonValueKind.String => property.GetString(),
+            JsonValueKind.Number => property.GetRawText(),
+            JsonValueKind.True => bool.TrueString,
+            JsonValueKind.False => bool.FalseString,
+            _ => null
+        };
+    }
+
+    private static bool? ReadBoolean(JsonElement element, params string[] propertyNames)
+    {
+        if (!TryGetProperty(element, out var property, propertyNames))
+        {
+            return null;
+        }
+
+        return property.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.String when bool.TryParse(property.GetString(), out var parsedValue) => parsedValue,
+            _ => null
+        };
+    }
+
+    private static DateTime? ReadUtcDateTime(JsonElement element, params string[] propertyNames)
+    {
+        var value = ReadString(element, propertyNames);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        if (ContainsExplicitOffset(value) && DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var offsetValue))
+        {
+            return offsetValue.UtcDateTime;
+        }
+
+        return TryParseCfdiLocalDateTimeAsUtc(value);
+    }
+
+    private static bool TryGetProperty(JsonElement element, out JsonElement property, params string[] propertyNames)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var candidate in element.EnumerateObject())
+            {
+                foreach (var propertyName in propertyNames)
+                {
+                    if (string.Equals(candidate.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        property = candidate.Value;
+                        return true;
+                    }
+                }
+            }
+        }
+
+        property = default;
+        return false;
     }
 
     private sealed class FacturaloPlusPaymentComplementStampingPayload
@@ -401,5 +638,7 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
         public string? ErrorCode { get; set; }
 
         public string? ErrorMessage { get; set; }
+
+        public bool HasSuccessfulStampEvidence { get; set; }
     }
 }

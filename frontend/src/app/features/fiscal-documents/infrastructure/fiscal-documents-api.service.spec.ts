@@ -43,6 +43,46 @@ describe('FiscalDocumentsApiService', () => {
     httpTesting.verify();
   });
 
+  it('gets fiscal stamp pdf as blob', () => {
+    const service = TestBed.inject(FiscalDocumentsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.getStampPdf(40).subscribe();
+
+    const req = httpTesting.expectOne('/api/fiscal-documents/40/stamp/pdf');
+    expect(req.request.method).toBe('GET');
+    expect(req.request.responseType).toBe('blob');
+    req.flush(new Blob(['%PDF-1.4'], { type: 'application/pdf' }));
+    httpTesting.verify();
+  });
+
+  it('gets fiscal document email draft', () => {
+    const service = TestBed.inject(FiscalDocumentsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.getEmailDraft(40).subscribe();
+
+    const req = httpTesting.expectOne('/api/fiscal-documents/40/email-draft');
+    expect(req.request.method).toBe('GET');
+    httpTesting.verify();
+  });
+
+  it('posts fiscal document email request', () => {
+    const service = TestBed.inject(FiscalDocumentsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.sendByEmail(40, {
+      recipients: ['cliente@example.com'],
+      subject: 'CFDI timbrado',
+      body: 'Adjuntamos CFDI.'
+    }).subscribe();
+
+    const req = httpTesting.expectOne('/api/fiscal-documents/40/email');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body.recipients).toEqual(['cliente@example.com']);
+    httpTesting.verify();
+  });
+
   it('gets billing document context by id', () => {
     const service = TestBed.inject(FiscalDocumentsApiService);
     const httpTesting = TestBed.inject(HttpTestingController);

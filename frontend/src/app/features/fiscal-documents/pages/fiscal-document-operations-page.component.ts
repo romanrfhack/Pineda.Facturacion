@@ -7,6 +7,7 @@ import {
   BillingDocumentLookupResponse,
   FiscalCancellationResponse,
   FiscalDocumentResponse,
+  FiscalDocumentEmailDraftResponse,
   FiscalReceiverSearchResponse,
   FiscalStampResponse,
   IssuerProfileResponse,
@@ -245,6 +246,17 @@ import { extractMissingProductFiscalProfileContext, MissingProductFiscalProfileC
             @if (permissionService.canCancelFiscal()) {
               <button type="button" class="secondary" (click)="refreshStatus()" [disabled]="loadingOperation()">Actualizar estatus</button>
             }
+            @if (currentDocument.status === 'Stamped') {
+              <button type="button" class="secondary" (click)="openStampPdf()" [disabled]="loadingPdf() || sendingEmail()">
+                {{ loadingPdf() ? 'Abriendo PDF...' : 'Ver PDF' }}
+              </button>
+              <button type="button" class="secondary" (click)="downloadStampPdf()" [disabled]="loadingPdf() || sendingEmail()">
+                {{ loadingPdf() ? 'Descargando PDF...' : 'Descargar PDF' }}
+              </button>
+              <button type="button" class="secondary" (click)="openEmailComposer()" [disabled]="loadingEmailDraft() || sendingEmail()">
+                {{ loadingEmailDraft() ? 'Cargando envío...' : 'Enviar por correo' }}
+              </button>
+            }
             <a [routerLink]="['/app/accounts-receivable']" [queryParams]="{ fiscalDocumentId: currentDocument.id }">Abrir cuentas por cobrar y pagos</a>
           </div>
 
@@ -278,6 +290,50 @@ import { extractMissingProductFiscalProfileContext, MissingProductFiscalProfileC
           [errorMessage]="stampXmlError()"
           (close)="closeStampXml()"
         />
+      }
+
+      @if (showEmailComposer()) {
+        <section class="card nested-card email-panel">
+          <h3>Enviar CFDI por correo</h3>
+          <p class="helper">Se adjuntarán el XML timbrado y el PDF del CFDI.</p>
+
+          <form class="form-grid" (ngSubmit)="sendEmail()">
+            <label class="receiver-selector">
+              <span>Correo(s) destino</span>
+              <input
+                [(ngModel)]="emailRecipientsInput"
+                name="emailRecipientsInput"
+                placeholder="correo@cliente.com, compras@cliente.com"
+              />
+              <small class="helper">Puedes capturar uno o varios correos separados por comas o punto y coma.</small>
+            </label>
+
+            <label class="receiver-selector">
+              <span>Asunto</span>
+              <input [(ngModel)]="emailSubject" name="emailSubject" />
+            </label>
+
+            <label class="receiver-selector">
+              <span>Mensaje</span>
+              <textarea [(ngModel)]="emailBody" name="emailBody" rows="5"></textarea>
+            </label>
+
+            @if (emailRecipientsError()) {
+              <p class="error">{{ emailRecipientsError() }}</p>
+            }
+
+            @if (emailDraftError()) {
+              <p class="error">{{ emailDraftError() }}</p>
+            }
+
+            <div class="context-actions">
+              <button type="submit" [disabled]="sendingEmail() || !hasValidEmailRecipients()">
+                {{ sendingEmail() ? 'Enviando...' : 'Enviar CFDI' }}
+              </button>
+              <button type="button" class="secondary" (click)="closeEmailComposer()" [disabled]="sendingEmail()">Cancelar</button>
+            </div>
+          </form>
+        </section>
       }
 
       @if (cancellation(); as currentCancellation) {
@@ -327,6 +383,7 @@ import { extractMissingProductFiscalProfileContext, MissingProductFiscalProfileC
     button.secondary { background:#d8c49b; color:#182533; }
     button.danger { background:#7a2020; }
     button:disabled { opacity:0.6; cursor:wait; }
+    textarea { border:1px solid #c9d1da; border-radius:0.8rem; padding:0.75rem 0.9rem; font:inherit; resize:vertical; }
     .error { margin:0; color:#7a2020; }
     @media (max-width: 720px) {
       .search-row { flex-direction:column; align-items:stretch; }
@@ -368,6 +425,13 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected readonly loadingStampXml = signal(false);
   protected readonly stampXmlContent = signal<string | null>(null);
   protected readonly stampXmlError = signal<string | null>(null);
+  protected readonly loadingPdf = signal(false);
+  protected readonly showEmailComposer = signal(false);
+  protected readonly loadingEmailDraft = signal(false);
+  protected readonly sendingEmail = signal(false);
+  protected readonly emailDraft = signal<FiscalDocumentEmailDraftResponse | null>(null);
+  protected readonly emailDraftError = signal<string | null>(null);
+  protected readonly emailRecipientsError = signal<string | null>(null);
   protected readonly searchingReceivers = signal(false);
   protected readonly receiverSearchError = signal<string | null>(null);
   protected readonly receiverSearchTouched = signal(false);
@@ -384,6 +448,9 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected paymentCondition = 'CREDITO';
   protected isCreditSale = true;
   protected creditDays = 7;
+  protected emailRecipientsInput = '';
+  protected emailSubject = '';
+  protected emailBody = '';
 
   protected readonly activeIssuerLabel = computed(() => {
     const issuer = this.activeIssuer();
@@ -629,7 +696,9 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
 
     await this.runOperation(async () => {
       const response = await firstValueFrom(this.api.stampFiscalDocument(fiscalDocumentId, { retryRejected: false }));
-      this.lastOperationMessage.set(response.errorMessage || `Resultado del timbrado: ${getDisplayLabel(response.outcome)}`);
+      this.lastOperationMessage.set(
+        response.errorMessage || (response.isSuccess ? 'Documento fiscal timbrado correctamente.' : `Resultado del timbrado: ${getDisplayLabel(response.outcome)}`)
+      );
       await this.loadFiscalDocument(fiscalDocumentId);
       await this.loadStamp(fiscalDocumentId);
     });
@@ -697,6 +766,83 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     this.stampXmlError.set(null);
   }
 
+  protected async openStampPdf(): Promise<void> {
+    await this.handleStampPdf(false);
+  }
+
+  protected async downloadStampPdf(): Promise<void> {
+    await this.handleStampPdf(true);
+  }
+
+  protected async openEmailComposer(): Promise<void> {
+    const fiscalDocumentId = this.fiscalDocumentId();
+    if (!fiscalDocumentId || this.loadingEmailDraft() || this.sendingEmail()) {
+      return;
+    }
+
+    this.loadingEmailDraft.set(true);
+    this.emailDraftError.set(null);
+
+    try {
+      const draft = await firstValueFrom(this.api.getEmailDraft(fiscalDocumentId));
+      this.emailDraft.set(draft);
+      this.emailRecipientsInput = draft.defaultRecipientEmail ?? '';
+      this.emailSubject = draft.suggestedSubject ?? '';
+      this.emailBody = draft.suggestedBody ?? '';
+      this.emailRecipientsError.set(null);
+      this.showEmailComposer.set(true);
+    } catch (error) {
+      this.emailDraftError.set(extractErrorMessage(error));
+      this.showEmailComposer.set(true);
+    } finally {
+      this.loadingEmailDraft.set(false);
+    }
+  }
+
+  protected closeEmailComposer(): void {
+    this.showEmailComposer.set(false);
+    this.emailDraftError.set(null);
+    this.emailRecipientsError.set(null);
+  }
+
+  protected hasValidEmailRecipients(): boolean {
+    const recipients = parseRecipients(this.emailRecipientsInput);
+    return recipients.length > 0 && recipients.every(isValidEmail);
+  }
+
+  protected async sendEmail(): Promise<void> {
+    const fiscalDocumentId = this.fiscalDocumentId();
+    if (!fiscalDocumentId || this.sendingEmail()) {
+      return;
+    }
+
+    const recipients = parseRecipients(this.emailRecipientsInput);
+    if (recipients.length === 0 || !recipients.every(isValidEmail)) {
+      this.emailRecipientsError.set('Captura al menos un correo válido para continuar.');
+      return;
+    }
+
+    this.sendingEmail.set(true);
+    this.emailDraftError.set(null);
+    this.emailRecipientsError.set(null);
+
+    try {
+      const response = await firstValueFrom(this.api.sendByEmail(fiscalDocumentId, {
+        recipients,
+        subject: this.emailSubject,
+        body: this.emailBody
+      }));
+
+      this.lastOperationMessage.set(`CFDI enviado correctamente a ${response.recipients.join(', ')}.`);
+      this.feedbackService.show('success', 'CFDI enviado por correo correctamente.');
+      this.closeEmailComposer();
+    } catch (error) {
+      this.emailDraftError.set(extractErrorMessage(error));
+    } finally {
+      this.sendingEmail.set(false);
+    }
+  }
+
   private async loadIssuer(): Promise<void> {
     try {
       this.activeIssuer.set(await firstValueFrom(this.api.getActiveIssuer()));
@@ -709,6 +855,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     this.fiscalDocumentId.set(fiscalDocumentId);
     this.showStampDetail.set(false);
     this.closeStampXml();
+    this.closeEmailComposer();
     const document = await firstValueFrom(this.api.getFiscalDocumentById(fiscalDocumentId));
     this.fiscalDocument.set(document);
     await this.loadBillingDocumentContext(document.billingDocumentId, false);
@@ -727,6 +874,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     try {
       const billingDocument = await firstValueFrom(this.api.getBillingDocumentById(billingDocumentId));
       this.clearMissingProductFiscalProfileState();
+      this.closeEmailComposer();
       this.billingDocumentContext.set(billingDocument);
       this.billingDocumentId.set(billingDocument.billingDocumentId);
       this.billingDocumentQuery = `${billingDocument.billingDocumentId}`;
@@ -778,6 +926,34 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       this.loadingOperation.set(false);
     }
   }
+
+  private async handleStampPdf(download: boolean): Promise<void> {
+    const fiscalDocumentId = this.fiscalDocumentId();
+    if (!fiscalDocumentId || this.loadingPdf()) {
+      return;
+    }
+
+    this.loadingPdf.set(true);
+    try {
+      const blob = await firstValueFrom(this.api.getStampPdf(fiscalDocumentId));
+      const objectUrl = window.URL.createObjectURL(blob);
+
+      if (download) {
+        const link = document.createElement('a');
+        link.href = objectUrl;
+        link.download = `cfdi-${fiscalDocumentId}.pdf`;
+        link.click();
+      } else {
+        window.open(objectUrl, '_blank', 'noopener,noreferrer');
+      }
+
+      window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 30000);
+    } catch (error) {
+      this.feedbackService.show('error', extractErrorMessage(error));
+    } finally {
+      this.loadingPdf.set(false);
+    }
+  }
 }
 
 function parseNumber(value: string | null): number | null {
@@ -791,4 +967,15 @@ function parseNumber(value: string | null): number | null {
 
 function extractErrorMessage(error: unknown): string {
   return extractApiErrorMessage(error);
+}
+
+function parseRecipients(value: string): string[] {
+  return value
+    .split(/[,;\n]+/)
+    .map((recipient) => recipient.trim())
+    .filter((recipient) => recipient.length > 0);
+}
+
+function isValidEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }

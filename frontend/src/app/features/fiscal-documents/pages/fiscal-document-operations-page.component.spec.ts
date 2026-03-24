@@ -95,6 +95,21 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         updatedAtUtc: '2026-03-20T12:00:00Z'
       })),
       getStampXml: vi.fn().mockReturnValue(of('<cfdi:Comprobante Version="4.0" />')),
+      getStampPdf: vi.fn().mockReturnValue(of(new Blob(['%PDF-1.4'], { type: 'application/pdf' }))),
+      getEmailDraft: vi.fn().mockReturnValue(of({
+        outcome: 'Found',
+        isSuccess: true,
+        defaultRecipientEmail: 'cliente@example.com',
+        suggestedSubject: 'CFDI timbrado A8',
+        suggestedBody: 'Adjuntamos XML y PDF.'
+      })),
+      sendByEmail: vi.fn().mockReturnValue(of({
+        outcome: 'Sent',
+        isSuccess: true,
+        fiscalDocumentId: 40,
+        recipients: ['cliente@example.com'],
+        sentAtUtc: '2026-03-24T12:10:00Z'
+      })),
       getCancellation: vi.fn().mockReturnValue(throwError(() => ({ status: 404 }))),
       stampFiscalDocument: vi.fn(),
       cancelFiscalDocument: vi.fn(),
@@ -171,6 +186,14 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Aún no hay evidencia de timbrado disponible');
   });
 
+  it('shows PDF and email actions only for stamped documents', async () => {
+    const fixture = await configure();
+
+    expect(fixture.nativeElement.textContent).toContain('Ver PDF');
+    expect(fixture.nativeElement.textContent).toContain('Descargar PDF');
+    expect(fixture.nativeElement.textContent).toContain('Enviar por correo');
+  });
+
   it('opens and closes the XML viewer on demand', async () => {
     const fixture = await configure();
 
@@ -199,6 +222,56 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).toContain('Acceso denegado.');
+  });
+
+  it('opens the email composer with preloaded recipient and suggested content', async () => {
+    const fixture = await configure();
+
+    await fixture.componentInstance['openEmailComposer']();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Enviar CFDI por correo');
+    expect(fixture.componentInstance['emailRecipientsInput']).toBe('cliente@example.com');
+    expect(fixture.componentInstance['emailSubject']).toBe('CFDI timbrado A8');
+    expect(fixture.componentInstance['emailBody']).toContain('XML y PDF');
+  });
+
+  it('sends the stamped CFDI by email and shows confirmation', async () => {
+    const sendByEmail = vi.fn().mockReturnValue(of({
+      outcome: 'Sent',
+      isSuccess: true,
+      fiscalDocumentId: 40,
+      recipients: ['cliente@example.com'],
+      sentAtUtc: '2026-03-24T12:10:00Z'
+    }));
+    const fixture = await configure({ sendByEmail });
+    await fixture.componentInstance['openEmailComposer']();
+    fixture.componentInstance['emailRecipientsInput'] = 'cliente@example.com';
+    fixture.componentInstance['emailSubject'] = 'CFDI timbrado A8';
+    fixture.componentInstance['emailBody'] = 'Adjuntamos XML y PDF.';
+
+    await fixture.componentInstance['sendEmail']();
+
+    expect(sendByEmail).toHaveBeenCalledWith(40, {
+      recipients: ['cliente@example.com'],
+      subject: 'CFDI timbrado A8',
+      body: 'Adjuntamos XML y PDF.'
+    });
+    expect(fixture.componentInstance['lastOperationMessage']()).toContain('CFDI enviado correctamente');
+  });
+
+  it('keeps the email composer open when sending fails', async () => {
+    const fixture = await configure({
+      sendByEmail: vi.fn().mockReturnValue(throwError(() => ({ error: { errorMessage: 'SMTP no disponible.' } })))
+    });
+
+    await fixture.componentInstance['openEmailComposer']();
+    fixture.componentInstance['emailRecipientsInput'] = 'cliente@example.com';
+    await fixture.componentInstance['sendEmail']();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['showEmailComposer']()).toBe(true);
+    expect(fixture.nativeElement.textContent).toContain('SMTP no disponible.');
   });
 
   it('debounces receiver search and renders suggestions', async () => {

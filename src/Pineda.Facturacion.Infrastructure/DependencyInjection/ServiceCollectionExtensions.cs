@@ -1,8 +1,12 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
+using Pineda.Facturacion.Application.Abstractions.Communication;
+using Pineda.Facturacion.Application.Abstractions.Documents;
 using Pineda.Facturacion.Application.Abstractions.Hashing;
 using Pineda.Facturacion.Application.Abstractions.Importing;
 using Pineda.Facturacion.Application.Abstractions.Security;
+using Pineda.Facturacion.Infrastructure.Communication;
+using Pineda.Facturacion.Infrastructure.Documents;
 using Pineda.Facturacion.Infrastructure.Hashing;
 using Pineda.Facturacion.Infrastructure.Excel;
 using Pineda.Facturacion.Infrastructure.Options;
@@ -31,10 +35,15 @@ public static class ServiceCollectionExtensions
 
             services.AddOptions<BootstrapSeedOptions>()
                 .Bind(configuration.GetSection(BootstrapSeedOptions.SectionName));
+
+            services.AddOptions<SmtpEmailOptions>()
+                .Bind(configuration.GetSection(SmtpEmailOptions.SectionName));
         }
 
         services.AddSingleton<IContentHashGenerator, Sha256ContentHashGenerator>();
         services.AddSingleton<IExcelWorksheetReader, ClosedXmlWorksheetReader>();
+        services.AddSingleton<IFiscalDocumentPdfRenderer, FiscalDocumentPdfRenderer>();
+        services.AddSingleton<IEmailSender, SmtpEmailSender>();
         services.AddSingleton<IPasswordHasher, PasswordHasherService>();
         services.AddSingleton<IJwtTokenService, JwtTokenService>();
         services.AddScoped<ICurrentUserAccessor, CurrentUserAccessor>();

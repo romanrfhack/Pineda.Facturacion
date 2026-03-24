@@ -1,0 +1,228 @@
+using System.Net.Mail;
+using Pineda.Facturacion.Application.Abstractions.Communication;
+using Pineda.Facturacion.Application.Abstractions.Documents;
+using Pineda.Facturacion.Application.Abstractions.Persistence;
+using Pineda.Facturacion.Application.UseCases.FiscalDocuments;
+using Pineda.Facturacion.Domain.Entities;
+using Pineda.Facturacion.Domain.Enums;
+using Pineda.Facturacion.Infrastructure.Documents;
+
+namespace Pineda.Facturacion.UnitTests;
+
+public class FiscalDocumentDeliveryServicesTests
+{
+    [Fact]
+    public async Task GetFiscalDocumentPdf_Returns_Pdf_For_Stamped_Document()
+    {
+        var service = new GetFiscalDocumentPdfService(
+            new FakeFiscalDocumentRepository { Existing = CreateFiscalDocument() },
+            new FakeFiscalStampRepository { Existing = CreateFiscalStamp() },
+            new FakeFiscalDocumentPdfRenderer());
+
+        var result = await service.ExecuteAsync(8);
+
+        Assert.Equal(GetFiscalDocumentPdfOutcome.Found, result.Outcome);
+        Assert.Equal("A8_4cb4eed3-3d93-4938-8872-028106881e4c.pdf", result.FileName);
+        Assert.Equal("%PDF-test"u8.ToArray(), result.Content);
+    }
+
+    [Fact]
+    public async Task GetFiscalDocumentPdf_Fails_When_Document_Is_Not_Stamped()
+    {
+        var service = new GetFiscalDocumentPdfService(
+            new FakeFiscalDocumentRepository { Existing = CreateFiscalDocument() },
+            new FakeFiscalStampRepository { Existing = CreateFiscalStamp(status: FiscalStampStatus.Rejected, xmlContent: null, uuid: null) },
+            new FakeFiscalDocumentPdfRenderer());
+
+        var result = await service.ExecuteAsync(8);
+
+        Assert.Equal(GetFiscalDocumentPdfOutcome.NotStamped, result.Outcome);
+    }
+
+    [Fact]
+    public async Task GetFiscalDocumentEmailDraft_Preloads_Receiver_Email()
+    {
+        var service = new GetFiscalDocumentEmailDraftService(
+            new FakeFiscalDocumentRepository { Existing = CreateFiscalDocument() },
+            new FakeFiscalStampRepository { Existing = CreateFiscalStamp() },
+            new FakeFiscalReceiverRepository { Existing = new FiscalReceiver { Id = 3, Email = "cliente@example.com" } });
+
+        var result = await service.ExecuteAsync(8);
+
+        Assert.Equal(GetFiscalDocumentEmailDraftOutcome.Found, result.Outcome);
+        Assert.Equal("cliente@example.com", result.DefaultRecipientEmail);
+        Assert.Contains("A8", result.SuggestedSubject, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SendFiscalDocumentEmail_Attaches_Xml_And_Pdf()
+    {
+        var emailSender = new FakeEmailSender();
+        var service = new SendFiscalDocumentEmailService(
+            new FakeFiscalDocumentRepository { Existing = CreateFiscalDocument() },
+            new FakeFiscalStampRepository { Existing = CreateFiscalStamp() },
+            emailSender,
+            new FakeFiscalDocumentPdfRenderer());
+
+        var result = await service.ExecuteAsync(
+            new SendFiscalDocumentEmailCommand
+            {
+                FiscalDocumentId = 8,
+                Recipients = ["cliente@example.com"]
+            });
+
+        Assert.Equal(SendFiscalDocumentEmailOutcome.Sent, result.Outcome);
+        Assert.NotNull(emailSender.LastMessage);
+        Assert.Equal(["cliente@example.com"], emailSender.LastMessage!.Recipients);
+        Assert.Equal(2, emailSender.LastMessage.Attachments.Count);
+        Assert.Contains(emailSender.LastMessage.Attachments, attachment => attachment.ContentType == "application/xml");
+        Assert.Contains(emailSender.LastMessage.Attachments, attachment => attachment.ContentType == "application/pdf");
+    }
+
+    [Fact]
+    public async Task SendFiscalDocumentEmail_Does_Not_Change_Stamping_State_When_Email_Fails()
+    {
+        var fiscalStamp = CreateFiscalStamp();
+        var service = new SendFiscalDocumentEmailService(
+            new FakeFiscalDocumentRepository { Existing = CreateFiscalDocument() },
+            new FakeFiscalStampRepository { Existing = fiscalStamp },
+            new FakeEmailSender { Exception = new SmtpException("SMTP down") },
+            new FakeFiscalDocumentPdfRenderer());
+
+        var result = await service.ExecuteAsync(
+            new SendFiscalDocumentEmailCommand
+            {
+                FiscalDocumentId = 8,
+                Recipients = ["cliente@example.com"]
+            });
+
+        Assert.Equal(SendFiscalDocumentEmailOutcome.DeliveryFailed, result.Outcome);
+        Assert.Equal(FiscalStampStatus.Succeeded, fiscalStamp.Status);
+    }
+
+    [Fact]
+    public void FiscalDocumentPdfRenderer_Generates_A_Real_Pdf_From_Stamped_Xml()
+    {
+        var renderer = new FiscalDocumentPdfRenderer();
+        var bytes = renderer.Render(CreateFiscalDocument(), CreateFiscalStamp());
+        var pdfText = System.Text.Encoding.ASCII.GetString(bytes);
+
+        Assert.StartsWith("%PDF-1.4", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Representacion impresa del CFDI", pdfText, StringComparison.Ordinal);
+        Assert.Contains("4cb4eed3-3d93-4938-8872-028106881e4c", pdfText, StringComparison.Ordinal);
+    }
+
+    private static FiscalDocument CreateFiscalDocument()
+    {
+        return new FiscalDocument
+        {
+            Id = 8,
+            BillingDocumentId = 3,
+            FiscalReceiverId = 3,
+            Status = FiscalDocumentStatus.Stamped,
+            Series = "A",
+            Folio = "8",
+            IssuedAtUtc = new DateTime(2026, 3, 24, 12, 0, 0, DateTimeKind.Utc),
+            CurrencyCode = "MXN",
+            PaymentMethodSat = "PUE",
+            PaymentFormSat = "03",
+            IssuerRfc = "AAA010101AAA",
+            IssuerLegalName = "Emisor SA",
+            IssuerFiscalRegimeCode = "601",
+            IssuerPostalCode = "01000",
+            ReceiverRfc = "BBB010101BBB",
+            ReceiverLegalName = "Cliente SA",
+            ReceiverFiscalRegimeCode = "601",
+            ReceiverCfdiUseCode = "G03",
+            ReceiverPostalCode = "02000",
+            Subtotal = 100m,
+            DiscountTotal = 0m,
+            TaxTotal = 16m,
+            Total = 116m
+        };
+    }
+
+    private static FiscalStamp CreateFiscalStamp(
+        FiscalStampStatus status = FiscalStampStatus.Succeeded,
+        string? xmlContent = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" Version="4.0" Serie="A" Folio="8" Fecha="2026-03-24T06:00:00" SubTotal="100.00" Total="116.00" Moneda="MXN" MetodoPago="PUE" FormaPago="03" LugarExpedicion="01000">
+              <cfdi:Emisor Rfc="AAA010101AAA" Nombre="Emisor SA" RegimenFiscal="601" />
+              <cfdi:Receptor Rfc="BBB010101BBB" Nombre="Cliente SA" UsoCFDI="G03" RegimenFiscalReceptor="601" DomicilioFiscalReceptor="02000" />
+              <cfdi:Conceptos>
+                <cfdi:Concepto ClaveProdServ="01010101" Cantidad="1" ClaveUnidad="H87" Descripcion="Producto" ValorUnitario="100.00" Importe="100.00" ObjetoImp="02" />
+              </cfdi:Conceptos>
+              <cfdi:Impuestos TotalImpuestosTrasladados="16.00" />
+              <cfdi:Complemento>
+                <tfd:TimbreFiscalDigital UUID="4cb4eed3-3d93-4938-8872-028106881e4c" FechaTimbrado="2026-03-24T06:05:59" NoCertificadoSAT="00001000000500001234" Version="1.1" />
+              </cfdi:Complemento>
+            </cfdi:Comprobante>
+            """,
+        string? uuid = "4cb4eed3-3d93-4938-8872-028106881e4c")
+    {
+        return new FiscalStamp
+        {
+            Id = 8,
+            FiscalDocumentId = 8,
+            Status = status,
+            ProviderName = "FacturaloPlus",
+            ProviderOperation = "stamp",
+            Uuid = uuid,
+            StampedAtUtc = new DateTime(2026, 3, 24, 12, 5, 59, DateTimeKind.Utc),
+            XmlContent = xmlContent,
+            QrCodeTextOrUrl = "https://sat.example/qr"
+        };
+    }
+
+    private sealed class FakeFiscalDocumentRepository : IFiscalDocumentRepository
+    {
+        public FiscalDocument? Existing { get; set; }
+
+        public Task<FiscalDocument?> GetByIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default) => Task.FromResult(Existing);
+        public Task<FiscalDocument?> GetTrackedByIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default) => Task.FromResult(Existing);
+        public Task<FiscalDocument?> GetByBillingDocumentIdAsync(long billingDocumentId, CancellationToken cancellationToken = default) => Task.FromResult(Existing);
+        public Task AddAsync(FiscalDocument fiscalDocument, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class FakeFiscalStampRepository : IFiscalStampRepository
+    {
+        public FiscalStamp? Existing { get; set; }
+
+        public Task<FiscalStamp?> GetByFiscalDocumentIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default) => Task.FromResult(Existing);
+        public Task<FiscalStamp?> GetTrackedByFiscalDocumentIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default) => Task.FromResult(Existing);
+        public Task AddAsync(FiscalStamp fiscalStamp, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class FakeFiscalReceiverRepository : IFiscalReceiverRepository
+    {
+        public FiscalReceiver? Existing { get; set; }
+
+        public Task<IReadOnlyList<FiscalReceiver>> SearchAsync(string query, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<FiscalReceiver>>([]);
+        public Task<FiscalReceiver?> GetByRfcAsync(string normalizedRfc, CancellationToken cancellationToken = default) => Task.FromResult(Existing);
+        public Task<FiscalReceiver?> GetByIdAsync(long fiscalReceiverId, CancellationToken cancellationToken = default) => Task.FromResult(Existing);
+        public Task AddAsync(FiscalReceiver fiscalReceiver, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task UpdateAsync(FiscalReceiver fiscalReceiver, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class FakeFiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
+    {
+        public byte[] Render(FiscalDocument fiscalDocument, FiscalStamp fiscalStamp) => "%PDF-test"u8.ToArray();
+    }
+
+    private sealed class FakeEmailSender : IEmailSender
+    {
+        public EmailMessage? LastMessage { get; private set; }
+        public Exception? Exception { get; init; }
+
+        public Task SendAsync(EmailMessage message, CancellationToken cancellationToken = default)
+        {
+            LastMessage = message;
+            if (Exception is not null)
+            {
+                throw Exception;
+            }
+
+            return Task.CompletedTask;
+        }
+    }
+}

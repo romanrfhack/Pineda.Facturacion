@@ -45,6 +45,29 @@ public static class FiscalDocumentsEndpoints
             .Produces(StatusCodes.Status200OK, contentType: "application/xml")
             .Produces(StatusCodes.Status404NotFound);
 
+        group.MapGet("/{fiscalDocumentId:long}/stamp/pdf", GetFiscalStampPdfByFiscalDocumentIdAsync)
+            .WithName("GetFiscalStampPdfByFiscalDocumentId")
+            .WithSummary("Get a printable PDF representation for a stamped fiscal document")
+            .Produces(StatusCodes.Status200OK, contentType: "application/pdf")
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status409Conflict);
+
+        group.MapGet("/{fiscalDocumentId:long}/email-draft", GetFiscalDocumentEmailDraftAsync)
+            .WithName("GetFiscalDocumentEmailDraft")
+            .WithSummary("Get suggested email data for a stamped fiscal document")
+            .Produces<FiscalDocumentEmailDraftResponse>(StatusCodes.Status200OK)
+            .Produces<FiscalDocumentEmailDraftResponse>(StatusCodes.Status404NotFound)
+            .Produces<FiscalDocumentEmailDraftResponse>(StatusCodes.Status409Conflict);
+
+        group.MapPost("/{fiscalDocumentId:long}/email", SendFiscalDocumentEmailAsync)
+            .WithName("SendFiscalDocumentEmail")
+            .WithSummary("Send a stamped fiscal document by email with XML and PDF attachments")
+            .Produces<SendFiscalDocumentEmailResponse>(StatusCodes.Status200OK)
+            .Produces<SendFiscalDocumentEmailResponse>(StatusCodes.Status400BadRequest)
+            .Produces<SendFiscalDocumentEmailResponse>(StatusCodes.Status404NotFound)
+            .Produces<SendFiscalDocumentEmailResponse>(StatusCodes.Status409Conflict)
+            .Produces<SendFiscalDocumentEmailResponse>(StatusCodes.Status503ServiceUnavailable);
+
         group.MapPost("/{fiscalDocumentId:long}/cancel", CancelFiscalDocumentAsync)
             .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
             .WithName("CancelFiscalDocument")
@@ -167,6 +190,93 @@ public static class FiscalDocumentsEndpoints
         }
 
         return TypedResults.Text(result.FiscalStamp.XmlContent, "application/xml");
+    }
+
+    private static async Task<IResult> GetFiscalStampPdfByFiscalDocumentIdAsync(
+        long fiscalDocumentId,
+        GetFiscalDocumentPdfService service,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(fiscalDocumentId, cancellationToken);
+        return result.Outcome switch
+        {
+            GetFiscalDocumentPdfOutcome.Found when result.Content is not null && !string.IsNullOrWhiteSpace(result.FileName)
+                => TypedResults.File(result.Content, "application/pdf", result.FileName),
+            GetFiscalDocumentPdfOutcome.NotFound => TypedResults.NotFound(),
+            _ => TypedResults.Conflict(new { outcome = result.Outcome.ToString(), isSuccess = result.IsSuccess, errorMessage = result.ErrorMessage })
+        };
+    }
+
+    private static async Task<Results<Ok<FiscalDocumentEmailDraftResponse>, NotFound<FiscalDocumentEmailDraftResponse>, Conflict<FiscalDocumentEmailDraftResponse>>> GetFiscalDocumentEmailDraftAsync(
+        long fiscalDocumentId,
+        GetFiscalDocumentEmailDraftService service,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(fiscalDocumentId, cancellationToken);
+        var response = new FiscalDocumentEmailDraftResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            DefaultRecipientEmail = result.DefaultRecipientEmail,
+            SuggestedSubject = result.SuggestedSubject,
+            SuggestedBody = result.SuggestedBody
+        };
+
+        return result.Outcome switch
+        {
+            GetFiscalDocumentEmailDraftOutcome.Found => TypedResults.Ok(response),
+            GetFiscalDocumentEmailDraftOutcome.NotFound => TypedResults.NotFound(response),
+            _ => TypedResults.Conflict(response)
+        };
+    }
+
+    private static async Task<Results<Ok<SendFiscalDocumentEmailResponse>, BadRequest<SendFiscalDocumentEmailResponse>, NotFound<SendFiscalDocumentEmailResponse>, Conflict<SendFiscalDocumentEmailResponse>, JsonHttpResult<SendFiscalDocumentEmailResponse>>> SendFiscalDocumentEmailAsync(
+        long fiscalDocumentId,
+        SendFiscalDocumentEmailRequest request,
+        SendFiscalDocumentEmailService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(
+            new SendFiscalDocumentEmailCommand
+            {
+                FiscalDocumentId = fiscalDocumentId,
+                Recipients = request.Recipients,
+                Subject = request.Subject,
+                Body = request.Body
+            },
+            cancellationToken);
+
+        var response = new SendFiscalDocumentEmailResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            FiscalDocumentId = result.FiscalDocumentId,
+            Recipients = result.Recipients,
+            SentAtUtc = result.SentAtUtc
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "FiscalDocument.Email",
+            "FiscalDocument",
+            fiscalDocumentId.ToString(),
+            result.Outcome.ToString(),
+            new { fiscalDocumentId, request.Recipients, request.Subject },
+            new { result.Recipients, result.SentAtUtc },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            SendFiscalDocumentEmailOutcome.Sent => TypedResults.Ok(response),
+            SendFiscalDocumentEmailOutcome.NotFound => TypedResults.NotFound(response),
+            SendFiscalDocumentEmailOutcome.NotStamped => TypedResults.Conflict(response),
+            SendFiscalDocumentEmailOutcome.DeliveryFailed => TypedResults.Json(response, statusCode: StatusCodes.Status503ServiceUnavailable),
+            _ => TypedResults.BadRequest(response)
+        };
     }
 
     private static async Task<Results<Ok<CancelFiscalDocumentResponse>, BadRequest<CancelFiscalDocumentResponse>, NotFound<CancelFiscalDocumentResponse>, Conflict<CancelFiscalDocumentResponse>, JsonHttpResult<CancelFiscalDocumentResponse>>> CancelFiscalDocumentAsync(
@@ -483,6 +593,33 @@ public static class FiscalDocumentsEndpoints
         public string? QrCodeTextOrUrl { get; init; }
         public DateTime CreatedAtUtc { get; init; }
         public DateTime UpdatedAtUtc { get; init; }
+    }
+
+    public sealed class FiscalDocumentEmailDraftResponse
+    {
+        public string Outcome { get; init; } = string.Empty;
+        public bool IsSuccess { get; init; }
+        public string? ErrorMessage { get; init; }
+        public string? DefaultRecipientEmail { get; init; }
+        public string? SuggestedSubject { get; init; }
+        public string? SuggestedBody { get; init; }
+    }
+
+    public sealed class SendFiscalDocumentEmailRequest
+    {
+        public IReadOnlyList<string> Recipients { get; init; } = [];
+        public string? Subject { get; init; }
+        public string? Body { get; init; }
+    }
+
+    public sealed class SendFiscalDocumentEmailResponse
+    {
+        public string Outcome { get; init; } = string.Empty;
+        public bool IsSuccess { get; init; }
+        public string? ErrorMessage { get; init; }
+        public long FiscalDocumentId { get; init; }
+        public IReadOnlyList<string> Recipients { get; init; } = [];
+        public DateTime? SentAtUtc { get; init; }
     }
 
     public sealed class CancelFiscalDocumentRequest
