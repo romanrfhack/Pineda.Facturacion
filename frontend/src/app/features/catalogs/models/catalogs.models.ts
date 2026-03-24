@@ -15,6 +15,9 @@ export interface IssuerProfile {
   hasCertificateReference: boolean;
   hasPrivateKeyReference: boolean;
   hasPrivateKeyPasswordReference: boolean;
+  hasLogo: boolean;
+  logoFileName?: string | null;
+  logoUpdatedAtUtc?: string | null;
   pacEnvironment: string;
   isActive: boolean;
   createdAtUtc: string;

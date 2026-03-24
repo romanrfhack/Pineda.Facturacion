@@ -1508,6 +1508,25 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
                         .HasColumnType("varchar(300)")
                         .HasColumnName("legal_name");
 
+                    b.Property<string>("LogoContentType")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)")
+                        .HasColumnName("logo_content_type");
+
+                    b.Property<string>("LogoFileName")
+                        .HasMaxLength(255)
+                        .HasColumnType("varchar(255)")
+                        .HasColumnName("logo_file_name");
+
+                    b.Property<string>("LogoStoragePath")
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)")
+                        .HasColumnName("logo_storage_path");
+
+                    b.Property<DateTime?>("LogoUpdatedAtUtc")
+                        .HasColumnType("datetime(6)")
+                        .HasColumnName("logo_updated_at_utc");
+
                     b.Property<string>("PacEnvironment")
                         .IsRequired()
                         .HasMaxLength(50)

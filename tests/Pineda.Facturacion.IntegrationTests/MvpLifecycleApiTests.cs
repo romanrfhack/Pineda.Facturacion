@@ -84,6 +84,38 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
+    public async Task IssuerProfile_Logo_Can_Be_Uploaded_And_Retrieved()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        var seed = await factory.SeedStandardFiscalMasterDataAsync();
+
+        using var content = new MultipartFormDataContent();
+        var file = new ByteArrayContent(
+        [
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+            0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+            0x00, 0x00, 0x00, 0x01
+        ]);
+        file.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+        content.Add(file, "file", "logo.png");
+
+        var uploadResponse = await client.PutAsync($"/api/fiscal/issuer-profile/{seed.IssuerId}/logo", content);
+        Assert.Equal(HttpStatusCode.OK, uploadResponse.StatusCode);
+
+        var activeResponse = await client.GetAsync("/api/fiscal/issuer-profile/active");
+        Assert.Equal(HttpStatusCode.OK, activeResponse.StatusCode);
+        using var activeJson = await JsonDocument.ParseAsync(await activeResponse.Content.ReadAsStreamAsync());
+        Assert.True(activeJson.RootElement.GetProperty("hasLogo").GetBoolean());
+        Assert.Equal("logo.png", activeJson.RootElement.GetProperty("logoFileName").GetString());
+
+        var logoResponse = await client.GetAsync($"/api/fiscal/issuer-profile/{seed.IssuerId}/logo");
+        Assert.Equal(HttpStatusCode.OK, logoResponse.StatusCode);
+        Assert.Equal("image/png", logoResponse.Content.Headers.ContentType?.MediaType);
+        Assert.NotEmpty(await logoResponse.Content.ReadAsByteArrayAsync());
+    }
+
+    [Fact]
     public async Task Import_CreateBilling_AndPrepareFiscalDocument_HappyPath()
     {
         await using var factory = new MvpApiFactory();

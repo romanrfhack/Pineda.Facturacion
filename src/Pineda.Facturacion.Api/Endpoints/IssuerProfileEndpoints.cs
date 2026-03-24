@@ -40,6 +40,29 @@ public static class IssuerProfileEndpoints
             .Produces<MutationResponse>(StatusCodes.Status404NotFound)
             .Produces<MutationResponse>(StatusCodes.Status409Conflict);
 
+        group.MapGet("/{id:long}/logo", GetIssuerProfileLogoAsync)
+            .WithName("GetIssuerProfileLogo")
+            .WithSummary("Get an issuer profile logo")
+            .Produces(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
+
+        group.MapPut("/{id:long}/logo", UploadIssuerProfileLogoAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
+            .DisableAntiforgery()
+            .Accepts<IFormFile>("multipart/form-data")
+            .WithName("UploadIssuerProfileLogo")
+            .WithSummary("Upload or replace an issuer profile logo")
+            .Produces<MutationResponse>(StatusCodes.Status200OK)
+            .Produces<MutationResponse>(StatusCodes.Status400BadRequest)
+            .Produces<MutationResponse>(StatusCodes.Status404NotFound);
+
+        group.MapDelete("/{id:long}/logo", RemoveIssuerProfileLogoAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
+            .WithName("RemoveIssuerProfileLogo")
+            .WithSummary("Remove an issuer profile logo")
+            .Produces<MutationResponse>(StatusCodes.Status200OK)
+            .Produces<MutationResponse>(StatusCodes.Status404NotFound);
+
         return endpoints;
     }
 
@@ -180,6 +203,108 @@ public static class IssuerProfileEndpoints
         };
     }
 
+    private static async Task<Results<FileContentHttpResult, NotFound>> GetIssuerProfileLogoAsync(
+        long id,
+        GetIssuerProfileLogoService service,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(id, cancellationToken);
+        if (result.Outcome == GetIssuerProfileLogoOutcome.NotFound || result.Content.Length == 0)
+        {
+            return TypedResults.NotFound();
+        }
+
+        return TypedResults.File(result.Content, result.ContentType, result.FileName);
+    }
+
+    private static async Task<Results<Ok<MutationResponse>, BadRequest<MutationResponse>, NotFound<MutationResponse>>> UploadIssuerProfileLogoAsync(
+        long id,
+        IFormFile? file,
+        UploadIssuerProfileLogoService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        if (file is null)
+        {
+            return TypedResults.BadRequest(new MutationResponse
+            {
+                Outcome = UploadIssuerProfileLogoOutcome.ValidationFailed.ToString(),
+                IsSuccess = false,
+                ErrorMessage = "El archivo del logotipo es obligatorio."
+            });
+        }
+
+        await using var stream = file.OpenReadStream();
+        using var buffer = new MemoryStream();
+        await stream.CopyToAsync(buffer, cancellationToken);
+
+        var result = await service.ExecuteAsync(id, file.FileName, file.ContentType, buffer.ToArray(), cancellationToken);
+        var response = new MutationResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            Id = result.IssuerProfileId
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "IssuerProfile.LogoUpload",
+            "IssuerProfile",
+            id.ToString(),
+            result.Outcome.ToString(),
+            new
+            {
+                id,
+                fileName = file.FileName,
+                fileSize = file.Length,
+                contentType = file.ContentType
+            },
+            new { result.IssuerProfileId },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            UploadIssuerProfileLogoOutcome.Updated => TypedResults.Ok(response),
+            UploadIssuerProfileLogoOutcome.NotFound => TypedResults.NotFound(response),
+            _ => TypedResults.BadRequest(response)
+        };
+    }
+
+    private static async Task<Results<Ok<MutationResponse>, NotFound<MutationResponse>>> RemoveIssuerProfileLogoAsync(
+        long id,
+        RemoveIssuerProfileLogoService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(id, cancellationToken);
+        var response = new MutationResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            Id = result.IssuerProfileId
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "IssuerProfile.LogoRemove",
+            "IssuerProfile",
+            id.ToString(),
+            result.Outcome.ToString(),
+            new { id },
+            new { result.IssuerProfileId },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            RemoveIssuerProfileLogoOutcome.Removed => TypedResults.Ok(response),
+            _ => TypedResults.NotFound(response)
+        };
+    }
+
     private static IssuerProfileResponse MapIssuerProfile(IssuerProfile issuerProfile)
     {
         return new IssuerProfileResponse
@@ -193,6 +318,9 @@ public static class IssuerProfileEndpoints
             HasCertificateReference = !string.IsNullOrWhiteSpace(issuerProfile.CertificateReference),
             HasPrivateKeyReference = !string.IsNullOrWhiteSpace(issuerProfile.PrivateKeyReference),
             HasPrivateKeyPasswordReference = !string.IsNullOrWhiteSpace(issuerProfile.PrivateKeyPasswordReference),
+            HasLogo = !string.IsNullOrWhiteSpace(issuerProfile.LogoStoragePath),
+            LogoFileName = issuerProfile.LogoFileName,
+            LogoUpdatedAtUtc = issuerProfile.LogoUpdatedAtUtc,
             PacEnvironment = issuerProfile.PacEnvironment,
             IsActive = issuerProfile.IsActive,
             CreatedAtUtc = issuerProfile.CreatedAtUtc,
@@ -227,6 +355,9 @@ public static class IssuerProfileEndpoints
         public bool HasCertificateReference { get; init; }
         public bool HasPrivateKeyReference { get; init; }
         public bool HasPrivateKeyPasswordReference { get; init; }
+        public bool HasLogo { get; init; }
+        public string? LogoFileName { get; init; }
+        public DateTime? LogoUpdatedAtUtc { get; init; }
         public string PacEnvironment { get; init; } = string.Empty;
         public bool IsActive { get; init; }
         public DateTime CreatedAtUtc { get; init; }

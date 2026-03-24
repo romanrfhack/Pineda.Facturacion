@@ -22,6 +22,14 @@ public class IssuerProfile
 
     public string PacEnvironment { get; set; } = string.Empty;
 
+    public string? LogoStoragePath { get; set; }
+
+    public string? LogoFileName { get; set; }
+
+    public string? LogoContentType { get; set; }
+
+    public DateTime? LogoUpdatedAtUtc { get; set; }
+
     public bool IsActive { get; set; }
 
     public DateTime CreatedAtUtc { get; set; }

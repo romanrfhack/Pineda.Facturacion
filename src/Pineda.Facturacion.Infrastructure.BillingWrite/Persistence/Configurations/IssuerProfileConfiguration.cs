@@ -70,6 +70,24 @@ public class IssuerProfileConfiguration : IEntityTypeConfiguration<IssuerProfile
             .HasColumnType("varchar(50)")
             .IsRequired();
 
+        builder.Property(x => x.LogoStoragePath)
+            .HasColumnName("logo_storage_path")
+            .HasMaxLength(500)
+            .HasColumnType("varchar(500)");
+
+        builder.Property(x => x.LogoFileName)
+            .HasColumnName("logo_file_name")
+            .HasMaxLength(255)
+            .HasColumnType("varchar(255)");
+
+        builder.Property(x => x.LogoContentType)
+            .HasColumnName("logo_content_type")
+            .HasMaxLength(100)
+            .HasColumnType("varchar(100)");
+
+        builder.Property(x => x.LogoUpdatedAtUtc)
+            .HasColumnName("logo_updated_at_utc");
+
         builder.Property(x => x.IsActive)
             .HasColumnName("is_active")
             .IsRequired();

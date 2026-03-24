@@ -53,6 +53,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<CreateIssuerProfileService>();
         services.AddScoped<UpdateIssuerProfileService>();
         services.AddScoped<GetActiveIssuerProfileService>();
+        services.AddScoped<UploadIssuerProfileLogoService>();
+        services.AddScoped<GetIssuerProfileLogoService>();
+        services.AddScoped<RemoveIssuerProfileLogoService>();
         services.AddScoped<SearchFiscalReceiversService>();
         services.AddScoped<GetFiscalReceiverByRfcService>();
         services.AddScoped<CreateFiscalReceiverService>();
