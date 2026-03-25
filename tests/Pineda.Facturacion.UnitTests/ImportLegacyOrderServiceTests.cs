@@ -142,7 +142,7 @@ public class ImportLegacyOrderServiceTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_Preserves_Consistent_Line_Math_When_Legacy_Item_Uses_Net_Base_And_Discount()
+    public async Task ExecuteAsync_Preserves_Consistent_Line_Math_When_Legacy_Item_Uses_Discounted_Gross_SuPrecio()
     {
         var legacyOrder = CreateLegacyOrder();
         legacyOrder.Items =
@@ -156,8 +156,8 @@ public class ImportLegacyOrderServiceTests
                 UnitCode = "H87",
                 UnitName = "Pieza",
                 Quantity = 2m,
-                UnitPrice = 100m,
-                DiscountAmount = 50m,
+                UnitPrice = 75m,
+                DiscountAmount = 0m,
                 TaxRate = 0m,
                 TaxAmount = 0m,
                 LineTotal = 150m,
@@ -183,8 +183,8 @@ public class ImportLegacyOrderServiceTests
 
         Assert.Equal(ImportLegacyOrderOutcome.Imported, result.Outcome);
         var item = Assert.Single(salesOrderRepository.Added!.Items);
-        Assert.Equal(100m, item.UnitPrice);
-        Assert.Equal(50m, item.DiscountAmount);
+        Assert.Equal(75m, item.UnitPrice);
+        Assert.Equal(0m, item.DiscountAmount);
         Assert.Equal(0.16m, item.TaxRate);
         Assert.Equal(24m, item.TaxAmount);
         Assert.Equal(150m, item.LineTotal);

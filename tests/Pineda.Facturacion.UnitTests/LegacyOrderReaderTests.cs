@@ -22,18 +22,15 @@ public class LegacyOrderReaderTests
     }
 
     [Fact]
-    public void CalculateDiscountAmountFromGrossPrices_Normalizes_Discount_To_Base_Amount()
+    public void NormalizeGrossAmountToNet_Converts_SuPrecio_With_Standard_Vat()
     {
-        var discountAmount = LegacyOrderReader.CalculateDiscountAmountFromGrossPrices(
-            quantity: 2m,
-            grossListUnitPrice: 116m,
-            grossEffectiveUnitPrice: 87m);
+        var unitPrice = LegacyOrderReader.NormalizeGrossAmountToNet(87m);
 
-        Assert.Equal(50m, discountAmount);
+        Assert.Equal(75m, unitPrice);
     }
 
     [Fact]
-    public void DetailSql_Joins_NombresArticulos_And_Uses_Precio2()
+    public void DetailSql_Joins_NombresArticulos_And_Uses_SuPrecio_As_Effective_Price()
     {
         var field = typeof(LegacyOrderReader).GetField("DetailSql", BindingFlags.Static | BindingFlags.NonPublic);
         var sql = Assert.IsType<string>(field?.GetValue(null));
@@ -41,6 +38,7 @@ public class LegacyOrderReaderTests
         Assert.Contains("LEFT JOIN nombresarticulos n", sql, StringComparison.Ordinal);
         Assert.Contains("a.cveNomArt = n.cveNomArt", sql, StringComparison.Ordinal);
         Assert.Contains("n.NomArt AS NomArt", sql, StringComparison.Ordinal);
-        Assert.Contains("a.Precio2 AS GrossListUnitPrice", sql, StringComparison.Ordinal);
+        Assert.Contains("d.SuPrecio AS GrossEffectiveUnitPrice", sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("GrossListUnitPrice", sql, StringComparison.Ordinal);
     }
 }

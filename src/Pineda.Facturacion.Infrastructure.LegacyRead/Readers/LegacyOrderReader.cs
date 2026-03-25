@@ -32,11 +32,7 @@ public class LegacyOrderReader : ILegacyOrderReader
                 FROM pedidosdet d
                 WHERE d.noPedido = p.noPedido
             ), 0) AS Subtotal,
-            COALESCE((
-                SELECT SUM((d.Precio - d.SuPrecio) * d.Cantidad)
-                FROM pedidosdet d
-                WHERE d.noPedido = p.noPedido
-            ), 0) AS DiscountTotal,
+            0 AS DiscountTotal,
             0 AS TaxTotal,
             p.MontoPedido AS Total
         FROM pedidos p
@@ -59,7 +55,6 @@ public class LegacyOrderReader : ILegacyOrderReader
             d.uniMedida AS UnitCode,
             a.uniMedida AS UnitName,
             d.Cantidad AS Quantity,
-            a.Precio2 AS GrossListUnitPrice,
             d.SuPrecio AS GrossEffectiveUnitPrice,
             0 AS TaxRate,
             0 AS TaxAmount,
@@ -186,7 +181,6 @@ public class LegacyOrderReader : ILegacyOrderReader
         while (await reader.ReadAsync(cancellationToken))
         {
             var quantity = GetRequiredDecimal(reader, "Quantity");
-            var grossListUnitPrice = GetRequiredDecimal(reader, "GrossListUnitPrice");
             var grossEffectiveUnitPrice = GetRequiredDecimal(reader, "GrossEffectiveUnitPrice");
 
             items.Add(new LegacyOrderItemReadModel
@@ -203,8 +197,8 @@ public class LegacyOrderReader : ILegacyOrderReader
                 UnitCode = GetNullableString(reader, "UnitCode"),
                 UnitName = GetNullableString(reader, "UnitName"),
                 Quantity = quantity,
-                UnitPrice = NormalizeGrossAmountToNet(grossListUnitPrice),
-                DiscountAmount = CalculateDiscountAmountFromGrossPrices(quantity, grossListUnitPrice, grossEffectiveUnitPrice),
+                UnitPrice = NormalizeGrossAmountToNet(grossEffectiveUnitPrice),
+                DiscountAmount = 0m,
                 TaxRate = GetRequiredDecimal(reader, "TaxRate"),
                 TaxAmount = GetRequiredDecimal(reader, "TaxAmount"),
                 LineTotal = NormalizeGrossAmountToNet(grossEffectiveUnitPrice * quantity),
@@ -382,11 +376,6 @@ public class LegacyOrderReader : ILegacyOrderReader
     internal static decimal NormalizeGrossAmountToNet(decimal grossAmount)
     {
         return Math.Round(grossAmount / 1.16m, 6, MidpointRounding.AwayFromZero);
-    }
-
-    internal static decimal CalculateDiscountAmountFromGrossPrices(decimal quantity, decimal grossListUnitPrice, decimal grossEffectiveUnitPrice)
-    {
-        return NormalizeGrossAmountToNet((grossListUnitPrice - grossEffectiveUnitPrice) * quantity);
     }
 
     internal static string BuildDescription(string? nominalArticleName, string? articleName, string? articleSpecification, string? fallbackArticleId = null)
