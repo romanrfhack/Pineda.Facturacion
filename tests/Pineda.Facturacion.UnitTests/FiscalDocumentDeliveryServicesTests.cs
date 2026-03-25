@@ -115,6 +115,7 @@ public class FiscalDocumentDeliveryServicesTests
         Assert.Contains("100.00", pdfText, StringComparison.Ordinal);
         Assert.Contains("16.00", pdfText, StringComparison.Ordinal);
         Assert.Contains("116.00", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Este documento es una representacion impresa de un CFDI 4.0", pdfText, StringComparison.Ordinal);
         Assert.Equal(2, CountOccurrences(pdfText, "/Subtype /Image"));
         Assert.Contains("Consulta SAT / QR:", pdfText, StringComparison.Ordinal);
     }
@@ -235,6 +236,7 @@ public class FiscalDocumentDeliveryServicesTests
         Assert.Contains("75.00", pdfText, StringComparison.Ordinal);
         Assert.Contains("282.00", pdfText, StringComparison.Ordinal);
         Assert.Contains("35.00", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Este documento es una representacion impresa de un CFDI 4.0", pdfText, StringComparison.Ordinal);
     }
 
     private static FiscalDocument CreateFiscalDocument()

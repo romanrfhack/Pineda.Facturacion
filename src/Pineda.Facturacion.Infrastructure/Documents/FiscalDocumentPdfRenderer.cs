@@ -522,33 +522,65 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
 
         private void DrawTimbre(PdfViewModel model, PdfImageAsset? qr)
         {
+            const float qrBoxSize = 92f;
+            const float qrColumnWidth = 112f;
+            const float metaLabelWidth = 120f;
+            var metaX = Margin + qrColumnWidth + 12f;
+            var metaWidth = PageWidth - Margin - metaX - 10f;
+            var metaValueWidth = metaWidth - metaLabelWidth;
+
+            var shortRows = new List<(string Label, string Value)>();
+            if (!string.IsNullOrWhiteSpace(model.SatCertificate))
+            {
+                shortRows.Add(("No. serie certificado SAT", model.SatCertificate!));
+            }
+
+            if (!string.IsNullOrWhiteSpace(model.IssuerCertificate))
+            {
+                shortRows.Add(("No. serie CSD emisor", model.IssuerCertificate!));
+            }
+
+            shortRows.Add(("UUID", model.Uuid));
+            shortRows.Add(("Fecha de timbrado", model.StampedAt));
+
             var qrLines = string.IsNullOrWhiteSpace(model.Qr)
                 ? []
-                : WrapText(model.Qr!, qr is null ? 72 : 34).Take(3).ToArray();
-            var originalLines = string.IsNullOrWhiteSpace(model.OriginalString)
-                ? []
-                : WrapText(model.OriginalString!, 66).Take(8).ToArray();
+                : WrapText(model.Qr!, EstimateWrapLength(metaWidth, 8f, PdfFont.Regular)).Take(3).ToArray();
             var satSealLines = string.IsNullOrWhiteSpace(model.SatSeal)
                 ? []
-                : WrapText(model.SatSeal!, 84).Take(4).ToArray();
+                : WrapText(model.SatSeal!, EstimateWrapLength(PageWidth - (Margin * 2) - 20f, 7.4f, PdfFont.Regular)).ToArray();
             var cfdiSealLines = string.IsNullOrWhiteSpace(model.CfdiSeal)
                 ? []
-                : WrapText(model.CfdiSeal!, 84).Take(4).ToArray();
+                : WrapText(model.CfdiSeal!, EstimateWrapLength(PageWidth - (Margin * 2) - 20f, 7.4f, PdfFont.Regular)).ToArray();
+            var originalLines = string.IsNullOrWhiteSpace(model.OriginalString)
+                ? []
+                : WrapText(model.OriginalString!, EstimateWrapLength(PageWidth - (Margin * 2) - 20f, 7.4f, PdfFont.Regular)).ToArray();
 
-            var sectionHeight = 122f
-                + (Math.Max(1, qrLines.Length) * 10f)
-                + (originalLines.Length * 9f)
-                + (satSealLines.Length * 9f)
-                + (cfdiSealLines.Length * 9f);
+            var shortRowsHeight = 0f;
+            foreach (var row in shortRows)
+            {
+                var lines = WrapText(row.Value, EstimateWrapLength(metaValueWidth, 8.8f, PdfFont.Regular)).ToArray();
+                shortRowsHeight += 12f + (lines.Length * 10f) + 2f;
+            }
+
+            if (qrLines.Length > 0)
+            {
+                shortRowsHeight += 14f + (qrLines.Length * 9f) + 2f;
+            }
+
+            var topZoneHeight = Math.Max(qrBoxSize + 12f, shortRowsHeight + 10f);
+            var sectionHeight = 34f + topZoneHeight
+                + MeasureLongTextBlockHeight(satSealLines)
+                + MeasureLongTextBlockHeight(cfdiSealLines)
+                + MeasureLongTextBlockHeight(originalLines)
+                + 18f;
             _page.FillRectangle(Margin, _cursorY - sectionHeight, PageWidth - (Margin * 2), sectionHeight, PdfColor.White);
             _page.StrokeRectangle(Margin, _cursorY - sectionHeight, PageWidth - (Margin * 2), sectionHeight, new PdfColor(218, 213, 204), 0.8f);
             _page.FillRectangle(Margin, _cursorY - 20f, PageWidth - (Margin * 2), 20f, new PdfColor(238, 235, 228));
             _page.DrawText("Datos del timbre y representación digital", Margin + 10f, _cursorY - 14f, 10f, PdfFont.Bold, new PdfColor(22, 30, 42));
 
-            const float qrBoxSize = 92f;
             var qrBoxX = Margin + 10f;
-            var qrBoxY = _cursorY - 118f;
-            var detailsX = qr is null ? Margin + 10f : qrBoxX + qrBoxSize + 18f;
+            var qrBoxY = _cursorY - 28f - qrBoxSize;
 
             if (qr is not null)
             {
@@ -557,66 +589,32 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
                 _page.DrawImage(qr, qrBoxX + 6f, qrBoxY + 6f, qrBoxSize - 12f, qrBoxSize - 12f);
             }
 
-            var metaY = _cursorY - 38f;
-            metaY = DrawWrappedKeyValue("UUID", model.Uuid, detailsX, metaY, 86f, 160f, 9f, 8.8f, 10f);
-            metaY = DrawWrappedKeyValue("Fecha de timbrado", model.StampedAt, detailsX, metaY, 86f, 160f, 9f, 8.8f, 10f);
-            if (!string.IsNullOrWhiteSpace(model.SatCertificate))
+            var metaY = _cursorY - 36f;
+            foreach (var row in shortRows)
             {
-                metaY = DrawWrappedKeyValue("No. certificado SAT", model.SatCertificate!, detailsX, metaY, 86f, 160f, 9f, 8.8f, 10f);
-            }
-
-            if (!string.IsNullOrWhiteSpace(model.IssuerCertificate))
-            {
-                metaY = DrawWrappedKeyValue("No. certificado emisor", model.IssuerCertificate!, detailsX, metaY, 86f, 160f, 9f, 8.8f, 10f);
+                metaY = DrawWrappedKeyValue(row.Label, row.Value, metaX, metaY, metaLabelWidth, metaValueWidth, 8.7f, 8.8f, 10f);
             }
 
             if (qrLines.Length > 0)
             {
-                _page.DrawText("Consulta SAT / QR:", detailsX, metaY - 2f, 9f, PdfFont.Bold, new PdfColor(22, 30, 42));
+                _page.DrawText("Consulta SAT / QR:", metaX, metaY - 2f, 8.7f, PdfFont.Bold, new PdfColor(22, 30, 42));
                 for (var index = 0; index < qrLines.Length; index++)
                 {
-                    _page.DrawText(qrLines[index], detailsX, metaY - 14f - (index * 10f), 8f, PdfFont.Regular, new PdfColor(76, 84, 96));
-                }
-                metaY -= 14f + (qrLines.Length * 10f);
-            }
-
-            var lowerY = Math.Min(qrBoxY - 14f, metaY - 8f);
-
-            if (satSealLines.Length > 0)
-            {
-                _page.DrawText("Sello digital del SAT:", Margin + 10f, lowerY, 8.5f, PdfFont.Bold, new PdfColor(22, 30, 42));
-                foreach (var (line, index) in satSealLines.Select((line, index) => (line, index)))
-                {
-                    _page.DrawText(line, Margin + 10f, lowerY - 12f - (index * 9f), 7.4f, PdfFont.Regular, new PdfColor(76, 84, 96));
-                }
-                lowerY -= 16f + (satSealLines.Length * 9f);
-            }
-
-            if (cfdiSealLines.Length > 0)
-            {
-                _page.DrawText("Sello digital del CFDI:", Margin + 10f, lowerY, 8.5f, PdfFont.Bold, new PdfColor(22, 30, 42));
-                foreach (var (line, index) in cfdiSealLines.Select((line, index) => (line, index)))
-                {
-                    _page.DrawText(line, Margin + 10f, lowerY - 12f - (index * 9f), 7.4f, PdfFont.Regular, new PdfColor(76, 84, 96));
-                }
-                lowerY -= 16f + (cfdiSealLines.Length * 9f);
-            }
-
-            if (originalLines.Length > 0)
-            {
-                _page.DrawText("Cadena original del complemento de certificacion del SAT:", Margin + 10f, lowerY, 8.5f, PdfFont.Bold, new PdfColor(22, 30, 42));
-                for (var index = 0; index < originalLines.Length; index++)
-                {
-                    _page.DrawText(originalLines[index], Margin + 10f, lowerY - 12f - (index * 9f), 7.4f, PdfFont.Regular, new PdfColor(76, 84, 96));
+                    _page.DrawText(qrLines[index], metaX, metaY - 14f - (index * 9f), 8f, PdfFont.Regular, new PdfColor(76, 84, 96));
                 }
             }
+
+            var lowerY = _cursorY - 28f - topZoneHeight;
+            lowerY = DrawLongTextBlock("SELLO DIGITAL DEL SAT", satSealLines, lowerY);
+            lowerY = DrawLongTextBlock("SELLO DIGITAL DEL CFDI", cfdiSealLines, lowerY);
+            _ = DrawLongTextBlock("CADENA ORIGINAL DEL COMPLEMENTO DE CERTIFICACION DIGITAL DEL SAT", originalLines, lowerY);
 
             _cursorY -= sectionHeight + SectionGap;
         }
 
         private void DrawFooter(PdfViewModel model)
         {
-            var footerY = Math.Max(_cursorY, 42f);
+            var footerY = Math.Max(_cursorY, 34f);
             _page.DrawLine(Margin, footerY, PageWidth - Margin, footerY, new PdfColor(210, 204, 193), 0.7f);
             _page.DrawText("Este documento es una representacion impresa de un CFDI 4.0", Margin, footerY - 12f, 8f, PdfFont.Regular, new PdfColor(92, 98, 110));
             if (!string.IsNullOrWhiteSpace(model.ProviderName))
@@ -642,6 +640,25 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
 
             return y - Math.Max(lineHeight, lines.Length * lineHeight) - 4f;
         }
+
+        private float DrawLongTextBlock(string title, IReadOnlyList<string> lines, float y)
+        {
+            if (lines.Count == 0)
+            {
+                return y;
+            }
+
+            _page.DrawText(title, Margin + 10f, y, 8.5f, PdfFont.Bold, new PdfColor(22, 30, 42));
+            for (var index = 0; index < lines.Count; index++)
+            {
+                _page.DrawText(lines[index], Margin + 10f, y - 12f - (index * 9f), 7.4f, PdfFont.Regular, new PdfColor(76, 84, 96));
+            }
+
+            return y - 18f - (lines.Count * 9f);
+        }
+
+        private static float MeasureLongTextBlockHeight(IReadOnlyList<string> lines)
+            => lines.Count == 0 ? 0f : 18f + (lines.Count * 9f);
 
         private void DrawRightAlignedKeyValue(string label, string value, float x, float y, float width, float valueFontSize = 10f, PdfFont? valueFont = null, PdfColor? valueColor = null)
         {
