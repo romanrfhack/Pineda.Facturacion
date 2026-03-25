@@ -37,6 +37,23 @@ describe('missing-product-fiscal-profile helper', () => {
     });
   });
 
+  it('prefers the real fallback description when it is provided', () => {
+    const context = resolveMissingProductFiscalProfileContext({
+      outcome: 'MissingProductFiscalProfile',
+      isSuccess: false,
+      errorMessage: "No active product fiscal profile exists for item line '1' and internal code 'GP-149'.",
+      billingDocumentId: 3,
+      fiscalDocumentId: null,
+      status: null
+    }, {
+      fallbackDescription: 'FILTRO DE ACEITE'
+    });
+
+    expect(context?.description).toBe('FILTRO DE ACEITE');
+    expect(context?.draft.description).toBe('FILTRO DE ACEITE');
+    expect(context?.draft.internalCode).toBe('GP-149');
+  });
+
   it('extracts recovery context from HttpErrorResponse-like payload', () => {
     expect(extractMissingProductFiscalProfileContext({
       status: 400,

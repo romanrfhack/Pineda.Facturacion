@@ -36,6 +36,13 @@ export interface BillingDocumentLookupResponse {
   createdAtUtc: string;
   fiscalDocumentId?: number | null;
   fiscalDocumentStatus?: string | null;
+  items?: BillingDocumentLookupItemResponse[];
+}
+
+export interface BillingDocumentLookupItemResponse {
+  lineNumber: number;
+  productInternalCode?: string | null;
+  description: string;
 }
 
 export interface IssuedFiscalDocumentListItemResponse {

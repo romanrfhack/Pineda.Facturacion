@@ -170,6 +170,14 @@ public static class BillingDocumentsEndpoints
         public DateTime CreatedAtUtc { get; init; }
         public long? FiscalDocumentId { get; init; }
         public string? FiscalDocumentStatus { get; init; }
+        public IReadOnlyList<BillingDocumentLookupItemResponse> Items { get; init; } = [];
+    }
+
+    public sealed class BillingDocumentLookupItemResponse
+    {
+        public int LineNumber { get; init; }
+        public string? ProductInternalCode { get; init; }
+        public string Description { get; init; } = string.Empty;
     }
 
     private static BillingDocumentLookupResponse MapBillingDocumentLookup(Application.Abstractions.Persistence.BillingDocumentLookupModel billingDocument)
@@ -185,7 +193,15 @@ public static class BillingDocumentsEndpoints
             Total = billingDocument.Total,
             CreatedAtUtc = billingDocument.CreatedAtUtc,
             FiscalDocumentId = billingDocument.FiscalDocumentId,
-            FiscalDocumentStatus = billingDocument.FiscalDocumentStatus
+            FiscalDocumentStatus = billingDocument.FiscalDocumentStatus,
+            Items = billingDocument.Items
+                .Select(item => new BillingDocumentLookupItemResponse
+                {
+                    LineNumber = item.LineNumber,
+                    ProductInternalCode = item.ProductInternalCode,
+                    Description = item.Description
+                })
+                .ToArray()
         };
     }
 }

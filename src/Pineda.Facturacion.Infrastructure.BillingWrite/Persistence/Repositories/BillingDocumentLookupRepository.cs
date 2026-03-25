@@ -14,8 +14,41 @@ public sealed class BillingDocumentLookupRepository : IBillingDocumentLookupRepo
 
     public Task<BillingDocumentLookupModel?> GetByIdAsync(long billingDocumentId, CancellationToken cancellationToken = default)
     {
-        return Query()
-            .FirstOrDefaultAsync(x => x.BillingDocumentId == billingDocumentId, cancellationToken);
+        return _dbContext.BillingDocuments
+            .AsNoTracking()
+            .Where(x => x.Id == billingDocumentId)
+            .Select(billingDocument => new BillingDocumentLookupModel
+            {
+                BillingDocumentId = billingDocument.Id,
+                SalesOrderId = billingDocument.SalesOrderId,
+                LegacyOrderId = _dbContext.SalesOrders
+                    .Where(salesOrder => salesOrder.Id == billingDocument.SalesOrderId)
+                    .Select(salesOrder => salesOrder.LegacyOrderNumber)
+                    .FirstOrDefault() ?? string.Empty,
+                Status = billingDocument.Status.ToString(),
+                DocumentType = billingDocument.DocumentType,
+                CurrencyCode = billingDocument.CurrencyCode,
+                Total = billingDocument.Total,
+                CreatedAtUtc = billingDocument.CreatedAtUtc,
+                FiscalDocumentId = _dbContext.FiscalDocuments
+                    .Where(fiscalDocument => fiscalDocument.BillingDocumentId == billingDocument.Id)
+                    .Select(fiscalDocument => (long?)fiscalDocument.Id)
+                    .FirstOrDefault(),
+                FiscalDocumentStatus = _dbContext.FiscalDocuments
+                    .Where(fiscalDocument => fiscalDocument.BillingDocumentId == billingDocument.Id)
+                    .Select(fiscalDocument => fiscalDocument.Status.ToString())
+                    .FirstOrDefault(),
+                Items = billingDocument.Items
+                    .OrderBy(item => item.LineNumber)
+                    .Select(item => new BillingDocumentLookupItemModel
+                    {
+                        LineNumber = item.LineNumber,
+                        ProductInternalCode = item.ProductInternalCode,
+                        Description = item.Description
+                    })
+                    .ToList()
+            })
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyList<BillingDocumentLookupModel>> SearchAsync(string query, int take = 5, CancellationToken cancellationToken = default)

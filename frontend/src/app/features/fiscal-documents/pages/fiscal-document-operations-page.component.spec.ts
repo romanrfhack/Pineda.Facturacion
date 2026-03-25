@@ -35,7 +35,14 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         total: 100,
         createdAtUtc: '2026-03-20T12:00:00Z',
         fiscalDocumentId: null,
-        fiscalDocumentStatus: null
+        fiscalDocumentStatus: null,
+        items: [
+          {
+            lineNumber: 1,
+            productInternalCode: 'MTE-4259',
+            description: 'FILTRO DE ACEITE'
+          }
+        ]
       })),
       searchBillingDocuments: vi.fn().mockReturnValue(of([])),
       prepareFiscalDocument: vi.fn(),
@@ -802,6 +809,8 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Agregar producto fiscal');
     expect(fixture.nativeElement.textContent).toContain('Guardar y reintentar');
     expect(feedback.show).toHaveBeenCalledWith('warning', 'Falta el perfil fiscal del producto MTE-4259. Debes darlo de alta para continuar.');
+    expect(fixture.componentInstance['missingProductFiscalProfile']()?.description).toBe('FILTRO DE ACEITE');
+    expect(fixture.componentInstance['missingProductFiscalProfile']()?.draft.description).toBe('FILTRO DE ACEITE');
   });
 
   it('creates the missing product fiscal profile and retries preparation', async () => {
@@ -864,7 +873,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     await fixture.componentInstance['prepare']();
     await fixture.componentInstance['saveMissingProductProfile']({
       internalCode: 'MTE-4259',
-      description: 'MTE-4259',
+      description: 'FILTRO DE ACEITE',
       satProductServiceCode: '01010101',
       satUnitCode: 'H87',
       taxObjectCode: '02',
@@ -875,7 +884,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
 
     expect(create).toHaveBeenCalledWith({
       internalCode: 'MTE-4259',
-      description: 'MTE-4259',
+      description: 'FILTRO DE ACEITE',
       satProductServiceCode: '01010101',
       satUnitCode: 'H87',
       taxObjectCode: '02',
@@ -953,7 +962,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     await fixture.componentInstance['prepare']();
     await fixture.componentInstance['saveMissingProductProfile']({
       internalCode: 'MTE-4259',
-      description: 'MTE-4259',
+      description: 'FILTRO DE ACEITE',
       satProductServiceCode: '01010101',
       satUnitCode: 'H87',
       taxObjectCode: '02',
@@ -966,5 +975,42 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(prepareFiscalDocument).toHaveBeenCalledTimes(2);
     expect(fixture.nativeElement.textContent).toContain('Falta el perfil fiscal del producto PS-317');
     expect(fixture.nativeElement.textContent).toContain('Guardar y reintentar');
+  });
+
+  it('falls back to internal code when the billing document item description is not available', async () => {
+    const prepareFiscalDocument = vi.fn().mockReturnValue(throwError(() => ({
+      status: 400,
+      error: {
+        outcome: 'MissingProductFiscalProfile',
+        isSuccess: false,
+        errorMessage: "No active product fiscal profile exists for item line '1' and internal code 'GP-149'.",
+        billingDocumentId: 30,
+        fiscalDocumentId: null,
+        status: null
+      }
+    })));
+
+    const fixture = await configure({
+      prepareFiscalDocument,
+      getBillingDocumentById: vi.fn().mockReturnValue(of({
+        billingDocumentId: 30,
+        salesOrderId: 20,
+        legacyOrderId: 'LEG-1001',
+        status: 'Draft',
+        documentType: 'I',
+        currencyCode: 'MXN',
+        total: 100,
+        createdAtUtc: '2026-03-20T12:00:00Z',
+        fiscalDocumentId: null,
+        fiscalDocumentStatus: null,
+        items: []
+      }))
+    }, { id: null, billingDocumentId: '30' });
+
+    fixture.componentInstance['selectedReceiverId'] = 9;
+    await fixture.componentInstance['prepare']();
+
+    expect(fixture.componentInstance['missingProductFiscalProfile']()?.description).toBe('GP-149');
+    expect(fixture.componentInstance['missingProductFiscalProfile']()?.draft.description).toBe('GP-149');
   });
 });

@@ -21,4 +21,15 @@ public sealed class BillingDocumentLookupModel
     public long? FiscalDocumentId { get; init; }
 
     public string? FiscalDocumentStatus { get; init; }
+
+    public IReadOnlyList<BillingDocumentLookupItemModel> Items { get; init; } = [];
+}
+
+public sealed class BillingDocumentLookupItemModel
+{
+    public int LineNumber { get; init; }
+
+    public string? ProductInternalCode { get; init; }
+
+    public string Description { get; init; } = string.Empty;
 }

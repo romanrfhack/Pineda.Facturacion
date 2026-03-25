@@ -857,7 +857,9 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       await this.loadFiscalDocument(response.fiscalDocumentId);
       this.feedbackService.show('success', 'Documento fiscal preparado.');
     } catch (error) {
-      const missingProfile = extractMissingProductFiscalProfileContext(error);
+      const missingProfile = extractMissingProductFiscalProfileContext(error, {
+        fallbackDescription: this.resolveMissingProductFallbackDescriptionFromError(error)
+      });
       if (missingProfile) {
         this.missingProductFiscalProfile.set(missingProfile);
         this.showMissingProductProfileForm.set(true);
@@ -1076,6 +1078,43 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       this.billingDocumentContext.set(null);
       this.billingDocumentSearchError.set(extractApiErrorMessage(error, 'No fue posible cargar el documento de facturación.'));
     }
+  }
+
+  private resolveMissingProductFallbackDescriptionFromError(error: unknown): string | null {
+    const context = extractMissingProductFiscalProfileContext(error);
+    if (!context) {
+      return null;
+    }
+
+    const items = this.billingDocumentContext()?.items ?? [];
+    if (!items.length) {
+      return null;
+    }
+
+    const normalizedCode = context.internalCode.trim().toUpperCase();
+
+    const exactMatch = items.find((item) =>
+      item.lineNumber === context.lineNumber
+      && (item.productInternalCode?.trim().toUpperCase() ?? '') === normalizedCode
+      && item.description?.trim());
+
+    if (exactMatch?.description?.trim()) {
+      return exactMatch.description.trim();
+    }
+
+    const lineMatch = items.find((item) =>
+      item.lineNumber === context.lineNumber
+      && item.description?.trim());
+
+    if (lineMatch?.description?.trim()) {
+      return lineMatch.description.trim();
+    }
+
+    const codeMatch = items.find((item) =>
+      (item.productInternalCode?.trim().toUpperCase() ?? '') === normalizedCode
+      && item.description?.trim());
+
+    return codeMatch?.description?.trim() || null;
   }
 
   private async loadStamp(fiscalDocumentId: number, notifyOnMissing = false): Promise<void> {
