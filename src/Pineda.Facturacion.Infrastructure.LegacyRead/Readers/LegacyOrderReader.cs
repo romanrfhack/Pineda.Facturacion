@@ -53,20 +53,23 @@ public class LegacyOrderReader : ILegacyOrderReader
         SELECT
             d.cveArticulo AS LegacyArticleId,
             d.cveArticulo AS Sku,
+            n.NomArt AS NomArt,
             a.Articulo AS ArticleName,
             a.Especificacion AS ArticleSpecification,
             d.uniMedida AS UnitCode,
             a.uniMedida AS UnitName,
             d.Cantidad AS Quantity,
-            d.SuPrecio AS UnitPrice,
-            ((d.Precio - d.SuPrecio) * d.Cantidad) AS DiscountAmount,
+            a.Precio2 AS GrossListUnitPrice,
+            d.SuPrecio AS GrossEffectiveUnitPrice,
             0 AS TaxRate,
             0 AS TaxAmount,
-            (d.SuPrecio * d.Cantidad) AS LineTotal
+            0 AS LineTotal
         FROM pedidosdet d
         INNER JOIN articulos a
             ON d.cveArticulo = a.cveArticulo
            AND d.cveMarcaArticulo = a.cveMarcaArticulo
+        LEFT JOIN nombresarticulos n
+            ON a.cveNomArt = n.cveNomArt
         WHERE d.noPedido = @legacyOrderId
         ORDER BY d.cveArticulo, d.cveMarcaArticulo, d.SuPrecio, d.Cantidad, d.uniMedida;
         """;
@@ -182,6 +185,10 @@ public class LegacyOrderReader : ILegacyOrderReader
 
         while (await reader.ReadAsync(cancellationToken))
         {
+            var quantity = GetRequiredDecimal(reader, "Quantity");
+            var grossListUnitPrice = GetRequiredDecimal(reader, "GrossListUnitPrice");
+            var grossEffectiveUnitPrice = GetRequiredDecimal(reader, "GrossEffectiveUnitPrice");
+
             items.Add(new LegacyOrderItemReadModel
             {
                 LineNumber = lineNumber++,
@@ -189,16 +196,18 @@ public class LegacyOrderReader : ILegacyOrderReader
                 // docs/013 documents Sku as a temporary same-source mapping from cveArticulo.
                 Sku = GetNullableString(reader, "Sku"),
                 Description = BuildDescription(
+                    GetNullableString(reader, "NomArt"),
                     GetNullableString(reader, "ArticleName"),
-                    GetNullableString(reader, "ArticleSpecification")),
+                    GetNullableString(reader, "ArticleSpecification"),
+                    GetNullableString(reader, "LegacyArticleId")),
                 UnitCode = GetNullableString(reader, "UnitCode"),
                 UnitName = GetNullableString(reader, "UnitName"),
-                Quantity = GetRequiredDecimal(reader, "Quantity"),
-                UnitPrice = GetRequiredDecimal(reader, "UnitPrice"),
-                DiscountAmount = GetRequiredDecimal(reader, "DiscountAmount"),
+                Quantity = quantity,
+                UnitPrice = NormalizeGrossAmountToNet(grossListUnitPrice),
+                DiscountAmount = CalculateDiscountAmountFromGrossPrices(quantity, grossListUnitPrice, grossEffectiveUnitPrice),
                 TaxRate = GetRequiredDecimal(reader, "TaxRate"),
                 TaxAmount = GetRequiredDecimal(reader, "TaxAmount"),
-                LineTotal = GetRequiredDecimal(reader, "LineTotal"),
+                LineTotal = NormalizeGrossAmountToNet(grossEffectiveUnitPrice * quantity),
                 // docs/013 maps SAT product/service code to TBD, so this remains intentionally unmapped.
                 // docs/013 maps SAT unit code to TBD, so this remains intentionally unmapped.
             });
@@ -370,11 +379,31 @@ public class LegacyOrderReader : ILegacyOrderReader
         return Convert.ToDateTime(value, CultureInfo.InvariantCulture);
     }
 
-    private static string BuildDescription(string? articleName, string? articleSpecification)
+    internal static decimal NormalizeGrossAmountToNet(decimal grossAmount)
     {
-        return string.Join(
+        return Math.Round(grossAmount / 1.16m, 6, MidpointRounding.AwayFromZero);
+    }
+
+    internal static decimal CalculateDiscountAmountFromGrossPrices(decimal quantity, decimal grossListUnitPrice, decimal grossEffectiveUnitPrice)
+    {
+        return NormalizeGrossAmountToNet((grossListUnitPrice - grossEffectiveUnitPrice) * quantity);
+    }
+
+    internal static string BuildDescription(string? nominalArticleName, string? articleName, string? articleSpecification, string? fallbackArticleId = null)
+    {
+        if (!string.IsNullOrWhiteSpace(nominalArticleName))
+        {
+            return nominalArticleName.Trim();
+        }
+
+        var composed = string.Join(
             ' ',
             new[] { articleName, articleSpecification }
-                .Where(value => !string.IsNullOrWhiteSpace(value)));
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Select(value => value!.Trim()));
+
+        return string.IsNullOrWhiteSpace(composed)
+            ? fallbackArticleId?.Trim() ?? string.Empty
+            : composed;
     }
 }

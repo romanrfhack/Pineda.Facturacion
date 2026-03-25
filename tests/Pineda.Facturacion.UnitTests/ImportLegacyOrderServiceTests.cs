@@ -141,6 +141,56 @@ public class ImportLegacyOrderServiceTests
         Assert.Equal(100m, item.LineTotal);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_Preserves_Consistent_Line_Math_When_Legacy_Item_Uses_Net_Base_And_Discount()
+    {
+        var legacyOrder = CreateLegacyOrder();
+        legacyOrder.Items =
+        [
+            new LegacyOrderItemReadModel
+            {
+                LineNumber = 1,
+                LegacyArticleId = "A-1",
+                Sku = "SKU-1",
+                Description = "Nombre correcto desde NomArt",
+                UnitCode = "H87",
+                UnitName = "Pieza",
+                Quantity = 2m,
+                UnitPrice = 100m,
+                DiscountAmount = 50m,
+                TaxRate = 0m,
+                TaxAmount = 0m,
+                LineTotal = 150m,
+                SatProductServiceCode = "01010101",
+                SatUnitCode = "H87"
+            }
+        ];
+
+        var salesOrderRepository = new FakeSalesOrderRepository();
+        var service = CreateService(
+            new FakeLegacyOrderReader { Result = legacyOrder },
+            new FakeContentHashGenerator { Hash = "hash-1" },
+            new FakeLegacyImportRecordRepository(),
+            salesOrderRepository,
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new ImportLegacyOrderCommand
+        {
+            SourceSystem = "legacy",
+            SourceTable = "orders",
+            LegacyOrderId = legacyOrder.LegacyOrderId
+        });
+
+        Assert.Equal(ImportLegacyOrderOutcome.Imported, result.Outcome);
+        var item = Assert.Single(salesOrderRepository.Added!.Items);
+        Assert.Equal(100m, item.UnitPrice);
+        Assert.Equal(50m, item.DiscountAmount);
+        Assert.Equal(0.16m, item.TaxRate);
+        Assert.Equal(24m, item.TaxAmount);
+        Assert.Equal(150m, item.LineTotal);
+        Assert.Equal(174m, salesOrderRepository.Added.Total);
+    }
+
     private static ImportLegacyOrderService CreateService(
         ILegacyOrderReader legacyOrderReader,
         IContentHashGenerator contentHashGenerator,
