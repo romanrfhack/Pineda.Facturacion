@@ -339,11 +339,13 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
                 ("UUID / Folio fiscal", model.Uuid),
                 ("Expedicion", model.IssuedAt),
                 ("Certificacion", model.StampedAt),
-                ("Forma / Metodo", $"{model.PaymentForm} / {model.PaymentMethod}"),
-                ("Exportacion", model.ExportCode)
+                ("Forma de pago", model.PaymentForm),
+                ("Metodo de pago", model.PaymentMethod),
+                ("Exportacion", model.ExportCode),
+                ("Reg. fiscal", model.IssuerRegime)
             };
 
-            var rightBoxWidth = 200f;
+            var rightBoxWidth = 210f;
             var rightBoxInnerWidth = rightBoxWidth - 20f;
             var rightValueWidth = rightBoxInnerWidth - 72f;
             var rightLineHeight = 11f;
@@ -354,45 +356,52 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
                 rightBoxContentHeight += 10f + (lines.Length * rightLineHeight) + 4f;
             }
 
-            var headerHeight = Math.Max(158f, 20f + Math.Max(86f, rightBoxContentHeight + 12f));
-            _page.FillRectangle(Margin, topY - headerHeight, PageWidth - (Margin * 2), headerHeight, new PdfColor(246, 245, 240));
-            _page.StrokeRectangle(Margin, topY - headerHeight, PageWidth - (Margin * 2), headerHeight, new PdfColor(201, 195, 186), 1f);
-            _page.FillRectangle(Margin, topY - 24f, PageWidth - (Margin * 2), 24f, new PdfColor(51, 63, 79));
+            var headerHeight = Math.Max(170f, 24f + Math.Max(104f, rightBoxContentHeight + 18f));
+            _page.FillRectangle(Margin, topY - headerHeight, PageWidth - (Margin * 2), headerHeight, PdfColor.White);
+            _page.StrokeRectangle(Margin, topY - headerHeight, PageWidth - (Margin * 2), headerHeight, new PdfColor(205, 199, 189), 1f);
+            _page.FillRectangle(Margin, topY - 24f, PageWidth - (Margin * 2), 24f, new PdfColor(53, 63, 78));
             _page.DrawText(model.DocumentTitle, Margin + 12f, topY - 17f, 10f, PdfFont.Bold, PdfColor.White);
 
             var logoBoxX = Margin + 12f;
-            var logoBoxY = topY - 106f;
-            var logoBoxW = 118f;
-            var logoBoxH = 72f;
+            var logoBoxY = topY - 128f;
+            var logoBoxW = 132f;
+            var logoBoxH = 94f;
             _page.FillRectangle(logoBoxX, logoBoxY, logoBoxW, logoBoxH, PdfColor.White);
-            _page.StrokeRectangle(logoBoxX, logoBoxY, logoBoxW, logoBoxH, new PdfColor(224, 220, 210), 0.8f);
+            _page.StrokeRectangle(logoBoxX, logoBoxY, logoBoxW, logoBoxH, new PdfColor(215, 209, 198), 0.8f);
 
             if (logo is not null)
             {
-                var fitted = Fit(logo.Width, logo.Height, logoBoxW - 10f, logoBoxH - 10f);
+                var fitted = Fit(logo.Width, logo.Height, logoBoxW - 12f, logoBoxH - 12f);
                 var imageX = logoBoxX + ((logoBoxW - fitted.Width) / 2f);
                 var imageY = logoBoxY + ((logoBoxH - fitted.Height) / 2f);
                 _page.DrawImage(logo, imageX, imageY, fitted.Width, fitted.Height);
             }
             else
             {
-                _page.DrawText("CFDI", logoBoxX + 34f, logoBoxY + 30f, 18f, PdfFont.Bold, new PdfColor(82, 88, 102));
+                _page.DrawTextCentered("CFDI 4.0", logoBoxX, logoBoxX + logoBoxW, logoBoxY + 42f, 18f, PdfFont.Bold, new PdfColor(82, 88, 102));
             }
 
-            var issuerX = Margin + 142f;
-            _page.DrawText(model.DocumentType, issuerX, topY - 44f, 17f, PdfFont.Bold, new PdfColor(22, 30, 42));
-            _page.DrawText(model.IssuerName, issuerX, topY - 64f, 12f, PdfFont.Bold, new PdfColor(22, 30, 42));
-            _page.DrawText($"RFC: {model.IssuerRfc}", issuerX, topY - 80f, 9.5f, PdfFont.Regular, new PdfColor(76, 84, 96));
-            _page.DrawText($"Regimen fiscal: {model.IssuerRegime}", issuerX, topY - 94f, 9.5f, PdfFont.Regular, new PdfColor(76, 84, 96));
-            _page.DrawText($"Lugar de expedicion: {model.PlaceOfIssue}", issuerX, topY - 108f, 9.5f, PdfFont.Regular, new PdfColor(76, 84, 96));
+            var centerLeft = logoBoxX + logoBoxW + 16f;
+            var centerRight = PageWidth - Margin - rightBoxWidth - 20f;
+            var centerMid = (centerLeft + centerRight) / 2f;
+
+            _page.DrawTextCentered(model.IssuerName, centerLeft, centerRight, topY - 48f, 16f, PdfFont.Bold, new PdfColor(22, 30, 42));
+            _page.DrawTextCentered($"RFC: {model.IssuerRfc}", centerLeft, centerRight, topY - 68f, 10f, PdfFont.Bold, new PdfColor(70, 78, 92));
+            _page.DrawTextCentered($"Regimen fiscal: {model.IssuerRegime}", centerLeft, centerRight, topY - 84f, 9.4f, PdfFont.Regular, new PdfColor(76, 84, 96));
+            _page.DrawTextCentered($"Lugar de expedicion: {model.PlaceOfIssue}", centerLeft, centerRight, topY - 98f, 9.4f, PdfFont.Regular, new PdfColor(76, 84, 96));
+            _page.DrawTextCentered($"Fecha y hora: {model.IssuedAt}", centerLeft, centerRight, topY - 112f, 9.4f, PdfFont.Regular, new PdfColor(76, 84, 96));
+            _page.DrawTextCentered("Sucursal: Matriz", centerLeft, centerRight, topY - 126f, 9.4f, PdfFont.Regular, new PdfColor(76, 84, 96));
+            _page.DrawTextCentered(model.DocumentType, centerLeft, centerRight, topY - 142f, 11f, PdfFont.Bold, new PdfColor(90, 86, 74));
 
             var infoX = PageWidth - Margin - 212f;
-            var infoTopY = topY - 32f;
-            var infoHeight = Math.Max(96f, rightBoxContentHeight + 16f);
+            var infoTopY = topY - 34f;
+            var infoHeight = Math.Max(112f, rightBoxContentHeight + 18f);
             _page.FillRectangle(infoX, infoTopY - infoHeight, rightBoxWidth, infoHeight, new PdfColor(255, 255, 255));
-            _page.StrokeRectangle(infoX, infoTopY - infoHeight, rightBoxWidth, infoHeight, new PdfColor(210, 204, 193), 0.8f);
+            _page.StrokeRectangle(infoX, infoTopY - infoHeight, rightBoxWidth, infoHeight, new PdfColor(205, 199, 189), 0.8f);
+            _page.FillRectangle(infoX, infoTopY - 18f, rightBoxWidth, 18f, new PdfColor(238, 235, 228));
+            _page.DrawTextCentered("Datos fiscales", infoX, infoX + rightBoxWidth, infoTopY - 12f, 8.5f, PdfFont.Bold, new PdfColor(88, 80, 66));
 
-            var rowY = infoTopY - 10f;
+            var rowY = infoTopY - 28f;
             foreach (var row in fiscalRows)
             {
                 rowY = DrawWrappedKeyValue(row.Label, row.Value, infoX + 10f, rowY, 64f, rightValueWidth, 8.2f, 10f, rightLineHeight);
@@ -725,6 +734,13 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
         {
             var width = EstimateTextWidth(text, fontSize, font);
             DrawText(text, x - width, y, fontSize, font, color);
+        }
+
+        public void DrawTextCentered(string text, float leftX, float rightX, float y, float fontSize, PdfFont font, PdfColor color)
+        {
+            var width = EstimateTextWidth(text, fontSize, font);
+            var x = leftX + Math.Max(0f, ((rightX - leftX) - width) / 2f);
+            DrawText(text, x, y, fontSize, font, color);
         }
 
         public void DrawImage(PdfImageAsset image, float x, float y, float width, float height)

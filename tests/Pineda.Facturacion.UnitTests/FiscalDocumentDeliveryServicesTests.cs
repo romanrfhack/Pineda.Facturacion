@@ -110,6 +110,8 @@ public class FiscalDocumentDeliveryServicesTests
 
         Assert.StartsWith("%PDF-1.4", pdfText, StringComparison.Ordinal);
         Assert.Contains("Representacion impresa del CFDI", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Sucursal: Matriz", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Lugar de expedicion: 01000", pdfText, StringComparison.Ordinal);
         Assert.Contains("Datos del timbre y representacion digital", pdfText, StringComparison.Ordinal);
         Assert.Contains("CIENTO DIECISEIS PESOS 00/100 M.N.", pdfText, StringComparison.Ordinal);
         Assert.Contains("100.00", pdfText, StringComparison.Ordinal);
@@ -133,6 +135,7 @@ public class FiscalDocumentDeliveryServicesTests
         Assert.StartsWith("%PDF-1.4", pdfText, StringComparison.Ordinal);
         Assert.Equal(1, CountOccurrences(pdfText, "/Subtype /Image"));
         Assert.Contains("CFDI", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Sucursal: Matriz", pdfText, StringComparison.Ordinal);
     }
 
     [Fact]
