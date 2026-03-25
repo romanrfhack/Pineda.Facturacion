@@ -34,6 +34,11 @@ export const routes: Routes = [
         loadChildren: () => import('./features/fiscal-documents/fiscal-documents.routes').then((m) => m.FISCAL_DOCUMENT_ROUTES)
       },
       {
+        path: 'issued-cfdis',
+        canMatch: [roleGuard([AppRole.Admin, AppRole.FiscalSupervisor, AppRole.FiscalOperator, AppRole.Auditor])],
+        loadChildren: () => import('./features/issued-cfdis/issued-cfdis.routes').then((m) => m.ISSUED_CFDI_ROUTES)
+      },
+      {
         path: 'accounts-receivable',
         canMatch: [roleGuard([AppRole.Admin, AppRole.FiscalSupervisor, AppRole.FiscalOperator, AppRole.Auditor])],
         loadChildren: () => import('./features/accounts-receivable/accounts-receivable.routes').then((m) => m.ACCOUNTS_RECEIVABLE_ROUTES)

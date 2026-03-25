@@ -23,6 +23,12 @@ public static class FiscalDocumentsEndpoints
             .Produces<FiscalDocumentResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status404NotFound);
 
+        group.MapGet("/issued", SearchIssuedFiscalDocumentsAsync)
+            .WithName("SearchIssuedFiscalDocuments")
+            .WithSummary("List issued CFDI with paging and operational filters")
+            .Produces<IssuedFiscalDocumentListResponse>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status400BadRequest);
+
         group.MapPost("/{fiscalDocumentId:long}/stamp", StampFiscalDocumentAsync)
             .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
             .WithName("StampFiscalDocument")
@@ -108,6 +114,72 @@ public static class FiscalDocumentsEndpoints
         }
 
         return TypedResults.Ok(MapFiscalDocument(result.FiscalDocument));
+    }
+
+    private static async Task<Results<Ok<IssuedFiscalDocumentListResponse>, BadRequest<SimpleErrorResponse>>> SearchIssuedFiscalDocumentsAsync(
+        int? page,
+        int? pageSize,
+        DateOnly? fromDate,
+        DateOnly? toDate,
+        string? receiverRfc,
+        string? receiverName,
+        string? uuid,
+        string? series,
+        string? folio,
+        string? status,
+        string? query,
+        SearchIssuedFiscalDocumentsService service,
+        CancellationToken cancellationToken)
+    {
+        if (fromDate.HasValue && toDate.HasValue && fromDate.Value > toDate.Value)
+        {
+            return TypedResults.BadRequest(new SimpleErrorResponse { ErrorMessage = "La fecha inicial no puede ser mayor a la fecha final." });
+        }
+
+        var result = await service.ExecuteAsync(
+            new SearchIssuedFiscalDocumentsFilter
+            {
+                Page = page ?? 1,
+                PageSize = pageSize ?? 25,
+                FromDate = fromDate,
+                ToDate = toDate,
+                ReceiverRfc = receiverRfc,
+                ReceiverName = receiverName,
+                Uuid = uuid,
+                Series = series,
+                Folio = folio,
+                Status = status,
+                Query = query
+            },
+            cancellationToken);
+
+        return TypedResults.Ok(new IssuedFiscalDocumentListResponse
+        {
+            Page = result.Page,
+            PageSize = result.PageSize,
+            TotalCount = result.TotalCount,
+            TotalPages = result.TotalPages,
+            Items = result.Items.Select(x => new IssuedFiscalDocumentListItemResponse
+            {
+                FiscalDocumentId = x.FiscalDocumentId,
+                BillingDocumentId = x.BillingDocumentId,
+                Status = x.Status,
+                IssuedAtUtc = x.IssuedAtUtc,
+                StampedAtUtc = x.StampedAtUtc,
+                IssuerRfc = x.IssuerRfc,
+                IssuerLegalName = x.IssuerLegalName,
+                Series = x.Series,
+                Folio = x.Folio,
+                Uuid = x.Uuid,
+                ReceiverRfc = x.ReceiverRfc,
+                ReceiverLegalName = x.ReceiverLegalName,
+                ReceiverCfdiUseCode = x.ReceiverCfdiUseCode,
+                PaymentMethodSat = x.PaymentMethodSat,
+                PaymentFormSat = x.PaymentFormSat,
+                DocumentType = x.DocumentType,
+                Total = x.Total
+            }).ToList()
+        });
     }
 
     private static async Task<Results<Ok<StampFiscalDocumentResponse>, BadRequest<StampFiscalDocumentResponse>, NotFound<StampFiscalDocumentResponse>, Conflict<StampFiscalDocumentResponse>, JsonHttpResult<StampFiscalDocumentResponse>>> StampFiscalDocumentAsync(
@@ -570,6 +642,41 @@ public static class FiscalDocumentsEndpoints
     public sealed class StampFiscalDocumentRequest
     {
         public bool RetryRejected { get; init; }
+    }
+
+    public sealed class IssuedFiscalDocumentListResponse
+    {
+        public int Page { get; init; }
+        public int PageSize { get; init; }
+        public int TotalCount { get; init; }
+        public int TotalPages { get; init; }
+        public IReadOnlyList<IssuedFiscalDocumentListItemResponse> Items { get; init; } = [];
+    }
+
+    public sealed class IssuedFiscalDocumentListItemResponse
+    {
+        public long FiscalDocumentId { get; init; }
+        public long BillingDocumentId { get; init; }
+        public string Status { get; init; } = string.Empty;
+        public DateTime IssuedAtUtc { get; init; }
+        public DateTime? StampedAtUtc { get; init; }
+        public string IssuerRfc { get; init; } = string.Empty;
+        public string IssuerLegalName { get; init; } = string.Empty;
+        public string Series { get; init; } = string.Empty;
+        public string Folio { get; init; } = string.Empty;
+        public string? Uuid { get; init; }
+        public string ReceiverRfc { get; init; } = string.Empty;
+        public string ReceiverLegalName { get; init; } = string.Empty;
+        public string ReceiverCfdiUseCode { get; init; } = string.Empty;
+        public string PaymentMethodSat { get; init; } = string.Empty;
+        public string PaymentFormSat { get; init; } = string.Empty;
+        public string DocumentType { get; init; } = string.Empty;
+        public decimal Total { get; init; }
+    }
+
+    public sealed class SimpleErrorResponse
+    {
+        public string ErrorMessage { get; init; } = string.Empty;
     }
 
     public sealed class StampFiscalDocumentResponse

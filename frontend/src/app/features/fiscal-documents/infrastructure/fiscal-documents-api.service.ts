@@ -8,6 +8,8 @@ import {
   CancelFiscalDocumentResponse,
   FiscalCancellationResponse,
   FiscalDocumentResponse,
+  IssuedFiscalDocumentFilters,
+  IssuedFiscalDocumentListResponse,
   FiscalReceiverSearchResponse,
   FiscalStampResponse,
   FiscalDocumentEmailDraftResponse,
@@ -41,6 +43,24 @@ export class FiscalDocumentsApiService {
     return this.http.get<BillingDocumentLookupResponse[]>(buildApiUrl(`/billing-documents/search?q=${encodeURIComponent(query)}`));
   }
 
+  searchIssued(filters: IssuedFiscalDocumentFilters): Observable<IssuedFiscalDocumentListResponse> {
+    const query = new URLSearchParams();
+    query.set('page', `${filters.page}`);
+    query.set('pageSize', `${filters.pageSize}`);
+
+    setOptionalQuery(query, 'fromDate', filters.fromDate);
+    setOptionalQuery(query, 'toDate', filters.toDate);
+    setOptionalQuery(query, 'receiverRfc', filters.receiverRfc);
+    setOptionalQuery(query, 'receiverName', filters.receiverName);
+    setOptionalQuery(query, 'uuid', filters.uuid);
+    setOptionalQuery(query, 'series', filters.series);
+    setOptionalQuery(query, 'folio', filters.folio);
+    setOptionalQuery(query, 'status', filters.status);
+    setOptionalQuery(query, 'query', filters.query);
+
+    return this.http.get<IssuedFiscalDocumentListResponse>(buildApiUrl(`/fiscal-documents/issued?${query.toString()}`));
+  }
+
   prepareFiscalDocument(billingDocumentId: number, request: PrepareFiscalDocumentRequest): Observable<PrepareFiscalDocumentResponse> {
     return this.http.post<PrepareFiscalDocumentResponse>(buildApiUrl(`/billing-documents/${billingDocumentId}/fiscal-documents`), request);
   }
@@ -59,6 +79,10 @@ export class FiscalDocumentsApiService {
 
   getStampXml(fiscalDocumentId: number): Observable<string> {
     return this.http.get(buildApiUrl(`/fiscal-documents/${fiscalDocumentId}/stamp/xml`), { responseType: 'text' });
+  }
+
+  getStampXmlFile(fiscalDocumentId: number): Observable<Blob> {
+    return this.http.get(buildApiUrl(`/fiscal-documents/${fiscalDocumentId}/stamp/xml`), { responseType: 'blob' });
   }
 
   getStampPdf(fiscalDocumentId: number): Observable<Blob> {
@@ -84,4 +108,12 @@ export class FiscalDocumentsApiService {
   refreshStatus(fiscalDocumentId: number): Observable<RefreshFiscalDocumentStatusResponse> {
     return this.http.post<RefreshFiscalDocumentStatusResponse>(buildApiUrl(`/fiscal-documents/${fiscalDocumentId}/refresh-status`), {});
   }
+}
+
+function setOptionalQuery(query: URLSearchParams, key: string, value?: string | null): void {
+  if (!value || !value.trim()) {
+    return;
+  }
+
+  query.set(key, value.trim());
 }

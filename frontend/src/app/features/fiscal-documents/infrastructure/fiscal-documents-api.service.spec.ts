@@ -104,4 +104,36 @@ describe('FiscalDocumentsApiService', () => {
     expect(req.request.method).toBe('GET');
     httpTesting.verify();
   });
+
+  it('searches issued CFDI with paged filters', () => {
+    const service = TestBed.inject(FiscalDocumentsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.searchIssued({
+      page: 2,
+      pageSize: 10,
+      fromDate: '2026-03-01',
+      toDate: '2026-03-24',
+      receiverRfc: 'BBB010101BBB',
+      uuid: 'UUID-1',
+      status: 'Stamped'
+    }).subscribe();
+
+    const req = httpTesting.expectOne('/api/fiscal-documents/issued?page=2&pageSize=10&fromDate=2026-03-01&toDate=2026-03-24&receiverRfc=BBB010101BBB&uuid=UUID-1&status=Stamped');
+    expect(req.request.method).toBe('GET');
+    httpTesting.verify();
+  });
+
+  it('gets fiscal stamp xml file as blob', () => {
+    const service = TestBed.inject(FiscalDocumentsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.getStampXmlFile(40).subscribe();
+
+    const req = httpTesting.expectOne('/api/fiscal-documents/40/stamp/xml');
+    expect(req.request.method).toBe('GET');
+    expect(req.request.responseType).toBe('blob');
+    req.flush(new Blob(['<cfdi:Comprobante />'], { type: 'application/xml' }));
+    httpTesting.verify();
+  });
 });

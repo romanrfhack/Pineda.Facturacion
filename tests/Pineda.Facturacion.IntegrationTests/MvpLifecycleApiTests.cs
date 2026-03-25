@@ -366,6 +366,39 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
+    public async Task IssuedFiscalDocuments_List_ReturnsPagedStampedDocuments()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-1010", uuid: "UUID-LIST-1");
+
+        var response = await client.GetAsync("/api/fiscal-documents/issued?page=1&pageSize=10&status=Stamped&uuid=UUID-LIST-1");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var json = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+        Assert.Equal(1, json.RootElement.GetProperty("page").GetInt32());
+        Assert.Equal(10, json.RootElement.GetProperty("pageSize").GetInt32());
+        Assert.True(json.RootElement.GetProperty("totalCount").GetInt32() >= 1);
+
+        var first = json.RootElement.GetProperty("items")[0];
+        Assert.Equal("Stamped", first.GetProperty("status").GetString());
+        Assert.Equal("UUID-LIST-1", first.GetProperty("uuid").GetString());
+    }
+
+    [Fact]
+    public async Task IssuedFiscalDocuments_List_RejectsInvalidDateRange()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        var response = await client.GetAsync("/api/fiscal-documents/issued?fromDate=2026-03-24&toDate=2026-03-23&page=1&pageSize=10");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        using var json = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+        Assert.Equal("La fecha inicial no puede ser mayor a la fecha final.", json.RootElement.GetProperty("errorMessage").GetString());
+    }
+
+    [Fact]
     public async Task FiscalDocumentRefreshStatus_Returns503_WhenProviderUnavailable()
     {
         await using var factory = new MvpApiFactory();

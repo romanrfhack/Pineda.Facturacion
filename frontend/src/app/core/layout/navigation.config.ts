@@ -18,6 +18,11 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
     roles: [AppRole.Admin, AppRole.FiscalSupervisor, AppRole.FiscalOperator, AppRole.Auditor]
   },
   {
+    label: 'CFDI emitidos',
+    route: '/app/issued-cfdis',
+    roles: [AppRole.Admin, AppRole.FiscalSupervisor, AppRole.FiscalOperator, AppRole.Auditor]
+  },
+  {
     label: 'Cuentas por cobrar',
     route: '/app/accounts-receivable',
     roles: [AppRole.Admin, AppRole.FiscalSupervisor, AppRole.FiscalOperator, AppRole.Auditor]

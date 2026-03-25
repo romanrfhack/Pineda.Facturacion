@@ -38,6 +38,48 @@ export interface BillingDocumentLookupResponse {
   fiscalDocumentStatus?: string | null;
 }
 
+export interface IssuedFiscalDocumentListItemResponse {
+  fiscalDocumentId: number;
+  billingDocumentId: number;
+  status: string;
+  issuedAtUtc: string;
+  stampedAtUtc?: string | null;
+  issuerRfc: string;
+  issuerLegalName: string;
+  series: string;
+  folio: string;
+  uuid?: string | null;
+  receiverRfc: string;
+  receiverLegalName: string;
+  receiverCfdiUseCode: string;
+  paymentMethodSat: string;
+  paymentFormSat: string;
+  documentType: string;
+  total: number;
+}
+
+export interface IssuedFiscalDocumentListResponse {
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+  items: IssuedFiscalDocumentListItemResponse[];
+}
+
+export interface IssuedFiscalDocumentFilters {
+  page: number;
+  pageSize: number;
+  fromDate?: string | null;
+  toDate?: string | null;
+  receiverRfc?: string | null;
+  receiverName?: string | null;
+  uuid?: string | null;
+  series?: string | null;
+  folio?: string | null;
+  status?: string | null;
+  query?: string | null;
+}
+
 export interface PrepareFiscalDocumentRequest {
   fiscalReceiverId: number;
   issuerProfileId?: number | null;

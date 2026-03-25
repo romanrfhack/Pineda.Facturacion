@@ -1,4 +1,5 @@
 using Pineda.Facturacion.Domain.Entities;
+using Pineda.Facturacion.Application.UseCases.FiscalDocuments;
 
 namespace Pineda.Facturacion.Application.Abstractions.Persistence;
 
@@ -18,6 +19,20 @@ public interface IFiscalDocumentRepository
         CancellationToken cancellationToken = default);
 
     Task<int?> GetLastUsedFolioAsync(string issuerRfc, string series, CancellationToken cancellationToken = default);
+
+    Task<SearchIssuedFiscalDocumentsResult> SearchIssuedAsync(
+        SearchIssuedFiscalDocumentsFilter filter,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(new SearchIssuedFiscalDocumentsResult
+        {
+            Page = filter.Page,
+            PageSize = filter.PageSize,
+            TotalCount = 0,
+            TotalPages = 0,
+            Items = []
+        });
+    }
 
     Task AddAsync(FiscalDocument fiscalDocument, CancellationToken cancellationToken = default);
 }

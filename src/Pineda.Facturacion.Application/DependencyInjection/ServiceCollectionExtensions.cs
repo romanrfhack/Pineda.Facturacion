@@ -41,6 +41,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<GetPaymentComplementCancellationByPaymentComplementIdService>();
         services.AddScoped<RefreshPaymentComplementStatusService>();
         services.AddScoped<PrepareFiscalDocumentService>();
+        services.AddScoped<SearchIssuedFiscalDocumentsService>();
         services.AddScoped<GetFiscalDocumentByIdService>();
         services.AddScoped<GetFiscalStampByFiscalDocumentIdService>();
         services.AddScoped<GetFiscalDocumentPdfService>();
