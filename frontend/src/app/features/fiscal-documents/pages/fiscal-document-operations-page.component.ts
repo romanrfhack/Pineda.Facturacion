@@ -28,6 +28,7 @@ import { FiscalReceiversApiService } from '../../catalogs/infrastructure/fiscal-
 import { FiscalReceiverFormComponent } from '../../catalogs/components/fiscal-receiver-form.component';
 import { UpsertFiscalReceiverRequest, UpsertProductFiscalProfileRequest } from '../../catalogs/models/catalogs.models';
 import { extractMissingProductFiscalProfileContext, MissingProductFiscalProfileContext } from '../application/missing-product-fiscal-profile';
+import { buildFiscalDocumentFileName } from '../application/fiscal-document-file-name';
 
 @Component({
   selector: 'app-fiscal-document-operations-page',
@@ -1045,7 +1046,13 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       if (download) {
         const link = document.createElement('a');
         link.href = objectUrl;
-        link.download = `cfdi-${fiscalDocumentId}.pdf`;
+        link.download = buildFiscalDocumentFileName({
+          issuerRfc: this.fiscalDocument()?.issuerRfc ?? 'CFDI',
+          series: this.fiscalDocument()?.series,
+          folio: this.fiscalDocument()?.folio,
+          receiverRfc: this.fiscalDocument()?.receiverRfc ?? 'CFDI',
+          fallbackToken: this.stampEvidence()?.uuid ?? fiscalDocumentId
+        }, 'pdf');
         link.click();
       } else {
         window.open(objectUrl, '_blank', 'noopener,noreferrer');

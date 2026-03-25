@@ -19,6 +19,7 @@ import { FiscalStampEvidenceDetailComponent } from '../../fiscal-documents/compo
 import { FiscalCancellationCardComponent } from '../../fiscal-documents/components/fiscal-cancellation-card.component';
 import { XmlViewerPanelComponent } from '../../../shared/components/xml-viewer-panel.component';
 import { getDisplayLabel } from '../../../shared/ui/display-labels';
+import { buildFiscalDocumentFileName } from '../../fiscal-documents/application/fiscal-document-file-name';
 
 @Component({
   selector: 'app-issued-cfdis-page',
@@ -431,7 +432,13 @@ export class IssuedCfdisPageComponent {
     this.actionKey.set(`xml-download:${item.fiscalDocumentId}`);
     try {
       const blob = await firstValueFrom(this.api.getStampXmlFile(item.fiscalDocumentId));
-      triggerBlobDownload(blob, buildFileName(item, 'xml'));
+      triggerBlobDownload(blob, buildFiscalDocumentFileName({
+        issuerRfc: item.issuerRfc,
+        series: item.series,
+        folio: item.folio,
+        receiverRfc: item.receiverRfc,
+        fallbackToken: item.uuid ?? item.fiscalDocumentId
+      }, 'xml'));
     } catch (error) {
       this.feedbackService.show('error', extractApiErrorMessage(error, 'No fue posible descargar el XML del CFDI.'));
     } finally {
@@ -599,7 +606,13 @@ export class IssuedCfdisPageComponent {
       if (download) {
         const link = document.createElement('a');
         link.href = objectUrl;
-        link.download = buildFileName(item, 'pdf');
+        link.download = buildFiscalDocumentFileName({
+          issuerRfc: item.issuerRfc,
+          series: item.series,
+          folio: item.folio,
+          receiverRfc: item.receiverRfc,
+          fallbackToken: item.uuid ?? item.fiscalDocumentId
+        }, 'pdf');
         link.click();
       } else {
         window.open(objectUrl, '_blank', 'noopener,noreferrer');
@@ -623,16 +636,6 @@ function parseRecipients(value: string): string[] {
 
 function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-}
-
-function sanitizeFileToken(value: string): string {
-  const sanitized = value.replace(/[^A-Za-z0-9_-]+/g, '');
-  return sanitized || 'CFDI';
-}
-
-function buildFileName(item: IssuedFiscalDocumentListItemResponse, extension: 'pdf' | 'xml'): string {
-  const folioToken = `${item.series || ''}${item.folio || item.uuid || item.fiscalDocumentId}`;
-  return `${sanitizeFileToken(item.issuerRfc)}_${sanitizeFileToken(folioToken)}_${sanitizeFileToken(item.receiverRfc)}.${extension}`;
 }
 
 function triggerBlobDownload(blob: Blob, fileName: string): void {

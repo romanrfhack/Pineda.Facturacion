@@ -47,6 +47,8 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         status: 'Stamped',
         cfdiVersion: '4.0',
         documentType: 'I',
+        series: 'A',
+        folio: '31787',
         issuedAtUtc: '2026-03-20T12:00:00Z',
         currencyCode: 'MXN',
         exchangeRate: 1,
@@ -219,6 +221,38 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Ver PDF');
     expect(fixture.nativeElement.textContent).toContain('Descargar PDF');
     expect(fixture.nativeElement.textContent).toContain('Enviar por correo');
+  });
+
+  it('downloads the stamped PDF with RFC plus series-folio plus receiver RFC', async () => {
+    const fixture = await configure();
+    const createObjectUrlSpy = vi.spyOn(window.URL, 'createObjectURL').mockReturnValue('blob:pdf');
+    const revokeObjectUrlSpy = vi.spyOn(window.URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    const clickSpy = vi.fn();
+    const originalCreateElement = document.createElement.bind(document);
+    const createdAnchors: HTMLAnchorElement[] = [];
+    const createElementSpy = vi.spyOn(document, 'createElement').mockImplementation(((tagName: string) => {
+      if (tagName === 'a') {
+        const anchor = {
+          href: '',
+          download: '',
+          click: clickSpy
+        } as unknown as HTMLAnchorElement;
+        createdAnchors.push(anchor);
+        return anchor;
+      }
+
+      return originalCreateElement(tagName);
+    }) as typeof document.createElement);
+
+    await fixture.componentInstance['handleStampPdf'](true);
+
+    expect(createObjectUrlSpy).toHaveBeenCalled();
+    expect(clickSpy).toHaveBeenCalled();
+    expect(createdAnchors.at(0)?.download).toBe('AAA010101AAA_A31787_BBB010101BBB.pdf');
+
+    createElementSpy.mockRestore();
+    revokeObjectUrlSpy.mockRestore();
+    createObjectUrlSpy.mockRestore();
   });
 
   it('opens and closes the XML viewer on demand', async () => {
