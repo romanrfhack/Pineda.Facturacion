@@ -449,6 +449,39 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
             return currentY - 2f;
         }
 
+        internal static string[] WrapValueWithHangingLabel(string label, string value, float maxWidth, float labelFontSize, float valueFontSize)
+            => PdfLayoutTextWrapper.WrapValueWithHangingLabel(label, value, maxWidth, labelFontSize, valueFontSize);
+
+        private static float MeasureHangingLabelBlockHeight(string label, string value, float maxWidth, float labelFontSize, float valueFontSize, float lineHeight)
+        {
+            var lines = WrapValueWithHangingLabel(label, value, maxWidth, labelFontSize, valueFontSize);
+            return lines.Length == 0 ? lineHeight + 2f : (lines.Length * lineHeight) + 2f;
+        }
+
+        private float DrawHangingLabelValue(string label, string value, float x, float y, float maxWidth, float labelFontSize, float valueFontSize, float lineHeight)
+        {
+            var labelText = $"{label}: ";
+            var labelWidth = EstimateTextWidth(labelText, labelFontSize, PdfFont.Bold) + 2f;
+            var lines = WrapValueWithHangingLabel(label, value, maxWidth, labelFontSize, valueFontSize);
+
+            _page.DrawText(labelText, x, y, labelFontSize, PdfFont.Bold, new PdfColor(120, 108, 84));
+            if (lines.Length == 0)
+            {
+                return y - lineHeight - 2f;
+            }
+
+            _page.DrawText(lines[0], x + labelWidth, y, valueFontSize, PdfFont.Regular, new PdfColor(50, 58, 70));
+
+            var currentY = y - lineHeight;
+            for (var index = 1; index < lines.Length; index++)
+            {
+                _page.DrawText(lines[index], x, currentY, valueFontSize, PdfFont.Regular, new PdfColor(50, 58, 70));
+                currentY -= lineHeight;
+            }
+
+            return currentY - 2f;
+        }
+
         // Renders label + value inline: "Label: valor" with proper indentation for wrapped lines
         private float DrawInlineKeyValueCompact(string label, string value, float x, float y, float maxWidth, float labelFontSize, float valueFontSize, float lineHeight)
         {
@@ -702,10 +735,7 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
                 float blockLineH = block.Label.StartsWith("SELLO") || block.Label.StartsWith("CADENA") ? sealLineHeight : metaLineH;
                 float blockValueFontSize = block.Label.StartsWith("SELLO") || block.Label.StartsWith("CADENA") ? sealFontSize : 8.5f;
 
-                var labelW = EstimateTextWidth($"{block.Label}: ", blockFontSize, PdfFont.Bold) * 0.72f + 4f;
-                var avail = Math.Max(20f, metaWidth - labelW);
-                var lines = WrapText(block.Value, EstimateWrapLength(avail, blockValueFontSize, PdfFont.Regular)).ToArray();
-                var blockH = blockLineH + ((lines.Length > 1 ? lines.Length - 1 : 0) * blockLineH) + 3f;
+                var blockH = MeasureHangingLabelBlockHeight(block.Label, block.Value, metaWidth, blockFontSize, blockValueFontSize, blockLineH) + 3f;
 
                 if (simY - blockH >= 0)
                 {
@@ -727,8 +757,7 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
                 float blockFontSize = block.Label.StartsWith("SELLO") || block.Label.StartsWith("CADENA") ? sealFontSize : 8.5f;
                 float blockLineH = block.Label.StartsWith("SELLO") || block.Label.StartsWith("CADENA") ? sealLineHeight : metaLineH;
                 float blockValueFontSize = blockFontSize;
-                var lines = WrapText(block.Value, EstimateWrapLength(fullWidth, blockValueFontSize, PdfFont.Regular)).ToArray();
-                sealsHeight += blockLineH + (lines.Length * blockLineH) + 3f;
+                sealsHeight += MeasureHangingLabelBlockHeight(block.Label, block.Value, fullWidth, blockFontSize, blockValueFontSize, blockLineH) + 3f;
             }
 
             var topZoneHeight = qrBoxSize + 12f;
@@ -756,7 +785,7 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
                 bool isSeal = block.Label.StartsWith("SELLO") || block.Label.StartsWith("CADENA");
                 float bFontSize = isSeal ? sealFontSize : 8.5f;
                 float bLineH = isSeal ? sealLineHeight : metaLineH;
-                metaY = DrawInlineKeyValueCompact(block.Label, block.Value, metaX, metaY, metaWidth, bFontSize, bFontSize, bLineH);
+                metaY = DrawHangingLabelValue(block.Label, block.Value, metaX, metaY, metaWidth, bFontSize, bFontSize, bLineH);
             }
 
             // --- Dibujar bloques debajo del QR (ancho completo) ---
@@ -767,27 +796,11 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
                 bool isSeal = block.Label.StartsWith("SELLO") || block.Label.StartsWith("CADENA");
                 float bFontSize = isSeal ? sealFontSize : 8.5f;
                 float bLineH = isSeal ? sealLineHeight : metaLineH;
-                sealY = DrawSingleColumnKeyValue(block.Label, block.Value, Margin + innerPad, sealY, fullWidth, bFontSize, bLineH);
+                sealY = DrawHangingLabelValue(block.Label, block.Value, Margin + innerPad, sealY, fullWidth, bFontSize, bFontSize, bLineH);
                 sealY -= 3f;
             }
 
             _cursorY -= sectionHeight + SectionGap;
-        }
-
-        // Renders label on its own line (bold), then value wrapped on subsequent lines (regular)
-        private float DrawSingleColumnKeyValue(string label, string value, float x, float y, float maxWidth, float fontSize, float lineHeight)
-        {
-            _page.DrawText($"{label}:", x, y, fontSize, PdfFont.Bold, new PdfColor(120, 108, 84));
-            var currentY = y - lineHeight;
-
-            var lines = WrapText(value, EstimateWrapLength(maxWidth, fontSize, PdfFont.Regular)).ToArray();
-            foreach (var line in lines)
-            {
-                _page.DrawText(line, x, currentY, fontSize, PdfFont.Regular, new PdfColor(50, 58, 70));
-                currentY -= lineHeight;
-            }
-
-            return currentY;
         }
 
         private float DrawInlineKeyValueParagraph(string label, string value, float x, float y, float maxWidth, float fontSize, float lineHeight)

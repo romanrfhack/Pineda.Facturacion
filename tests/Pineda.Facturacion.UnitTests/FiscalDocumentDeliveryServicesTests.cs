@@ -281,6 +281,36 @@ public class FiscalDocumentDeliveryServicesTests
         Assert.Contains("Este documento es una representacion impresa de un CFDI 4.0", pdfText, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void WrapValueWithHangingLabel_Uses_More_Width_On_Following_Lines()
+    {
+        var lines = PdfLayoutTextWrapper.WrapValueWithHangingLabel(
+            "SELLO DIGITAL DEL SAT",
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ 1234567890 QWERTYUIOP ASDFGHJKL ZXCVBNM",
+            180f,
+            6.2f,
+            6.2f);
+
+        Assert.True(lines.Length >= 2);
+        Assert.DoesNotContain("SELLO DIGITAL DEL SAT", lines[0], StringComparison.Ordinal);
+        Assert.DoesNotContain("SELLO DIGITAL DEL SAT", lines[1], StringComparison.Ordinal);
+        Assert.True(lines[1].Length >= lines[0].Length);
+    }
+
+    [Fact]
+    public void WrapValueWithHangingLabel_Returns_Single_Line_When_Value_Fits()
+    {
+        var lines = PdfLayoutTextWrapper.WrapValueWithHangingLabel(
+            "SELLO DIGITAL DEL CFDI",
+            "ABC123",
+            220f,
+            6.2f,
+            6.2f);
+
+        Assert.Single(lines);
+        Assert.Equal("ABC123", lines[0]);
+    }
+
     private static FiscalDocument CreateFiscalDocument()
     {
         return new FiscalDocument
