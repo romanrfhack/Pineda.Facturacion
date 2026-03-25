@@ -100,7 +100,7 @@ import { getDisplayLabel } from '../../../shared/ui/display-labels';
               </thead>
               <tbody>
                 @for (item of items(); track item.fiscalDocumentId) {
-                  <tr [class.selected-row]="selectedItem()?.fiscalDocumentId === item.fiscalDocumentId">
+                  <tr>
                     <td>{{ formatUtc(item.issuedAtUtc) }}</td>
                     <td>{{ item.stampedAtUtc ? formatUtc(item.stampedAtUtc) : '—' }}</td>
                     <td>{{ item.series || '—' }}</td>
@@ -112,16 +112,7 @@ import { getDisplayLabel } from '../../../shared/ui/display-labels';
                     <td>{{ getDisplayLabel(item.status) }}</td>
                     <td>{{ item.paymentMethodSat }}</td>
                     <td>{{ item.paymentFormSat }}</td>
-                    <td>
-                      <div class="row-actions">
-                        <button type="button" class="secondary small" (click)="selectItem(item)">Ver detalle</button>
-                        <button type="button" class="secondary small" (click)="openPdf(item, false)" [disabled]="actionBusy(item.fiscalDocumentId, 'pdf-view')">Ver PDF</button>
-                        <button type="button" class="secondary small" (click)="openPdf(item, true)" [disabled]="actionBusy(item.fiscalDocumentId, 'pdf-download')">Descargar PDF</button>
-                        <button type="button" class="secondary small" (click)="openXml(item)" [disabled]="actionBusy(item.fiscalDocumentId, 'xml-view')">Ver XML</button>
-                        <button type="button" class="secondary small" (click)="downloadXml(item)" [disabled]="actionBusy(item.fiscalDocumentId, 'xml-download')">Descargar XML</button>
-                        <button type="button" class="secondary small" (click)="openEmailComposer(item)" [disabled]="actionBusy(item.fiscalDocumentId, 'email-draft') || sendingEmail()">Reenviar</button>
-                      </div>
-                    </td>
+                    <td><button type="button" class="secondary small" (click)="openDetailModal(item)" [disabled]="actionBusy(item.fiscalDocumentId, 'detail')">Ver detalle</button></td>
                   </tr>
                 }
               </tbody>
@@ -136,29 +127,47 @@ import { getDisplayLabel } from '../../../shared/ui/display-labels';
         }
       </section>
 
-      @if (selectedDocument(); as currentDocument) {
-        <app-fiscal-document-card [document]="currentDocument" />
+      @if (showDetailModal()) {
+        <section class="modal-backdrop" (click)="closeDetailModal()">
+          <section class="modal-card detail-modal" (click)="$event.stopPropagation()">
+            <div class="modal-header">
+              <div>
+                <p class="eyebrow">CFDI emitidos</p>
+                <h3>Detalle de CFDI emitido</h3>
+              </div>
+              <button type="button" class="secondary" (click)="closeDetailModal()">Cerrar</button>
+            </div>
 
-        <section class="card">
-          <div class="button-row">
-            <button type="button" class="secondary" (click)="openPdfForSelected(false)">Ver PDF</button>
-            <button type="button" class="secondary" (click)="openPdfForSelected(true)">Descargar PDF</button>
-            <button type="button" class="secondary" (click)="openXmlForSelected()">Ver XML</button>
-            <button type="button" class="secondary" (click)="downloadXmlForSelected()">Descargar XML</button>
-            <button type="button" class="secondary" (click)="openEmailComposerForSelected()">Reenviar por correo</button>
-          </div>
+            @if (selectedDocument(); as currentDocument) {
+              <section class="card nested-card">
+                <div class="button-row">
+                  <button type="button" class="secondary" (click)="openPdfForSelected(false)">Ver PDF</button>
+                  <button type="button" class="secondary" (click)="openPdfForSelected(true)">Descargar PDF</button>
+                  <button type="button" class="secondary" (click)="openXmlForSelected()">Ver XML</button>
+                  <button type="button" class="secondary" (click)="downloadXmlForSelected()">Descargar XML</button>
+                  <button type="button" class="secondary" (click)="openEmailComposerForSelected()">Reenviar por correo</button>
+                </div>
+              </section>
+
+              <app-fiscal-document-card [document]="currentDocument" />
+            } @else {
+              <section class="card nested-card">
+                <p class="helper">Cargando detalle del CFDI...</p>
+              </section>
+            }
+
+            @if (selectedStamp(); as currentStamp) {
+              <app-fiscal-stamp-evidence-card [stamp]="currentStamp" (detailsRequested)="toggleStampDetail()" (xmlRequested)="openXmlForSelected()" />
+              @if (showStampDetail()) {
+                <app-fiscal-stamp-evidence-detail [stamp]="currentStamp" />
+              }
+            }
+
+            @if (selectedCancellation(); as cancellation) {
+              <app-fiscal-cancellation-card [cancellation]="cancellation" />
+            }
+          </section>
         </section>
-      }
-
-      @if (selectedStamp(); as currentStamp) {
-        <app-fiscal-stamp-evidence-card [stamp]="currentStamp" (detailsRequested)="toggleStampDetail()" (xmlRequested)="openXmlForSelected()" />
-        @if (showStampDetail()) {
-          <app-fiscal-stamp-evidence-detail [stamp]="currentStamp" />
-        }
-      }
-
-      @if (selectedCancellation(); as cancellation) {
-        <app-fiscal-cancellation-card [cancellation]="cancellation" />
       }
 
       @if (showStampXmlPanel()) {
@@ -218,12 +227,11 @@ import { getDisplayLabel } from '../../../shared/ui/display-labels';
     label { display:grid; gap:0.35rem; }
     input, select, button, textarea { font:inherit; }
     input, select, textarea { border:1px solid #c9d1da; border-radius:0.8rem; padding:0.75rem 0.9rem; }
-    .actions, .toolbar, .pagination, .button-row, .row-actions { display:flex; flex-wrap:wrap; gap:0.75rem; align-items:center; }
+    .actions, .toolbar, .pagination, .button-row { display:flex; flex-wrap:wrap; gap:0.75rem; align-items:center; }
     .toolbar, .pagination { justify-content:space-between; }
     .table-wrap { overflow:auto; }
     table { width:100%; border-collapse:collapse; }
     th, td { text-align:left; padding:0.75rem 0.5rem; border-bottom:1px solid #ece5d7; vertical-align:top; }
-    .selected-row { background:#fffaf0; }
     .helper { margin:0; color:#5f6b76; }
     .error { margin:0; color:#7a2020; }
     button { border:none; border-radius:0.8rem; padding:0.75rem 1rem; background:#182533; color:#fff; cursor:pointer; }
@@ -233,8 +241,12 @@ import { getDisplayLabel } from '../../../shared/ui/display-labels';
     .page-size { min-width:120px; }
     .modal-backdrop { position:fixed; inset:0; background:rgba(24, 37, 51, 0.42); display:grid; place-items:center; padding:1rem; z-index:50; }
     .modal-card { width:min(760px, 100%); max-height:calc(100vh - 2rem); overflow:auto; border:1px solid #d8d1c2; border-radius:1rem; background:#fff; padding:1rem; display:grid; gap:1rem; box-shadow:0 24px 60px rgba(24, 37, 51, 0.24); }
+    .detail-modal { width:min(1120px, 100%); align-content:start; }
+    .modal-header { display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; }
+    .nested-card { padding:0; border:none; background:transparent; }
     @media (max-width: 720px) {
       .toolbar, .pagination { flex-direction:column; align-items:stretch; }
+      .modal-header { flex-direction:column; align-items:stretch; }
     }
   `],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -276,6 +288,7 @@ export class IssuedCfdisPageComponent {
   protected readonly emailRecipientsError = signal<string | null>(null);
   protected readonly showStampDetail = signal(false);
   protected readonly actionKey = signal<string | null>(null);
+  protected readonly showDetailModal = signal(false);
   private emailFiscalDocumentId: number | null = null;
   protected emailRecipientsInput = '';
   protected emailSubject = '';
@@ -343,6 +356,21 @@ export class IssuedCfdisPageComponent {
     } catch {
       this.selectedCancellation.set(null);
     }
+  }
+
+  protected async openDetailModal(item: IssuedFiscalDocumentListItemResponse): Promise<void> {
+    this.actionKey.set(`detail:${item.fiscalDocumentId}`);
+    try {
+      await this.selectItem(item);
+      this.showDetailModal.set(true);
+    } finally {
+      this.actionKey.set(null);
+    }
+  }
+
+  protected closeDetailModal(): void {
+    this.showDetailModal.set(false);
+    this.showStampDetail.set(false);
   }
 
   protected toggleStampDetail(): void {

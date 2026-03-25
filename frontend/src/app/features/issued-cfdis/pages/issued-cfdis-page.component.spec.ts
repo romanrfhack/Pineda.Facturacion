@@ -135,11 +135,15 @@ describe('IssuedCfdisPageComponent', () => {
 
   it('loads and renders the issued CFDI grid', async () => {
     const fixture = await configure();
+    await fixture.componentInstance['load']();
+    fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).toContain('UUID-123');
     expect(fixture.nativeElement.textContent).toContain('BBB010101BBB');
     expect(fixture.nativeElement.textContent).toContain('Receiver One');
     expect(fixture.nativeElement.textContent).toContain('Ver detalle');
+    expect(fixture.nativeElement.textContent).not.toContain('Descargar PDF');
+    expect(fixture.nativeElement.textContent).not.toContain('Reenviar por correo');
   });
 
   it('applies filters through the paged issued-search endpoint', async () => {
@@ -164,7 +168,25 @@ describe('IssuedCfdisPageComponent', () => {
     }));
   });
 
-  it('opens the email composer and sends without re-timbrar', async () => {
+  it('opens the detail in a modal and hides the fixed summary sections from the page', async () => {
+    const fixture = await configure();
+
+    expect(fixture.nativeElement.textContent).not.toContain('Detalle de CFDI emitido');
+
+    await fixture.componentInstance['openDetailModal'](fixture.componentInstance['items']()[0]);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Detalle de CFDI emitido');
+    expect(fixture.nativeElement.textContent).toContain('Snapshot fiscal');
+    expect(fixture.nativeElement.textContent).toContain('Evidencia de timbrado');
+
+    fixture.componentInstance['closeDetailModal']();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).not.toContain('Detalle de CFDI emitido');
+  });
+
+  it('opens the email composer from the detail modal and sends without re-timbrar', async () => {
     const sendByEmail = vi.fn().mockReturnValue(of({
       outcome: 'Sent',
       isSuccess: true,
@@ -174,7 +196,8 @@ describe('IssuedCfdisPageComponent', () => {
     }));
     const fixture = await configure({ sendByEmail });
 
-    await fixture.componentInstance['openEmailComposer'](fixture.componentInstance['items']()[0]);
+    await fixture.componentInstance['openDetailModal'](fixture.componentInstance['items']()[0]);
+    await fixture.componentInstance['openEmailComposerForSelected']();
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).toContain('Reenviar CFDI por correo');
