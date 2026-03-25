@@ -11,6 +11,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="..\..\sat_cfdi_40_catalogos_y_compatibilidad_receptor.json" LogicalName="Pineda.Facturacion.Infrastructure.Resources.sat_cfdi_40_catalogos_y_compatibilidad_receptor.json" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="ClosedXML" Version="0.104.2" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.13" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.14.0" />

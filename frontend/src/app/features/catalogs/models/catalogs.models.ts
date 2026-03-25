@@ -91,6 +91,21 @@ export interface UpsertFiscalReceiverRequest {
   specialFields: FiscalReceiverSpecialFieldDefinition[];
 }
 
+export interface FiscalReceiverSatCatalogOption {
+  code: string;
+  description: string;
+}
+
+export interface FiscalReceiverSatRegimeCompatibility extends FiscalReceiverSatCatalogOption {
+  allowedUsoCfdi: FiscalReceiverSatCatalogOption[];
+}
+
+export interface FiscalReceiverSatCatalog {
+  regimenFiscal: FiscalReceiverSatCatalogOption[];
+  usoCfdi: FiscalReceiverSatCatalogOption[];
+  byRegimenFiscal: FiscalReceiverSatRegimeCompatibility[];
+}
+
 export interface ProductFiscalProfileSearchItem {
   id: number;
   internalCode: string;

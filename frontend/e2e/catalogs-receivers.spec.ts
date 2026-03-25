@@ -18,8 +18,8 @@ test('login then create receiver and find it in search results', async ({ page }
   await page.getByRole('button', { name: 'Nuevo receptor' }).click();
   await page.getByRole('textbox', { name: 'RFC' }).fill('CCC010101CCC');
   await page.getByRole('textbox', { name: 'Razón social' }).fill('Receiver Catalog UI');
-  await page.getByRole('textbox', { name: 'Código de régimen fiscal' }).fill('601');
-  await page.getByRole('textbox', { name: 'Uso CFDI predeterminado' }).fill('G03');
+  await page.getByRole('combobox', { name: 'Régimen fiscal del receptor' }).selectOption('601');
+  await page.getByRole('combobox', { name: 'Uso CFDI predeterminado' }).selectOption('G03');
   await page.getByRole('textbox', { name: 'Código postal' }).fill('03100');
   await page.getByRole('button', { name: 'Crear receptor' }).click();
 

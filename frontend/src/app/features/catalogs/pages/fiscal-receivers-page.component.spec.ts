@@ -25,6 +25,21 @@ describe('FiscalReceiversPageComponent', () => {
               }
             ])),
             getByRfc: vi.fn(),
+            getSatCatalog: vi.fn().mockReturnValue(of({
+              regimenFiscal: [
+                { code: '601', description: 'General de Ley Personas Morales' }
+              ],
+              usoCfdi: [
+                { code: 'G03', description: 'Gastos en general' }
+              ],
+              byRegimenFiscal: [
+                {
+                  code: '601',
+                  description: 'General de Ley Personas Morales',
+                  allowedUsoCfdi: [{ code: 'G03', description: 'Gastos en general' }]
+                }
+              ]
+            })),
             create: vi.fn(),
             update: vi.fn()
           }

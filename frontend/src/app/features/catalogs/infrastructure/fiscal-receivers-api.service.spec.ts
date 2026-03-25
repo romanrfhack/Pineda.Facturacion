@@ -39,4 +39,15 @@ describe('FiscalReceiversApiService', () => {
     expect(req.request.method).toBe('POST');
     httpTesting.verify();
   });
+
+  it('loads SAT receiver catalogs', () => {
+    const service = TestBed.inject(FiscalReceiversApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.getSatCatalog().subscribe();
+
+    const req = httpTesting.expectOne('/api/fiscal/receivers/sat-catalogs');
+    expect(req.request.method).toBe('GET');
+    httpTesting.verify();
+  });
 });

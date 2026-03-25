@@ -187,6 +187,21 @@ describe('FiscalDocumentOperationsPageComponent', () => {
               createdAtUtc: '2026-03-20T12:00:00Z',
               updatedAtUtc: '2026-03-20T12:00:00Z'
             })),
+            getSatCatalog: vi.fn().mockReturnValue(of({
+              regimenFiscal: [
+                { code: '601', description: 'General de Ley Personas Morales' }
+              ],
+              usoCfdi: [
+                { code: 'G03', description: 'Gastos en general' }
+              ],
+              byRegimenFiscal: [
+                {
+                  code: '601',
+                  description: 'General de Ley Personas Morales',
+                  allowedUsoCfdi: [{ code: 'G03', description: 'Gastos en general' }]
+                }
+              ]
+            })),
             create: vi.fn().mockReturnValue(of({ outcome: 'Created', isSuccess: true, id: 9 })),
             update: vi.fn(),
             ...receiverApiOverrides

@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
 using Pineda.Facturacion.Application.Abstractions.Communication;
 using Pineda.Facturacion.Application.Abstractions.Documents;
+using Pineda.Facturacion.Application.Abstractions.FiscalReceivers;
 using Pineda.Facturacion.Application.Abstractions.Hashing;
 using Pineda.Facturacion.Application.Abstractions.Importing;
 using Pineda.Facturacion.Application.Abstractions.Security;
@@ -10,6 +11,7 @@ using Pineda.Facturacion.Infrastructure.Communication;
 using Pineda.Facturacion.Infrastructure.Documents;
 using Pineda.Facturacion.Infrastructure.Hashing;
 using Pineda.Facturacion.Infrastructure.Excel;
+using Pineda.Facturacion.Infrastructure.FiscalReceivers;
 using Pineda.Facturacion.Infrastructure.Options;
 using Pineda.Facturacion.Infrastructure.Security;
 
@@ -45,6 +47,7 @@ public static class ServiceCollectionExtensions
         }
 
         services.AddSingleton<IContentHashGenerator, Sha256ContentHashGenerator>();
+        services.AddSingleton<IFiscalReceiverSatCatalogProvider, FiscalReceiverSatCatalogProvider>();
         services.AddSingleton<IExcelWorksheetReader, ClosedXmlWorksheetReader>();
         services.AddScoped<IFiscalDocumentPdfRenderer, FiscalDocumentPdfRenderer>();
         services.AddSingleton<IIssuerProfileLogoStorage, IssuerProfileLogoStorage>();

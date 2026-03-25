@@ -1,4 +1,5 @@
 using Pineda.Facturacion.Application.Abstractions.Persistence;
+using Pineda.Facturacion.Application.Abstractions.FiscalReceivers;
 using Pineda.Facturacion.Application.UseCases.FiscalReceivers;
 using Pineda.Facturacion.Application.UseCases.IssuerProfiles;
 using Pineda.Facturacion.Application.UseCases.ProductFiscalProfiles;
@@ -53,7 +54,7 @@ public class FiscalMasterDataServicesTests
                 Rfc = "XAXX010101000"
             }
         };
-        var service = new CreateFiscalReceiverService(repository, new FakeUnitOfWork());
+        var service = new CreateFiscalReceiverService(repository, FakeFiscalReceiverSatCatalogProvider.Default(), new FakeUnitOfWork());
 
         var result = await service.ExecuteAsync(new CreateFiscalReceiverCommand
         {
@@ -160,7 +161,7 @@ public class FiscalMasterDataServicesTests
     public async Task CreateFiscalReceiver_Persists_Special_Field_Definitions()
     {
         var repository = new FakeFiscalReceiverRepository();
-        var service = new CreateFiscalReceiverService(repository, new FakeUnitOfWork());
+        var service = new CreateFiscalReceiverService(repository, FakeFiscalReceiverSatCatalogProvider.Default(), new FakeUnitOfWork());
 
         var result = await service.ExecuteAsync(new CreateFiscalReceiverCommand
         {
@@ -215,6 +216,26 @@ public class FiscalMasterDataServicesTests
                 Assert.Equal("text", second.DataType);
                 Assert.False(second.IsRequired);
             });
+    }
+
+    [Fact]
+    public async Task CreateFiscalReceiver_ReturnsValidationFailure_WhenRegimeAndCfdiUseAreNotCompatible()
+    {
+        var repository = new FakeFiscalReceiverRepository();
+        var service = new CreateFiscalReceiverService(repository, FakeFiscalReceiverSatCatalogProvider.Default(), new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new CreateFiscalReceiverCommand
+        {
+            Rfc = " xexx010101000 ",
+            LegalName = "Receiver",
+            FiscalRegimeCode = "601",
+            CfdiUseCodeDefault = "CN01",
+            PostalCode = "64000"
+        });
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(CreateFiscalReceiverOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("not compatible", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -319,6 +340,61 @@ public class FiscalMasterDataServicesTests
         }
 
         public Task UpdateAsync(ProductFiscalProfile productFiscalProfile, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class FakeFiscalReceiverSatCatalogProvider : IFiscalReceiverSatCatalogProvider
+    {
+        private readonly FiscalReceiverSatCatalog _catalog;
+
+        private FakeFiscalReceiverSatCatalogProvider(FiscalReceiverSatCatalog catalog)
+        {
+            _catalog = catalog;
+        }
+
+        public static FakeFiscalReceiverSatCatalogProvider Default()
+        {
+            return new FakeFiscalReceiverSatCatalogProvider(new FiscalReceiverSatCatalog
+            {
+                RegimenFiscal =
+                [
+                    new FiscalReceiverSatCatalogOption { Code = "601", Description = "General de Ley Personas Morales" },
+                    new FiscalReceiverSatCatalogOption { Code = "605", Description = "Sueldos y Salarios" }
+                ],
+                UsoCfdi =
+                [
+                    new FiscalReceiverSatCatalogOption { Code = "G03", Description = "Gastos en general" },
+                    new FiscalReceiverSatCatalogOption { Code = "CN01", Description = "Nómina" }
+                ],
+                ByRegimenFiscal =
+                [
+                    new FiscalReceiverSatRegimeCompatibility
+                    {
+                        Code = "601",
+                        Description = "General de Ley Personas Morales",
+                        AllowedUsoCfdi = [new FiscalReceiverSatCatalogOption { Code = "G03", Description = "Gastos en general" }]
+                    },
+                    new FiscalReceiverSatRegimeCompatibility
+                    {
+                        Code = "605",
+                        Description = "Sueldos y Salarios",
+                        AllowedUsoCfdi = [new FiscalReceiverSatCatalogOption { Code = "CN01", Description = "Nómina" }]
+                    }
+                ]
+            });
+        }
+
+        public FiscalReceiverSatCatalog GetCatalog() => _catalog;
+
+        public bool FiscalRegimeExists(string code)
+            => _catalog.RegimenFiscal.Any(x => string.Equals(x.Code, code, StringComparison.OrdinalIgnoreCase));
+
+        public bool CfdiUseExists(string code)
+            => _catalog.UsoCfdi.Any(x => string.Equals(x.Code, code, StringComparison.OrdinalIgnoreCase));
+
+        public bool IsCfdiUseCompatibleWithRegime(string fiscalRegimeCode, string cfdiUseCode)
+            => _catalog.ByRegimenFiscal.Any(x =>
+                string.Equals(x.Code, fiscalRegimeCode, StringComparison.OrdinalIgnoreCase)
+                && x.AllowedUsoCfdi.Any(usage => string.Equals(usage.Code, cfdiUseCode, StringComparison.OrdinalIgnoreCase)));
     }
 
     private sealed class FakeUnitOfWork : IUnitOfWork

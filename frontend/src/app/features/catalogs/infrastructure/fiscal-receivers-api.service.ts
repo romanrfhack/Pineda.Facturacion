@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { buildApiUrl } from '../../../core/config/api-url';
-import { FiscalReceiver, FiscalReceiverSearchItem, MutationResponse, UpsertFiscalReceiverRequest } from '../models/catalogs.models';
+import { FiscalReceiver, FiscalReceiverSatCatalog, FiscalReceiverSearchItem, MutationResponse, UpsertFiscalReceiverRequest } from '../models/catalogs.models';
 
 @Injectable({ providedIn: 'root' })
 export class FiscalReceiversApiService {
@@ -14,6 +14,10 @@ export class FiscalReceiversApiService {
 
   getByRfc(rfc: string): Observable<FiscalReceiver> {
     return this.http.get<FiscalReceiver>(buildApiUrl(`/fiscal/receivers/by-rfc/${encodeURIComponent(rfc)}`));
+  }
+
+  getSatCatalog(): Observable<FiscalReceiverSatCatalog> {
+    return this.http.get<FiscalReceiverSatCatalog>(buildApiUrl('/fiscal/receivers/sat-catalogs'));
   }
 
   create(request: UpsertFiscalReceiverRequest): Observable<MutationResponse> {

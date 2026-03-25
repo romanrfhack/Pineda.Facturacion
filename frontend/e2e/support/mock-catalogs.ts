@@ -72,6 +72,26 @@ export async function mockCatalogReceiversBackend(page: Page): Promise<void> {
     });
   });
 
+  await page.route('**/api/fiscal/receivers/sat-catalogs', async (route) => {
+    await route.fulfill({
+      json: {
+        regimenFiscal: [
+          { code: '601', description: 'General de Ley Personas Morales' }
+        ],
+        usoCfdi: [
+          { code: 'G03', description: 'Gastos en general' }
+        ],
+        byRegimenFiscal: [
+          {
+            code: '601',
+            description: 'General de Ley Personas Morales',
+            allowedUsoCfdi: [{ code: 'G03', description: 'Gastos en general' }]
+          }
+        ]
+      }
+    });
+  });
+
   await page.route('**/api/fiscal/receivers/by-rfc/**', async (route) => {
     const rfc = decodeURIComponent(route.request().url().split('/by-rfc/')[1]);
     const receiver = receivers.find((item) => item.rfc === rfc);

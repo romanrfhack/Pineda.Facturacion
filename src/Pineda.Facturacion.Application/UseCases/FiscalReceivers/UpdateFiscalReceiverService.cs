@@ -1,3 +1,4 @@
+using Pineda.Facturacion.Application.Abstractions.FiscalReceivers;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Common;
 
@@ -6,11 +7,16 @@ namespace Pineda.Facturacion.Application.UseCases.FiscalReceivers;
 public class UpdateFiscalReceiverService
 {
     private readonly IFiscalReceiverRepository _fiscalReceiverRepository;
+    private readonly IFiscalReceiverSatCatalogProvider _fiscalReceiverSatCatalogProvider;
     private readonly IUnitOfWork _unitOfWork;
 
-    public UpdateFiscalReceiverService(IFiscalReceiverRepository fiscalReceiverRepository, IUnitOfWork unitOfWork)
+    public UpdateFiscalReceiverService(
+        IFiscalReceiverRepository fiscalReceiverRepository,
+        IFiscalReceiverSatCatalogProvider fiscalReceiverSatCatalogProvider,
+        IUnitOfWork unitOfWork)
     {
         _fiscalReceiverRepository = fiscalReceiverRepository;
+        _fiscalReceiverSatCatalogProvider = fiscalReceiverSatCatalogProvider;
         _unitOfWork = unitOfWork;
     }
 
@@ -21,7 +27,7 @@ public class UpdateFiscalReceiverService
             return ValidationFailure("Fiscal receiver id is required.");
         }
 
-        var validationError = Validate(command);
+        var validationError = Validate(command, _fiscalReceiverSatCatalogProvider);
         if (validationError is not null)
         {
             return ValidationFailure(validationError);
@@ -92,13 +98,15 @@ public class UpdateFiscalReceiverService
         };
     }
 
-    private static string? Validate(UpdateFiscalReceiverCommand command)
+    private static string? Validate(UpdateFiscalReceiverCommand command, IFiscalReceiverSatCatalogProvider fiscalReceiverSatCatalogProvider)
     {
         if (string.IsNullOrWhiteSpace(command.Rfc)) return "RFC is required.";
         if (string.IsNullOrWhiteSpace(command.LegalName)) return "Legal name is required.";
         if (string.IsNullOrWhiteSpace(command.FiscalRegimeCode)) return "Fiscal regime code is required.";
         if (string.IsNullOrWhiteSpace(command.CfdiUseCodeDefault)) return "Default CFDI use code is required.";
         if (string.IsNullOrWhiteSpace(command.PostalCode)) return "Postal code is required.";
+        var satCatalogValidationError = FiscalReceiverSatCatalogValidation.ValidateCodes(command.FiscalRegimeCode, command.CfdiUseCodeDefault, fiscalReceiverSatCatalogProvider);
+        if (satCatalogValidationError is not null) return satCatalogValidationError;
         var specialFieldValidationError = CreateFiscalReceiverService.ValidateSpecialFields(command.SpecialFields);
         if (specialFieldValidationError is not null) return specialFieldValidationError;
         return null;

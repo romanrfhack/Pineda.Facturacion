@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http.HttpResults;
 using Pineda.Facturacion.Api.Security;
+using Pineda.Facturacion.Application.Abstractions.FiscalReceivers;
 using Pineda.Facturacion.Application.Abstractions.Security;
 using Pineda.Facturacion.Application.Security;
 using Pineda.Facturacion.Application.UseCases.FiscalReceivers;
@@ -27,6 +28,11 @@ public static class FiscalReceiversEndpoints
             .WithSummary("Get a fiscal receiver by RFC")
             .Produces<FiscalReceiverResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status404NotFound);
+
+        group.MapGet("/sat-catalogs", GetFiscalReceiverSatCatalogAsync)
+            .WithName("GetFiscalReceiverSatCatalog")
+            .WithSummary("Get SAT CFDI 4.0 receiver regime and CFDI use catalogs")
+            .Produces<FiscalReceiverSatCatalogResponse>(StatusCodes.Status200OK);
 
         group.MapPost("/", CreateFiscalReceiverAsync)
             .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
@@ -70,6 +76,32 @@ public static class FiscalReceiversEndpoints
         }
 
         return TypedResults.Ok(MapReceiver(result.FiscalReceiver));
+    }
+
+    private static Ok<FiscalReceiverSatCatalogResponse> GetFiscalReceiverSatCatalogAsync(
+        IFiscalReceiverSatCatalogProvider catalogProvider)
+    {
+        var catalog = catalogProvider.GetCatalog();
+
+        return TypedResults.Ok(new FiscalReceiverSatCatalogResponse
+        {
+            RegimenFiscal = catalog.RegimenFiscal
+                .Select(MapCatalogOption)
+                .ToArray(),
+            UsoCfdi = catalog.UsoCfdi
+                .Select(MapCatalogOption)
+                .ToArray(),
+            ByRegimenFiscal = catalog.ByRegimenFiscal
+                .Select(regime => new FiscalReceiverSatRegimeCompatibilityResponse
+                {
+                    Code = regime.Code,
+                    Description = regime.Description,
+                    AllowedUsoCfdi = regime.AllowedUsoCfdi
+                        .Select(MapCatalogOption)
+                        .ToArray()
+                })
+                .ToArray()
+        });
     }
 
     private static async Task<Results<Ok<MutationResponse>, BadRequest<MutationResponse>, Conflict<MutationResponse>>> CreateFiscalReceiverAsync(
@@ -265,6 +297,15 @@ public static class FiscalReceiversEndpoints
         };
     }
 
+    private static FiscalReceiverSatCatalogOptionResponse MapCatalogOption(FiscalReceiverSatCatalogOption option)
+    {
+        return new FiscalReceiverSatCatalogOptionResponse
+        {
+            Code = option.Code,
+            Description = option.Description
+        };
+    }
+
     public sealed class UpsertFiscalReceiverRequest
     {
         public string Rfc { get; init; } = string.Empty;
@@ -328,6 +369,24 @@ public static class FiscalReceiversEndpoints
         public bool IsRequired { get; init; }
         public bool IsActive { get; init; }
         public int DisplayOrder { get; init; }
+    }
+
+    public sealed class FiscalReceiverSatCatalogResponse
+    {
+        public IReadOnlyList<FiscalReceiverSatCatalogOptionResponse> RegimenFiscal { get; init; } = [];
+        public IReadOnlyList<FiscalReceiverSatCatalogOptionResponse> UsoCfdi { get; init; } = [];
+        public IReadOnlyList<FiscalReceiverSatRegimeCompatibilityResponse> ByRegimenFiscal { get; init; } = [];
+    }
+
+    public class FiscalReceiverSatCatalogOptionResponse
+    {
+        public string Code { get; init; } = string.Empty;
+        public string Description { get; init; } = string.Empty;
+    }
+
+    public sealed class FiscalReceiverSatRegimeCompatibilityResponse : FiscalReceiverSatCatalogOptionResponse
+    {
+        public IReadOnlyList<FiscalReceiverSatCatalogOptionResponse> AllowedUsoCfdi { get; init; } = [];
     }
 
     public sealed class MutationResponse

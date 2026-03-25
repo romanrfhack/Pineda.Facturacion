@@ -1,0 +1,5676 @@
+{
+  "metadata": {
+    "name": "SAT CFDI 4.0 - catálogos de receptor y compatibilidad para UI",
+    "generated_on": "2026-03-25",
+    "purpose": "Poblar dropdowns de RegimenFiscalReceptor y UsoCFDI, y filtrar opciones de UsoCFDI por régimen fiscal en formularios de captura.",
+    "official_source_summary": [
+      "SAT - Anexo 20 / Guía de llenado CFDI 4.0: UsoCFDI debe corresponder al catálogo c_UsoCFDI y al valor del campo RegimenFiscalReceptor.",
+      "SAT - Matriz de errores CFDI 4.0: UsoCFDI debe corresponder con el tipo de persona y el régimen correspondiente conforme al catálogo c_UsoCFDI.",
+      "SAT - Para complemento de pagos se usa CP01 (Pagos).",
+      "SAT - Para nómina se usa CN01 y RegimenFiscalReceptor 605."
+    ],
+    "mapping_notes": [
+      "Este archivo es utilizable para frontend/backend y conserva los catálogos base.",
+      "La compatibilidad incluida está preparada para filtrado de UI y validación previa.",
+      "Se recomienda mantener validación final en backend/PAC al timbrar, porque el SAT/PAC es el validador definitivo."
+    ],
+    "structure_summary": {
+      "catalogs.regimenFiscal": "Catálogo base c_RegimenFiscal para dropdown de régimen fiscal del receptor.",
+      "catalogs.usoCFDI": "Catálogo base c_UsoCFDI para dropdown de uso del CFDI.",
+      "compatibility.byUsoCFDI": "Lista cada uso con flags por tipo de persona y los regímenes fiscales permitidos para filtrado.",
+      "compatibility.byRegimenFiscal": "Vista inversa: por cada régimen fiscal, qué usos CFDI mostrar."
+    }
+  },
+  "catalogs": {
+    "regimenFiscal": [
+      {
+        "code": "601",
+        "description": "General de Ley Personas Morales",
+        "person_types_hint": [
+          "moral"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "G01",
+            "description": "Adquisición de mercancías"
+          },
+          {
+            "code": "G02",
+            "description": "Devoluciones, descuentos o bonificaciones"
+          },
+          {
+            "code": "G03",
+            "description": "Gastos en general"
+          },
+          {
+            "code": "I01",
+            "description": "Construcciones"
+          },
+          {
+            "code": "I02",
+            "description": "Mobiliario y equipo de oficina por inversiones"
+          },
+          {
+            "code": "I03",
+            "description": "Equipo de transporte"
+          },
+          {
+            "code": "I04",
+            "description": "Equipo de cómputo y accesorios"
+          },
+          {
+            "code": "I05",
+            "description": "Dados, troqueles, moldes, matrices y herramental"
+          },
+          {
+            "code": "I06",
+            "description": "Comunicaciones telefónicas"
+          },
+          {
+            "code": "I07",
+            "description": "Comunicaciones satelitales"
+          },
+          {
+            "code": "I08",
+            "description": "Otra maquinaria y equipo"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      },
+      {
+        "code": "603",
+        "description": "Personas Morales con Fines no Lucrativos",
+        "person_types_hint": [
+          "moral"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "G01",
+            "description": "Adquisición de mercancías"
+          },
+          {
+            "code": "G02",
+            "description": "Devoluciones, descuentos o bonificaciones"
+          },
+          {
+            "code": "G03",
+            "description": "Gastos en general"
+          },
+          {
+            "code": "I01",
+            "description": "Construcciones"
+          },
+          {
+            "code": "I02",
+            "description": "Mobiliario y equipo de oficina por inversiones"
+          },
+          {
+            "code": "I03",
+            "description": "Equipo de transporte"
+          },
+          {
+            "code": "I04",
+            "description": "Equipo de cómputo y accesorios"
+          },
+          {
+            "code": "I05",
+            "description": "Dados, troqueles, moldes, matrices y herramental"
+          },
+          {
+            "code": "I06",
+            "description": "Comunicaciones telefónicas"
+          },
+          {
+            "code": "I07",
+            "description": "Comunicaciones satelitales"
+          },
+          {
+            "code": "I08",
+            "description": "Otra maquinaria y equipo"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      },
+      {
+        "code": "605",
+        "description": "Sueldos y Salarios e Ingresos Asimilados a Salarios",
+        "person_types_hint": [
+          "fisica"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "D01",
+            "description": "Honorarios médicos, dentales y gastos hospitalarios"
+          },
+          {
+            "code": "D02",
+            "description": "Gastos médicos por incapacidad o discapacidad"
+          },
+          {
+            "code": "D03",
+            "description": "Gastos funerales"
+          },
+          {
+            "code": "D04",
+            "description": "Donativos"
+          },
+          {
+            "code": "D05",
+            "description": "Intereses reales efectivamente pagados por créditos hipotecarios (casa habitación)"
+          },
+          {
+            "code": "D06",
+            "description": "Aportaciones voluntarias al SAR"
+          },
+          {
+            "code": "D07",
+            "description": "Primas por seguros de gastos médicos"
+          },
+          {
+            "code": "D08",
+            "description": "Gastos de transportación escolar obligatoria"
+          },
+          {
+            "code": "D09",
+            "description": "Depósitos en cuentas para el ahorro, primas que tengan como base planes de pensiones"
+          },
+          {
+            "code": "D10",
+            "description": "Pagos por servicios educativos (colegiaturas)"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          },
+          {
+            "code": "CN01",
+            "description": "Nómina"
+          }
+        ]
+      },
+      {
+        "code": "606",
+        "description": "Arrendamiento",
+        "person_types_hint": [
+          "fisica"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "G01",
+            "description": "Adquisición de mercancías"
+          },
+          {
+            "code": "G02",
+            "description": "Devoluciones, descuentos o bonificaciones"
+          },
+          {
+            "code": "G03",
+            "description": "Gastos en general"
+          },
+          {
+            "code": "I01",
+            "description": "Construcciones"
+          },
+          {
+            "code": "I02",
+            "description": "Mobiliario y equipo de oficina por inversiones"
+          },
+          {
+            "code": "I03",
+            "description": "Equipo de transporte"
+          },
+          {
+            "code": "I04",
+            "description": "Equipo de cómputo y accesorios"
+          },
+          {
+            "code": "I05",
+            "description": "Dados, troqueles, moldes, matrices y herramental"
+          },
+          {
+            "code": "I06",
+            "description": "Comunicaciones telefónicas"
+          },
+          {
+            "code": "I07",
+            "description": "Comunicaciones satelitales"
+          },
+          {
+            "code": "I08",
+            "description": "Otra maquinaria y equipo"
+          },
+          {
+            "code": "D01",
+            "description": "Honorarios médicos, dentales y gastos hospitalarios"
+          },
+          {
+            "code": "D02",
+            "description": "Gastos médicos por incapacidad o discapacidad"
+          },
+          {
+            "code": "D03",
+            "description": "Gastos funerales"
+          },
+          {
+            "code": "D04",
+            "description": "Donativos"
+          },
+          {
+            "code": "D05",
+            "description": "Intereses reales efectivamente pagados por créditos hipotecarios (casa habitación)"
+          },
+          {
+            "code": "D06",
+            "description": "Aportaciones voluntarias al SAR"
+          },
+          {
+            "code": "D07",
+            "description": "Primas por seguros de gastos médicos"
+          },
+          {
+            "code": "D08",
+            "description": "Gastos de transportación escolar obligatoria"
+          },
+          {
+            "code": "D09",
+            "description": "Depósitos en cuentas para el ahorro, primas que tengan como base planes de pensiones"
+          },
+          {
+            "code": "D10",
+            "description": "Pagos por servicios educativos (colegiaturas)"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      },
+      {
+        "code": "607",
+        "description": "Régimen de Enajenación o Adquisición de Bienes",
+        "person_types_hint": [
+          "fisica"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "G01",
+            "description": "Adquisición de mercancías"
+          },
+          {
+            "code": "G02",
+            "description": "Devoluciones, descuentos o bonificaciones"
+          },
+          {
+            "code": "G03",
+            "description": "Gastos en general"
+          },
+          {
+            "code": "I01",
+            "description": "Construcciones"
+          },
+          {
+            "code": "I02",
+            "description": "Mobiliario y equipo de oficina por inversiones"
+          },
+          {
+            "code": "I03",
+            "description": "Equipo de transporte"
+          },
+          {
+            "code": "I04",
+            "description": "Equipo de cómputo y accesorios"
+          },
+          {
+            "code": "I05",
+            "description": "Dados, troqueles, moldes, matrices y herramental"
+          },
+          {
+            "code": "I06",
+            "description": "Comunicaciones telefónicas"
+          },
+          {
+            "code": "I07",
+            "description": "Comunicaciones satelitales"
+          },
+          {
+            "code": "I08",
+            "description": "Otra maquinaria y equipo"
+          },
+          {
+            "code": "D01",
+            "description": "Honorarios médicos, dentales y gastos hospitalarios"
+          },
+          {
+            "code": "D02",
+            "description": "Gastos médicos por incapacidad o discapacidad"
+          },
+          {
+            "code": "D03",
+            "description": "Gastos funerales"
+          },
+          {
+            "code": "D04",
+            "description": "Donativos"
+          },
+          {
+            "code": "D05",
+            "description": "Intereses reales efectivamente pagados por créditos hipotecarios (casa habitación)"
+          },
+          {
+            "code": "D06",
+            "description": "Aportaciones voluntarias al SAR"
+          },
+          {
+            "code": "D07",
+            "description": "Primas por seguros de gastos médicos"
+          },
+          {
+            "code": "D08",
+            "description": "Gastos de transportación escolar obligatoria"
+          },
+          {
+            "code": "D09",
+            "description": "Depósitos en cuentas para el ahorro, primas que tengan como base planes de pensiones"
+          },
+          {
+            "code": "D10",
+            "description": "Pagos por servicios educativos (colegiaturas)"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      },
+      {
+        "code": "608",
+        "description": "Demás ingresos",
+        "person_types_hint": [
+          "fisica"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "G01",
+            "description": "Adquisición de mercancías"
+          },
+          {
+            "code": "G02",
+            "description": "Devoluciones, descuentos o bonificaciones"
+          },
+          {
+            "code": "G03",
+            "description": "Gastos en general"
+          },
+          {
+            "code": "I01",
+            "description": "Construcciones"
+          },
+          {
+            "code": "I02",
+            "description": "Mobiliario y equipo de oficina por inversiones"
+          },
+          {
+            "code": "I03",
+            "description": "Equipo de transporte"
+          },
+          {
+            "code": "I04",
+            "description": "Equipo de cómputo y accesorios"
+          },
+          {
+            "code": "I05",
+            "description": "Dados, troqueles, moldes, matrices y herramental"
+          },
+          {
+            "code": "I06",
+            "description": "Comunicaciones telefónicas"
+          },
+          {
+            "code": "I07",
+            "description": "Comunicaciones satelitales"
+          },
+          {
+            "code": "I08",
+            "description": "Otra maquinaria y equipo"
+          },
+          {
+            "code": "D01",
+            "description": "Honorarios médicos, dentales y gastos hospitalarios"
+          },
+          {
+            "code": "D02",
+            "description": "Gastos médicos por incapacidad o discapacidad"
+          },
+          {
+            "code": "D03",
+            "description": "Gastos funerales"
+          },
+          {
+            "code": "D04",
+            "description": "Donativos"
+          },
+          {
+            "code": "D05",
+            "description": "Intereses reales efectivamente pagados por créditos hipotecarios (casa habitación)"
+          },
+          {
+            "code": "D06",
+            "description": "Aportaciones voluntarias al SAR"
+          },
+          {
+            "code": "D07",
+            "description": "Primas por seguros de gastos médicos"
+          },
+          {
+            "code": "D08",
+            "description": "Gastos de transportación escolar obligatoria"
+          },
+          {
+            "code": "D09",
+            "description": "Depósitos en cuentas para el ahorro, primas que tengan como base planes de pensiones"
+          },
+          {
+            "code": "D10",
+            "description": "Pagos por servicios educativos (colegiaturas)"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      },
+      {
+        "code": "610",
+        "description": "Residentes en el Extranjero sin Establecimiento Permanente en México",
+        "person_types_hint": [
+          "fisica"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "G01",
+            "description": "Adquisición de mercancías"
+          },
+          {
+            "code": "G02",
+            "description": "Devoluciones, descuentos o bonificaciones"
+          },
+          {
+            "code": "G03",
+            "description": "Gastos en general"
+          },
+          {
+            "code": "I01",
+            "description": "Construcciones"
+          },
+          {
+            "code": "I02",
+            "description": "Mobiliario y equipo de oficina por inversiones"
+          },
+          {
+            "code": "I03",
+            "description": "Equipo de transporte"
+          },
+          {
+            "code": "I04",
+            "description": "Equipo de cómputo y accesorios"
+          },
+          {
+            "code": "I05",
+            "description": "Dados, troqueles, moldes, matrices y herramental"
+          },
+          {
+            "code": "I06",
+            "description": "Comunicaciones telefónicas"
+          },
+          {
+            "code": "I07",
+            "description": "Comunicaciones satelitales"
+          },
+          {
+            "code": "I08",
+            "description": "Otra maquinaria y equipo"
+          },
+          {
+            "code": "D01",
+            "description": "Honorarios médicos, dentales y gastos hospitalarios"
+          },
+          {
+            "code": "D02",
+            "description": "Gastos médicos por incapacidad o discapacidad"
+          },
+          {
+            "code": "D03",
+            "description": "Gastos funerales"
+          },
+          {
+            "code": "D04",
+            "description": "Donativos"
+          },
+          {
+            "code": "D05",
+            "description": "Intereses reales efectivamente pagados por créditos hipotecarios (casa habitación)"
+          },
+          {
+            "code": "D06",
+            "description": "Aportaciones voluntarias al SAR"
+          },
+          {
+            "code": "D07",
+            "description": "Primas por seguros de gastos médicos"
+          },
+          {
+            "code": "D08",
+            "description": "Gastos de transportación escolar obligatoria"
+          },
+          {
+            "code": "D09",
+            "description": "Depósitos en cuentas para el ahorro, primas que tengan como base planes de pensiones"
+          },
+          {
+            "code": "D10",
+            "description": "Pagos por servicios educativos (colegiaturas)"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      },
+      {
+        "code": "611",
+        "description": "Ingresos por Dividendos (socios y accionistas)",
+        "person_types_hint": [
+          "fisica"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "G01",
+            "description": "Adquisición de mercancías"
+          },
+          {
+            "code": "G02",
+            "description": "Devoluciones, descuentos o bonificaciones"
+          },
+          {
+            "code": "G03",
+            "description": "Gastos en general"
+          },
+          {
+            "code": "I01",
+            "description": "Construcciones"
+          },
+          {
+            "code": "I02",
+            "description": "Mobiliario y equipo de oficina por inversiones"
+          },
+          {
+            "code": "I03",
+            "description": "Equipo de transporte"
+          },
+          {
+            "code": "I04",
+            "description": "Equipo de cómputo y accesorios"
+          },
+          {
+            "code": "I05",
+            "description": "Dados, troqueles, moldes, matrices y herramental"
+          },
+          {
+            "code": "I06",
+            "description": "Comunicaciones telefónicas"
+          },
+          {
+            "code": "I07",
+            "description": "Comunicaciones satelitales"
+          },
+          {
+            "code": "I08",
+            "description": "Otra maquinaria y equipo"
+          },
+          {
+            "code": "D01",
+            "description": "Honorarios médicos, dentales y gastos hospitalarios"
+          },
+          {
+            "code": "D02",
+            "description": "Gastos médicos por incapacidad o discapacidad"
+          },
+          {
+            "code": "D03",
+            "description": "Gastos funerales"
+          },
+          {
+            "code": "D04",
+            "description": "Donativos"
+          },
+          {
+            "code": "D05",
+            "description": "Intereses reales efectivamente pagados por créditos hipotecarios (casa habitación)"
+          },
+          {
+            "code": "D06",
+            "description": "Aportaciones voluntarias al SAR"
+          },
+          {
+            "code": "D07",
+            "description": "Primas por seguros de gastos médicos"
+          },
+          {
+            "code": "D08",
+            "description": "Gastos de transportación escolar obligatoria"
+          },
+          {
+            "code": "D09",
+            "description": "Depósitos en cuentas para el ahorro, primas que tengan como base planes de pensiones"
+          },
+          {
+            "code": "D10",
+            "description": "Pagos por servicios educativos (colegiaturas)"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      },
+      {
+        "code": "612",
+        "description": "Personas Físicas con Actividades Empresariales y Profesionales",
+        "person_types_hint": [
+          "fisica"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "G01",
+            "description": "Adquisición de mercancías"
+          },
+          {
+            "code": "G02",
+            "description": "Devoluciones, descuentos o bonificaciones"
+          },
+          {
+            "code": "G03",
+            "description": "Gastos en general"
+          },
+          {
+            "code": "I01",
+            "description": "Construcciones"
+          },
+          {
+            "code": "I02",
+            "description": "Mobiliario y equipo de oficina por inversiones"
+          },
+          {
+            "code": "I03",
+            "description": "Equipo de transporte"
+          },
+          {
+            "code": "I04",
+            "description": "Equipo de cómputo y accesorios"
+          },
+          {
+            "code": "I05",
+            "description": "Dados, troqueles, moldes, matrices y herramental"
+          },
+          {
+            "code": "I06",
+            "description": "Comunicaciones telefónicas"
+          },
+          {
+            "code": "I07",
+            "description": "Comunicaciones satelitales"
+          },
+          {
+            "code": "I08",
+            "description": "Otra maquinaria y equipo"
+          },
+          {
+            "code": "D01",
+            "description": "Honorarios médicos, dentales y gastos hospitalarios"
+          },
+          {
+            "code": "D02",
+            "description": "Gastos médicos por incapacidad o discapacidad"
+          },
+          {
+            "code": "D03",
+            "description": "Gastos funerales"
+          },
+          {
+            "code": "D04",
+            "description": "Donativos"
+          },
+          {
+            "code": "D05",
+            "description": "Intereses reales efectivamente pagados por créditos hipotecarios (casa habitación)"
+          },
+          {
+            "code": "D06",
+            "description": "Aportaciones voluntarias al SAR"
+          },
+          {
+            "code": "D07",
+            "description": "Primas por seguros de gastos médicos"
+          },
+          {
+            "code": "D08",
+            "description": "Gastos de transportación escolar obligatoria"
+          },
+          {
+            "code": "D09",
+            "description": "Depósitos en cuentas para el ahorro, primas que tengan como base planes de pensiones"
+          },
+          {
+            "code": "D10",
+            "description": "Pagos por servicios educativos (colegiaturas)"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      },
+      {
+        "code": "614",
+        "description": "Ingresos por intereses",
+        "person_types_hint": [
+          "fisica"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "G01",
+            "description": "Adquisición de mercancías"
+          },
+          {
+            "code": "G02",
+            "description": "Devoluciones, descuentos o bonificaciones"
+          },
+          {
+            "code": "G03",
+            "description": "Gastos en general"
+          },
+          {
+            "code": "I01",
+            "description": "Construcciones"
+          },
+          {
+            "code": "I02",
+            "description": "Mobiliario y equipo de oficina por inversiones"
+          },
+          {
+            "code": "I03",
+            "description": "Equipo de transporte"
+          },
+          {
+            "code": "I04",
+            "description": "Equipo de cómputo y accesorios"
+          },
+          {
+            "code": "I05",
+            "description": "Dados, troqueles, moldes, matrices y herramental"
+          },
+          {
+            "code": "I06",
+            "description": "Comunicaciones telefónicas"
+          },
+          {
+            "code": "I07",
+            "description": "Comunicaciones satelitales"
+          },
+          {
+            "code": "I08",
+            "description": "Otra maquinaria y equipo"
+          },
+          {
+            "code": "D01",
+            "description": "Honorarios médicos, dentales y gastos hospitalarios"
+          },
+          {
+            "code": "D02",
+            "description": "Gastos médicos por incapacidad o discapacidad"
+          },
+          {
+            "code": "D03",
+            "description": "Gastos funerales"
+          },
+          {
+            "code": "D04",
+            "description": "Donativos"
+          },
+          {
+            "code": "D05",
+            "description": "Intereses reales efectivamente pagados por créditos hipotecarios (casa habitación)"
+          },
+          {
+            "code": "D06",
+            "description": "Aportaciones voluntarias al SAR"
+          },
+          {
+            "code": "D07",
+            "description": "Primas por seguros de gastos médicos"
+          },
+          {
+            "code": "D08",
+            "description": "Gastos de transportación escolar obligatoria"
+          },
+          {
+            "code": "D09",
+            "description": "Depósitos en cuentas para el ahorro, primas que tengan como base planes de pensiones"
+          },
+          {
+            "code": "D10",
+            "description": "Pagos por servicios educativos (colegiaturas)"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      },
+      {
+        "code": "615",
+        "description": "Régimen de los ingresos por obtención de premios",
+        "person_types_hint": [
+          "fisica"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "G01",
+            "description": "Adquisición de mercancías"
+          },
+          {
+            "code": "G02",
+            "description": "Devoluciones, descuentos o bonificaciones"
+          },
+          {
+            "code": "G03",
+            "description": "Gastos en general"
+          },
+          {
+            "code": "I01",
+            "description": "Construcciones"
+          },
+          {
+            "code": "I02",
+            "description": "Mobiliario y equipo de oficina por inversiones"
+          },
+          {
+            "code": "I03",
+            "description": "Equipo de transporte"
+          },
+          {
+            "code": "I04",
+            "description": "Equipo de cómputo y accesorios"
+          },
+          {
+            "code": "I05",
+            "description": "Dados, troqueles, moldes, matrices y herramental"
+          },
+          {
+            "code": "I06",
+            "description": "Comunicaciones telefónicas"
+          },
+          {
+            "code": "I07",
+            "description": "Comunicaciones satelitales"
+          },
+          {
+            "code": "I08",
+            "description": "Otra maquinaria y equipo"
+          },
+          {
+            "code": "D01",
+            "description": "Honorarios médicos, dentales y gastos hospitalarios"
+          },
+          {
+            "code": "D02",
+            "description": "Gastos médicos por incapacidad o discapacidad"
+          },
+          {
+            "code": "D03",
+            "description": "Gastos funerales"
+          },
+          {
+            "code": "D04",
+            "description": "Donativos"
+          },
+          {
+            "code": "D05",
+            "description": "Intereses reales efectivamente pagados por créditos hipotecarios (casa habitación)"
+          },
+          {
+            "code": "D06",
+            "description": "Aportaciones voluntarias al SAR"
+          },
+          {
+            "code": "D07",
+            "description": "Primas por seguros de gastos médicos"
+          },
+          {
+            "code": "D08",
+            "description": "Gastos de transportación escolar obligatoria"
+          },
+          {
+            "code": "D09",
+            "description": "Depósitos en cuentas para el ahorro, primas que tengan como base planes de pensiones"
+          },
+          {
+            "code": "D10",
+            "description": "Pagos por servicios educativos (colegiaturas)"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      },
+      {
+        "code": "616",
+        "description": "Sin obligaciones fiscales",
+        "person_types_hint": [
+          "fisica"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "D01",
+            "description": "Honorarios médicos, dentales y gastos hospitalarios"
+          },
+          {
+            "code": "D02",
+            "description": "Gastos médicos por incapacidad o discapacidad"
+          },
+          {
+            "code": "D03",
+            "description": "Gastos funerales"
+          },
+          {
+            "code": "D04",
+            "description": "Donativos"
+          },
+          {
+            "code": "D05",
+            "description": "Intereses reales efectivamente pagados por créditos hipotecarios (casa habitación)"
+          },
+          {
+            "code": "D06",
+            "description": "Aportaciones voluntarias al SAR"
+          },
+          {
+            "code": "D07",
+            "description": "Primas por seguros de gastos médicos"
+          },
+          {
+            "code": "D08",
+            "description": "Gastos de transportación escolar obligatoria"
+          },
+          {
+            "code": "D09",
+            "description": "Depósitos en cuentas para el ahorro, primas que tengan como base planes de pensiones"
+          },
+          {
+            "code": "D10",
+            "description": "Pagos por servicios educativos (colegiaturas)"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      },
+      {
+        "code": "620",
+        "description": "Sociedades Cooperativas de Producción que optan por diferir sus ingresos",
+        "person_types_hint": [
+          "moral"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "G01",
+            "description": "Adquisición de mercancías"
+          },
+          {
+            "code": "G02",
+            "description": "Devoluciones, descuentos o bonificaciones"
+          },
+          {
+            "code": "G03",
+            "description": "Gastos en general"
+          },
+          {
+            "code": "I01",
+            "description": "Construcciones"
+          },
+          {
+            "code": "I02",
+            "description": "Mobiliario y equipo de oficina por inversiones"
+          },
+          {
+            "code": "I03",
+            "description": "Equipo de transporte"
+          },
+          {
+            "code": "I04",
+            "description": "Equipo de cómputo y accesorios"
+          },
+          {
+            "code": "I05",
+            "description": "Dados, troqueles, moldes, matrices y herramental"
+          },
+          {
+            "code": "I06",
+            "description": "Comunicaciones telefónicas"
+          },
+          {
+            "code": "I07",
+            "description": "Comunicaciones satelitales"
+          },
+          {
+            "code": "I08",
+            "description": "Otra maquinaria y equipo"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      },
+      {
+        "code": "621",
+        "description": "Incorporación Fiscal",
+        "person_types_hint": [
+          "fisica"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "G01",
+            "description": "Adquisición de mercancías"
+          },
+          {
+            "code": "G02",
+            "description": "Devoluciones, descuentos o bonificaciones"
+          },
+          {
+            "code": "G03",
+            "description": "Gastos en general"
+          },
+          {
+            "code": "I01",
+            "description": "Construcciones"
+          },
+          {
+            "code": "I02",
+            "description": "Mobiliario y equipo de oficina por inversiones"
+          },
+          {
+            "code": "I03",
+            "description": "Equipo de transporte"
+          },
+          {
+            "code": "I04",
+            "description": "Equipo de cómputo y accesorios"
+          },
+          {
+            "code": "I05",
+            "description": "Dados, troqueles, moldes, matrices y herramental"
+          },
+          {
+            "code": "I06",
+            "description": "Comunicaciones telefónicas"
+          },
+          {
+            "code": "I07",
+            "description": "Comunicaciones satelitales"
+          },
+          {
+            "code": "I08",
+            "description": "Otra maquinaria y equipo"
+          },
+          {
+            "code": "D01",
+            "description": "Honorarios médicos, dentales y gastos hospitalarios"
+          },
+          {
+            "code": "D02",
+            "description": "Gastos médicos por incapacidad o discapacidad"
+          },
+          {
+            "code": "D03",
+            "description": "Gastos funerales"
+          },
+          {
+            "code": "D04",
+            "description": "Donativos"
+          },
+          {
+            "code": "D05",
+            "description": "Intereses reales efectivamente pagados por créditos hipotecarios (casa habitación)"
+          },
+          {
+            "code": "D06",
+            "description": "Aportaciones voluntarias al SAR"
+          },
+          {
+            "code": "D07",
+            "description": "Primas por seguros de gastos médicos"
+          },
+          {
+            "code": "D08",
+            "description": "Gastos de transportación escolar obligatoria"
+          },
+          {
+            "code": "D09",
+            "description": "Depósitos en cuentas para el ahorro, primas que tengan como base planes de pensiones"
+          },
+          {
+            "code": "D10",
+            "description": "Pagos por servicios educativos (colegiaturas)"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      },
+      {
+        "code": "622",
+        "description": "Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras",
+        "person_types_hint": [
+          "fisica"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "G01",
+            "description": "Adquisición de mercancías"
+          },
+          {
+            "code": "G02",
+            "description": "Devoluciones, descuentos o bonificaciones"
+          },
+          {
+            "code": "G03",
+            "description": "Gastos en general"
+          },
+          {
+            "code": "I01",
+            "description": "Construcciones"
+          },
+          {
+            "code": "I02",
+            "description": "Mobiliario y equipo de oficina por inversiones"
+          },
+          {
+            "code": "I03",
+            "description": "Equipo de transporte"
+          },
+          {
+            "code": "I04",
+            "description": "Equipo de cómputo y accesorios"
+          },
+          {
+            "code": "I05",
+            "description": "Dados, troqueles, moldes, matrices y herramental"
+          },
+          {
+            "code": "I06",
+            "description": "Comunicaciones telefónicas"
+          },
+          {
+            "code": "I07",
+            "description": "Comunicaciones satelitales"
+          },
+          {
+            "code": "I08",
+            "description": "Otra maquinaria y equipo"
+          },
+          {
+            "code": "D01",
+            "description": "Honorarios médicos, dentales y gastos hospitalarios"
+          },
+          {
+            "code": "D02",
+            "description": "Gastos médicos por incapacidad o discapacidad"
+          },
+          {
+            "code": "D03",
+            "description": "Gastos funerales"
+          },
+          {
+            "code": "D04",
+            "description": "Donativos"
+          },
+          {
+            "code": "D05",
+            "description": "Intereses reales efectivamente pagados por créditos hipotecarios (casa habitación)"
+          },
+          {
+            "code": "D06",
+            "description": "Aportaciones voluntarias al SAR"
+          },
+          {
+            "code": "D07",
+            "description": "Primas por seguros de gastos médicos"
+          },
+          {
+            "code": "D08",
+            "description": "Gastos de transportación escolar obligatoria"
+          },
+          {
+            "code": "D09",
+            "description": "Depósitos en cuentas para el ahorro, primas que tengan como base planes de pensiones"
+          },
+          {
+            "code": "D10",
+            "description": "Pagos por servicios educativos (colegiaturas)"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      },
+      {
+        "code": "623",
+        "description": "Opcional para Grupos de Sociedades",
+        "person_types_hint": [
+          "moral"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "G01",
+            "description": "Adquisición de mercancías"
+          },
+          {
+            "code": "G02",
+            "description": "Devoluciones, descuentos o bonificaciones"
+          },
+          {
+            "code": "G03",
+            "description": "Gastos en general"
+          },
+          {
+            "code": "I01",
+            "description": "Construcciones"
+          },
+          {
+            "code": "I02",
+            "description": "Mobiliario y equipo de oficina por inversiones"
+          },
+          {
+            "code": "I03",
+            "description": "Equipo de transporte"
+          },
+          {
+            "code": "I04",
+            "description": "Equipo de cómputo y accesorios"
+          },
+          {
+            "code": "I05",
+            "description": "Dados, troqueles, moldes, matrices y herramental"
+          },
+          {
+            "code": "I06",
+            "description": "Comunicaciones telefónicas"
+          },
+          {
+            "code": "I07",
+            "description": "Comunicaciones satelitales"
+          },
+          {
+            "code": "I08",
+            "description": "Otra maquinaria y equipo"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      },
+      {
+        "code": "624",
+        "description": "Coordinados",
+        "person_types_hint": [
+          "moral"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "G01",
+            "description": "Adquisición de mercancías"
+          },
+          {
+            "code": "G02",
+            "description": "Devoluciones, descuentos o bonificaciones"
+          },
+          {
+            "code": "G03",
+            "description": "Gastos en general"
+          },
+          {
+            "code": "I01",
+            "description": "Construcciones"
+          },
+          {
+            "code": "I02",
+            "description": "Mobiliario y equipo de oficina por inversiones"
+          },
+          {
+            "code": "I03",
+            "description": "Equipo de transporte"
+          },
+          {
+            "code": "I04",
+            "description": "Equipo de cómputo y accesorios"
+          },
+          {
+            "code": "I05",
+            "description": "Dados, troqueles, moldes, matrices y herramental"
+          },
+          {
+            "code": "I06",
+            "description": "Comunicaciones telefónicas"
+          },
+          {
+            "code": "I07",
+            "description": "Comunicaciones satelitales"
+          },
+          {
+            "code": "I08",
+            "description": "Otra maquinaria y equipo"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      },
+      {
+        "code": "625",
+        "description": "Régimen de las Actividades Empresariales con ingresos a través de Plataformas Tecnológicas",
+        "person_types_hint": [
+          "fisica"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "G01",
+            "description": "Adquisición de mercancías"
+          },
+          {
+            "code": "G02",
+            "description": "Devoluciones, descuentos o bonificaciones"
+          },
+          {
+            "code": "G03",
+            "description": "Gastos en general"
+          },
+          {
+            "code": "I01",
+            "description": "Construcciones"
+          },
+          {
+            "code": "I02",
+            "description": "Mobiliario y equipo de oficina por inversiones"
+          },
+          {
+            "code": "I03",
+            "description": "Equipo de transporte"
+          },
+          {
+            "code": "I04",
+            "description": "Equipo de cómputo y accesorios"
+          },
+          {
+            "code": "I05",
+            "description": "Dados, troqueles, moldes, matrices y herramental"
+          },
+          {
+            "code": "I06",
+            "description": "Comunicaciones telefónicas"
+          },
+          {
+            "code": "I07",
+            "description": "Comunicaciones satelitales"
+          },
+          {
+            "code": "I08",
+            "description": "Otra maquinaria y equipo"
+          },
+          {
+            "code": "D01",
+            "description": "Honorarios médicos, dentales y gastos hospitalarios"
+          },
+          {
+            "code": "D02",
+            "description": "Gastos médicos por incapacidad o discapacidad"
+          },
+          {
+            "code": "D03",
+            "description": "Gastos funerales"
+          },
+          {
+            "code": "D04",
+            "description": "Donativos"
+          },
+          {
+            "code": "D05",
+            "description": "Intereses reales efectivamente pagados por créditos hipotecarios (casa habitación)"
+          },
+          {
+            "code": "D06",
+            "description": "Aportaciones voluntarias al SAR"
+          },
+          {
+            "code": "D07",
+            "description": "Primas por seguros de gastos médicos"
+          },
+          {
+            "code": "D08",
+            "description": "Gastos de transportación escolar obligatoria"
+          },
+          {
+            "code": "D09",
+            "description": "Depósitos en cuentas para el ahorro, primas que tengan como base planes de pensiones"
+          },
+          {
+            "code": "D10",
+            "description": "Pagos por servicios educativos (colegiaturas)"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      },
+      {
+        "code": "626",
+        "description": "Régimen Simplificado de Confianza",
+        "person_types_hint": [
+          "fisica"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "G01",
+            "description": "Adquisición de mercancías"
+          },
+          {
+            "code": "G02",
+            "description": "Devoluciones, descuentos o bonificaciones"
+          },
+          {
+            "code": "G03",
+            "description": "Gastos en general"
+          },
+          {
+            "code": "I01",
+            "description": "Construcciones"
+          },
+          {
+            "code": "I02",
+            "description": "Mobiliario y equipo de oficina por inversiones"
+          },
+          {
+            "code": "I03",
+            "description": "Equipo de transporte"
+          },
+          {
+            "code": "I04",
+            "description": "Equipo de cómputo y accesorios"
+          },
+          {
+            "code": "I05",
+            "description": "Dados, troqueles, moldes, matrices y herramental"
+          },
+          {
+            "code": "I06",
+            "description": "Comunicaciones telefónicas"
+          },
+          {
+            "code": "I07",
+            "description": "Comunicaciones satelitales"
+          },
+          {
+            "code": "I08",
+            "description": "Otra maquinaria y equipo"
+          },
+          {
+            "code": "D01",
+            "description": "Honorarios médicos, dentales y gastos hospitalarios"
+          },
+          {
+            "code": "D02",
+            "description": "Gastos médicos por incapacidad o discapacidad"
+          },
+          {
+            "code": "D03",
+            "description": "Gastos funerales"
+          },
+          {
+            "code": "D04",
+            "description": "Donativos"
+          },
+          {
+            "code": "D05",
+            "description": "Intereses reales efectivamente pagados por créditos hipotecarios (casa habitación)"
+          },
+          {
+            "code": "D06",
+            "description": "Aportaciones voluntarias al SAR"
+          },
+          {
+            "code": "D07",
+            "description": "Primas por seguros de gastos médicos"
+          },
+          {
+            "code": "D08",
+            "description": "Gastos de transportación escolar obligatoria"
+          },
+          {
+            "code": "D09",
+            "description": "Depósitos en cuentas para el ahorro, primas que tengan como base planes de pensiones"
+          },
+          {
+            "code": "D10",
+            "description": "Pagos por servicios educativos (colegiaturas)"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      },
+      {
+        "code": "628",
+        "description": "Hidrocarburos",
+        "person_types_hint": [
+          "moral"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "G01",
+            "description": "Adquisición de mercancías"
+          },
+          {
+            "code": "G02",
+            "description": "Devoluciones, descuentos o bonificaciones"
+          },
+          {
+            "code": "G03",
+            "description": "Gastos en general"
+          },
+          {
+            "code": "I01",
+            "description": "Construcciones"
+          },
+          {
+            "code": "I02",
+            "description": "Mobiliario y equipo de oficina por inversiones"
+          },
+          {
+            "code": "I03",
+            "description": "Equipo de transporte"
+          },
+          {
+            "code": "I04",
+            "description": "Equipo de cómputo y accesorios"
+          },
+          {
+            "code": "I05",
+            "description": "Dados, troqueles, moldes, matrices y herramental"
+          },
+          {
+            "code": "I06",
+            "description": "Comunicaciones telefónicas"
+          },
+          {
+            "code": "I07",
+            "description": "Comunicaciones satelitales"
+          },
+          {
+            "code": "I08",
+            "description": "Otra maquinaria y equipo"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      }
+    ],
+    "usoCFDI": [
+      {
+        "code": "G01",
+        "description": "Adquisición de mercancías"
+      },
+      {
+        "code": "G02",
+        "description": "Devoluciones, descuentos o bonificaciones"
+      },
+      {
+        "code": "G03",
+        "description": "Gastos en general"
+      },
+      {
+        "code": "I01",
+        "description": "Construcciones"
+      },
+      {
+        "code": "I02",
+        "description": "Mobiliario y equipo de oficina por inversiones"
+      },
+      {
+        "code": "I03",
+        "description": "Equipo de transporte"
+      },
+      {
+        "code": "I04",
+        "description": "Equipo de cómputo y accesorios"
+      },
+      {
+        "code": "I05",
+        "description": "Dados, troqueles, moldes, matrices y herramental"
+      },
+      {
+        "code": "I06",
+        "description": "Comunicaciones telefónicas"
+      },
+      {
+        "code": "I07",
+        "description": "Comunicaciones satelitales"
+      },
+      {
+        "code": "I08",
+        "description": "Otra maquinaria y equipo"
+      },
+      {
+        "code": "D01",
+        "description": "Honorarios médicos, dentales y gastos hospitalarios"
+      },
+      {
+        "code": "D02",
+        "description": "Gastos médicos por incapacidad o discapacidad"
+      },
+      {
+        "code": "D03",
+        "description": "Gastos funerales"
+      },
+      {
+        "code": "D04",
+        "description": "Donativos"
+      },
+      {
+        "code": "D05",
+        "description": "Intereses reales efectivamente pagados por créditos hipotecarios (casa habitación)"
+      },
+      {
+        "code": "D06",
+        "description": "Aportaciones voluntarias al SAR"
+      },
+      {
+        "code": "D07",
+        "description": "Primas por seguros de gastos médicos"
+      },
+      {
+        "code": "D08",
+        "description": "Gastos de transportación escolar obligatoria"
+      },
+      {
+        "code": "D09",
+        "description": "Depósitos en cuentas para el ahorro, primas que tengan como base planes de pensiones"
+      },
+      {
+        "code": "D10",
+        "description": "Pagos por servicios educativos (colegiaturas)"
+      },
+      {
+        "code": "S01",
+        "description": "Sin efectos fiscales"
+      },
+      {
+        "code": "CP01",
+        "description": "Pagos"
+      },
+      {
+        "code": "CN01",
+        "description": "Nómina"
+      }
+    ]
+  },
+  "compatibility": {
+    "byUsoCFDI": [
+      {
+        "code": "G01",
+        "description": "Adquisición de mercancías",
+        "applies_to_persona_fisica": true,
+        "applies_to_persona_moral": true,
+        "allowed_regimen_fiscal_codes": [
+          "601",
+          "603",
+          "606",
+          "607",
+          "608",
+          "610",
+          "611",
+          "612",
+          "614",
+          "615",
+          "620",
+          "621",
+          "622",
+          "623",
+          "624",
+          "625",
+          "626",
+          "628"
+        ],
+        "allowed_regimen_fiscal_descriptions": [
+          {
+            "code": "601",
+            "description": "General de Ley Personas Morales"
+          },
+          {
+            "code": "603",
+            "description": "Personas Morales con Fines no Lucrativos"
+          },
+          {
+            "code": "606",
+            "description": "Arrendamiento"
+          },
+          {
+            "code": "607",
+            "description": "Régimen de Enajenación o Adquisición de Bienes"
+          },
+          {
+            "code": "608",
+            "description": "Demás ingresos"
+          },
+          {
+            "code": "610",
+            "description": "Residentes en el Extranjero sin Establecimiento Permanente en México"
+          },
+          {
+            "code": "611",
+            "description": "Ingresos por Dividendos (socios y accionistas)"
+          },
+          {
+            "code": "612",
+            "description": "Personas Físicas con Actividades Empresariales y Profesionales"
+          },
+          {
+            "code": "614",
+            "description": "Ingresos por intereses"
+          },
+          {
+            "code": "615",
+            "description": "Régimen de los ingresos por obtención de premios"
+          },
+          {
+            "code": "620",
+            "description": "Sociedades Cooperativas de Producción que optan por diferir sus ingresos"
+          },
+          {
+            "code": "621",
+            "description": "Incorporación Fiscal"
+          },
+          {
+            "code": "622",
+            "description": "Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras"
+          },
+          {
+            "code": "623",
+            "description": "Opcional para Grupos de Sociedades"
+          },
+          {
+            "code": "624",
+            "description": "Coordinados"
+          },
+          {
+            "code": "625",
+            "description": "Régimen de las Actividades Empresariales con ingresos a través de Plataformas Tecnológicas"
+          },
+          {
+            "code": "626",
+            "description": "Régimen Simplificado de Confianza"
+          },
+          {
+            "code": "628",
+            "description": "Hidrocarburos"
+          }
+        ]
+      },
+      {
+        "code": "G02",
+        "description": "Devoluciones, descuentos o bonificaciones",
+        "applies_to_persona_fisica": true,
+        "applies_to_persona_moral": true,
+        "allowed_regimen_fiscal_codes": [
+          "601",
+          "603",
+          "606",
+          "607",
+          "608",
+          "610",
+          "611",
+          "612",
+          "614",
+          "615",
+          "620",
+          "621",
+          "622",
+          "623",
+          "624",
+          "625",
+          "626",
+          "628"
+        ],
+        "allowed_regimen_fiscal_descriptions": [
+          {
+            "code": "601",
+            "description": "General de Ley Personas Morales"
+          },
+          {
+            "code": "603",
+            "description": "Personas Morales con Fines no Lucrativos"
+          },
+          {
+            "code": "606",
+            "description": "Arrendamiento"
+          },
+          {
+            "code": "607",
+            "description": "Régimen de Enajenación o Adquisición de Bienes"
+          },
+          {
+            "code": "608",
+            "description": "Demás ingresos"
+          },
+          {
+            "code": "610",
+            "description": "Residentes en el Extranjero sin Establecimiento Permanente en México"
+          },
+          {
+            "code": "611",
+            "description": "Ingresos por Dividendos (socios y accionistas)"
+          },
+          {
+            "code": "612",
+            "description": "Personas Físicas con Actividades Empresariales y Profesionales"
+          },
+          {
+            "code": "614",
+            "description": "Ingresos por intereses"
+          },
+          {
+            "code": "615",
+            "description": "Régimen de los ingresos por obtención de premios"
+          },
+          {
+            "code": "620",
+            "description": "Sociedades Cooperativas de Producción que optan por diferir sus ingresos"
+          },
+          {
+            "code": "621",
+            "description": "Incorporación Fiscal"
+          },
+          {
+            "code": "622",
+            "description": "Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras"
+          },
+          {
+            "code": "623",
+            "description": "Opcional para Grupos de Sociedades"
+          },
+          {
+            "code": "624",
+            "description": "Coordinados"
+          },
+          {
+            "code": "625",
+            "description": "Régimen de las Actividades Empresariales con ingresos a través de Plataformas Tecnológicas"
+          },
+          {
+            "code": "626",
+            "description": "Régimen Simplificado de Confianza"
+          },
+          {
+            "code": "628",
+            "description": "Hidrocarburos"
+          }
+        ]
+      },
+      {
+        "code": "G03",
+        "description": "Gastos en general",
+        "applies_to_persona_fisica": true,
+        "applies_to_persona_moral": true,
+        "allowed_regimen_fiscal_codes": [
+          "601",
+          "603",
+          "606",
+          "607",
+          "608",
+          "610",
+          "611",
+          "612",
+          "614",
+          "615",
+          "620",
+          "621",
+          "622",
+          "623",
+          "624",
+          "625",
+          "626",
+          "628"
+        ],
+        "allowed_regimen_fiscal_descriptions": [
+          {
+            "code": "601",
+            "description": "General de Ley Personas Morales"
+          },
+          {
+            "code": "603",
+            "description": "Personas Morales con Fines no Lucrativos"
+          },
+          {
+            "code": "606",
+            "description": "Arrendamiento"
+          },
+          {
+            "code": "607",
+            "description": "Régimen de Enajenación o Adquisición de Bienes"
+          },
+          {
+            "code": "608",
+            "description": "Demás ingresos"
+          },
+          {
+            "code": "610",
+            "description": "Residentes en el Extranjero sin Establecimiento Permanente en México"
+          },
+          {
+            "code": "611",
+            "description": "Ingresos por Dividendos (socios y accionistas)"
+          },
+          {
+            "code": "612",
+            "description": "Personas Físicas con Actividades Empresariales y Profesionales"
+          },
+          {
+            "code": "614",
+            "description": "Ingresos por intereses"
+          },
+          {
+            "code": "615",
+            "description": "Régimen de los ingresos por obtención de premios"
+          },
+          {
+            "code": "620",
+            "description": "Sociedades Cooperativas de Producción que optan por diferir sus ingresos"
+          },
+          {
+            "code": "621",
+            "description": "Incorporación Fiscal"
+          },
+          {
+            "code": "622",
+            "description": "Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras"
+          },
+          {
+            "code": "623",
+            "description": "Opcional para Grupos de Sociedades"
+          },
+          {
+            "code": "624",
+            "description": "Coordinados"
+          },
+          {
+            "code": "625",
+            "description": "Régimen de las Actividades Empresariales con ingresos a través de Plataformas Tecnológicas"
+          },
+          {
+            "code": "626",
+            "description": "Régimen Simplificado de Confianza"
+          },
+          {
+            "code": "628",
+            "description": "Hidrocarburos"
+          }
+        ]
+      },
+      {
+        "code": "I01",
+        "description": "Construcciones",
+        "applies_to_persona_fisica": true,
+        "applies_to_persona_moral": true,
+        "allowed_regimen_fiscal_codes": [
+          "601",
+          "603",
+          "606",
+          "607",
+          "608",
+          "610",
+          "611",
+          "612",
+          "614",
+          "615",
+          "620",
+          "621",
+          "622",
+          "623",
+          "624",
+          "625",
+          "626",
+          "628"
+        ],
+        "allowed_regimen_fiscal_descriptions": [
+          {
+            "code": "601",
+            "description": "General de Ley Personas Morales"
+          },
+          {
+            "code": "603",
+            "description": "Personas Morales con Fines no Lucrativos"
+          },
+          {
+            "code": "606",
+            "description": "Arrendamiento"
+          },
+          {
+            "code": "607",
+            "description": "Régimen de Enajenación o Adquisición de Bienes"
+          },
+          {
+            "code": "608",
+            "description": "Demás ingresos"
+          },
+          {
+            "code": "610",
+            "description": "Residentes en el Extranjero sin Establecimiento Permanente en México"
+          },
+          {
+            "code": "611",
+            "description": "Ingresos por Dividendos (socios y accionistas)"
+          },
+          {
+            "code": "612",
+            "description": "Personas Físicas con Actividades Empresariales y Profesionales"
+          },
+          {
+            "code": "614",
+            "description": "Ingresos por intereses"
+          },
+          {
+            "code": "615",
+            "description": "Régimen de los ingresos por obtención de premios"
+          },
+          {
+            "code": "620",
+            "description": "Sociedades Cooperativas de Producción que optan por diferir sus ingresos"
+          },
+          {
+            "code": "621",
+            "description": "Incorporación Fiscal"
+          },
+          {
+            "code": "622",
+            "description": "Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras"
+          },
+          {
+            "code": "623",
+            "description": "Opcional para Grupos de Sociedades"
+          },
+          {
+            "code": "624",
+            "description": "Coordinados"
+          },
+          {
+            "code": "625",
+            "description": "Régimen de las Actividades Empresariales con ingresos a través de Plataformas Tecnológicas"
+          },
+          {
+            "code": "626",
+            "description": "Régimen Simplificado de Confianza"
+          },
+          {
+            "code": "628",
+            "description": "Hidrocarburos"
+          }
+        ]
+      },
+      {
+        "code": "I02",
+        "description": "Mobiliario y equipo de oficina por inversiones",
+        "applies_to_persona_fisica": true,
+        "applies_to_persona_moral": true,
+        "allowed_regimen_fiscal_codes": [
+          "601",
+          "603",
+          "606",
+          "607",
+          "608",
+          "610",
+          "611",
+          "612",
+          "614",
+          "615",
+          "620",
+          "621",
+          "622",
+          "623",
+          "624",
+          "625",
+          "626",
+          "628"
+        ],
+        "allowed_regimen_fiscal_descriptions": [
+          {
+            "code": "601",
+            "description": "General de Ley Personas Morales"
+          },
+          {
+            "code": "603",
+            "description": "Personas Morales con Fines no Lucrativos"
+          },
+          {
+            "code": "606",
+            "description": "Arrendamiento"
+          },
+          {
+            "code": "607",
+            "description": "Régimen de Enajenación o Adquisición de Bienes"
+          },
+          {
+            "code": "608",
+            "description": "Demás ingresos"
+          },
+          {
+            "code": "610",
+            "description": "Residentes en el Extranjero sin Establecimiento Permanente en México"
+          },
+          {
+            "code": "611",
+            "description": "Ingresos por Dividendos (socios y accionistas)"
+          },
+          {
+            "code": "612",
+            "description": "Personas Físicas con Actividades Empresariales y Profesionales"
+          },
+          {
+            "code": "614",
+            "description": "Ingresos por intereses"
+          },
+          {
+            "code": "615",
+            "description": "Régimen de los ingresos por obtención de premios"
+          },
+          {
+            "code": "620",
+            "description": "Sociedades Cooperativas de Producción que optan por diferir sus ingresos"
+          },
+          {
+            "code": "621",
+            "description": "Incorporación Fiscal"
+          },
+          {
+            "code": "622",
+            "description": "Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras"
+          },
+          {
+            "code": "623",
+            "description": "Opcional para Grupos de Sociedades"
+          },
+          {
+            "code": "624",
+            "description": "Coordinados"
+          },
+          {
+            "code": "625",
+            "description": "Régimen de las Actividades Empresariales con ingresos a través de Plataformas Tecnológicas"
+          },
+          {
+            "code": "626",
+            "description": "Régimen Simplificado de Confianza"
+          },
+          {
+            "code": "628",
+            "description": "Hidrocarburos"
+          }
+        ]
+      },
+      {
+        "code": "I03",
+        "description": "Equipo de transporte",
+        "applies_to_persona_fisica": true,
+        "applies_to_persona_moral": true,
+        "allowed_regimen_fiscal_codes": [
+          "601",
+          "603",
+          "606",
+          "607",
+          "608",
+          "610",
+          "611",
+          "612",
+          "614",
+          "615",
+          "620",
+          "621",
+          "622",
+          "623",
+          "624",
+          "625",
+          "626",
+          "628"
+        ],
+        "allowed_regimen_fiscal_descriptions": [
+          {
+            "code": "601",
+            "description": "General de Ley Personas Morales"
+          },
+          {
+            "code": "603",
+            "description": "Personas Morales con Fines no Lucrativos"
+          },
+          {
+            "code": "606",
+            "description": "Arrendamiento"
+          },
+          {
+            "code": "607",
+            "description": "Régimen de Enajenación o Adquisición de Bienes"
+          },
+          {
+            "code": "608",
+            "description": "Demás ingresos"
+          },
+          {
+            "code": "610",
+            "description": "Residentes en el Extranjero sin Establecimiento Permanente en México"
+          },
+          {
+            "code": "611",
+            "description": "Ingresos por Dividendos (socios y accionistas)"
+          },
+          {
+            "code": "612",
+            "description": "Personas Físicas con Actividades Empresariales y Profesionales"
+          },
+          {
+            "code": "614",
+            "description": "Ingresos por intereses"
+          },
+          {
+            "code": "615",
+            "description": "Régimen de los ingresos por obtención de premios"
+          },
+          {
+            "code": "620",
+            "description": "Sociedades Cooperativas de Producción que optan por diferir sus ingresos"
+          },
+          {
+            "code": "621",
+            "description": "Incorporación Fiscal"
+          },
+          {
+            "code": "622",
+            "description": "Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras"
+          },
+          {
+            "code": "623",
+            "description": "Opcional para Grupos de Sociedades"
+          },
+          {
+            "code": "624",
+            "description": "Coordinados"
+          },
+          {
+            "code": "625",
+            "description": "Régimen de las Actividades Empresariales con ingresos a través de Plataformas Tecnológicas"
+          },
+          {
+            "code": "626",
+            "description": "Régimen Simplificado de Confianza"
+          },
+          {
+            "code": "628",
+            "description": "Hidrocarburos"
+          }
+        ]
+      },
+      {
+        "code": "I04",
+        "description": "Equipo de cómputo y accesorios",
+        "applies_to_persona_fisica": true,
+        "applies_to_persona_moral": true,
+        "allowed_regimen_fiscal_codes": [
+          "601",
+          "603",
+          "606",
+          "607",
+          "608",
+          "610",
+          "611",
+          "612",
+          "614",
+          "615",
+          "620",
+          "621",
+          "622",
+          "623",
+          "624",
+          "625",
+          "626",
+          "628"
+        ],
+        "allowed_regimen_fiscal_descriptions": [
+          {
+            "code": "601",
+            "description": "General de Ley Personas Morales"
+          },
+          {
+            "code": "603",
+            "description": "Personas Morales con Fines no Lucrativos"
+          },
+          {
+            "code": "606",
+            "description": "Arrendamiento"
+          },
+          {
+            "code": "607",
+            "description": "Régimen de Enajenación o Adquisición de Bienes"
+          },
+          {
+            "code": "608",
+            "description": "Demás ingresos"
+          },
+          {
+            "code": "610",
+            "description": "Residentes en el Extranjero sin Establecimiento Permanente en México"
+          },
+          {
+            "code": "611",
+            "description": "Ingresos por Dividendos (socios y accionistas)"
+          },
+          {
+            "code": "612",
+            "description": "Personas Físicas con Actividades Empresariales y Profesionales"
+          },
+          {
+            "code": "614",
+            "description": "Ingresos por intereses"
+          },
+          {
+            "code": "615",
+            "description": "Régimen de los ingresos por obtención de premios"
+          },
+          {
+            "code": "620",
+            "description": "Sociedades Cooperativas de Producción que optan por diferir sus ingresos"
+          },
+          {
+            "code": "621",
+            "description": "Incorporación Fiscal"
+          },
+          {
+            "code": "622",
+            "description": "Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras"
+          },
+          {
+            "code": "623",
+            "description": "Opcional para Grupos de Sociedades"
+          },
+          {
+            "code": "624",
+            "description": "Coordinados"
+          },
+          {
+            "code": "625",
+            "description": "Régimen de las Actividades Empresariales con ingresos a través de Plataformas Tecnológicas"
+          },
+          {
+            "code": "626",
+            "description": "Régimen Simplificado de Confianza"
+          },
+          {
+            "code": "628",
+            "description": "Hidrocarburos"
+          }
+        ]
+      },
+      {
+        "code": "I05",
+        "description": "Dados, troqueles, moldes, matrices y herramental",
+        "applies_to_persona_fisica": true,
+        "applies_to_persona_moral": true,
+        "allowed_regimen_fiscal_codes": [
+          "601",
+          "603",
+          "606",
+          "607",
+          "608",
+          "610",
+          "611",
+          "612",
+          "614",
+          "615",
+          "620",
+          "621",
+          "622",
+          "623",
+          "624",
+          "625",
+          "626",
+          "628"
+        ],
+        "allowed_regimen_fiscal_descriptions": [
+          {
+            "code": "601",
+            "description": "General de Ley Personas Morales"
+          },
+          {
+            "code": "603",
+            "description": "Personas Morales con Fines no Lucrativos"
+          },
+          {
+            "code": "606",
+            "description": "Arrendamiento"
+          },
+          {
+            "code": "607",
+            "description": "Régimen de Enajenación o Adquisición de Bienes"
+          },
+          {
+            "code": "608",
+            "description": "Demás ingresos"
+          },
+          {
+            "code": "610",
+            "description": "Residentes en el Extranjero sin Establecimiento Permanente en México"
+          },
+          {
+            "code": "611",
+            "description": "Ingresos por Dividendos (socios y accionistas)"
+          },
+          {
+            "code": "612",
+            "description": "Personas Físicas con Actividades Empresariales y Profesionales"
+          },
+          {
+            "code": "614",
+            "description": "Ingresos por intereses"
+          },
+          {
+            "code": "615",
+            "description": "Régimen de los ingresos por obtención de premios"
+          },
+          {
+            "code": "620",
+            "description": "Sociedades Cooperativas de Producción que optan por diferir sus ingresos"
+          },
+          {
+            "code": "621",
+            "description": "Incorporación Fiscal"
+          },
+          {
+            "code": "622",
+            "description": "Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras"
+          },
+          {
+            "code": "623",
+            "description": "Opcional para Grupos de Sociedades"
+          },
+          {
+            "code": "624",
+            "description": "Coordinados"
+          },
+          {
+            "code": "625",
+            "description": "Régimen de las Actividades Empresariales con ingresos a través de Plataformas Tecnológicas"
+          },
+          {
+            "code": "626",
+            "description": "Régimen Simplificado de Confianza"
+          },
+          {
+            "code": "628",
+            "description": "Hidrocarburos"
+          }
+        ]
+      },
+      {
+        "code": "I06",
+        "description": "Comunicaciones telefónicas",
+        "applies_to_persona_fisica": true,
+        "applies_to_persona_moral": true,
+        "allowed_regimen_fiscal_codes": [
+          "601",
+          "603",
+          "606",
+          "607",
+          "608",
+          "610",
+          "611",
+          "612",
+          "614",
+          "615",
+          "620",
+          "621",
+          "622",
+          "623",
+          "624",
+          "625",
+          "626",
+          "628"
+        ],
+        "allowed_regimen_fiscal_descriptions": [
+          {
+            "code": "601",
+            "description": "General de Ley Personas Morales"
+          },
+          {
+            "code": "603",
+            "description": "Personas Morales con Fines no Lucrativos"
+          },
+          {
+            "code": "606",
+            "description": "Arrendamiento"
+          },
+          {
+            "code": "607",
+            "description": "Régimen de Enajenación o Adquisición de Bienes"
+          },
+          {
+            "code": "608",
+            "description": "Demás ingresos"
+          },
+          {
+            "code": "610",
+            "description": "Residentes en el Extranjero sin Establecimiento Permanente en México"
+          },
+          {
+            "code": "611",
+            "description": "Ingresos por Dividendos (socios y accionistas)"
+          },
+          {
+            "code": "612",
+            "description": "Personas Físicas con Actividades Empresariales y Profesionales"
+          },
+          {
+            "code": "614",
+            "description": "Ingresos por intereses"
+          },
+          {
+            "code": "615",
+            "description": "Régimen de los ingresos por obtención de premios"
+          },
+          {
+            "code": "620",
+            "description": "Sociedades Cooperativas de Producción que optan por diferir sus ingresos"
+          },
+          {
+            "code": "621",
+            "description": "Incorporación Fiscal"
+          },
+          {
+            "code": "622",
+            "description": "Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras"
+          },
+          {
+            "code": "623",
+            "description": "Opcional para Grupos de Sociedades"
+          },
+          {
+            "code": "624",
+            "description": "Coordinados"
+          },
+          {
+            "code": "625",
+            "description": "Régimen de las Actividades Empresariales con ingresos a través de Plataformas Tecnológicas"
+          },
+          {
+            "code": "626",
+            "description": "Régimen Simplificado de Confianza"
+          },
+          {
+            "code": "628",
+            "description": "Hidrocarburos"
+          }
+        ]
+      },
+      {
+        "code": "I07",
+        "description": "Comunicaciones satelitales",
+        "applies_to_persona_fisica": true,
+        "applies_to_persona_moral": true,
+        "allowed_regimen_fiscal_codes": [
+          "601",
+          "603",
+          "606",
+          "607",
+          "608",
+          "610",
+          "611",
+          "612",
+          "614",
+          "615",
+          "620",
+          "621",
+          "622",
+          "623",
+          "624",
+          "625",
+          "626",
+          "628"
+        ],
+        "allowed_regimen_fiscal_descriptions": [
+          {
+            "code": "601",
+            "description": "General de Ley Personas Morales"
+          },
+          {
+            "code": "603",
+            "description": "Personas Morales con Fines no Lucrativos"
+          },
+          {
+            "code": "606",
+            "description": "Arrendamiento"
+          },
+          {
+            "code": "607",
+            "description": "Régimen de Enajenación o Adquisición de Bienes"
+          },
+          {
+            "code": "608",
+            "description": "Demás ingresos"
+          },
+          {
+            "code": "610",
+            "description": "Residentes en el Extranjero sin Establecimiento Permanente en México"
+          },
+          {
+            "code": "611",
+            "description": "Ingresos por Dividendos (socios y accionistas)"
+          },
+          {
+            "code": "612",
+            "description": "Personas Físicas con Actividades Empresariales y Profesionales"
+          },
+          {
+            "code": "614",
+            "description": "Ingresos por intereses"
+          },
+          {
+            "code": "615",
+            "description": "Régimen de los ingresos por obtención de premios"
+          },
+          {
+            "code": "620",
+            "description": "Sociedades Cooperativas de Producción que optan por diferir sus ingresos"
+          },
+          {
+            "code": "621",
+            "description": "Incorporación Fiscal"
+          },
+          {
+            "code": "622",
+            "description": "Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras"
+          },
+          {
+            "code": "623",
+            "description": "Opcional para Grupos de Sociedades"
+          },
+          {
+            "code": "624",
+            "description": "Coordinados"
+          },
+          {
+            "code": "625",
+            "description": "Régimen de las Actividades Empresariales con ingresos a través de Plataformas Tecnológicas"
+          },
+          {
+            "code": "626",
+            "description": "Régimen Simplificado de Confianza"
+          },
+          {
+            "code": "628",
+            "description": "Hidrocarburos"
+          }
+        ]
+      },
+      {
+        "code": "I08",
+        "description": "Otra maquinaria y equipo",
+        "applies_to_persona_fisica": true,
+        "applies_to_persona_moral": true,
+        "allowed_regimen_fiscal_codes": [
+          "601",
+          "603",
+          "606",
+          "607",
+          "608",
+          "610",
+          "611",
+          "612",
+          "614",
+          "615",
+          "620",
+          "621",
+          "622",
+          "623",
+          "624",
+          "625",
+          "626",
+          "628"
+        ],
+        "allowed_regimen_fiscal_descriptions": [
+          {
+            "code": "601",
+            "description": "General de Ley Personas Morales"
+          },
+          {
+            "code": "603",
+            "description": "Personas Morales con Fines no Lucrativos"
+          },
+          {
+            "code": "606",
+            "description": "Arrendamiento"
+          },
+          {
+            "code": "607",
+            "description": "Régimen de Enajenación o Adquisición de Bienes"
+          },
+          {
+            "code": "608",
+            "description": "Demás ingresos"
+          },
+          {
+            "code": "610",
+            "description": "Residentes en el Extranjero sin Establecimiento Permanente en México"
+          },
+          {
+            "code": "611",
+            "description": "Ingresos por Dividendos (socios y accionistas)"
+          },
+          {
+            "code": "612",
+            "description": "Personas Físicas con Actividades Empresariales y Profesionales"
+          },
+          {
+            "code": "614",
+            "description": "Ingresos por intereses"
+          },
+          {
+            "code": "615",
+            "description": "Régimen de los ingresos por obtención de premios"
+          },
+          {
+            "code": "620",
+            "description": "Sociedades Cooperativas de Producción que optan por diferir sus ingresos"
+          },
+          {
+            "code": "621",
+            "description": "Incorporación Fiscal"
+          },
+          {
+            "code": "622",
+            "description": "Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras"
+          },
+          {
+            "code": "623",
+            "description": "Opcional para Grupos de Sociedades"
+          },
+          {
+            "code": "624",
+            "description": "Coordinados"
+          },
+          {
+            "code": "625",
+            "description": "Régimen de las Actividades Empresariales con ingresos a través de Plataformas Tecnológicas"
+          },
+          {
+            "code": "626",
+            "description": "Régimen Simplificado de Confianza"
+          },
+          {
+            "code": "628",
+            "description": "Hidrocarburos"
+          }
+        ]
+      },
+      {
+        "code": "D01",
+        "description": "Honorarios médicos, dentales y gastos hospitalarios",
+        "applies_to_persona_fisica": true,
+        "applies_to_persona_moral": false,
+        "allowed_regimen_fiscal_codes": [
+          "605",
+          "606",
+          "607",
+          "608",
+          "610",
+          "611",
+          "612",
+          "614",
+          "615",
+          "616",
+          "621",
+          "622",
+          "625",
+          "626"
+        ],
+        "allowed_regimen_fiscal_descriptions": [
+          {
+            "code": "605",
+            "description": "Sueldos y Salarios e Ingresos Asimilados a Salarios"
+          },
+          {
+            "code": "606",
+            "description": "Arrendamiento"
+          },
+          {
+            "code": "607",
+            "description": "Régimen de Enajenación o Adquisición de Bienes"
+          },
+          {
+            "code": "608",
+            "description": "Demás ingresos"
+          },
+          {
+            "code": "610",
+            "description": "Residentes en el Extranjero sin Establecimiento Permanente en México"
+          },
+          {
+            "code": "611",
+            "description": "Ingresos por Dividendos (socios y accionistas)"
+          },
+          {
+            "code": "612",
+            "description": "Personas Físicas con Actividades Empresariales y Profesionales"
+          },
+          {
+            "code": "614",
+            "description": "Ingresos por intereses"
+          },
+          {
+            "code": "615",
+            "description": "Régimen de los ingresos por obtención de premios"
+          },
+          {
+            "code": "616",
+            "description": "Sin obligaciones fiscales"
+          },
+          {
+            "code": "621",
+            "description": "Incorporación Fiscal"
+          },
+          {
+            "code": "622",
+            "description": "Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras"
+          },
+          {
+            "code": "625",
+            "description": "Régimen de las Actividades Empresariales con ingresos a través de Plataformas Tecnológicas"
+          },
+          {
+            "code": "626",
+            "description": "Régimen Simplificado de Confianza"
+          }
+        ]
+      },
+      {
+        "code": "D02",
+        "description": "Gastos médicos por incapacidad o discapacidad",
+        "applies_to_persona_fisica": true,
+        "applies_to_persona_moral": false,
+        "allowed_regimen_fiscal_codes": [
+          "605",
+          "606",
+          "607",
+          "608",
+          "610",
+          "611",
+          "612",
+          "614",
+          "615",
+          "616",
+          "621",
+          "622",
+          "625",
+          "626"
+        ],
+        "allowed_regimen_fiscal_descriptions": [
+          {
+            "code": "605",
+            "description": "Sueldos y Salarios e Ingresos Asimilados a Salarios"
+          },
+          {
+            "code": "606",
+            "description": "Arrendamiento"
+          },
+          {
+            "code": "607",
+            "description": "Régimen de Enajenación o Adquisición de Bienes"
+          },
+          {
+            "code": "608",
+            "description": "Demás ingresos"
+          },
+          {
+            "code": "610",
+            "description": "Residentes en el Extranjero sin Establecimiento Permanente en México"
+          },
+          {
+            "code": "611",
+            "description": "Ingresos por Dividendos (socios y accionistas)"
+          },
+          {
+            "code": "612",
+            "description": "Personas Físicas con Actividades Empresariales y Profesionales"
+          },
+          {
+            "code": "614",
+            "description": "Ingresos por intereses"
+          },
+          {
+            "code": "615",
+            "description": "Régimen de los ingresos por obtención de premios"
+          },
+          {
+            "code": "616",
+            "description": "Sin obligaciones fiscales"
+          },
+          {
+            "code": "621",
+            "description": "Incorporación Fiscal"
+          },
+          {
+            "code": "622",
+            "description": "Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras"
+          },
+          {
+            "code": "625",
+            "description": "Régimen de las Actividades Empresariales con ingresos a través de Plataformas Tecnológicas"
+          },
+          {
+            "code": "626",
+            "description": "Régimen Simplificado de Confianza"
+          }
+        ]
+      },
+      {
+        "code": "D03",
+        "description": "Gastos funerales",
+        "applies_to_persona_fisica": true,
+        "applies_to_persona_moral": false,
+        "allowed_regimen_fiscal_codes": [
+          "605",
+          "606",
+          "607",
+          "608",
+          "610",
+          "611",
+          "612",
+          "614",
+          "615",
+          "616",
+          "621",
+          "622",
+          "625",
+          "626"
+        ],
+        "allowed_regimen_fiscal_descriptions": [
+          {
+            "code": "605",
+            "description": "Sueldos y Salarios e Ingresos Asimilados a Salarios"
+          },
+          {
+            "code": "606",
+            "description": "Arrendamiento"
+          },
+          {
+            "code": "607",
+            "description": "Régimen de Enajenación o Adquisición de Bienes"
+          },
+          {
+            "code": "608",
+            "description": "Demás ingresos"
+          },
+          {
+            "code": "610",
+            "description": "Residentes en el Extranjero sin Establecimiento Permanente en México"
+          },
+          {
+            "code": "611",
+            "description": "Ingresos por Dividendos (socios y accionistas)"
+          },
+          {
+            "code": "612",
+            "description": "Personas Físicas con Actividades Empresariales y Profesionales"
+          },
+          {
+            "code": "614",
+            "description": "Ingresos por intereses"
+          },
+          {
+            "code": "615",
+            "description": "Régimen de los ingresos por obtención de premios"
+          },
+          {
+            "code": "616",
+            "description": "Sin obligaciones fiscales"
+          },
+          {
+            "code": "621",
+            "description": "Incorporación Fiscal"
+          },
+          {
+            "code": "622",
+            "description": "Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras"
+          },
+          {
+            "code": "625",
+            "description": "Régimen de las Actividades Empresariales con ingresos a través de Plataformas Tecnológicas"
+          },
+          {
+            "code": "626",
+            "description": "Régimen Simplificado de Confianza"
+          }
+        ]
+      },
+      {
+        "code": "D04",
+        "description": "Donativos",
+        "applies_to_persona_fisica": true,
+        "applies_to_persona_moral": false,
+        "allowed_regimen_fiscal_codes": [
+          "605",
+          "606",
+          "607",
+          "608",
+          "610",
+          "611",
+          "612",
+          "614",
+          "615",
+          "616",
+          "621",
+          "622",
+          "625",
+          "626"
+        ],
+        "allowed_regimen_fiscal_descriptions": [
+          {
+            "code": "605",
+            "description": "Sueldos y Salarios e Ingresos Asimilados a Salarios"
+          },
+          {
+            "code": "606",
+            "description": "Arrendamiento"
+          },
+          {
+            "code": "607",
+            "description": "Régimen de Enajenación o Adquisición de Bienes"
+          },
+          {
+            "code": "608",
+            "description": "Demás ingresos"
+          },
+          {
+            "code": "610",
+            "description": "Residentes en el Extranjero sin Establecimiento Permanente en México"
+          },
+          {
+            "code": "611",
+            "description": "Ingresos por Dividendos (socios y accionistas)"
+          },
+          {
+            "code": "612",
+            "description": "Personas Físicas con Actividades Empresariales y Profesionales"
+          },
+          {
+            "code": "614",
+            "description": "Ingresos por intereses"
+          },
+          {
+            "code": "615",
+            "description": "Régimen de los ingresos por obtención de premios"
+          },
+          {
+            "code": "616",
+            "description": "Sin obligaciones fiscales"
+          },
+          {
+            "code": "621",
+            "description": "Incorporación Fiscal"
+          },
+          {
+            "code": "622",
+            "description": "Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras"
+          },
+          {
+            "code": "625",
+            "description": "Régimen de las Actividades Empresariales con ingresos a través de Plataformas Tecnológicas"
+          },
+          {
+            "code": "626",
+            "description": "Régimen Simplificado de Confianza"
+          }
+        ]
+      },
+      {
+        "code": "D05",
+        "description": "Intereses reales efectivamente pagados por créditos hipotecarios (casa habitación)",
+        "applies_to_persona_fisica": true,
+        "applies_to_persona_moral": false,
+        "allowed_regimen_fiscal_codes": [
+          "605",
+          "606",
+          "607",
+          "608",
+          "610",
+          "611",
+          "612",
+          "614",
+          "615",
+          "616",
+          "621",
+          "622",
+          "625",
+          "626"
+        ],
+        "allowed_regimen_fiscal_descriptions": [
+          {
+            "code": "605",
+            "description": "Sueldos y Salarios e Ingresos Asimilados a Salarios"
+          },
+          {
+            "code": "606",
+            "description": "Arrendamiento"
+          },
+          {
+            "code": "607",
+            "description": "Régimen de Enajenación o Adquisición de Bienes"
+          },
+          {
+            "code": "608",
+            "description": "Demás ingresos"
+          },
+          {
+            "code": "610",
+            "description": "Residentes en el Extranjero sin Establecimiento Permanente en México"
+          },
+          {
+            "code": "611",
+            "description": "Ingresos por Dividendos (socios y accionistas)"
+          },
+          {
+            "code": "612",
+            "description": "Personas Físicas con Actividades Empresariales y Profesionales"
+          },
+          {
+            "code": "614",
+            "description": "Ingresos por intereses"
+          },
+          {
+            "code": "615",
+            "description": "Régimen de los ingresos por obtención de premios"
+          },
+          {
+            "code": "616",
+            "description": "Sin obligaciones fiscales"
+          },
+          {
+            "code": "621",
+            "description": "Incorporación Fiscal"
+          },
+          {
+            "code": "622",
+            "description": "Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras"
+          },
+          {
+            "code": "625",
+            "description": "Régimen de las Actividades Empresariales con ingresos a través de Plataformas Tecnológicas"
+          },
+          {
+            "code": "626",
+            "description": "Régimen Simplificado de Confianza"
+          }
+        ]
+      },
+      {
+        "code": "D06",
+        "description": "Aportaciones voluntarias al SAR",
+        "applies_to_persona_fisica": true,
+        "applies_to_persona_moral": false,
+        "allowed_regimen_fiscal_codes": [
+          "605",
+          "606",
+          "607",
+          "608",
+          "610",
+          "611",
+          "612",
+          "614",
+          "615",
+          "616",
+          "621",
+          "622",
+          "625",
+          "626"
+        ],
+        "allowed_regimen_fiscal_descriptions": [
+          {
+            "code": "605",
+            "description": "Sueldos y Salarios e Ingresos Asimilados a Salarios"
+          },
+          {
+            "code": "606",
+            "description": "Arrendamiento"
+          },
+          {
+            "code": "607",
+            "description": "Régimen de Enajenación o Adquisición de Bienes"
+          },
+          {
+            "code": "608",
+            "description": "Demás ingresos"
+          },
+          {
+            "code": "610",
+            "description": "Residentes en el Extranjero sin Establecimiento Permanente en México"
+          },
+          {
+            "code": "611",
+            "description": "Ingresos por Dividendos (socios y accionistas)"
+          },
+          {
+            "code": "612",
+            "description": "Personas Físicas con Actividades Empresariales y Profesionales"
+          },
+          {
+            "code": "614",
+            "description": "Ingresos por intereses"
+          },
+          {
+            "code": "615",
+            "description": "Régimen de los ingresos por obtención de premios"
+          },
+          {
+            "code": "616",
+            "description": "Sin obligaciones fiscales"
+          },
+          {
+            "code": "621",
+            "description": "Incorporación Fiscal"
+          },
+          {
+            "code": "622",
+            "description": "Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras"
+          },
+          {
+            "code": "625",
+            "description": "Régimen de las Actividades Empresariales con ingresos a través de Plataformas Tecnológicas"
+          },
+          {
+            "code": "626",
+            "description": "Régimen Simplificado de Confianza"
+          }
+        ]
+      },
+      {
+        "code": "D07",
+        "description": "Primas por seguros de gastos médicos",
+        "applies_to_persona_fisica": true,
+        "applies_to_persona_moral": false,
+        "allowed_regimen_fiscal_codes": [
+          "605",
+          "606",
+          "607",
+          "608",
+          "610",
+          "611",
+          "612",
+          "614",
+          "615",
+          "616",
+          "621",
+          "622",
+          "625",
+          "626"
+        ],
+        "allowed_regimen_fiscal_descriptions": [
+          {
+            "code": "605",
+            "description": "Sueldos y Salarios e Ingresos Asimilados a Salarios"
+          },
+          {
+            "code": "606",
+            "description": "Arrendamiento"
+          },
+          {
+            "code": "607",
+            "description": "Régimen de Enajenación o Adquisición de Bienes"
+          },
+          {
+            "code": "608",
+            "description": "Demás ingresos"
+          },
+          {
+            "code": "610",
+            "description": "Residentes en el Extranjero sin Establecimiento Permanente en México"
+          },
+          {
+            "code": "611",
+            "description": "Ingresos por Dividendos (socios y accionistas)"
+          },
+          {
+            "code": "612",
+            "description": "Personas Físicas con Actividades Empresariales y Profesionales"
+          },
+          {
+            "code": "614",
+            "description": "Ingresos por intereses"
+          },
+          {
+            "code": "615",
+            "description": "Régimen de los ingresos por obtención de premios"
+          },
+          {
+            "code": "616",
+            "description": "Sin obligaciones fiscales"
+          },
+          {
+            "code": "621",
+            "description": "Incorporación Fiscal"
+          },
+          {
+            "code": "622",
+            "description": "Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras"
+          },
+          {
+            "code": "625",
+            "description": "Régimen de las Actividades Empresariales con ingresos a través de Plataformas Tecnológicas"
+          },
+          {
+            "code": "626",
+            "description": "Régimen Simplificado de Confianza"
+          }
+        ]
+      },
+      {
+        "code": "D08",
+        "description": "Gastos de transportación escolar obligatoria",
+        "applies_to_persona_fisica": true,
+        "applies_to_persona_moral": false,
+        "allowed_regimen_fiscal_codes": [
+          "605",
+          "606",
+          "607",
+          "608",
+          "610",
+          "611",
+          "612",
+          "614",
+          "615",
+          "616",
+          "621",
+          "622",
+          "625",
+          "626"
+        ],
+        "allowed_regimen_fiscal_descriptions": [
+          {
+            "code": "605",
+            "description": "Sueldos y Salarios e Ingresos Asimilados a Salarios"
+          },
+          {
+            "code": "606",
+            "description": "Arrendamiento"
+          },
+          {
+            "code": "607",
+            "description": "Régimen de Enajenación o Adquisición de Bienes"
+          },
+          {
+            "code": "608",
+            "description": "Demás ingresos"
+          },
+          {
+            "code": "610",
+            "description": "Residentes en el Extranjero sin Establecimiento Permanente en México"
+          },
+          {
+            "code": "611",
+            "description": "Ingresos por Dividendos (socios y accionistas)"
+          },
+          {
+            "code": "612",
+            "description": "Personas Físicas con Actividades Empresariales y Profesionales"
+          },
+          {
+            "code": "614",
+            "description": "Ingresos por intereses"
+          },
+          {
+            "code": "615",
+            "description": "Régimen de los ingresos por obtención de premios"
+          },
+          {
+            "code": "616",
+            "description": "Sin obligaciones fiscales"
+          },
+          {
+            "code": "621",
+            "description": "Incorporación Fiscal"
+          },
+          {
+            "code": "622",
+            "description": "Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras"
+          },
+          {
+            "code": "625",
+            "description": "Régimen de las Actividades Empresariales con ingresos a través de Plataformas Tecnológicas"
+          },
+          {
+            "code": "626",
+            "description": "Régimen Simplificado de Confianza"
+          }
+        ]
+      },
+      {
+        "code": "D09",
+        "description": "Depósitos en cuentas para el ahorro, primas que tengan como base planes de pensiones",
+        "applies_to_persona_fisica": true,
+        "applies_to_persona_moral": false,
+        "allowed_regimen_fiscal_codes": [
+          "605",
+          "606",
+          "607",
+          "608",
+          "610",
+          "611",
+          "612",
+          "614",
+          "615",
+          "616",
+          "621",
+          "622",
+          "625",
+          "626"
+        ],
+        "allowed_regimen_fiscal_descriptions": [
+          {
+            "code": "605",
+            "description": "Sueldos y Salarios e Ingresos Asimilados a Salarios"
+          },
+          {
+            "code": "606",
+            "description": "Arrendamiento"
+          },
+          {
+            "code": "607",
+            "description": "Régimen de Enajenación o Adquisición de Bienes"
+          },
+          {
+            "code": "608",
+            "description": "Demás ingresos"
+          },
+          {
+            "code": "610",
+            "description": "Residentes en el Extranjero sin Establecimiento Permanente en México"
+          },
+          {
+            "code": "611",
+            "description": "Ingresos por Dividendos (socios y accionistas)"
+          },
+          {
+            "code": "612",
+            "description": "Personas Físicas con Actividades Empresariales y Profesionales"
+          },
+          {
+            "code": "614",
+            "description": "Ingresos por intereses"
+          },
+          {
+            "code": "615",
+            "description": "Régimen de los ingresos por obtención de premios"
+          },
+          {
+            "code": "616",
+            "description": "Sin obligaciones fiscales"
+          },
+          {
+            "code": "621",
+            "description": "Incorporación Fiscal"
+          },
+          {
+            "code": "622",
+            "description": "Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras"
+          },
+          {
+            "code": "625",
+            "description": "Régimen de las Actividades Empresariales con ingresos a través de Plataformas Tecnológicas"
+          },
+          {
+            "code": "626",
+            "description": "Régimen Simplificado de Confianza"
+          }
+        ]
+      },
+      {
+        "code": "D10",
+        "description": "Pagos por servicios educativos (colegiaturas)",
+        "applies_to_persona_fisica": true,
+        "applies_to_persona_moral": false,
+        "allowed_regimen_fiscal_codes": [
+          "605",
+          "606",
+          "607",
+          "608",
+          "610",
+          "611",
+          "612",
+          "614",
+          "615",
+          "616",
+          "621",
+          "622",
+          "625",
+          "626"
+        ],
+        "allowed_regimen_fiscal_descriptions": [
+          {
+            "code": "605",
+            "description": "Sueldos y Salarios e Ingresos Asimilados a Salarios"
+          },
+          {
+            "code": "606",
+            "description": "Arrendamiento"
+          },
+          {
+            "code": "607",
+            "description": "Régimen de Enajenación o Adquisición de Bienes"
+          },
+          {
+            "code": "608",
+            "description": "Demás ingresos"
+          },
+          {
+            "code": "610",
+            "description": "Residentes en el Extranjero sin Establecimiento Permanente en México"
+          },
+          {
+            "code": "611",
+            "description": "Ingresos por Dividendos (socios y accionistas)"
+          },
+          {
+            "code": "612",
+            "description": "Personas Físicas con Actividades Empresariales y Profesionales"
+          },
+          {
+            "code": "614",
+            "description": "Ingresos por intereses"
+          },
+          {
+            "code": "615",
+            "description": "Régimen de los ingresos por obtención de premios"
+          },
+          {
+            "code": "616",
+            "description": "Sin obligaciones fiscales"
+          },
+          {
+            "code": "621",
+            "description": "Incorporación Fiscal"
+          },
+          {
+            "code": "622",
+            "description": "Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras"
+          },
+          {
+            "code": "625",
+            "description": "Régimen de las Actividades Empresariales con ingresos a través de Plataformas Tecnológicas"
+          },
+          {
+            "code": "626",
+            "description": "Régimen Simplificado de Confianza"
+          }
+        ]
+      },
+      {
+        "code": "S01",
+        "description": "Sin efectos fiscales",
+        "applies_to_persona_fisica": true,
+        "applies_to_persona_moral": true,
+        "allowed_regimen_fiscal_codes": [
+          "601",
+          "603",
+          "605",
+          "606",
+          "607",
+          "608",
+          "610",
+          "611",
+          "612",
+          "614",
+          "615",
+          "616",
+          "620",
+          "621",
+          "622",
+          "623",
+          "624",
+          "625",
+          "626",
+          "628"
+        ],
+        "allowed_regimen_fiscal_descriptions": [
+          {
+            "code": "601",
+            "description": "General de Ley Personas Morales"
+          },
+          {
+            "code": "603",
+            "description": "Personas Morales con Fines no Lucrativos"
+          },
+          {
+            "code": "605",
+            "description": "Sueldos y Salarios e Ingresos Asimilados a Salarios"
+          },
+          {
+            "code": "606",
+            "description": "Arrendamiento"
+          },
+          {
+            "code": "607",
+            "description": "Régimen de Enajenación o Adquisición de Bienes"
+          },
+          {
+            "code": "608",
+            "description": "Demás ingresos"
+          },
+          {
+            "code": "610",
+            "description": "Residentes en el Extranjero sin Establecimiento Permanente en México"
+          },
+          {
+            "code": "611",
+            "description": "Ingresos por Dividendos (socios y accionistas)"
+          },
+          {
+            "code": "612",
+            "description": "Personas Físicas con Actividades Empresariales y Profesionales"
+          },
+          {
+            "code": "614",
+            "description": "Ingresos por intereses"
+          },
+          {
+            "code": "615",
+            "description": "Régimen de los ingresos por obtención de premios"
+          },
+          {
+            "code": "616",
+            "description": "Sin obligaciones fiscales"
+          },
+          {
+            "code": "620",
+            "description": "Sociedades Cooperativas de Producción que optan por diferir sus ingresos"
+          },
+          {
+            "code": "621",
+            "description": "Incorporación Fiscal"
+          },
+          {
+            "code": "622",
+            "description": "Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras"
+          },
+          {
+            "code": "623",
+            "description": "Opcional para Grupos de Sociedades"
+          },
+          {
+            "code": "624",
+            "description": "Coordinados"
+          },
+          {
+            "code": "625",
+            "description": "Régimen de las Actividades Empresariales con ingresos a través de Plataformas Tecnológicas"
+          },
+          {
+            "code": "626",
+            "description": "Régimen Simplificado de Confianza"
+          },
+          {
+            "code": "628",
+            "description": "Hidrocarburos"
+          }
+        ]
+      },
+      {
+        "code": "CP01",
+        "description": "Pagos",
+        "applies_to_persona_fisica": true,
+        "applies_to_persona_moral": true,
+        "allowed_regimen_fiscal_codes": [
+          "601",
+          "603",
+          "605",
+          "606",
+          "607",
+          "608",
+          "610",
+          "611",
+          "612",
+          "614",
+          "615",
+          "616",
+          "620",
+          "621",
+          "622",
+          "623",
+          "624",
+          "625",
+          "626",
+          "628"
+        ],
+        "allowed_regimen_fiscal_descriptions": [
+          {
+            "code": "601",
+            "description": "General de Ley Personas Morales"
+          },
+          {
+            "code": "603",
+            "description": "Personas Morales con Fines no Lucrativos"
+          },
+          {
+            "code": "605",
+            "description": "Sueldos y Salarios e Ingresos Asimilados a Salarios"
+          },
+          {
+            "code": "606",
+            "description": "Arrendamiento"
+          },
+          {
+            "code": "607",
+            "description": "Régimen de Enajenación o Adquisición de Bienes"
+          },
+          {
+            "code": "608",
+            "description": "Demás ingresos"
+          },
+          {
+            "code": "610",
+            "description": "Residentes en el Extranjero sin Establecimiento Permanente en México"
+          },
+          {
+            "code": "611",
+            "description": "Ingresos por Dividendos (socios y accionistas)"
+          },
+          {
+            "code": "612",
+            "description": "Personas Físicas con Actividades Empresariales y Profesionales"
+          },
+          {
+            "code": "614",
+            "description": "Ingresos por intereses"
+          },
+          {
+            "code": "615",
+            "description": "Régimen de los ingresos por obtención de premios"
+          },
+          {
+            "code": "616",
+            "description": "Sin obligaciones fiscales"
+          },
+          {
+            "code": "620",
+            "description": "Sociedades Cooperativas de Producción que optan por diferir sus ingresos"
+          },
+          {
+            "code": "621",
+            "description": "Incorporación Fiscal"
+          },
+          {
+            "code": "622",
+            "description": "Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras"
+          },
+          {
+            "code": "623",
+            "description": "Opcional para Grupos de Sociedades"
+          },
+          {
+            "code": "624",
+            "description": "Coordinados"
+          },
+          {
+            "code": "625",
+            "description": "Régimen de las Actividades Empresariales con ingresos a través de Plataformas Tecnológicas"
+          },
+          {
+            "code": "626",
+            "description": "Régimen Simplificado de Confianza"
+          },
+          {
+            "code": "628",
+            "description": "Hidrocarburos"
+          }
+        ]
+      },
+      {
+        "code": "CN01",
+        "description": "Nómina",
+        "applies_to_persona_fisica": true,
+        "applies_to_persona_moral": false,
+        "allowed_regimen_fiscal_codes": [
+          "605"
+        ],
+        "allowed_regimen_fiscal_descriptions": [
+          {
+            "code": "605",
+            "description": "Sueldos y Salarios e Ingresos Asimilados a Salarios"
+          }
+        ]
+      }
+    ],
+    "byRegimenFiscal": [
+      {
+        "code": "601",
+        "description": "General de Ley Personas Morales",
+        "person_types_hint": [
+          "moral"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "G01",
+            "description": "Adquisición de mercancías"
+          },
+          {
+            "code": "G02",
+            "description": "Devoluciones, descuentos o bonificaciones"
+          },
+          {
+            "code": "G03",
+            "description": "Gastos en general"
+          },
+          {
+            "code": "I01",
+            "description": "Construcciones"
+          },
+          {
+            "code": "I02",
+            "description": "Mobiliario y equipo de oficina por inversiones"
+          },
+          {
+            "code": "I03",
+            "description": "Equipo de transporte"
+          },
+          {
+            "code": "I04",
+            "description": "Equipo de cómputo y accesorios"
+          },
+          {
+            "code": "I05",
+            "description": "Dados, troqueles, moldes, matrices y herramental"
+          },
+          {
+            "code": "I06",
+            "description": "Comunicaciones telefónicas"
+          },
+          {
+            "code": "I07",
+            "description": "Comunicaciones satelitales"
+          },
+          {
+            "code": "I08",
+            "description": "Otra maquinaria y equipo"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      },
+      {
+        "code": "603",
+        "description": "Personas Morales con Fines no Lucrativos",
+        "person_types_hint": [
+          "moral"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "G01",
+            "description": "Adquisición de mercancías"
+          },
+          {
+            "code": "G02",
+            "description": "Devoluciones, descuentos o bonificaciones"
+          },
+          {
+            "code": "G03",
+            "description": "Gastos en general"
+          },
+          {
+            "code": "I01",
+            "description": "Construcciones"
+          },
+          {
+            "code": "I02",
+            "description": "Mobiliario y equipo de oficina por inversiones"
+          },
+          {
+            "code": "I03",
+            "description": "Equipo de transporte"
+          },
+          {
+            "code": "I04",
+            "description": "Equipo de cómputo y accesorios"
+          },
+          {
+            "code": "I05",
+            "description": "Dados, troqueles, moldes, matrices y herramental"
+          },
+          {
+            "code": "I06",
+            "description": "Comunicaciones telefónicas"
+          },
+          {
+            "code": "I07",
+            "description": "Comunicaciones satelitales"
+          },
+          {
+            "code": "I08",
+            "description": "Otra maquinaria y equipo"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      },
+      {
+        "code": "605",
+        "description": "Sueldos y Salarios e Ingresos Asimilados a Salarios",
+        "person_types_hint": [
+          "fisica"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "D01",
+            "description": "Honorarios médicos, dentales y gastos hospitalarios"
+          },
+          {
+            "code": "D02",
+            "description": "Gastos médicos por incapacidad o discapacidad"
+          },
+          {
+            "code": "D03",
+            "description": "Gastos funerales"
+          },
+          {
+            "code": "D04",
+            "description": "Donativos"
+          },
+          {
+            "code": "D05",
+            "description": "Intereses reales efectivamente pagados por créditos hipotecarios (casa habitación)"
+          },
+          {
+            "code": "D06",
+            "description": "Aportaciones voluntarias al SAR"
+          },
+          {
+            "code": "D07",
+            "description": "Primas por seguros de gastos médicos"
+          },
+          {
+            "code": "D08",
+            "description": "Gastos de transportación escolar obligatoria"
+          },
+          {
+            "code": "D09",
+            "description": "Depósitos en cuentas para el ahorro, primas que tengan como base planes de pensiones"
+          },
+          {
+            "code": "D10",
+            "description": "Pagos por servicios educativos (colegiaturas)"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          },
+          {
+            "code": "CN01",
+            "description": "Nómina"
+          }
+        ]
+      },
+      {
+        "code": "606",
+        "description": "Arrendamiento",
+        "person_types_hint": [
+          "fisica"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "G01",
+            "description": "Adquisición de mercancías"
+          },
+          {
+            "code": "G02",
+            "description": "Devoluciones, descuentos o bonificaciones"
+          },
+          {
+            "code": "G03",
+            "description": "Gastos en general"
+          },
+          {
+            "code": "I01",
+            "description": "Construcciones"
+          },
+          {
+            "code": "I02",
+            "description": "Mobiliario y equipo de oficina por inversiones"
+          },
+          {
+            "code": "I03",
+            "description": "Equipo de transporte"
+          },
+          {
+            "code": "I04",
+            "description": "Equipo de cómputo y accesorios"
+          },
+          {
+            "code": "I05",
+            "description": "Dados, troqueles, moldes, matrices y herramental"
+          },
+          {
+            "code": "I06",
+            "description": "Comunicaciones telefónicas"
+          },
+          {
+            "code": "I07",
+            "description": "Comunicaciones satelitales"
+          },
+          {
+            "code": "I08",
+            "description": "Otra maquinaria y equipo"
+          },
+          {
+            "code": "D01",
+            "description": "Honorarios médicos, dentales y gastos hospitalarios"
+          },
+          {
+            "code": "D02",
+            "description": "Gastos médicos por incapacidad o discapacidad"
+          },
+          {
+            "code": "D03",
+            "description": "Gastos funerales"
+          },
+          {
+            "code": "D04",
+            "description": "Donativos"
+          },
+          {
+            "code": "D05",
+            "description": "Intereses reales efectivamente pagados por créditos hipotecarios (casa habitación)"
+          },
+          {
+            "code": "D06",
+            "description": "Aportaciones voluntarias al SAR"
+          },
+          {
+            "code": "D07",
+            "description": "Primas por seguros de gastos médicos"
+          },
+          {
+            "code": "D08",
+            "description": "Gastos de transportación escolar obligatoria"
+          },
+          {
+            "code": "D09",
+            "description": "Depósitos en cuentas para el ahorro, primas que tengan como base planes de pensiones"
+          },
+          {
+            "code": "D10",
+            "description": "Pagos por servicios educativos (colegiaturas)"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      },
+      {
+        "code": "607",
+        "description": "Régimen de Enajenación o Adquisición de Bienes",
+        "person_types_hint": [
+          "fisica"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "G01",
+            "description": "Adquisición de mercancías"
+          },
+          {
+            "code": "G02",
+            "description": "Devoluciones, descuentos o bonificaciones"
+          },
+          {
+            "code": "G03",
+            "description": "Gastos en general"
+          },
+          {
+            "code": "I01",
+            "description": "Construcciones"
+          },
+          {
+            "code": "I02",
+            "description": "Mobiliario y equipo de oficina por inversiones"
+          },
+          {
+            "code": "I03",
+            "description": "Equipo de transporte"
+          },
+          {
+            "code": "I04",
+            "description": "Equipo de cómputo y accesorios"
+          },
+          {
+            "code": "I05",
+            "description": "Dados, troqueles, moldes, matrices y herramental"
+          },
+          {
+            "code": "I06",
+            "description": "Comunicaciones telefónicas"
+          },
+          {
+            "code": "I07",
+            "description": "Comunicaciones satelitales"
+          },
+          {
+            "code": "I08",
+            "description": "Otra maquinaria y equipo"
+          },
+          {
+            "code": "D01",
+            "description": "Honorarios médicos, dentales y gastos hospitalarios"
+          },
+          {
+            "code": "D02",
+            "description": "Gastos médicos por incapacidad o discapacidad"
+          },
+          {
+            "code": "D03",
+            "description": "Gastos funerales"
+          },
+          {
+            "code": "D04",
+            "description": "Donativos"
+          },
+          {
+            "code": "D05",
+            "description": "Intereses reales efectivamente pagados por créditos hipotecarios (casa habitación)"
+          },
+          {
+            "code": "D06",
+            "description": "Aportaciones voluntarias al SAR"
+          },
+          {
+            "code": "D07",
+            "description": "Primas por seguros de gastos médicos"
+          },
+          {
+            "code": "D08",
+            "description": "Gastos de transportación escolar obligatoria"
+          },
+          {
+            "code": "D09",
+            "description": "Depósitos en cuentas para el ahorro, primas que tengan como base planes de pensiones"
+          },
+          {
+            "code": "D10",
+            "description": "Pagos por servicios educativos (colegiaturas)"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      },
+      {
+        "code": "608",
+        "description": "Demás ingresos",
+        "person_types_hint": [
+          "fisica"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "G01",
+            "description": "Adquisición de mercancías"
+          },
+          {
+            "code": "G02",
+            "description": "Devoluciones, descuentos o bonificaciones"
+          },
+          {
+            "code": "G03",
+            "description": "Gastos en general"
+          },
+          {
+            "code": "I01",
+            "description": "Construcciones"
+          },
+          {
+            "code": "I02",
+            "description": "Mobiliario y equipo de oficina por inversiones"
+          },
+          {
+            "code": "I03",
+            "description": "Equipo de transporte"
+          },
+          {
+            "code": "I04",
+            "description": "Equipo de cómputo y accesorios"
+          },
+          {
+            "code": "I05",
+            "description": "Dados, troqueles, moldes, matrices y herramental"
+          },
+          {
+            "code": "I06",
+            "description": "Comunicaciones telefónicas"
+          },
+          {
+            "code": "I07",
+            "description": "Comunicaciones satelitales"
+          },
+          {
+            "code": "I08",
+            "description": "Otra maquinaria y equipo"
+          },
+          {
+            "code": "D01",
+            "description": "Honorarios médicos, dentales y gastos hospitalarios"
+          },
+          {
+            "code": "D02",
+            "description": "Gastos médicos por incapacidad o discapacidad"
+          },
+          {
+            "code": "D03",
+            "description": "Gastos funerales"
+          },
+          {
+            "code": "D04",
+            "description": "Donativos"
+          },
+          {
+            "code": "D05",
+            "description": "Intereses reales efectivamente pagados por créditos hipotecarios (casa habitación)"
+          },
+          {
+            "code": "D06",
+            "description": "Aportaciones voluntarias al SAR"
+          },
+          {
+            "code": "D07",
+            "description": "Primas por seguros de gastos médicos"
+          },
+          {
+            "code": "D08",
+            "description": "Gastos de transportación escolar obligatoria"
+          },
+          {
+            "code": "D09",
+            "description": "Depósitos en cuentas para el ahorro, primas que tengan como base planes de pensiones"
+          },
+          {
+            "code": "D10",
+            "description": "Pagos por servicios educativos (colegiaturas)"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      },
+      {
+        "code": "610",
+        "description": "Residentes en el Extranjero sin Establecimiento Permanente en México",
+        "person_types_hint": [
+          "fisica"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "G01",
+            "description": "Adquisición de mercancías"
+          },
+          {
+            "code": "G02",
+            "description": "Devoluciones, descuentos o bonificaciones"
+          },
+          {
+            "code": "G03",
+            "description": "Gastos en general"
+          },
+          {
+            "code": "I01",
+            "description": "Construcciones"
+          },
+          {
+            "code": "I02",
+            "description": "Mobiliario y equipo de oficina por inversiones"
+          },
+          {
+            "code": "I03",
+            "description": "Equipo de transporte"
+          },
+          {
+            "code": "I04",
+            "description": "Equipo de cómputo y accesorios"
+          },
+          {
+            "code": "I05",
+            "description": "Dados, troqueles, moldes, matrices y herramental"
+          },
+          {
+            "code": "I06",
+            "description": "Comunicaciones telefónicas"
+          },
+          {
+            "code": "I07",
+            "description": "Comunicaciones satelitales"
+          },
+          {
+            "code": "I08",
+            "description": "Otra maquinaria y equipo"
+          },
+          {
+            "code": "D01",
+            "description": "Honorarios médicos, dentales y gastos hospitalarios"
+          },
+          {
+            "code": "D02",
+            "description": "Gastos médicos por incapacidad o discapacidad"
+          },
+          {
+            "code": "D03",
+            "description": "Gastos funerales"
+          },
+          {
+            "code": "D04",
+            "description": "Donativos"
+          },
+          {
+            "code": "D05",
+            "description": "Intereses reales efectivamente pagados por créditos hipotecarios (casa habitación)"
+          },
+          {
+            "code": "D06",
+            "description": "Aportaciones voluntarias al SAR"
+          },
+          {
+            "code": "D07",
+            "description": "Primas por seguros de gastos médicos"
+          },
+          {
+            "code": "D08",
+            "description": "Gastos de transportación escolar obligatoria"
+          },
+          {
+            "code": "D09",
+            "description": "Depósitos en cuentas para el ahorro, primas que tengan como base planes de pensiones"
+          },
+          {
+            "code": "D10",
+            "description": "Pagos por servicios educativos (colegiaturas)"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      },
+      {
+        "code": "611",
+        "description": "Ingresos por Dividendos (socios y accionistas)",
+        "person_types_hint": [
+          "fisica"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "G01",
+            "description": "Adquisición de mercancías"
+          },
+          {
+            "code": "G02",
+            "description": "Devoluciones, descuentos o bonificaciones"
+          },
+          {
+            "code": "G03",
+            "description": "Gastos en general"
+          },
+          {
+            "code": "I01",
+            "description": "Construcciones"
+          },
+          {
+            "code": "I02",
+            "description": "Mobiliario y equipo de oficina por inversiones"
+          },
+          {
+            "code": "I03",
+            "description": "Equipo de transporte"
+          },
+          {
+            "code": "I04",
+            "description": "Equipo de cómputo y accesorios"
+          },
+          {
+            "code": "I05",
+            "description": "Dados, troqueles, moldes, matrices y herramental"
+          },
+          {
+            "code": "I06",
+            "description": "Comunicaciones telefónicas"
+          },
+          {
+            "code": "I07",
+            "description": "Comunicaciones satelitales"
+          },
+          {
+            "code": "I08",
+            "description": "Otra maquinaria y equipo"
+          },
+          {
+            "code": "D01",
+            "description": "Honorarios médicos, dentales y gastos hospitalarios"
+          },
+          {
+            "code": "D02",
+            "description": "Gastos médicos por incapacidad o discapacidad"
+          },
+          {
+            "code": "D03",
+            "description": "Gastos funerales"
+          },
+          {
+            "code": "D04",
+            "description": "Donativos"
+          },
+          {
+            "code": "D05",
+            "description": "Intereses reales efectivamente pagados por créditos hipotecarios (casa habitación)"
+          },
+          {
+            "code": "D06",
+            "description": "Aportaciones voluntarias al SAR"
+          },
+          {
+            "code": "D07",
+            "description": "Primas por seguros de gastos médicos"
+          },
+          {
+            "code": "D08",
+            "description": "Gastos de transportación escolar obligatoria"
+          },
+          {
+            "code": "D09",
+            "description": "Depósitos en cuentas para el ahorro, primas que tengan como base planes de pensiones"
+          },
+          {
+            "code": "D10",
+            "description": "Pagos por servicios educativos (colegiaturas)"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      },
+      {
+        "code": "612",
+        "description": "Personas Físicas con Actividades Empresariales y Profesionales",
+        "person_types_hint": [
+          "fisica"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "G01",
+            "description": "Adquisición de mercancías"
+          },
+          {
+            "code": "G02",
+            "description": "Devoluciones, descuentos o bonificaciones"
+          },
+          {
+            "code": "G03",
+            "description": "Gastos en general"
+          },
+          {
+            "code": "I01",
+            "description": "Construcciones"
+          },
+          {
+            "code": "I02",
+            "description": "Mobiliario y equipo de oficina por inversiones"
+          },
+          {
+            "code": "I03",
+            "description": "Equipo de transporte"
+          },
+          {
+            "code": "I04",
+            "description": "Equipo de cómputo y accesorios"
+          },
+          {
+            "code": "I05",
+            "description": "Dados, troqueles, moldes, matrices y herramental"
+          },
+          {
+            "code": "I06",
+            "description": "Comunicaciones telefónicas"
+          },
+          {
+            "code": "I07",
+            "description": "Comunicaciones satelitales"
+          },
+          {
+            "code": "I08",
+            "description": "Otra maquinaria y equipo"
+          },
+          {
+            "code": "D01",
+            "description": "Honorarios médicos, dentales y gastos hospitalarios"
+          },
+          {
+            "code": "D02",
+            "description": "Gastos médicos por incapacidad o discapacidad"
+          },
+          {
+            "code": "D03",
+            "description": "Gastos funerales"
+          },
+          {
+            "code": "D04",
+            "description": "Donativos"
+          },
+          {
+            "code": "D05",
+            "description": "Intereses reales efectivamente pagados por créditos hipotecarios (casa habitación)"
+          },
+          {
+            "code": "D06",
+            "description": "Aportaciones voluntarias al SAR"
+          },
+          {
+            "code": "D07",
+            "description": "Primas por seguros de gastos médicos"
+          },
+          {
+            "code": "D08",
+            "description": "Gastos de transportación escolar obligatoria"
+          },
+          {
+            "code": "D09",
+            "description": "Depósitos en cuentas para el ahorro, primas que tengan como base planes de pensiones"
+          },
+          {
+            "code": "D10",
+            "description": "Pagos por servicios educativos (colegiaturas)"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      },
+      {
+        "code": "614",
+        "description": "Ingresos por intereses",
+        "person_types_hint": [
+          "fisica"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "G01",
+            "description": "Adquisición de mercancías"
+          },
+          {
+            "code": "G02",
+            "description": "Devoluciones, descuentos o bonificaciones"
+          },
+          {
+            "code": "G03",
+            "description": "Gastos en general"
+          },
+          {
+            "code": "I01",
+            "description": "Construcciones"
+          },
+          {
+            "code": "I02",
+            "description": "Mobiliario y equipo de oficina por inversiones"
+          },
+          {
+            "code": "I03",
+            "description": "Equipo de transporte"
+          },
+          {
+            "code": "I04",
+            "description": "Equipo de cómputo y accesorios"
+          },
+          {
+            "code": "I05",
+            "description": "Dados, troqueles, moldes, matrices y herramental"
+          },
+          {
+            "code": "I06",
+            "description": "Comunicaciones telefónicas"
+          },
+          {
+            "code": "I07",
+            "description": "Comunicaciones satelitales"
+          },
+          {
+            "code": "I08",
+            "description": "Otra maquinaria y equipo"
+          },
+          {
+            "code": "D01",
+            "description": "Honorarios médicos, dentales y gastos hospitalarios"
+          },
+          {
+            "code": "D02",
+            "description": "Gastos médicos por incapacidad o discapacidad"
+          },
+          {
+            "code": "D03",
+            "description": "Gastos funerales"
+          },
+          {
+            "code": "D04",
+            "description": "Donativos"
+          },
+          {
+            "code": "D05",
+            "description": "Intereses reales efectivamente pagados por créditos hipotecarios (casa habitación)"
+          },
+          {
+            "code": "D06",
+            "description": "Aportaciones voluntarias al SAR"
+          },
+          {
+            "code": "D07",
+            "description": "Primas por seguros de gastos médicos"
+          },
+          {
+            "code": "D08",
+            "description": "Gastos de transportación escolar obligatoria"
+          },
+          {
+            "code": "D09",
+            "description": "Depósitos en cuentas para el ahorro, primas que tengan como base planes de pensiones"
+          },
+          {
+            "code": "D10",
+            "description": "Pagos por servicios educativos (colegiaturas)"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      },
+      {
+        "code": "615",
+        "description": "Régimen de los ingresos por obtención de premios",
+        "person_types_hint": [
+          "fisica"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "G01",
+            "description": "Adquisición de mercancías"
+          },
+          {
+            "code": "G02",
+            "description": "Devoluciones, descuentos o bonificaciones"
+          },
+          {
+            "code": "G03",
+            "description": "Gastos en general"
+          },
+          {
+            "code": "I01",
+            "description": "Construcciones"
+          },
+          {
+            "code": "I02",
+            "description": "Mobiliario y equipo de oficina por inversiones"
+          },
+          {
+            "code": "I03",
+            "description": "Equipo de transporte"
+          },
+          {
+            "code": "I04",
+            "description": "Equipo de cómputo y accesorios"
+          },
+          {
+            "code": "I05",
+            "description": "Dados, troqueles, moldes, matrices y herramental"
+          },
+          {
+            "code": "I06",
+            "description": "Comunicaciones telefónicas"
+          },
+          {
+            "code": "I07",
+            "description": "Comunicaciones satelitales"
+          },
+          {
+            "code": "I08",
+            "description": "Otra maquinaria y equipo"
+          },
+          {
+            "code": "D01",
+            "description": "Honorarios médicos, dentales y gastos hospitalarios"
+          },
+          {
+            "code": "D02",
+            "description": "Gastos médicos por incapacidad o discapacidad"
+          },
+          {
+            "code": "D03",
+            "description": "Gastos funerales"
+          },
+          {
+            "code": "D04",
+            "description": "Donativos"
+          },
+          {
+            "code": "D05",
+            "description": "Intereses reales efectivamente pagados por créditos hipotecarios (casa habitación)"
+          },
+          {
+            "code": "D06",
+            "description": "Aportaciones voluntarias al SAR"
+          },
+          {
+            "code": "D07",
+            "description": "Primas por seguros de gastos médicos"
+          },
+          {
+            "code": "D08",
+            "description": "Gastos de transportación escolar obligatoria"
+          },
+          {
+            "code": "D09",
+            "description": "Depósitos en cuentas para el ahorro, primas que tengan como base planes de pensiones"
+          },
+          {
+            "code": "D10",
+            "description": "Pagos por servicios educativos (colegiaturas)"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      },
+      {
+        "code": "616",
+        "description": "Sin obligaciones fiscales",
+        "person_types_hint": [
+          "fisica"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "D01",
+            "description": "Honorarios médicos, dentales y gastos hospitalarios"
+          },
+          {
+            "code": "D02",
+            "description": "Gastos médicos por incapacidad o discapacidad"
+          },
+          {
+            "code": "D03",
+            "description": "Gastos funerales"
+          },
+          {
+            "code": "D04",
+            "description": "Donativos"
+          },
+          {
+            "code": "D05",
+            "description": "Intereses reales efectivamente pagados por créditos hipotecarios (casa habitación)"
+          },
+          {
+            "code": "D06",
+            "description": "Aportaciones voluntarias al SAR"
+          },
+          {
+            "code": "D07",
+            "description": "Primas por seguros de gastos médicos"
+          },
+          {
+            "code": "D08",
+            "description": "Gastos de transportación escolar obligatoria"
+          },
+          {
+            "code": "D09",
+            "description": "Depósitos en cuentas para el ahorro, primas que tengan como base planes de pensiones"
+          },
+          {
+            "code": "D10",
+            "description": "Pagos por servicios educativos (colegiaturas)"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      },
+      {
+        "code": "620",
+        "description": "Sociedades Cooperativas de Producción que optan por diferir sus ingresos",
+        "person_types_hint": [
+          "moral"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "G01",
+            "description": "Adquisición de mercancías"
+          },
+          {
+            "code": "G02",
+            "description": "Devoluciones, descuentos o bonificaciones"
+          },
+          {
+            "code": "G03",
+            "description": "Gastos en general"
+          },
+          {
+            "code": "I01",
+            "description": "Construcciones"
+          },
+          {
+            "code": "I02",
+            "description": "Mobiliario y equipo de oficina por inversiones"
+          },
+          {
+            "code": "I03",
+            "description": "Equipo de transporte"
+          },
+          {
+            "code": "I04",
+            "description": "Equipo de cómputo y accesorios"
+          },
+          {
+            "code": "I05",
+            "description": "Dados, troqueles, moldes, matrices y herramental"
+          },
+          {
+            "code": "I06",
+            "description": "Comunicaciones telefónicas"
+          },
+          {
+            "code": "I07",
+            "description": "Comunicaciones satelitales"
+          },
+          {
+            "code": "I08",
+            "description": "Otra maquinaria y equipo"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      },
+      {
+        "code": "621",
+        "description": "Incorporación Fiscal",
+        "person_types_hint": [
+          "fisica"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "G01",
+            "description": "Adquisición de mercancías"
+          },
+          {
+            "code": "G02",
+            "description": "Devoluciones, descuentos o bonificaciones"
+          },
+          {
+            "code": "G03",
+            "description": "Gastos en general"
+          },
+          {
+            "code": "I01",
+            "description": "Construcciones"
+          },
+          {
+            "code": "I02",
+            "description": "Mobiliario y equipo de oficina por inversiones"
+          },
+          {
+            "code": "I03",
+            "description": "Equipo de transporte"
+          },
+          {
+            "code": "I04",
+            "description": "Equipo de cómputo y accesorios"
+          },
+          {
+            "code": "I05",
+            "description": "Dados, troqueles, moldes, matrices y herramental"
+          },
+          {
+            "code": "I06",
+            "description": "Comunicaciones telefónicas"
+          },
+          {
+            "code": "I07",
+            "description": "Comunicaciones satelitales"
+          },
+          {
+            "code": "I08",
+            "description": "Otra maquinaria y equipo"
+          },
+          {
+            "code": "D01",
+            "description": "Honorarios médicos, dentales y gastos hospitalarios"
+          },
+          {
+            "code": "D02",
+            "description": "Gastos médicos por incapacidad o discapacidad"
+          },
+          {
+            "code": "D03",
+            "description": "Gastos funerales"
+          },
+          {
+            "code": "D04",
+            "description": "Donativos"
+          },
+          {
+            "code": "D05",
+            "description": "Intereses reales efectivamente pagados por créditos hipotecarios (casa habitación)"
+          },
+          {
+            "code": "D06",
+            "description": "Aportaciones voluntarias al SAR"
+          },
+          {
+            "code": "D07",
+            "description": "Primas por seguros de gastos médicos"
+          },
+          {
+            "code": "D08",
+            "description": "Gastos de transportación escolar obligatoria"
+          },
+          {
+            "code": "D09",
+            "description": "Depósitos en cuentas para el ahorro, primas que tengan como base planes de pensiones"
+          },
+          {
+            "code": "D10",
+            "description": "Pagos por servicios educativos (colegiaturas)"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      },
+      {
+        "code": "622",
+        "description": "Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras",
+        "person_types_hint": [
+          "fisica"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "G01",
+            "description": "Adquisición de mercancías"
+          },
+          {
+            "code": "G02",
+            "description": "Devoluciones, descuentos o bonificaciones"
+          },
+          {
+            "code": "G03",
+            "description": "Gastos en general"
+          },
+          {
+            "code": "I01",
+            "description": "Construcciones"
+          },
+          {
+            "code": "I02",
+            "description": "Mobiliario y equipo de oficina por inversiones"
+          },
+          {
+            "code": "I03",
+            "description": "Equipo de transporte"
+          },
+          {
+            "code": "I04",
+            "description": "Equipo de cómputo y accesorios"
+          },
+          {
+            "code": "I05",
+            "description": "Dados, troqueles, moldes, matrices y herramental"
+          },
+          {
+            "code": "I06",
+            "description": "Comunicaciones telefónicas"
+          },
+          {
+            "code": "I07",
+            "description": "Comunicaciones satelitales"
+          },
+          {
+            "code": "I08",
+            "description": "Otra maquinaria y equipo"
+          },
+          {
+            "code": "D01",
+            "description": "Honorarios médicos, dentales y gastos hospitalarios"
+          },
+          {
+            "code": "D02",
+            "description": "Gastos médicos por incapacidad o discapacidad"
+          },
+          {
+            "code": "D03",
+            "description": "Gastos funerales"
+          },
+          {
+            "code": "D04",
+            "description": "Donativos"
+          },
+          {
+            "code": "D05",
+            "description": "Intereses reales efectivamente pagados por créditos hipotecarios (casa habitación)"
+          },
+          {
+            "code": "D06",
+            "description": "Aportaciones voluntarias al SAR"
+          },
+          {
+            "code": "D07",
+            "description": "Primas por seguros de gastos médicos"
+          },
+          {
+            "code": "D08",
+            "description": "Gastos de transportación escolar obligatoria"
+          },
+          {
+            "code": "D09",
+            "description": "Depósitos en cuentas para el ahorro, primas que tengan como base planes de pensiones"
+          },
+          {
+            "code": "D10",
+            "description": "Pagos por servicios educativos (colegiaturas)"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      },
+      {
+        "code": "623",
+        "description": "Opcional para Grupos de Sociedades",
+        "person_types_hint": [
+          "moral"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "G01",
+            "description": "Adquisición de mercancías"
+          },
+          {
+            "code": "G02",
+            "description": "Devoluciones, descuentos o bonificaciones"
+          },
+          {
+            "code": "G03",
+            "description": "Gastos en general"
+          },
+          {
+            "code": "I01",
+            "description": "Construcciones"
+          },
+          {
+            "code": "I02",
+            "description": "Mobiliario y equipo de oficina por inversiones"
+          },
+          {
+            "code": "I03",
+            "description": "Equipo de transporte"
+          },
+          {
+            "code": "I04",
+            "description": "Equipo de cómputo y accesorios"
+          },
+          {
+            "code": "I05",
+            "description": "Dados, troqueles, moldes, matrices y herramental"
+          },
+          {
+            "code": "I06",
+            "description": "Comunicaciones telefónicas"
+          },
+          {
+            "code": "I07",
+            "description": "Comunicaciones satelitales"
+          },
+          {
+            "code": "I08",
+            "description": "Otra maquinaria y equipo"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      },
+      {
+        "code": "624",
+        "description": "Coordinados",
+        "person_types_hint": [
+          "moral"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "G01",
+            "description": "Adquisición de mercancías"
+          },
+          {
+            "code": "G02",
+            "description": "Devoluciones, descuentos o bonificaciones"
+          },
+          {
+            "code": "G03",
+            "description": "Gastos en general"
+          },
+          {
+            "code": "I01",
+            "description": "Construcciones"
+          },
+          {
+            "code": "I02",
+            "description": "Mobiliario y equipo de oficina por inversiones"
+          },
+          {
+            "code": "I03",
+            "description": "Equipo de transporte"
+          },
+          {
+            "code": "I04",
+            "description": "Equipo de cómputo y accesorios"
+          },
+          {
+            "code": "I05",
+            "description": "Dados, troqueles, moldes, matrices y herramental"
+          },
+          {
+            "code": "I06",
+            "description": "Comunicaciones telefónicas"
+          },
+          {
+            "code": "I07",
+            "description": "Comunicaciones satelitales"
+          },
+          {
+            "code": "I08",
+            "description": "Otra maquinaria y equipo"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      },
+      {
+        "code": "625",
+        "description": "Régimen de las Actividades Empresariales con ingresos a través de Plataformas Tecnológicas",
+        "person_types_hint": [
+          "fisica"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "G01",
+            "description": "Adquisición de mercancías"
+          },
+          {
+            "code": "G02",
+            "description": "Devoluciones, descuentos o bonificaciones"
+          },
+          {
+            "code": "G03",
+            "description": "Gastos en general"
+          },
+          {
+            "code": "I01",
+            "description": "Construcciones"
+          },
+          {
+            "code": "I02",
+            "description": "Mobiliario y equipo de oficina por inversiones"
+          },
+          {
+            "code": "I03",
+            "description": "Equipo de transporte"
+          },
+          {
+            "code": "I04",
+            "description": "Equipo de cómputo y accesorios"
+          },
+          {
+            "code": "I05",
+            "description": "Dados, troqueles, moldes, matrices y herramental"
+          },
+          {
+            "code": "I06",
+            "description": "Comunicaciones telefónicas"
+          },
+          {
+            "code": "I07",
+            "description": "Comunicaciones satelitales"
+          },
+          {
+            "code": "I08",
+            "description": "Otra maquinaria y equipo"
+          },
+          {
+            "code": "D01",
+            "description": "Honorarios médicos, dentales y gastos hospitalarios"
+          },
+          {
+            "code": "D02",
+            "description": "Gastos médicos por incapacidad o discapacidad"
+          },
+          {
+            "code": "D03",
+            "description": "Gastos funerales"
+          },
+          {
+            "code": "D04",
+            "description": "Donativos"
+          },
+          {
+            "code": "D05",
+            "description": "Intereses reales efectivamente pagados por créditos hipotecarios (casa habitación)"
+          },
+          {
+            "code": "D06",
+            "description": "Aportaciones voluntarias al SAR"
+          },
+          {
+            "code": "D07",
+            "description": "Primas por seguros de gastos médicos"
+          },
+          {
+            "code": "D08",
+            "description": "Gastos de transportación escolar obligatoria"
+          },
+          {
+            "code": "D09",
+            "description": "Depósitos en cuentas para el ahorro, primas que tengan como base planes de pensiones"
+          },
+          {
+            "code": "D10",
+            "description": "Pagos por servicios educativos (colegiaturas)"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      },
+      {
+        "code": "626",
+        "description": "Régimen Simplificado de Confianza",
+        "person_types_hint": [
+          "fisica"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "G01",
+            "description": "Adquisición de mercancías"
+          },
+          {
+            "code": "G02",
+            "description": "Devoluciones, descuentos o bonificaciones"
+          },
+          {
+            "code": "G03",
+            "description": "Gastos en general"
+          },
+          {
+            "code": "I01",
+            "description": "Construcciones"
+          },
+          {
+            "code": "I02",
+            "description": "Mobiliario y equipo de oficina por inversiones"
+          },
+          {
+            "code": "I03",
+            "description": "Equipo de transporte"
+          },
+          {
+            "code": "I04",
+            "description": "Equipo de cómputo y accesorios"
+          },
+          {
+            "code": "I05",
+            "description": "Dados, troqueles, moldes, matrices y herramental"
+          },
+          {
+            "code": "I06",
+            "description": "Comunicaciones telefónicas"
+          },
+          {
+            "code": "I07",
+            "description": "Comunicaciones satelitales"
+          },
+          {
+            "code": "I08",
+            "description": "Otra maquinaria y equipo"
+          },
+          {
+            "code": "D01",
+            "description": "Honorarios médicos, dentales y gastos hospitalarios"
+          },
+          {
+            "code": "D02",
+            "description": "Gastos médicos por incapacidad o discapacidad"
+          },
+          {
+            "code": "D03",
+            "description": "Gastos funerales"
+          },
+          {
+            "code": "D04",
+            "description": "Donativos"
+          },
+          {
+            "code": "D05",
+            "description": "Intereses reales efectivamente pagados por créditos hipotecarios (casa habitación)"
+          },
+          {
+            "code": "D06",
+            "description": "Aportaciones voluntarias al SAR"
+          },
+          {
+            "code": "D07",
+            "description": "Primas por seguros de gastos médicos"
+          },
+          {
+            "code": "D08",
+            "description": "Gastos de transportación escolar obligatoria"
+          },
+          {
+            "code": "D09",
+            "description": "Depósitos en cuentas para el ahorro, primas que tengan como base planes de pensiones"
+          },
+          {
+            "code": "D10",
+            "description": "Pagos por servicios educativos (colegiaturas)"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      },
+      {
+        "code": "628",
+        "description": "Hidrocarburos",
+        "person_types_hint": [
+          "moral"
+        ],
+        "allowed_uso_cfdi": [
+          {
+            "code": "G01",
+            "description": "Adquisición de mercancías"
+          },
+          {
+            "code": "G02",
+            "description": "Devoluciones, descuentos o bonificaciones"
+          },
+          {
+            "code": "G03",
+            "description": "Gastos en general"
+          },
+          {
+            "code": "I01",
+            "description": "Construcciones"
+          },
+          {
+            "code": "I02",
+            "description": "Mobiliario y equipo de oficina por inversiones"
+          },
+          {
+            "code": "I03",
+            "description": "Equipo de transporte"
+          },
+          {
+            "code": "I04",
+            "description": "Equipo de cómputo y accesorios"
+          },
+          {
+            "code": "I05",
+            "description": "Dados, troqueles, moldes, matrices y herramental"
+          },
+          {
+            "code": "I06",
+            "description": "Comunicaciones telefónicas"
+          },
+          {
+            "code": "I07",
+            "description": "Comunicaciones satelitales"
+          },
+          {
+            "code": "I08",
+            "description": "Otra maquinaria y equipo"
+          },
+          {
+            "code": "S01",
+            "description": "Sin efectos fiscales"
+          },
+          {
+            "code": "CP01",
+            "description": "Pagos"
+          }
+        ]
+      }
+    ]
+  },
+  "ui_examples": {
+    "angular_filter_rule": {
+      "input": [
+        "regimenFiscalReceptorCode"
+      ],
+      "filter_collection": "compatibility.byRegimenFiscal",
+      "output": "allowed_uso_cfdi"
+    },
+    "recommended_fields": [
+      "rfc",
+      "name",
+      "fiscalZipCode",
+      "regimenFiscalReceptorCode",
+      "usoCfdiCode",
+      "email"
+    ]
+  }
+}

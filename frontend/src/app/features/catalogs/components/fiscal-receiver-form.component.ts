@@ -1,6 +1,8 @@
-import { ChangeDetectionStrategy, Component, OnChanges, SimpleChanges, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnChanges, SimpleChanges, inject, input, output } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { FiscalReceiver, FiscalReceiverSpecialFieldDefinition, UpsertFiscalReceiverRequest } from '../models/catalogs.models';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { FiscalReceiverSatCatalogService } from '../application/fiscal-receiver-sat-catalog.service';
+import { FiscalReceiver, FiscalReceiverSatCatalog, FiscalReceiverSatCatalogOption, FiscalReceiverSpecialFieldDefinition, UpsertFiscalReceiverRequest } from '../models/catalogs.models';
 
 @Component({
   selector: 'app-fiscal-receiver-form',
@@ -18,13 +20,29 @@ import { FiscalReceiver, FiscalReceiverSpecialFieldDefinition, UpsertFiscalRecei
       </label>
 
       <label>
-        <span>Código de régimen fiscal</span>
-        <input [(ngModel)]="draft.fiscalRegimeCode" name="fiscalRegimeCode" required />
+        <span>Régimen fiscal del receptor</span>
+        <select [ngModel]="draft.fiscalRegimeCode" name="fiscalRegimeCode" [disabled]="readOnly() || !catalogReady()" required (ngModelChange)="updateFiscalRegime($event)">
+          <option value="">Selecciona un régimen fiscal</option>
+          @for (option of fiscalRegimeOptions(); track option.code) {
+            <option [value]="option.code">{{ option.description }}</option>
+          }
+        </select>
+        @if (!catalogReady()) {
+          <small class="helper">Cargando catálogo SAT...</small>
+        }
       </label>
 
       <label>
         <span>Uso CFDI predeterminado</span>
-        <input [(ngModel)]="draft.cfdiUseCodeDefault" name="cfdiUseCodeDefault" required />
+        <select [(ngModel)]="draft.cfdiUseCodeDefault" name="cfdiUseCodeDefault" [disabled]="readOnly() || !catalogReady() || !draft.fiscalRegimeCode.trim()" required>
+          <option value="">{{ draft.fiscalRegimeCode.trim() ? 'Selecciona un uso CFDI' : 'Primero selecciona régimen fiscal' }}</option>
+          @for (option of cfdiUseOptions(); track option.code) {
+            <option [value]="option.code">{{ option.description }}</option>
+          }
+        </select>
+        @if (draft.fiscalRegimeCode.trim() && !cfdiUseOptions().length) {
+          <small class="helper">No hay usos CFDI compatibles disponibles para el régimen seleccionado.</small>
+        }
       </label>
 
       <label>
@@ -164,6 +182,8 @@ import { FiscalReceiver, FiscalReceiverSpecialFieldDefinition, UpsertFiscalRecei
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class FiscalReceiverFormComponent implements OnChanges {
+  private readonly fiscalReceiverSatCatalogService = inject(FiscalReceiverSatCatalogService);
+
   readonly receiver = input<FiscalReceiver | null>(null);
   readonly initialValue = input<UpsertFiscalReceiverRequest | null>(null);
   readonly submitLabel = input('Guardar receptor');
@@ -172,7 +192,9 @@ export class FiscalReceiverFormComponent implements OnChanges {
   readonly errorMessage = input<string | null>(null);
   readonly submitted = output<UpsertFiscalReceiverRequest>();
 
+  protected readonly satCatalog = toSignal(this.fiscalReceiverSatCatalogService.getCatalog(), { initialValue: null });
   protected draft: UpsertFiscalReceiverRequest = emptyReceiver();
+  private hydratingDraft = false;
 
   ngOnChanges(changes: SimpleChanges): void {
     if (!changes['receiver'] && !changes['initialValue']) {
@@ -180,6 +202,7 @@ export class FiscalReceiverFormComponent implements OnChanges {
     }
 
     const receiver = this.receiver();
+    this.hydratingDraft = true;
     this.draft = receiver
       ? {
           rfc: receiver.rfc,
@@ -196,6 +219,7 @@ export class FiscalReceiverFormComponent implements OnChanges {
           specialFields: (receiver.specialFields ?? []).map(cloneSpecialField)
       }
       : cloneDraft(this.initialValue() ?? emptyReceiver());
+    this.hydratingDraft = false;
   }
 
   protected submitForm(): void {
@@ -240,6 +264,76 @@ export class FiscalReceiverFormComponent implements OnChanges {
   protected trackSpecialField(index: number, field: FiscalReceiverSpecialFieldDefinition): string {
     return field.code || `new-${index}`;
   }
+
+  protected catalogReady(): boolean {
+    return this.satCatalog() !== null;
+  }
+
+  protected fiscalRegimeOptions(): FiscalReceiverSatCatalogOption[] {
+    const catalog = this.satCatalog();
+    const options = catalog?.regimenFiscal ?? [];
+    return includeLegacyOption(options, this.draft.fiscalRegimeCode, 'Régimen legacy no encontrado en catálogo');
+  }
+
+  protected cfdiUseOptions(): FiscalReceiverSatCatalogOption[] {
+    const catalog = this.satCatalog();
+    const selectedFiscalRegimeCode = this.draft.fiscalRegimeCode.trim().toUpperCase();
+    const currentCfdiUseCode = this.draft.cfdiUseCodeDefault.trim().toUpperCase();
+
+    if (!catalog) {
+      return [];
+    }
+
+    const allowedByRegime = catalog.byRegimenFiscal.find((regime) => regime.code === selectedFiscalRegimeCode)?.allowedUsoCfdi ?? [];
+    return includeLegacyOption(allowedByRegime, currentCfdiUseCode, 'Uso CFDI legacy no encontrado o incompatible');
+  }
+
+  protected updateFiscalRegime(value: string): void {
+    this.draft.fiscalRegimeCode = value;
+
+    if (this.hydratingDraft) {
+      return;
+    }
+
+    const selectedFiscalRegimeCode = value.trim().toUpperCase();
+    const selectedCfdiUseCode = this.draft.cfdiUseCodeDefault.trim().toUpperCase();
+    if (!selectedFiscalRegimeCode || !selectedCfdiUseCode) {
+      return;
+    }
+
+    const catalog = this.satCatalog();
+    const isCompatible = catalog?.byRegimenFiscal
+      .find((regime) => regime.code === selectedFiscalRegimeCode)
+      ?.allowedUsoCfdi
+      .some((usage) => usage.code === selectedCfdiUseCode) ?? false;
+
+    if (!isCompatible) {
+      this.draft.cfdiUseCodeDefault = '';
+    }
+  }
+}
+
+function includeLegacyOption(
+  options: readonly FiscalReceiverSatCatalogOption[],
+  currentCode: string | null | undefined,
+  fallbackLabel: string): FiscalReceiverSatCatalogOption[]
+{
+  const normalizedCurrentCode = currentCode?.trim().toUpperCase();
+  if (!normalizedCurrentCode) {
+    return [...options];
+  }
+
+  if (options.some((option) => option.code === normalizedCurrentCode)) {
+    return [...options];
+  }
+
+  return [
+    {
+      code: normalizedCurrentCode,
+      description: `${normalizedCurrentCode} - ${fallbackLabel}`
+    },
+    ...options
+  ];
 }
 
 function emptyReceiver(): UpsertFiscalReceiverRequest {
