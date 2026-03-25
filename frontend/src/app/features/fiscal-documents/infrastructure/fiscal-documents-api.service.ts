@@ -14,6 +14,7 @@ import {
   FiscalStampResponse,
   FiscalDocumentEmailDraftResponse,
   IssuerProfileResponse,
+  IssuedFiscalDocumentSpecialFieldOptionResponse,
   PrepareFiscalDocumentRequest,
   PrepareFiscalDocumentResponse,
   RefreshFiscalDocumentStatusResponse,
@@ -57,8 +58,14 @@ export class FiscalDocumentsApiService {
     setOptionalQuery(query, 'folio', filters.folio);
     setOptionalQuery(query, 'status', filters.status);
     setOptionalQuery(query, 'query', filters.query);
+    setOptionalQuery(query, 'specialFieldCode', filters.specialFieldCode);
+    setOptionalQuery(query, 'specialFieldValue', filters.specialFieldValue);
 
     return this.http.get<IssuedFiscalDocumentListResponse>(buildApiUrl(`/fiscal-documents/issued?${query.toString()}`));
+  }
+
+  getIssuedSpecialFieldOptions(): Observable<IssuedFiscalDocumentSpecialFieldOptionResponse[]> {
+    return this.http.get<IssuedFiscalDocumentSpecialFieldOptionResponse[]>(buildApiUrl('/fiscal-documents/issued/special-fields'));
   }
 
   prepareFiscalDocument(billingDocumentId: number, request: PrepareFiscalDocumentRequest): Observable<PrepareFiscalDocumentResponse> {

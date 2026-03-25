@@ -58,8 +58,22 @@ export interface FiscalReceiver extends FiscalReceiverSearchItem {
   email?: string | null;
   phone?: string | null;
   searchAlias?: string | null;
+  specialFields?: FiscalReceiverSpecialFieldDefinition[];
   createdAtUtc: string;
   updatedAtUtc: string;
+}
+
+export interface FiscalReceiverSpecialFieldDefinition {
+  id?: number | null;
+  fiscalReceiverId?: number | null;
+  code: string;
+  label: string;
+  dataType: string;
+  maxLength?: number | null;
+  helpText?: string | null;
+  isRequired: boolean;
+  isActive: boolean;
+  displayOrder: number;
 }
 
 export interface UpsertFiscalReceiverRequest {
@@ -74,6 +88,7 @@ export interface UpsertFiscalReceiverRequest {
   phone?: string | null;
   searchAlias?: string | null;
   isActive: boolean;
+  specialFields: FiscalReceiverSpecialFieldDefinition[];
 }
 
 export interface ProductFiscalProfileSearchItem {

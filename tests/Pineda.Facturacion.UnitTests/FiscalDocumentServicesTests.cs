@@ -306,6 +306,109 @@ public class FiscalDocumentServicesTests
     }
 
     [Fact]
+    public async Task PrepareFiscalDocument_Fails_When_Required_Special_Field_Is_Missing()
+    {
+        var receiver = CreateReceiver();
+        receiver.SpecialFieldDefinitions =
+        [
+            new FiscalReceiverSpecialFieldDefinition
+            {
+                Id = 31,
+                FiscalReceiverId = receiver.Id,
+                Code = "AGENTE",
+                Label = "Agente",
+                DataType = "text",
+                IsRequired = true,
+                IsActive = true,
+                DisplayOrder = 1,
+                CreatedAtUtc = DateTime.UtcNow,
+                UpdatedAtUtc = DateTime.UtcNow
+            }
+        ];
+
+        var service = CreateService(receiver: receiver);
+        var result = await service.ExecuteAsync(new PrepareFiscalDocumentCommand
+        {
+            BillingDocumentId = 5,
+            FiscalReceiverId = 11,
+            PaymentMethodSat = "PUE",
+            PaymentFormSat = "03"
+        });
+
+        Assert.Equal(PrepareFiscalDocumentOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("Agente", result.ErrorMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PrepareFiscalDocument_Snapshots_Special_Field_Values_Per_Fiscal_Document()
+    {
+        var receiver = CreateReceiver();
+        receiver.SpecialFieldDefinitions =
+        [
+            new FiscalReceiverSpecialFieldDefinition
+            {
+                Id = 31,
+                FiscalReceiverId = receiver.Id,
+                Code = "AGENTE",
+                Label = "Agente",
+                DataType = "text",
+                MaxLength = 50,
+                IsRequired = true,
+                IsActive = true,
+                DisplayOrder = 1,
+                CreatedAtUtc = DateTime.UtcNow,
+                UpdatedAtUtc = DateTime.UtcNow
+            },
+            new FiscalReceiverSpecialFieldDefinition
+            {
+                Id = 32,
+                FiscalReceiverId = receiver.Id,
+                Code = "ORDEN_TRABAJO",
+                Label = "Orden de trabajo",
+                DataType = "text",
+                IsRequired = false,
+                IsActive = true,
+                DisplayOrder = 2,
+                CreatedAtUtc = DateTime.UtcNow,
+                UpdatedAtUtc = DateTime.UtcNow
+            }
+        ];
+
+        var repository = new FakeFiscalDocumentRepository();
+        var service = CreateService(fiscalDocumentRepository: repository, receiver: receiver);
+        var result = await service.ExecuteAsync(new PrepareFiscalDocumentCommand
+        {
+            BillingDocumentId = 5,
+            FiscalReceiverId = 11,
+            PaymentMethodSat = "PUE",
+            PaymentFormSat = "03",
+            SpecialFields =
+            [
+                new PrepareFiscalDocumentSpecialFieldValueCommand { FieldCode = "AGENTE", Value = "Juan Perez" },
+                new PrepareFiscalDocumentSpecialFieldValueCommand { FieldCode = "ORDEN_TRABAJO", Value = "OT-45678" }
+            ]
+        });
+
+        Assert.Equal(PrepareFiscalDocumentOutcome.Created, result.Outcome);
+        Assert.Collection(
+            repository.Added!.SpecialFieldValues.OrderBy(x => x.DisplayOrder),
+            first =>
+            {
+                Assert.Equal(31, first.FiscalReceiverSpecialFieldDefinitionId);
+                Assert.Equal("AGENTE", first.FieldCode);
+                Assert.Equal("Agente", first.FieldLabelSnapshot);
+                Assert.Equal("Juan Perez", first.Value);
+            },
+            second =>
+            {
+                Assert.Equal(32, second.FiscalReceiverSpecialFieldDefinitionId);
+                Assert.Equal("ORDEN_TRABAJO", second.FieldCode);
+                Assert.Equal("Orden de trabajo", second.FieldLabelSnapshot);
+                Assert.Equal("OT-45678", second.Value);
+            });
+    }
+
+    [Fact]
     public async Task GetFiscalDocumentById_ReturnsSnapshotDataAndItemSatFields()
     {
         var fiscalDocument = new FiscalDocument
@@ -707,6 +810,9 @@ public class FiscalDocumentServicesTests
 
         public Task<FiscalReceiver?> GetByIdAsync(long fiscalReceiverId, CancellationToken cancellationToken = default)
             => Task.FromResult(ExistingById?.Id == fiscalReceiverId ? ExistingById : null);
+
+        public Task<IReadOnlyList<FiscalReceiverSpecialFieldDefinition>> GetActiveSpecialFieldDefinitionsAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<FiscalReceiverSpecialFieldDefinition>>([]);
 
         public Task AddAsync(FiscalReceiver fiscalReceiver, CancellationToken cancellationToken = default) => Task.CompletedTask;
 

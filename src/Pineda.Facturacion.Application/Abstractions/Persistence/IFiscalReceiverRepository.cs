@@ -10,6 +10,8 @@ public interface IFiscalReceiverRepository
 
     Task<FiscalReceiver?> GetByIdAsync(long fiscalReceiverId, CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<FiscalReceiverSpecialFieldDefinition>> GetActiveSpecialFieldDefinitionsAsync(CancellationToken cancellationToken = default);
+
     Task AddAsync(FiscalReceiver fiscalReceiver, CancellationToken cancellationToken = default);
 
     Task UpdateAsync(FiscalReceiver fiscalReceiver, CancellationToken cancellationToken = default);

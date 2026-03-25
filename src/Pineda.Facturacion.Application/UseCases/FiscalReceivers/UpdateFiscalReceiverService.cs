@@ -69,6 +69,7 @@ public class UpdateFiscalReceiverService
             : FiscalMasterDataNormalization.NormalizeSearchableText(normalizedSearchAlias);
         fiscalReceiver.IsActive = command.IsActive;
         fiscalReceiver.UpdatedAtUtc = DateTime.UtcNow;
+        ReplaceSpecialFields(fiscalReceiver, command.SpecialFields, fiscalReceiver.UpdatedAtUtc);
 
         await _fiscalReceiverRepository.UpdateAsync(fiscalReceiver, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -98,6 +99,34 @@ public class UpdateFiscalReceiverService
         if (string.IsNullOrWhiteSpace(command.FiscalRegimeCode)) return "Fiscal regime code is required.";
         if (string.IsNullOrWhiteSpace(command.CfdiUseCodeDefault)) return "Default CFDI use code is required.";
         if (string.IsNullOrWhiteSpace(command.PostalCode)) return "Postal code is required.";
+        var specialFieldValidationError = CreateFiscalReceiverService.ValidateSpecialFields(command.SpecialFields);
+        if (specialFieldValidationError is not null) return specialFieldValidationError;
         return null;
+    }
+
+    private static void ReplaceSpecialFields(
+        Domain.Entities.FiscalReceiver fiscalReceiver,
+        IReadOnlyList<UpsertFiscalReceiverSpecialFieldDefinitionCommand>? fields,
+        DateTime now)
+    {
+        fiscalReceiver.SpecialFieldDefinitions.Clear();
+
+        foreach (var field in CreateFiscalReceiverService.NormalizeSpecialFields(fields))
+        {
+            fiscalReceiver.SpecialFieldDefinitions.Add(new Domain.Entities.FiscalReceiverSpecialFieldDefinition
+            {
+                FiscalReceiverId = fiscalReceiver.Id,
+                Code = field.Code,
+                Label = field.Label,
+                DataType = field.DataType,
+                MaxLength = field.MaxLength,
+                HelpText = field.HelpText,
+                IsRequired = field.IsRequired,
+                IsActive = field.IsActive,
+                DisplayOrder = field.DisplayOrder,
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now
+            });
+        }
     }
 }

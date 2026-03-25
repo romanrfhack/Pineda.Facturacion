@@ -135,6 +135,12 @@ public class PrepareFiscalDocumentService
             };
         }
 
+        var specialFieldValidationError = ValidateSpecialFields(fiscalReceiver, command.SpecialFields);
+        if (specialFieldValidationError is not null)
+        {
+            return ValidationFailure(command.BillingDocumentId, specialFieldValidationError);
+        }
+
         if (string.IsNullOrWhiteSpace(billingDocument.CurrencyCode))
         {
             return ValidationFailure(command.BillingDocumentId, "Billing document currency code is required.");
@@ -257,7 +263,8 @@ public class PrepareFiscalDocumentService
             Total = billingDocument.Total,
             CreatedAtUtc = now,
             UpdatedAtUtc = now,
-            Items = itemResults
+            Items = itemResults,
+            SpecialFieldValues = BuildSpecialFieldSnapshots(fiscalReceiver, command.SpecialFields, now)
         };
 
         await _fiscalDocumentRepository.AddAsync(fiscalDocument, cancellationToken);
@@ -340,6 +347,85 @@ public class PrepareFiscalDocumentService
         return string.IsNullOrWhiteSpace(command.ReceiverCfdiUseCode)
             ? fiscalReceiver.CfdiUseCodeDefault
             : FiscalMasterDataNormalization.NormalizeRequiredCode(command.ReceiverCfdiUseCode);
+    }
+
+    private static string? ValidateSpecialFields(
+        FiscalReceiver fiscalReceiver,
+        IReadOnlyList<PrepareFiscalDocumentSpecialFieldValueCommand>? requestedFields)
+    {
+        var activeDefinitions = fiscalReceiver.SpecialFieldDefinitions
+            .Where(x => x.IsActive)
+            .OrderBy(x => x.DisplayOrder)
+            .ToArray();
+
+        if (activeDefinitions.Length == 0)
+        {
+            return null;
+        }
+
+        var valuesByCode = (requestedFields ?? [])
+            .Where(x => !string.IsNullOrWhiteSpace(x.FieldCode))
+            .ToDictionary(
+                x => x.FieldCode.Trim().ToUpperInvariant(),
+                x => x.Value?.Trim() ?? string.Empty,
+                StringComparer.OrdinalIgnoreCase);
+
+        foreach (var definition in activeDefinitions)
+        {
+            valuesByCode.TryGetValue(definition.Code, out var capturedValue);
+            if (definition.IsRequired && string.IsNullOrWhiteSpace(capturedValue))
+            {
+                return $"El campo especial '{definition.Label}' es requerido para este receptor.";
+            }
+
+            if (definition.MaxLength.HasValue
+                && !string.IsNullOrWhiteSpace(capturedValue)
+                && capturedValue.Length > definition.MaxLength.Value)
+            {
+                return $"El campo especial '{definition.Label}' excede la longitud máxima permitida de {definition.MaxLength.Value} caracteres.";
+            }
+
+            if (!string.IsNullOrWhiteSpace(capturedValue))
+            {
+                switch (definition.DataType)
+                {
+                    case "number" when !decimal.TryParse(capturedValue, NumberStyles.Any, CultureInfo.InvariantCulture, out _):
+                        return $"El campo especial '{definition.Label}' debe ser numérico.";
+                    case "date" when !DateOnly.TryParse(capturedValue, CultureInfo.InvariantCulture, DateTimeStyles.None, out _):
+                        return $"El campo especial '{definition.Label}' debe ser una fecha válida.";
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static List<FiscalDocumentSpecialFieldValue> BuildSpecialFieldSnapshots(
+        FiscalReceiver fiscalReceiver,
+        IReadOnlyList<PrepareFiscalDocumentSpecialFieldValueCommand>? requestedFields,
+        DateTime now)
+    {
+        var valuesByCode = (requestedFields ?? [])
+            .Where(x => !string.IsNullOrWhiteSpace(x.FieldCode))
+            .ToDictionary(
+                x => x.FieldCode.Trim().ToUpperInvariant(),
+                x => x.Value?.Trim() ?? string.Empty,
+                StringComparer.OrdinalIgnoreCase);
+
+        return fiscalReceiver.SpecialFieldDefinitions
+            .Where(x => x.IsActive)
+            .OrderBy(x => x.DisplayOrder)
+            .Select(definition => new FiscalDocumentSpecialFieldValue
+            {
+                FiscalReceiverSpecialFieldDefinitionId = definition.Id,
+                FieldCode = definition.Code,
+                FieldLabelSnapshot = definition.Label,
+                DataType = definition.DataType,
+                Value = valuesByCode.TryGetValue(definition.Code, out var value) ? value : string.Empty,
+                DisplayOrder = definition.DisplayOrder,
+                CreatedAtUtc = now
+            })
+            .ToList();
     }
 
     private static bool HasRequiredIssuerFields(IssuerProfile issuerProfile)

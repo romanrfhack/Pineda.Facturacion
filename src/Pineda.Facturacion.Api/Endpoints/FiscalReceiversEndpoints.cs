@@ -90,7 +90,8 @@ public static class FiscalReceiversEndpoints
             Email = request.Email,
             Phone = request.Phone,
             SearchAlias = request.SearchAlias,
-            IsActive = request.IsActive
+            IsActive = request.IsActive,
+            SpecialFields = request.SpecialFields.Select(MapSpecialFieldCommand).ToArray()
         }, cancellationToken);
 
         var response = new MutationResponse
@@ -150,7 +151,8 @@ public static class FiscalReceiversEndpoints
             Email = request.Email,
             Phone = request.Phone,
             SearchAlias = request.SearchAlias,
-            IsActive = request.IsActive
+            IsActive = request.IsActive,
+            SpecialFields = request.SpecialFields.Select(MapSpecialFieldCommand).ToArray()
         }, cancellationToken);
 
         var response = new MutationResponse
@@ -222,8 +224,44 @@ public static class FiscalReceiversEndpoints
             Phone = fiscalReceiver.Phone,
             SearchAlias = fiscalReceiver.SearchAlias,
             IsActive = fiscalReceiver.IsActive,
+            SpecialFields = fiscalReceiver.SpecialFieldDefinitions
+                .OrderBy(x => x.DisplayOrder)
+                .Select(MapSpecialField)
+                .ToArray(),
             CreatedAtUtc = fiscalReceiver.CreatedAtUtc,
             UpdatedAtUtc = fiscalReceiver.UpdatedAtUtc
+        };
+    }
+
+    private static UpsertFiscalReceiverSpecialFieldDefinitionCommand MapSpecialFieldCommand(UpsertFiscalReceiverSpecialFieldDefinitionRequest request)
+    {
+        return new UpsertFiscalReceiverSpecialFieldDefinitionCommand
+        {
+            Code = request.Code,
+            Label = request.Label,
+            DataType = request.DataType,
+            MaxLength = request.MaxLength,
+            HelpText = request.HelpText,
+            IsRequired = request.IsRequired,
+            IsActive = request.IsActive,
+            DisplayOrder = request.DisplayOrder
+        };
+    }
+
+    private static FiscalReceiverSpecialFieldDefinitionResponse MapSpecialField(FiscalReceiverSpecialFieldDefinition specialField)
+    {
+        return new FiscalReceiverSpecialFieldDefinitionResponse
+        {
+            Id = specialField.Id,
+            FiscalReceiverId = specialField.FiscalReceiverId,
+            Code = specialField.Code,
+            Label = specialField.Label,
+            DataType = specialField.DataType,
+            MaxLength = specialField.MaxLength,
+            HelpText = specialField.HelpText,
+            IsRequired = specialField.IsRequired,
+            IsActive = specialField.IsActive,
+            DisplayOrder = specialField.DisplayOrder
         };
     }
 
@@ -240,6 +278,19 @@ public static class FiscalReceiversEndpoints
         public string? Phone { get; init; }
         public string? SearchAlias { get; init; }
         public bool IsActive { get; init; } = true;
+        public IReadOnlyList<UpsertFiscalReceiverSpecialFieldDefinitionRequest> SpecialFields { get; init; } = [];
+    }
+
+    public sealed class UpsertFiscalReceiverSpecialFieldDefinitionRequest
+    {
+        public string Code { get; init; } = string.Empty;
+        public string Label { get; init; } = string.Empty;
+        public string DataType { get; init; } = "text";
+        public int? MaxLength { get; init; }
+        public string? HelpText { get; init; }
+        public bool IsRequired { get; init; }
+        public bool IsActive { get; init; } = true;
+        public int DisplayOrder { get; init; }
     }
 
     public class FiscalReceiverSearchResponse
@@ -260,8 +311,23 @@ public static class FiscalReceiversEndpoints
         public string? Email { get; init; }
         public string? Phone { get; init; }
         public string? SearchAlias { get; init; }
+        public IReadOnlyList<FiscalReceiverSpecialFieldDefinitionResponse> SpecialFields { get; init; } = [];
         public DateTime CreatedAtUtc { get; init; }
         public DateTime UpdatedAtUtc { get; init; }
+    }
+
+    public sealed class FiscalReceiverSpecialFieldDefinitionResponse
+    {
+        public long Id { get; init; }
+        public long FiscalReceiverId { get; init; }
+        public string Code { get; init; } = string.Empty;
+        public string Label { get; init; } = string.Empty;
+        public string DataType { get; init; } = string.Empty;
+        public int? MaxLength { get; init; }
+        public string? HelpText { get; init; }
+        public bool IsRequired { get; init; }
+        public bool IsActive { get; init; }
+        public int DisplayOrder { get; init; }
     }
 
     public sealed class MutationResponse

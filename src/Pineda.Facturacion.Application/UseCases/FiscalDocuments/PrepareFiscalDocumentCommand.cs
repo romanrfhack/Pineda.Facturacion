@@ -21,4 +21,12 @@ public class PrepareFiscalDocumentCommand
     public string? ReceiverCfdiUseCode { get; set; }
 
     public DateTime? IssuedAtUtc { get; set; }
+
+    public IReadOnlyList<PrepareFiscalDocumentSpecialFieldValueCommand> SpecialFields { get; set; } = [];
+}
+
+public sealed class PrepareFiscalDocumentSpecialFieldValueCommand
+{
+    public string FieldCode { get; set; } = string.Empty;
+    public string Value { get; set; } = string.Empty;
 }

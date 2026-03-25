@@ -20,6 +20,7 @@ public class FiscalDocumentRepository : IFiscalDocumentRepository
         return _dbContext.FiscalDocuments
             .AsNoTracking()
             .Include(x => x.Items)
+            .Include(x => x.SpecialFieldValues.OrderBy(field => field.DisplayOrder))
             .FirstOrDefaultAsync(x => x.Id == fiscalDocumentId, cancellationToken);
     }
 
@@ -27,6 +28,7 @@ public class FiscalDocumentRepository : IFiscalDocumentRepository
     {
         return _dbContext.FiscalDocuments
             .Include(x => x.Items)
+            .Include(x => x.SpecialFieldValues.OrderBy(field => field.DisplayOrder))
             .FirstOrDefaultAsync(x => x.Id == fiscalDocumentId, cancellationToken);
     }
 
@@ -35,6 +37,7 @@ public class FiscalDocumentRepository : IFiscalDocumentRepository
         return _dbContext.FiscalDocuments
             .AsNoTracking()
             .Include(x => x.Items)
+            .Include(x => x.SpecialFieldValues.OrderBy(field => field.DisplayOrder))
             .FirstOrDefaultAsync(x => x.BillingDocumentId == billingDocumentId, cancellationToken);
     }
 
@@ -151,7 +154,24 @@ public class FiscalDocumentRepository : IFiscalDocumentRepository
                 || x.FiscalDocument.ReceiverLegalName.Contains(search)
                 || (x.FiscalDocument.Folio != null && x.FiscalDocument.Folio.Contains(search))
                 || (x.FiscalDocument.Series != null && x.FiscalDocument.Series.Contains(search))
-                || (x.FiscalStamp != null && x.FiscalStamp.Uuid != null && x.FiscalStamp.Uuid.Contains(search)));
+                || (x.FiscalStamp != null && x.FiscalStamp.Uuid != null && x.FiscalStamp.Uuid.Contains(search))
+                || _dbContext.FiscalDocumentSpecialFieldValues.Any(field => field.FiscalDocumentId == x.FiscalDocument.Id && field.Value.Contains(search)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.SpecialFieldCode))
+        {
+            var specialFieldCode = filter.SpecialFieldCode.Trim().ToUpperInvariant();
+            query = query.Where(x => _dbContext.FiscalDocumentSpecialFieldValues.Any(
+                field => field.FiscalDocumentId == x.FiscalDocument.Id
+                    && field.FieldCode == specialFieldCode
+                    && (string.IsNullOrWhiteSpace(filter.SpecialFieldValue) || field.Value.Contains(filter.SpecialFieldValue.Trim()))));
+        }
+        else if (!string.IsNullOrWhiteSpace(filter.SpecialFieldValue))
+        {
+            var specialFieldValue = filter.SpecialFieldValue.Trim();
+            query = query.Where(x => _dbContext.FiscalDocumentSpecialFieldValues.Any(
+                field => field.FiscalDocumentId == x.FiscalDocument.Id
+                    && field.Value.Contains(specialFieldValue)));
         }
 
         var totalCount = await query.CountAsync(cancellationToken);
@@ -199,6 +219,21 @@ public class FiscalDocumentRepository : IFiscalDocumentRepository
     public async Task AddAsync(FiscalDocument fiscalDocument, CancellationToken cancellationToken = default)
     {
         await _dbContext.FiscalDocuments.AddAsync(fiscalDocument, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<IssuedFiscalDocumentSpecialFieldOption>> GetIssuedSpecialFieldOptionsAsync(CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.FiscalReceiverSpecialFieldDefinitions
+            .AsNoTracking()
+            .Where(x => x.IsActive)
+            .OrderBy(x => x.Label)
+            .Select(x => new IssuedFiscalDocumentSpecialFieldOption
+            {
+                Code = x.Code,
+                Label = x.Label
+            })
+            .Distinct()
+            .ToListAsync(cancellationToken);
     }
 
     private static string NormalizeRfc(string value)

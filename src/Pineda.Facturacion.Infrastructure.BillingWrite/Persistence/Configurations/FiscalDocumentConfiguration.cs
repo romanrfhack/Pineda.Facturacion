@@ -246,5 +246,10 @@ public class FiscalDocumentConfiguration : IEntityTypeConfiguration<FiscalDocume
             .WithOne()
             .HasForeignKey(x => x.FiscalDocumentId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasMany(x => x.SpecialFieldValues)
+            .WithOne()
+            .HasForeignKey(x => x.FiscalDocumentId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }

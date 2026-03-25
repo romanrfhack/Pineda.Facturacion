@@ -31,13 +31,25 @@ public class FiscalReceiverRepository : IFiscalReceiverRepository
     {
         return _dbContext.FiscalReceivers
             .AsNoTracking()
+            .Include(x => x.SpecialFieldDefinitions.OrderBy(field => field.DisplayOrder))
             .FirstOrDefaultAsync(x => x.Rfc == normalizedRfc, cancellationToken);
     }
 
     public Task<FiscalReceiver?> GetByIdAsync(long fiscalReceiverId, CancellationToken cancellationToken = default)
     {
         return _dbContext.FiscalReceivers
+            .Include(x => x.SpecialFieldDefinitions.OrderBy(field => field.DisplayOrder))
             .FirstOrDefaultAsync(x => x.Id == fiscalReceiverId, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<FiscalReceiverSpecialFieldDefinition>> GetActiveSpecialFieldDefinitionsAsync(CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.FiscalReceiverSpecialFieldDefinitions
+            .AsNoTracking()
+            .Where(x => x.IsActive)
+            .OrderBy(x => x.Label)
+            .ThenBy(x => x.DisplayOrder)
+            .ToListAsync(cancellationToken);
     }
 
     public async Task AddAsync(FiscalReceiver fiscalReceiver, CancellationToken cancellationToken = default)

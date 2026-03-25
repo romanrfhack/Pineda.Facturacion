@@ -43,7 +43,9 @@ public sealed class SearchIssuedFiscalDocumentsService
                 Series = NormalizeOptionalText(filter.Series),
                 Folio = NormalizeOptionalText(filter.Folio),
                 Status = NormalizeOptionalText(filter.Status),
-                Query = NormalizeOptionalText(filter.Query)
+                Query = NormalizeOptionalText(filter.Query),
+                SpecialFieldCode = NormalizeOptionalText(filter.SpecialFieldCode)?.ToUpperInvariant(),
+                SpecialFieldValue = NormalizeOptionalText(filter.SpecialFieldValue)
             },
             cancellationToken);
     }

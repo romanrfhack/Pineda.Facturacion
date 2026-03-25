@@ -11,7 +11,8 @@ import {
   FiscalDocumentResponse,
   FiscalStampResponse,
   IssuedFiscalDocumentFilters,
-  IssuedFiscalDocumentListItemResponse
+  IssuedFiscalDocumentListItemResponse,
+  IssuedFiscalDocumentSpecialFieldOptionResponse
 } from '../../fiscal-documents/models/fiscal-documents.models';
 import { FiscalDocumentCardComponent } from '../../fiscal-documents/components/fiscal-document-card.component';
 import { FiscalStampEvidenceCardComponent } from '../../fiscal-documents/components/fiscal-stamp-evidence-card.component';
@@ -40,6 +41,16 @@ import { buildFiscalDocumentFileName } from '../../fiscal-documents/application/
           <label><span>UUID</span><input [(ngModel)]="uuid" name="uuid" /></label>
           <label><span>Serie</span><input [(ngModel)]="series" name="series" /></label>
           <label><span>Folio</span><input [(ngModel)]="folio" name="folio" /></label>
+          <label>
+            <span>Campo especial</span>
+            <select [(ngModel)]="specialFieldCode" name="specialFieldCode">
+              <option value="">Todos</option>
+              @for (field of specialFieldOptions(); track field.code) {
+                <option [value]="field.code">{{ field.label }}</option>
+              }
+            </select>
+          </label>
+          <label><span>Valor campo especial</span><input [(ngModel)]="specialFieldValue" name="specialFieldValue" /></label>
           <label>
             <span>Estado</span>
             <select [(ngModel)]="status" name="status">
@@ -264,8 +275,11 @@ export class IssuedCfdisPageComponent {
   protected uuid = '';
   protected series = '';
   protected folio = '';
+  protected specialFieldCode = '';
+  protected specialFieldValue = '';
   protected status = '';
   protected query = '';
+  protected readonly specialFieldOptions = signal<IssuedFiscalDocumentSpecialFieldOptionResponse[]>([]);
   protected readonly page = signal(1);
   protected readonly pageSize = signal(25);
   protected readonly totalCount = signal(0);
@@ -296,6 +310,7 @@ export class IssuedCfdisPageComponent {
   protected emailBody = '';
 
   constructor() {
+    void this.loadSpecialFieldOptions();
     void this.load();
   }
 
@@ -318,6 +333,8 @@ export class IssuedCfdisPageComponent {
     this.uuid = '';
     this.series = '';
     this.folio = '';
+    this.specialFieldCode = '';
+    this.specialFieldValue = '';
     this.status = '';
     this.query = '';
     this.filtersError.set(null);
@@ -585,9 +602,19 @@ export class IssuedCfdisPageComponent {
       uuid: this.uuid || null,
       series: this.series || null,
       folio: this.folio || null,
+      specialFieldCode: this.specialFieldCode || null,
+      specialFieldValue: this.specialFieldValue || null,
       status: this.status || null,
       query: this.query || null
     };
+  }
+
+  private async loadSpecialFieldOptions(): Promise<void> {
+    try {
+      this.specialFieldOptions.set(await firstValueFrom(this.api.getIssuedSpecialFieldOptions()));
+    } catch {
+      this.specialFieldOptions.set([]);
+    }
   }
 
   private consumeEmailDraft(draft: FiscalDocumentEmailDraftResponse): void {

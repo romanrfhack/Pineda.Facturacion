@@ -29,6 +29,11 @@ public static class FiscalDocumentsEndpoints
             .Produces<IssuedFiscalDocumentListResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status400BadRequest);
 
+        group.MapGet("/issued/special-fields", ListIssuedFiscalDocumentSpecialFieldsAsync)
+            .WithName("ListIssuedFiscalDocumentSpecialFields")
+            .WithSummary("List available special billing fields for issued CFDI filters")
+            .Produces<IReadOnlyList<IssuedFiscalDocumentSpecialFieldOptionResponse>>(StatusCodes.Status200OK);
+
         group.MapPost("/{fiscalDocumentId:long}/stamp", StampFiscalDocumentAsync)
             .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
             .WithName("StampFiscalDocument")
@@ -128,6 +133,8 @@ public static class FiscalDocumentsEndpoints
         string? folio,
         string? status,
         string? query,
+        string? specialFieldCode,
+        string? specialFieldValue,
         SearchIssuedFiscalDocumentsService service,
         CancellationToken cancellationToken)
     {
@@ -149,7 +156,9 @@ public static class FiscalDocumentsEndpoints
                 Series = series,
                 Folio = folio,
                 Status = status,
-                Query = query
+                Query = query,
+                SpecialFieldCode = specialFieldCode,
+                SpecialFieldValue = specialFieldValue
             },
             cancellationToken);
 
@@ -180,6 +189,21 @@ public static class FiscalDocumentsEndpoints
                 Total = x.Total
             }).ToList()
         });
+    }
+
+    private static async Task<Ok<IReadOnlyList<IssuedFiscalDocumentSpecialFieldOptionResponse>>> ListIssuedFiscalDocumentSpecialFieldsAsync(
+        ListIssuedFiscalDocumentSpecialFieldsService service,
+        CancellationToken cancellationToken)
+    {
+        var items = await service.ExecuteAsync(cancellationToken);
+        IReadOnlyList<IssuedFiscalDocumentSpecialFieldOptionResponse> response = items
+            .Select(x => new IssuedFiscalDocumentSpecialFieldOptionResponse
+            {
+                Code = x.Code,
+                Label = x.Label
+            })
+            .ToList();
+        return TypedResults.Ok(response);
     }
 
     private static async Task<Results<Ok<StampFiscalDocumentResponse>, BadRequest<StampFiscalDocumentResponse>, NotFound<StampFiscalDocumentResponse>, Conflict<StampFiscalDocumentResponse>, JsonHttpResult<StampFiscalDocumentResponse>>> StampFiscalDocumentAsync(
@@ -520,6 +544,10 @@ public static class FiscalDocumentsEndpoints
             Total = fiscalDocument.Total,
             CreatedAtUtc = fiscalDocument.CreatedAtUtc,
             UpdatedAtUtc = fiscalDocument.UpdatedAtUtc,
+            SpecialFields = fiscalDocument.SpecialFieldValues
+                .OrderBy(x => x.DisplayOrder)
+                .Select(MapSpecialFieldValue)
+                .ToArray(),
             Items = fiscalDocument.Items
                 .OrderBy(x => x.LineNumber)
                 .Select(MapItem)
@@ -596,6 +624,22 @@ public static class FiscalDocumentsEndpoints
         };
     }
 
+    private static FiscalDocumentSpecialFieldValueResponse MapSpecialFieldValue(FiscalDocumentSpecialFieldValue specialField)
+    {
+        return new FiscalDocumentSpecialFieldValueResponse
+        {
+            Id = specialField.Id,
+            FiscalDocumentId = specialField.FiscalDocumentId,
+            FiscalReceiverSpecialFieldDefinitionId = specialField.FiscalReceiverSpecialFieldDefinitionId,
+            FieldCode = specialField.FieldCode,
+            FieldLabelSnapshot = specialField.FieldLabelSnapshot,
+            DataType = specialField.DataType,
+            Value = specialField.Value,
+            DisplayOrder = specialField.DisplayOrder,
+            CreatedAtUtc = specialField.CreatedAtUtc
+        };
+    }
+
     public sealed class FiscalDocumentResponse
     {
         public long Id { get; init; }
@@ -636,7 +680,21 @@ public static class FiscalDocumentsEndpoints
         public decimal Total { get; init; }
         public DateTime CreatedAtUtc { get; init; }
         public DateTime UpdatedAtUtc { get; init; }
+        public IReadOnlyList<FiscalDocumentSpecialFieldValueResponse> SpecialFields { get; init; } = [];
         public IReadOnlyList<FiscalDocumentItemResponse> Items { get; init; } = [];
+    }
+
+    public sealed class FiscalDocumentSpecialFieldValueResponse
+    {
+        public long Id { get; init; }
+        public long FiscalDocumentId { get; init; }
+        public long FiscalReceiverSpecialFieldDefinitionId { get; init; }
+        public string FieldCode { get; init; } = string.Empty;
+        public string FieldLabelSnapshot { get; init; } = string.Empty;
+        public string DataType { get; init; } = string.Empty;
+        public string Value { get; init; } = string.Empty;
+        public int DisplayOrder { get; init; }
+        public DateTime CreatedAtUtc { get; init; }
     }
 
     public sealed class StampFiscalDocumentRequest
@@ -677,6 +735,12 @@ public static class FiscalDocumentsEndpoints
     public sealed class SimpleErrorResponse
     {
         public string ErrorMessage { get; init; } = string.Empty;
+    }
+
+    public sealed class IssuedFiscalDocumentSpecialFieldOptionResponse
+    {
+        public string Code { get; init; } = string.Empty;
+        public string Label { get; init; } = string.Empty;
     }
 
     public sealed class StampFiscalDocumentResponse

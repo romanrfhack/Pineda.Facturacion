@@ -34,5 +34,10 @@ public interface IFiscalDocumentRepository
         });
     }
 
+    Task<IReadOnlyList<IssuedFiscalDocumentSpecialFieldOption>> GetIssuedSpecialFieldOptionsAsync(CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult<IReadOnlyList<IssuedFiscalDocumentSpecialFieldOption>>([]);
+    }
+
     Task AddAsync(FiscalDocument fiscalDocument, CancellationToken cancellationToken = default);
 }

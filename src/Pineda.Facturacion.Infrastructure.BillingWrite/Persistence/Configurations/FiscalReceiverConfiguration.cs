@@ -106,5 +106,10 @@ public class FiscalReceiverConfiguration : IEntityTypeConfiguration<FiscalReceiv
         builder.HasIndex(x => x.NormalizedLegalName);
 
         builder.HasIndex(x => x.NormalizedSearchAlias);
+
+        builder.HasMany(x => x.SpecialFieldDefinitions)
+            .WithOne()
+            .HasForeignKey(x => x.FiscalReceiverId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }

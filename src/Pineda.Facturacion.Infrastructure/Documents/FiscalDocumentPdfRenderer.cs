@@ -136,6 +136,7 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
         public required string? ProviderName { get; init; }
         public required IReadOnlyList<PdfConceptRow> Concepts { get; init; }
         public required IReadOnlyList<PdfTaxRow> TaxesBreakdown { get; init; }
+        public required IReadOnlyList<PdfAdditionalFieldRow> AdditionalFields { get; init; }
 
         public static PdfViewModel Create(FiscalDocument fiscalDocument, FiscalStamp fiscalStamp, XDocument document)
         {
@@ -183,6 +184,10 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
                 CfdiSeal = GetAttribute(comprobante, "Sello"),
                 SatSeal = GetAttribute(timbre, "SelloSAT"),
                 ProviderName = fiscalStamp.ProviderName,
+                AdditionalFields = fiscalDocument.SpecialFieldValues
+                    .OrderBy(x => x.DisplayOrder)
+                    .Select(x => new PdfAdditionalFieldRow(x.FieldLabelSnapshot, x.Value))
+                    .ToArray(),
                 Concepts = conceptos.Count == 0
                     ? [new PdfConceptRow("N/D", "N/D", "0", "N/D", "N/D", "No se encontraron conceptos en el XML timbrado.", "N/D", "0", "0")]
                     : conceptos.Select(MapConcept).ToArray()
@@ -278,6 +283,8 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
 
     private sealed record PdfTaxRow(string Label, string Rate, string Amount);
 
+    private sealed record PdfAdditionalFieldRow(string Label, string Value);
+
     private static decimal ResolveTransferredTaxes(XDocument document, FiscalDocument fiscalDocument)
     {
         var impuestos = document.Descendants().FirstOrDefault(static node => node.Name.LocalName == "Impuestos");
@@ -322,6 +329,7 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
         {
             DrawHeader(model, logo);
             DrawReceiverSection(model);
+            DrawAdditionalFields(model.AdditionalFields);
             DrawConceptTable(model.Concepts);
             DrawTotals(model);
             DrawTimbre(model, qr);
@@ -572,6 +580,33 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
             }
 
             _cursorY = _cursorY - totalHeight - SectionGap;
+        }
+
+        private void DrawAdditionalFields(IReadOnlyList<PdfAdditionalFieldRow> fields)
+        {
+            if (fields.Count == 0)
+            {
+                return;
+            }
+
+            var contentWidth = PageWidth - (Margin * 2);
+            var rowHeight = 18f;
+            var sectionHeight = 28f + (fields.Count * rowHeight);
+
+            _page.FillRectangle(Margin, _cursorY - sectionHeight, contentWidth, sectionHeight, PdfColor.White);
+            _page.StrokeRectangle(Margin, _cursorY - sectionHeight, contentWidth, sectionHeight, new PdfColor(218, 213, 204), 0.8f);
+            _page.FillRectangle(Margin, _cursorY - 20f, contentWidth, 20f, new PdfColor(238, 235, 228));
+            _page.DrawText("Datos adicionales", Margin + 10f, _cursorY - 14f, 10f, PdfFont.Bold, new PdfColor(22, 30, 42));
+
+            var y = _cursorY - 38f;
+            foreach (var field in fields)
+            {
+                _page.DrawText($"{field.Label}:", Margin + 10f, y, 9f, PdfFont.Bold, new PdfColor(76, 84, 96));
+                _page.DrawText(field.Value, Margin + 160f, y, 9f, PdfFont.Regular, new PdfColor(76, 84, 96));
+                y -= rowHeight;
+            }
+
+            _cursorY -= sectionHeight + SectionGap;
         }
 
         private void DrawTotals(PdfViewModel model)

@@ -13,4 +13,6 @@ public sealed class SearchIssuedFiscalDocumentsFilter
     public string? Folio { get; init; }
     public string? Status { get; init; }
     public string? Query { get; init; }
+    public string? SpecialFieldCode { get; init; }
+    public string? SpecialFieldValue { get; init; }
 }

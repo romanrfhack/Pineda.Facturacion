@@ -33,4 +33,6 @@ public class FiscalReceiver
     public DateTime CreatedAtUtc { get; set; }
 
     public DateTime UpdatedAtUtc { get; set; }
+
+    public List<FiscalReceiverSpecialFieldDefinition> SpecialFieldDefinitions { get; set; } = [];
 }

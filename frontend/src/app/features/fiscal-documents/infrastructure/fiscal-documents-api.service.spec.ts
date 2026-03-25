@@ -116,10 +116,12 @@ describe('FiscalDocumentsApiService', () => {
       toDate: '2026-03-24',
       receiverRfc: 'BBB010101BBB',
       uuid: 'UUID-1',
+      specialFieldCode: 'AGENTE',
+      specialFieldValue: 'Juan',
       status: 'Stamped'
     }).subscribe();
 
-    const req = httpTesting.expectOne('/api/fiscal-documents/issued?page=2&pageSize=10&fromDate=2026-03-01&toDate=2026-03-24&receiverRfc=BBB010101BBB&uuid=UUID-1&status=Stamped');
+    const req = httpTesting.expectOne('/api/fiscal-documents/issued?page=2&pageSize=10&fromDate=2026-03-01&toDate=2026-03-24&receiverRfc=BBB010101BBB&uuid=UUID-1&status=Stamped&specialFieldCode=AGENTE&specialFieldValue=Juan');
     expect(req.request.method).toBe('GET');
     httpTesting.verify();
   });

@@ -78,6 +78,13 @@ export interface IssuedFiscalDocumentFilters {
   folio?: string | null;
   status?: string | null;
   query?: string | null;
+  specialFieldCode?: string | null;
+  specialFieldValue?: string | null;
+}
+
+export interface IssuedFiscalDocumentSpecialFieldOptionResponse {
+  code: string;
+  label: string;
 }
 
 export interface PrepareFiscalDocumentRequest {
@@ -90,6 +97,12 @@ export interface PrepareFiscalDocumentRequest {
   creditDays?: number | null;
   receiverCfdiUseCode?: string | null;
   issuedAtUtc?: string | null;
+  specialFields?: PrepareFiscalDocumentSpecialFieldValueRequest[];
+}
+
+export interface PrepareFiscalDocumentSpecialFieldValueRequest {
+  fieldCode: string;
+  value: string;
 }
 
 export interface PrepareFiscalDocumentResponse {
@@ -158,7 +171,20 @@ export interface FiscalDocumentResponse {
   discountTotal: number;
   taxTotal: number;
   total: number;
+  specialFields?: FiscalDocumentSpecialFieldValueResponse[];
   items: FiscalDocumentItemResponse[];
+}
+
+export interface FiscalDocumentSpecialFieldValueResponse {
+  id: number;
+  fiscalDocumentId: number;
+  fiscalReceiverSpecialFieldDefinitionId: number;
+  fieldCode: string;
+  fieldLabelSnapshot: string;
+  dataType: string;
+  value: string;
+  displayOrder: number;
+  createdAtUtc: string;
 }
 
 export interface StampFiscalDocumentRequest {

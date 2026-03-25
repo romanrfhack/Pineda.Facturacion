@@ -55,7 +55,11 @@ public class BillingDbContext : DbContext, IUnitOfWork
 
     public DbSet<FiscalReceiver> FiscalReceivers => Set<FiscalReceiver>();
 
+    public DbSet<FiscalReceiverSpecialFieldDefinition> FiscalReceiverSpecialFieldDefinitions => Set<FiscalReceiverSpecialFieldDefinition>();
+
     public DbSet<ProductFiscalProfile> ProductFiscalProfiles => Set<ProductFiscalProfile>();
+
+    public DbSet<FiscalDocumentSpecialFieldValue> FiscalDocumentSpecialFieldValues => Set<FiscalDocumentSpecialFieldValue>();
 
     public DbSet<FiscalReceiverImportBatch> FiscalReceiverImportBatches => Set<FiscalReceiverImportBatch>();
 

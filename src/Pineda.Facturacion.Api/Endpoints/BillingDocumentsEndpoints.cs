@@ -77,7 +77,12 @@ public static class BillingDocumentsEndpoints
             IsCreditSale = request.IsCreditSale,
             CreditDays = request.CreditDays,
             ReceiverCfdiUseCode = request.ReceiverCfdiUseCode,
-            IssuedAtUtc = request.IssuedAtUtc
+            IssuedAtUtc = request.IssuedAtUtc,
+            SpecialFields = request.SpecialFields.Select(x => new PrepareFiscalDocumentSpecialFieldValueCommand
+            {
+                FieldCode = x.FieldCode,
+                Value = x.Value
+            }).ToArray()
         }, cancellationToken);
 
         var response = new PrepareFiscalDocumentResponse
@@ -134,6 +139,13 @@ public static class BillingDocumentsEndpoints
         public int? CreditDays { get; init; }
         public string? ReceiverCfdiUseCode { get; init; }
         public DateTime? IssuedAtUtc { get; init; }
+        public IReadOnlyList<PrepareFiscalDocumentSpecialFieldValueRequest> SpecialFields { get; init; } = [];
+    }
+
+    public sealed class PrepareFiscalDocumentSpecialFieldValueRequest
+    {
+        public string FieldCode { get; init; } = string.Empty;
+        public string Value { get; init; } = string.Empty;
     }
 
     public sealed class PrepareFiscalDocumentResponse

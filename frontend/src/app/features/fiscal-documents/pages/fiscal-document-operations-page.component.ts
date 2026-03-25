@@ -26,7 +26,7 @@ import { ProductFiscalProfileFormComponent } from '../../catalogs/components/pro
 import { ProductFiscalProfilesApiService } from '../../catalogs/infrastructure/product-fiscal-profiles-api.service';
 import { FiscalReceiversApiService } from '../../catalogs/infrastructure/fiscal-receivers-api.service';
 import { FiscalReceiverFormComponent } from '../../catalogs/components/fiscal-receiver-form.component';
-import { UpsertFiscalReceiverRequest, UpsertProductFiscalProfileRequest } from '../../catalogs/models/catalogs.models';
+import { FiscalReceiver, UpsertFiscalReceiverRequest, UpsertProductFiscalProfileRequest } from '../../catalogs/models/catalogs.models';
 import { extractMissingProductFiscalProfileContext, MissingProductFiscalProfileContext } from '../application/missing-product-fiscal-profile';
 import { buildFiscalDocumentFileName } from '../application/fiscal-document-file-name';
 
@@ -161,6 +161,34 @@ import { buildFiscalDocumentFileName } from '../application/fiscal-document-file
                 </section>
               }
             </section>
+
+            @if (activeReceiverSpecialFields().length) {
+              <section class="receiver-selector special-fields-section">
+                <div>
+                  <p class="selected-title">Campos especiales de facturación</p>
+                  <strong>Datos adicionales requeridos por el receptor</strong>
+                  <span class="helper">Captura los valores requeridos antes de preparar el documento fiscal.</span>
+                </div>
+
+                <div class="form-grid">
+                  @for (field of activeReceiverSpecialFields(); track field.fieldCode) {
+                    <label>
+                      <span>{{ field.label }} @if (field.isRequired) { <strong>*</strong> }</span>
+                      <input
+                        [(ngModel)]="field.value"
+                        [name]="'specialField-' + field.fieldCode"
+                        [attr.maxLength]="field.maxLength ?? null"
+                        [attr.placeholder]="field.helpText || null"
+                        [type]="resolveSpecialFieldInputType(field.dataType)"
+                      />
+                      @if (field.helpText) {
+                        <small class="helper">{{ field.helpText }}</small>
+                      }
+                    </label>
+                  }
+                </div>
+              </section>
+            }
 
             <label>
               <span>Emisor activo</span>
@@ -458,7 +486,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected readonly billingDocumentSearchError = signal<string | null>(null);
   protected readonly billingDocumentSearchTouched = signal(false);
   protected readonly receiverResults = signal<FiscalReceiverSearchResponse[]>([]);
-  protected readonly selectedReceiver = signal<FiscalReceiverSearchResponse | null>(null);
+  protected readonly selectedReceiver = signal<FiscalReceiver | null>(null);
   protected readonly fiscalDocument = signal<FiscalDocumentResponse | null>(null);
   protected readonly stampEvidence = signal<FiscalStampResponse | null>(null);
   protected readonly cancellation = signal<FiscalCancellationResponse | null>(null);
@@ -485,6 +513,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected readonly savingReceiver = signal(false);
   protected readonly receiverCreateError = signal<string | null>(null);
   protected readonly receiverCreateDraft = signal<UpsertFiscalReceiverRequest | null>(null);
+  protected readonly specialFieldDrafts = signal<ReceiverSpecialFieldDraft[]>([]);
   private readonly pendingPrepareRequest = signal<PrepareFiscalDocumentRequest | null>(null);
 
   protected readonly receiverQuery = signal('');
@@ -508,6 +537,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     && this.receiverQuery().trim().length >= 2
     && (this.searchingReceivers() || this.receiverResults().length > 0 || !!this.receiverSearchError() || this.receiverSearchTouched())
   );
+  protected readonly activeReceiverSpecialFields = computed(() => this.specialFieldDrafts().filter((field) => field.isActive));
 
   private receiverSearchTimer: number | null = null;
 
@@ -530,6 +560,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     this.receiverQuery.set(value);
     this.selectedReceiverId = null;
     this.selectedReceiver.set(null);
+    this.specialFieldDrafts.set([]);
     this.receiverSearchError.set(null);
     this.receiverSearchTouched.set(false);
 
@@ -549,17 +580,19 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     }, 250);
   }
 
-  protected selectReceiver(receiver: FiscalReceiverSearchResponse): void {
-    this.selectedReceiver.set(receiver);
-    this.selectedReceiverId = receiver.id;
-    this.receiverQuery.set(`${receiver.rfc} · ${receiver.legalName}`);
-    this.receiverResults.set([]);
-    this.receiverSearchError.set(null);
+  protected async selectReceiver(receiver: FiscalReceiverSearchResponse): Promise<void> {
+    try {
+      const fullReceiver = await firstValueFrom(this.fiscalReceiversApi.getByRfc(receiver.rfc));
+      this.applySelectedReceiver(fullReceiver);
+    } catch (error) {
+      this.receiverSearchError.set(extractApiErrorMessage(error, 'No fue posible cargar el detalle del receptor.'));
+    }
   }
 
   protected clearSelectedReceiver(): void {
     this.selectedReceiver.set(null);
     this.selectedReceiverId = null;
+    this.specialFieldDrafts.set([]);
     this.receiverQuery.set('');
     this.receiverResults.set([]);
     this.receiverSearchError.set(null);
@@ -579,7 +612,8 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       email: '',
       phone: '',
       searchAlias: '',
-      isActive: true
+      isActive: true,
+      specialFields: []
     });
     this.showReceiverCreateModal.set(true);
   }
@@ -595,6 +629,10 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
 
   protected receiverTrackBy(index: number, receiver: FiscalReceiverSearchResponse): number {
     return receiver.id;
+  }
+
+  protected resolveSpecialFieldInputType(dataType: string): string {
+    return dataType === 'number' || dataType === 'date' ? dataType : 'text';
   }
 
   protected async searchBillingDocuments(): Promise<void> {
@@ -663,6 +701,45 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     }
   }
 
+  private applySelectedReceiver(receiver: FiscalReceiver): void {
+    this.selectedReceiver.set(receiver);
+    this.selectedReceiverId = receiver.id;
+    this.receiverQuery.set(`${receiver.rfc} · ${receiver.legalName}`);
+    this.receiverResults.set([]);
+    this.receiverSearchError.set(null);
+    this.receiverSearchTouched.set(false);
+    this.specialFieldDrafts.set(
+      (receiver.specialFields ?? [])
+        .filter((field) => field.isActive)
+        .sort((left, right) => left.displayOrder - right.displayOrder)
+        .map((field) => ({
+          fieldCode: field.code,
+          label: field.label,
+          dataType: field.dataType,
+          isRequired: field.isRequired,
+          isActive: field.isActive,
+          maxLength: field.maxLength ?? null,
+          helpText: field.helpText ?? null,
+          value: ''
+        }))
+    );
+  }
+
+  private validateSpecialFields(): string | null {
+    for (const field of this.activeReceiverSpecialFields()) {
+      const trimmed = field.value.trim();
+      if (field.isRequired && !trimmed) {
+        return `El campo especial '${field.label}' es requerido.`;
+      }
+
+      if (field.maxLength && trimmed.length > field.maxLength) {
+        return `El campo especial '${field.label}' excede la longitud máxima permitida de ${field.maxLength} caracteres.`;
+      }
+    }
+
+    return null;
+  }
+
   protected async saveReceiver(request: UpsertFiscalReceiverRequest): Promise<void> {
     if (!this.permissionService.canWriteMasterData() || this.savingReceiver()) {
       return;
@@ -674,15 +751,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     try {
       await firstValueFrom(this.fiscalReceiversApi.create(request));
       const createdReceiver = await firstValueFrom(this.fiscalReceiversApi.getByRfc(request.rfc));
-      this.selectReceiver({
-        id: createdReceiver.id,
-        rfc: createdReceiver.rfc,
-        legalName: createdReceiver.legalName,
-        postalCode: createdReceiver.postalCode,
-        fiscalRegimeCode: createdReceiver.fiscalRegimeCode,
-        cfdiUseCodeDefault: createdReceiver.cfdiUseCodeDefault,
-        isActive: createdReceiver.isActive
-      });
+      this.applySelectedReceiver(createdReceiver);
       this.showReceiverCreateModal.set(false);
       this.receiverCreateDraft.set(null);
       this.feedbackService.show('success', 'Receptor creado y seleccionado.');
@@ -701,6 +770,12 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       return;
     }
 
+    const specialFieldValidationError = this.validateSpecialFields();
+    if (specialFieldValidationError) {
+      this.feedbackService.show('error', specialFieldValidationError);
+      return;
+    }
+
     const request: PrepareFiscalDocumentRequest = {
       fiscalReceiverId: this.selectedReceiverId,
       issuerProfileId: this.activeIssuer()?.id ?? null,
@@ -708,7 +783,11 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       paymentFormSat: this.paymentFormSat,
       paymentCondition: this.paymentCondition,
       isCreditSale: this.isCreditSale,
-      creditDays: this.creditDays
+      creditDays: this.creditDays,
+      specialFields: this.activeReceiverSpecialFields().map((field) => ({
+        fieldCode: field.fieldCode,
+        value: field.value.trim()
+      }))
     };
 
     this.pendingPrepareRequest.set(request);
@@ -1089,4 +1168,15 @@ function parseRecipients(value: string): string[] {
 
 function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+interface ReceiverSpecialFieldDraft {
+  fieldCode: string;
+  label: string;
+  dataType: string;
+  isRequired: boolean;
+  isActive: boolean;
+  maxLength: number | null;
+  helpText: string | null;
+  value: string;
 }

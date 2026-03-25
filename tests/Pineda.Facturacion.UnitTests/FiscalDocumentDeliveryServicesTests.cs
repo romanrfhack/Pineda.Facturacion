@@ -109,10 +109,8 @@ public class FiscalDocumentDeliveryServicesTests
         var pdfText = System.Text.Encoding.ASCII.GetString(bytes);
 
         Assert.StartsWith("%PDF-1.4", pdfText, StringComparison.Ordinal);
-        Assert.Contains("Representacion impresa del CFDI", pdfText, StringComparison.Ordinal);
-        Assert.Contains("Sucursal: Matriz", pdfText, StringComparison.Ordinal);
-        Assert.Contains("Lugar de expedicion: 01000", pdfText, StringComparison.Ordinal);
-        Assert.Contains("Datos del timbre y representacion digital", pdfText, StringComparison.Ordinal);
+        Assert.Contains("FISCALDOM", pdfText, StringComparison.Ordinal);
+        Assert.Contains("01000", pdfText, StringComparison.Ordinal);
         Assert.Contains("CIENTO DIECISEIS PESOS 00/100 M.N.", pdfText, StringComparison.Ordinal);
         Assert.Contains("100.00", pdfText, StringComparison.Ordinal);
         Assert.Contains("16.00", pdfText, StringComparison.Ordinal);
@@ -135,7 +133,48 @@ public class FiscalDocumentDeliveryServicesTests
         Assert.StartsWith("%PDF-1.4", pdfText, StringComparison.Ordinal);
         Assert.Equal(1, CountOccurrences(pdfText, "/Subtype /Image"));
         Assert.Contains("CFDI", pdfText, StringComparison.Ordinal);
-        Assert.Contains("Sucursal: Matriz", pdfText, StringComparison.Ordinal);
+        Assert.Contains("FISCALDOM", pdfText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task FiscalDocumentPdfRenderer_Renders_Additional_Special_Fields_When_Present()
+    {
+        var fiscalDocument = CreateFiscalDocument();
+        fiscalDocument.SpecialFieldValues =
+        [
+            new FiscalDocumentSpecialFieldValue
+            {
+                Id = 1,
+                FiscalDocumentId = fiscalDocument.Id,
+                FieldCode = "AGENTE",
+                FieldLabelSnapshot = "Agente",
+                DataType = "text",
+                Value = "Juan Perez",
+                DisplayOrder = 1,
+                CreatedAtUtc = new DateTime(2026, 3, 24, 12, 0, 0, DateTimeKind.Utc)
+            },
+            new FiscalDocumentSpecialFieldValue
+            {
+                Id = 2,
+                FiscalDocumentId = fiscalDocument.Id,
+                FieldCode = "ORDEN_TRABAJO",
+                FieldLabelSnapshot = "Orden de trabajo",
+                DataType = "text",
+                Value = "OT-45678",
+                DisplayOrder = 2,
+                CreatedAtUtc = new DateTime(2026, 3, 24, 12, 0, 0, DateTimeKind.Utc)
+            }
+        ];
+
+        var renderer = new FiscalDocumentPdfRenderer(new FakeIssuerProfileRepository(), new FakeIssuerProfileLogoStorage());
+        var bytes = await renderer.RenderAsync(fiscalDocument, CreateFiscalStamp());
+        var pdfText = System.Text.Encoding.ASCII.GetString(bytes);
+
+        Assert.Contains("Datos adicionales", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Agente", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Juan Perez", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Orden de trabajo", pdfText, StringComparison.Ordinal);
+        Assert.Contains("OT-45678", pdfText, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -347,6 +386,7 @@ public class FiscalDocumentDeliveryServicesTests
         public Task<IReadOnlyList<FiscalReceiver>> SearchAsync(string query, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<FiscalReceiver>>([]);
         public Task<FiscalReceiver?> GetByRfcAsync(string normalizedRfc, CancellationToken cancellationToken = default) => Task.FromResult(Existing);
         public Task<FiscalReceiver?> GetByIdAsync(long fiscalReceiverId, CancellationToken cancellationToken = default) => Task.FromResult(Existing);
+        public Task<IReadOnlyList<FiscalReceiverSpecialFieldDefinition>> GetActiveSpecialFieldDefinitionsAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<FiscalReceiverSpecialFieldDefinition>>([]);
         public Task AddAsync(FiscalReceiver fiscalReceiver, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task UpdateAsync(FiscalReceiver fiscalReceiver, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }

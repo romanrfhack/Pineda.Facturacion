@@ -25,4 +25,6 @@ public class UpdateFiscalReceiverCommand
     public string? SearchAlias { get; set; }
 
     public bool IsActive { get; set; }
+
+    public IReadOnlyList<UpsertFiscalReceiverSpecialFieldDefinitionCommand> SpecialFields { get; set; } = [];
 }

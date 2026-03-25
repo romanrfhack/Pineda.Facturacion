@@ -157,6 +157,67 @@ public class FiscalMasterDataServicesTests
     }
 
     [Fact]
+    public async Task CreateFiscalReceiver_Persists_Special_Field_Definitions()
+    {
+        var repository = new FakeFiscalReceiverRepository();
+        var service = new CreateFiscalReceiverService(repository, new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new CreateFiscalReceiverCommand
+        {
+            Rfc = " xexx010101000 ",
+            LegalName = "Receiver",
+            FiscalRegimeCode = "601",
+            CfdiUseCodeDefault = "G03",
+            PostalCode = "64000",
+            SpecialFields =
+            [
+                new UpsertFiscalReceiverSpecialFieldDefinitionCommand
+                {
+                    Code = " agente ",
+                    Label = "Agente",
+                    DataType = "text",
+                    MaxLength = 80,
+                    HelpText = "Nombre del agente",
+                    IsRequired = true,
+                    IsActive = true,
+                    DisplayOrder = 1
+                },
+                new UpsertFiscalReceiverSpecialFieldDefinitionCommand
+                {
+                    Code = "orden_trabajo",
+                    Label = "Orden de trabajo",
+                    DataType = "text",
+                    IsRequired = false,
+                    IsActive = true,
+                    DisplayOrder = 2
+                }
+            ]
+        });
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(CreateFiscalReceiverOutcome.Created, result.Outcome);
+        Assert.Collection(
+            repository.Added!.SpecialFieldDefinitions.OrderBy(x => x.DisplayOrder),
+            first =>
+            {
+                Assert.Equal("AGENTE", first.Code);
+                Assert.Equal("Agente", first.Label);
+                Assert.Equal("text", first.DataType);
+                Assert.Equal(80, first.MaxLength);
+                Assert.Equal("Nombre del agente", first.HelpText);
+                Assert.True(first.IsRequired);
+                Assert.True(first.IsActive);
+            },
+            second =>
+            {
+                Assert.Equal("ORDEN_TRABAJO", second.Code);
+                Assert.Equal("Orden de trabajo", second.Label);
+                Assert.Equal("text", second.DataType);
+                Assert.False(second.IsRequired);
+            });
+    }
+
+    [Fact]
     public void IssuerProfileGetResponse_DoesNotExposeSecretReferenceValues()
     {
         var propertyNames = typeof(IssuerProfileEndpoints.IssuerProfileResponse)
@@ -212,6 +273,7 @@ public class FiscalMasterDataServicesTests
     private sealed class FakeFiscalReceiverRepository : IFiscalReceiverRepository
     {
         public FiscalReceiver? ExistingByRfc { get; init; }
+        public FiscalReceiver? Added { get; private set; }
         public IReadOnlyList<FiscalReceiver> SearchResults { get; init; } = [];
 
         public Task<IReadOnlyList<FiscalReceiver>> SearchAsync(string query, CancellationToken cancellationToken = default)
@@ -223,9 +285,13 @@ public class FiscalMasterDataServicesTests
         public Task<FiscalReceiver?> GetByIdAsync(long fiscalReceiverId, CancellationToken cancellationToken = default)
             => Task.FromResult<FiscalReceiver?>(null);
 
+        public Task<IReadOnlyList<FiscalReceiverSpecialFieldDefinition>> GetActiveSpecialFieldDefinitionsAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<FiscalReceiverSpecialFieldDefinition>>([]);
+
         public Task AddAsync(FiscalReceiver fiscalReceiver, CancellationToken cancellationToken = default)
         {
             fiscalReceiver.Id = 2;
+            Added = fiscalReceiver;
             return Task.CompletedTask;
         }
 

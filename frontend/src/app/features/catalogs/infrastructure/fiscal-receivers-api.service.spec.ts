@@ -31,7 +31,8 @@ describe('FiscalReceiversApiService', () => {
       fiscalRegimeCode: '601',
       cfdiUseCodeDefault: 'G03',
       postalCode: '01000',
-      isActive: true
+      isActive: true,
+      specialFields: []
     }).subscribe();
 
     const req = httpTesting.expectOne('/api/fiscal/receivers/');

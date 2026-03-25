@@ -81,4 +81,6 @@ public class FiscalDocument
     public DateTime UpdatedAtUtc { get; set; }
 
     public List<FiscalDocumentItem> Items { get; set; } = [];
+
+    public List<FiscalDocumentSpecialFieldValue> SpecialFieldValues { get; set; } = [];
 }

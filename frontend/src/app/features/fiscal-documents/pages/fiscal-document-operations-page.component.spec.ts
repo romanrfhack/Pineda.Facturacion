@@ -373,7 +373,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
   it('selecting a suggestion sets the receiver and shows the selected summary', async () => {
     const fixture = await configure(undefined, { id: null, billingDocumentId: '30' });
 
-    fixture.componentInstance['selectReceiver']({
+    await fixture.componentInstance['selectReceiver']({
       id: 9,
       rfc: 'BBB010101BBB',
       legalName: 'Receiver One',
@@ -382,6 +382,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       cfdiUseCodeDefault: 'G03',
       isActive: true
     });
+    await fixture.whenStable();
     fixture.detectChanges();
 
     expect(fixture.componentInstance['selectedReceiverId']).toBe(9);
@@ -399,6 +400,129 @@ describe('FiscalDocumentOperationsPageComponent', () => {
 
     expect(fixture.nativeElement.textContent).toContain('Sin coincidencias.');
     expect(fixture.nativeElement.textContent).toContain('Agregar receptor');
+  });
+
+  it('renders dynamic special billing fields for the selected receiver', async () => {
+    const fixture = await configure(
+      undefined,
+      { id: null, billingDocumentId: '30' },
+      undefined,
+      {
+        getByRfc: vi.fn().mockReturnValue(of({
+          id: 9,
+          rfc: 'BBB010101BBB',
+          legalName: 'Receiver One',
+          postalCode: '02000',
+          fiscalRegimeCode: '601',
+          cfdiUseCodeDefault: 'G03',
+          countryCode: 'MX',
+          foreignTaxRegistration: null,
+          email: 'cliente@example.com',
+          phone: null,
+          searchAlias: null,
+          isActive: true,
+          createdAtUtc: '2026-03-20T12:00:00Z',
+          updatedAtUtc: '2026-03-20T12:00:00Z',
+          specialFields: [
+            {
+              id: 31,
+              code: 'AGENTE',
+              label: 'Agente',
+              dataType: 'text',
+              maxLength: 80,
+              helpText: 'Nombre del agente',
+              isRequired: true,
+              isActive: true,
+              displayOrder: 1
+            },
+            {
+              id: 32,
+              code: 'ORDEN_TRABAJO',
+              label: 'Orden de trabajo',
+              dataType: 'text',
+              maxLength: 30,
+              helpText: null,
+              isRequired: false,
+              isActive: true,
+              displayOrder: 2
+            }
+          ]
+        }))
+      }
+    );
+
+    await fixture.componentInstance['selectReceiver']({
+      id: 9,
+      rfc: 'BBB010101BBB',
+      legalName: 'Receiver One',
+      postalCode: '02000',
+      fiscalRegimeCode: '601',
+      cfdiUseCodeDefault: 'G03',
+      isActive: true
+    });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Campos especiales de facturación');
+    expect(fixture.nativeElement.textContent).toContain('Agente');
+    expect(fixture.nativeElement.textContent).toContain('Orden de trabajo');
+  });
+
+  it('blocks prepare when a required special billing field is missing', async () => {
+    const prepareFiscalDocument = vi.fn();
+    const fixture = await configure(
+      { prepareFiscalDocument },
+      { id: null, billingDocumentId: '30' },
+      undefined,
+      {
+        getByRfc: vi.fn().mockReturnValue(of({
+          id: 9,
+          rfc: 'BBB010101BBB',
+          legalName: 'Receiver One',
+          postalCode: '02000',
+          fiscalRegimeCode: '601',
+          cfdiUseCodeDefault: 'G03',
+          countryCode: 'MX',
+          foreignTaxRegistration: null,
+          email: 'cliente@example.com',
+          phone: null,
+          searchAlias: null,
+          isActive: true,
+          createdAtUtc: '2026-03-20T12:00:00Z',
+          updatedAtUtc: '2026-03-20T12:00:00Z',
+          specialFields: [
+            {
+              id: 31,
+              code: 'AGENTE',
+              label: 'Agente',
+              dataType: 'text',
+              maxLength: 80,
+              helpText: null,
+              isRequired: true,
+              isActive: true,
+              displayOrder: 1
+            }
+          ]
+        }))
+      }
+    );
+    const feedback = TestBed.inject(FeedbackService) as unknown as { show: ReturnType<typeof vi.fn> };
+
+    await fixture.componentInstance['selectReceiver']({
+      id: 9,
+      rfc: 'BBB010101BBB',
+      legalName: 'Receiver One',
+      postalCode: '02000',
+      fiscalRegimeCode: '601',
+      cfdiUseCodeDefault: 'G03',
+      isActive: true
+    });
+    await fixture.whenStable();
+
+    await fixture.componentInstance['prepare']();
+
+    expect(prepareFiscalDocument).not.toHaveBeenCalled();
+    expect(feedback.show).toHaveBeenCalledWith('error', "El campo especial 'Agente' es requerido.");
   });
 
   it('opens the receiver creation modal with the searched RFC preloaded', async () => {
@@ -479,7 +603,8 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       email: null,
       phone: null,
       searchAlias: null,
-      isActive: true
+      isActive: true,
+      specialFields: []
     });
     fixture.detectChanges();
 
@@ -514,7 +639,8 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       email: 'cliente@example.com',
       phone: null,
       searchAlias: null,
-      isActive: true
+      isActive: true,
+      specialFields: []
     });
     fixture.detectChanges();
 
