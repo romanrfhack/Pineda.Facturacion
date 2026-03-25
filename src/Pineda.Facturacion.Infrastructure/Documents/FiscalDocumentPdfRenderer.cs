@@ -449,12 +449,12 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
             return currentY - 2f;
         }
 
-        // Renders label + value inline: "Label: valor" — value starts right after label width estimate
+        // Renders label + value inline: "Label: valor" with proper indentation for wrapped lines
         private float DrawInlineKeyValueCompact(string label, string value, float x, float y, float maxWidth, float labelFontSize, float valueFontSize, float lineHeight)
         {
             var labelText = $"{label}: ";
-            // Use actual measured width with a small gap (4px) instead of full estimated width
-            var labelW = EstimateTextWidth(labelText, labelFontSize, PdfFont.Bold) * 0.72f + 4f;
+            // Use full estimated width plus a small gap (no reduction)
+            var labelW = EstimateTextWidth(labelText, labelFontSize, PdfFont.Bold) * 0.86f + 2f;
             _page.DrawText(labelText, x, y, labelFontSize, PdfFont.Bold, new PdfColor(120, 108, 84));
 
             var availableWidth = maxWidth - labelW;
@@ -466,12 +466,14 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
                 return y - lineHeight - 2f;
             }
 
+            // Draw first line indented
             _page.DrawText(lines[0], x + labelW, y, valueFontSize, PdfFont.Regular, new PdfColor(50, 58, 70));
 
             var currentY = y - lineHeight;
             for (int i = 1; i < lines.Length; i++)
             {
-                _page.DrawText(lines[i], x, currentY, valueFontSize, PdfFont.Regular, new PdfColor(50, 58, 70));
+                // Subsequent lines also indented by labelW
+                _page.DrawText(lines[i], x + labelW, currentY, valueFontSize, PdfFont.Regular, new PdfColor(50, 58, 70));
                 currentY -= lineHeight;
             }
 
