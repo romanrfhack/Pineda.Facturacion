@@ -22,5 +22,9 @@ public class UpdateIssuerProfileCommand
 
     public string PacEnvironment { get; set; } = string.Empty;
 
+    public string? FiscalSeries { get; set; }
+
+    public int? NextFiscalFolio { get; set; }
+
     public bool IsActive { get; set; }
 }

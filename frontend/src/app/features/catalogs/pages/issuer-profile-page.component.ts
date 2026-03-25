@@ -46,6 +46,20 @@ const ALLOWED_LOGO_CONTENT_TYPES = new Set(['image/png', 'image/jpeg']);
             <label><span>Referencia de llave privada</span><input [(ngModel)]="draft.privateKeyReference" name="privateKeyReference" [disabled]="readOnly()" required /></label>
             <label><span>Referencia de contraseña</span><input [(ngModel)]="draft.privateKeyPasswordReference" name="privateKeyPasswordReference" [disabled]="readOnly()" required /></label>
 
+            <section class="folio-card">
+              <div class="logo-copy">
+                <span class="logo-title">Configuración de folios</span>
+                <p class="helper">Captura la serie opcional y el próximo folio entero positivo que deberá usar el siguiente CFDI de este emisor.</p>
+              </div>
+
+              <div class="indicator-grid">
+                <label><span>Serie</span><input [(ngModel)]="draft.fiscalSeries" name="fiscalSeries" [disabled]="saving() || readOnly()" /></label>
+                <label><span>Próximo folio</span><input [(ngModel)]="draft.nextFiscalFolio" name="nextFiscalFolio" type="number" min="1" step="1" [disabled]="saving() || readOnly()" required /></label>
+                <label><span>Último folio usado</span><input [value]="issuer()?.lastUsedFiscalFolio ?? 'Sin datos'" disabled /></label>
+                <label><span>Vista previa del siguiente comprobante</span><input [value]="nextComprobantePreview()" disabled /></label>
+              </div>
+            </section>
+
             <section class="logo-card">
               <div class="logo-copy">
                 <span class="logo-title">Logotipo del emisor</span>
@@ -119,6 +133,7 @@ const ALLOWED_LOGO_CONTENT_TYPES = new Set(['image/png', 'image/jpeg']);
     .checkbox input { width:auto; }
     button { border:none; border-radius:0.8rem; padding:0.75rem 1rem; background:#182533; color:#fff; cursor:pointer; }
     .secondary { background:#e8ecef; color:#182533; }
+    .folio-card { grid-column:1 / -1; display:grid; gap:1rem; padding:1rem; border:1px solid #d8d1c2; border-radius:1rem; background:#fffaf0; }
     .logo-card { grid-column:1 / -1; display:grid; gap:1rem; padding:1rem; border:1px dashed #c9d1da; border-radius:1rem; background:#fcfbf7; }
     .logo-title { font-weight:700; color:#182533; }
     .logo-copy { display:grid; gap:0.35rem; }
@@ -160,6 +175,8 @@ export class IssuerProfilePageComponent implements OnDestroy {
     privateKeyReference: '',
     privateKeyPasswordReference: '',
     pacEnvironment: '',
+    fiscalSeries: '',
+    nextFiscalFolio: null as number | null,
     isActive: true,
     hasCertificateReference: false,
     hasPrivateKeyReference: false,
@@ -180,6 +197,16 @@ export class IssuerProfilePageComponent implements OnDestroy {
 
   protected hasLogoConfigured(): boolean {
     return !!this.logoPreviewUrl() || !!this.selectedLogoFile() || (!!this.issuer()?.hasLogo && !this.removeLogoRequested());
+  }
+
+  protected nextComprobantePreview(): string {
+    const nextFiscalFolio = this.draft.nextFiscalFolio;
+    const fiscalSeries = this.draft.fiscalSeries.trim();
+    if (!nextFiscalFolio || nextFiscalFolio <= 0) {
+      return 'Pendiente de configurar';
+    }
+
+    return `${fiscalSeries}${nextFiscalFolio}`;
   }
 
   protected onLogoSelected(event: Event): void {
@@ -223,6 +250,11 @@ export class IssuerProfilePageComponent implements OnDestroy {
       return;
     }
 
+    if (!Number.isInteger(this.draft.nextFiscalFolio) || (this.draft.nextFiscalFolio ?? 0) <= 0) {
+      this.errorMessage.set('El próximo folio debe ser un entero positivo.');
+      return;
+    }
+
     this.saving.set(true);
     this.errorMessage.set(null);
 
@@ -236,6 +268,8 @@ export class IssuerProfilePageComponent implements OnDestroy {
       privateKeyReference: this.draft.privateKeyReference.trim(),
       privateKeyPasswordReference: this.draft.privateKeyPasswordReference.trim(),
       pacEnvironment: this.draft.pacEnvironment.trim(),
+      fiscalSeries: this.draft.fiscalSeries.trim() || null,
+      nextFiscalFolio: this.draft.nextFiscalFolio,
       isActive: this.draft.isActive
     };
 
@@ -275,6 +309,9 @@ export class IssuerProfilePageComponent implements OnDestroy {
           logoFileName: null,
           logoUpdatedAtUtc: null,
           pacEnvironment: payload.pacEnvironment,
+          fiscalSeries: payload.fiscalSeries,
+          nextFiscalFolio: payload.nextFiscalFolio,
+          lastUsedFiscalFolio: null,
           isActive: payload.isActive,
           createdAtUtc: new Date().toISOString(),
           updatedAtUtc: new Date().toISOString()
@@ -313,6 +350,8 @@ export class IssuerProfilePageComponent implements OnDestroy {
         privateKeyReference: '',
         privateKeyPasswordReference: '',
         pacEnvironment: issuer.pacEnvironment,
+        fiscalSeries: issuer.fiscalSeries ?? '',
+        nextFiscalFolio: issuer.nextFiscalFolio ?? null,
         isActive: issuer.isActive,
         hasCertificateReference: issuer.hasCertificateReference,
         hasPrivateKeyReference: issuer.hasPrivateKeyReference,

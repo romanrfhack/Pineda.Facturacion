@@ -49,7 +49,8 @@ public class FiscalDocumentConfiguration : IEntityTypeConfiguration<FiscalDocume
             .HasColumnName("series")
             .HasMaxLength(20)
             .HasColumnType("varchar(20)")
-            .IsRequired(false);
+            .HasDefaultValue(string.Empty)
+            .IsRequired();
 
         builder.Property(x => x.Folio)
             .HasColumnName("folio")
@@ -217,6 +218,9 @@ public class FiscalDocumentConfiguration : IEntityTypeConfiguration<FiscalDocume
             .IsRequired();
 
         builder.HasIndex(x => x.BillingDocumentId)
+            .IsUnique();
+
+        builder.HasIndex(x => new { x.IssuerRfc, x.Series, x.Folio })
             .IsUnique();
 
         builder.HasIndex(x => x.FiscalReceiverId);

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http.HttpResults;
 using Pineda.Facturacion.Api.Security;
+using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Abstractions.Security;
 using Pineda.Facturacion.Application.Security;
 using Pineda.Facturacion.Application.UseCases.IssuerProfiles;
@@ -68,6 +69,7 @@ public static class IssuerProfileEndpoints
 
     private static async Task<Results<Ok<IssuerProfileResponse>, NotFound>> GetActiveIssuerProfileAsync(
         GetActiveIssuerProfileService service,
+        IFiscalDocumentRepository fiscalDocumentRepository,
         CancellationToken cancellationToken)
     {
         var result = await service.ExecuteAsync(cancellationToken);
@@ -76,7 +78,10 @@ public static class IssuerProfileEndpoints
             return TypedResults.NotFound();
         }
 
-        return TypedResults.Ok(MapIssuerProfile(result.IssuerProfile));
+        var normalizedSeries = result.IssuerProfile.FiscalSeries?.Trim() ?? string.Empty;
+        var lastUsedFiscalFolio = await fiscalDocumentRepository.GetLastUsedFolioAsync(result.IssuerProfile.Rfc, normalizedSeries, cancellationToken);
+
+        return TypedResults.Ok(MapIssuerProfile(result.IssuerProfile, lastUsedFiscalFolio));
     }
 
     private static async Task<Results<Ok<MutationResponse>, BadRequest<MutationResponse>, Conflict<MutationResponse>>> CreateIssuerProfileAsync(
@@ -96,6 +101,8 @@ public static class IssuerProfileEndpoints
             PrivateKeyReference = request.PrivateKeyReference,
             PrivateKeyPasswordReference = request.PrivateKeyPasswordReference,
             PacEnvironment = request.PacEnvironment,
+            FiscalSeries = request.FiscalSeries,
+            NextFiscalFolio = request.NextFiscalFolio,
             IsActive = request.IsActive
         }, cancellationToken);
 
@@ -124,6 +131,8 @@ public static class IssuerProfileEndpoints
                 hasPrivateKeyReference = !string.IsNullOrWhiteSpace(request.PrivateKeyReference),
                 hasPrivateKeyPasswordReference = !string.IsNullOrWhiteSpace(request.PrivateKeyPasswordReference),
                 request.PacEnvironment,
+                request.FiscalSeries,
+                request.NextFiscalFolio,
                 request.IsActive
             },
             new { result.IssuerProfileId },
@@ -158,6 +167,8 @@ public static class IssuerProfileEndpoints
             PrivateKeyReference = request.PrivateKeyReference,
             PrivateKeyPasswordReference = request.PrivateKeyPasswordReference,
             PacEnvironment = request.PacEnvironment,
+            FiscalSeries = request.FiscalSeries,
+            NextFiscalFolio = request.NextFiscalFolio,
             IsActive = request.IsActive
         }, cancellationToken);
 
@@ -187,6 +198,8 @@ public static class IssuerProfileEndpoints
                 hasPrivateKeyReference = !string.IsNullOrWhiteSpace(request.PrivateKeyReference),
                 hasPrivateKeyPasswordReference = !string.IsNullOrWhiteSpace(request.PrivateKeyPasswordReference),
                 request.PacEnvironment,
+                request.FiscalSeries,
+                request.NextFiscalFolio,
                 request.IsActive
             },
             new { result.IssuerProfileId },
@@ -305,7 +318,7 @@ public static class IssuerProfileEndpoints
         };
     }
 
-    private static IssuerProfileResponse MapIssuerProfile(IssuerProfile issuerProfile)
+    private static IssuerProfileResponse MapIssuerProfile(IssuerProfile issuerProfile, int? lastUsedFiscalFolio)
     {
         return new IssuerProfileResponse
         {
@@ -322,6 +335,9 @@ public static class IssuerProfileEndpoints
             LogoFileName = issuerProfile.LogoFileName,
             LogoUpdatedAtUtc = issuerProfile.LogoUpdatedAtUtc,
             PacEnvironment = issuerProfile.PacEnvironment,
+            FiscalSeries = issuerProfile.FiscalSeries,
+            NextFiscalFolio = issuerProfile.NextFiscalFolio,
+            LastUsedFiscalFolio = lastUsedFiscalFolio,
             IsActive = issuerProfile.IsActive,
             CreatedAtUtc = issuerProfile.CreatedAtUtc,
             UpdatedAtUtc = issuerProfile.UpdatedAtUtc
@@ -341,6 +357,8 @@ public static class IssuerProfileEndpoints
         public string PrivateKeyReference { get; init; } = string.Empty;
         public string PrivateKeyPasswordReference { get; init; } = string.Empty;
         public string PacEnvironment { get; init; } = string.Empty;
+        public string? FiscalSeries { get; init; }
+        public int? NextFiscalFolio { get; init; }
         public bool IsActive { get; init; }
     }
 
@@ -359,6 +377,9 @@ public static class IssuerProfileEndpoints
         public string? LogoFileName { get; init; }
         public DateTime? LogoUpdatedAtUtc { get; init; }
         public string PacEnvironment { get; init; } = string.Empty;
+        public string? FiscalSeries { get; init; }
+        public int? NextFiscalFolio { get; init; }
+        public int? LastUsedFiscalFolio { get; init; }
         public bool IsActive { get; init; }
         public DateTime CreatedAtUtc { get; init; }
         public DateTime UpdatedAtUtc { get; init; }

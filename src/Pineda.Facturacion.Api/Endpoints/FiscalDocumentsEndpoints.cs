@@ -178,18 +178,30 @@ public static class FiscalDocumentsEndpoints
 
     private static async Task<IResult> GetFiscalStampXmlByFiscalDocumentIdAsync(
         long fiscalDocumentId,
+        GetFiscalDocumentByIdService fiscalDocumentService,
         GetFiscalStampByFiscalDocumentIdService service,
         CancellationToken cancellationToken)
     {
         var result = await service.ExecuteAsync(fiscalDocumentId, cancellationToken);
+        var fiscalDocumentResult = await fiscalDocumentService.ExecuteAsync(fiscalDocumentId, cancellationToken);
         if (result.Outcome == GetFiscalStampByFiscalDocumentIdOutcome.NotFound
             || result.FiscalStamp is null
-            || string.IsNullOrWhiteSpace(result.FiscalStamp.XmlContent))
+            || string.IsNullOrWhiteSpace(result.FiscalStamp.XmlContent)
+            || fiscalDocumentResult.Outcome == GetFiscalDocumentByIdOutcome.NotFound
+            || fiscalDocumentResult.FiscalDocument is null)
         {
             return TypedResults.NotFound();
         }
 
-        return TypedResults.Text(result.FiscalStamp.XmlContent, "application/xml");
+        var fileName = FiscalDocumentFileNameBuilder.Build(
+            fiscalDocumentResult.FiscalDocument.IssuerRfc,
+            fiscalDocumentResult.FiscalDocument.Series,
+            fiscalDocumentResult.FiscalDocument.Folio,
+            fiscalDocumentResult.FiscalDocument.ReceiverRfc,
+            result.FiscalStamp.Uuid ?? fiscalDocumentId.ToString(),
+            "xml");
+
+        return TypedResults.File(System.Text.Encoding.UTF8.GetBytes(result.FiscalStamp.XmlContent), "application/xml", fileName);
     }
 
     private static async Task<IResult> GetFiscalStampPdfByFiscalDocumentIdAsync(

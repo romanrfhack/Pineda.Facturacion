@@ -19,6 +19,9 @@ export interface IssuerProfile {
   logoFileName?: string | null;
   logoUpdatedAtUtc?: string | null;
   pacEnvironment: string;
+  fiscalSeries?: string | null;
+  nextFiscalFolio?: number | null;
+  lastUsedFiscalFolio?: number | null;
   isActive: boolean;
   createdAtUtc: string;
   updatedAtUtc: string;
@@ -34,6 +37,8 @@ export interface UpsertIssuerProfileRequest {
   privateKeyReference: string;
   privateKeyPasswordReference: string;
   pacEnvironment: string;
+  fiscalSeries?: string | null;
+  nextFiscalFolio: number | null;
   isActive: boolean;
 }
 

@@ -70,6 +70,14 @@ public class IssuerProfileConfiguration : IEntityTypeConfiguration<IssuerProfile
             .HasColumnType("varchar(50)")
             .IsRequired();
 
+        builder.Property(x => x.FiscalSeries)
+            .HasColumnName("fiscal_series")
+            .HasMaxLength(20)
+            .HasColumnType("varchar(20)");
+
+        builder.Property(x => x.NextFiscalFolio)
+            .HasColumnName("next_fiscal_folio");
+
         builder.Property(x => x.LogoStoragePath)
             .HasColumnName("logo_storage_path")
             .HasMaxLength(500)

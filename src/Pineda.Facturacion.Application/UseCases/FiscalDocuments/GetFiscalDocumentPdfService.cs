@@ -50,24 +50,12 @@ public class GetFiscalDocumentPdfService
             Outcome = GetFiscalDocumentPdfOutcome.Found,
             IsSuccess = true,
             Content = await _pdfRenderer.RenderAsync(fiscalDocument, fiscalStamp, cancellationToken),
-            FileName = BuildFileName(fiscalDocument.Series, fiscalDocument.Folio, fiscalStamp.Uuid, "pdf")
+            FileName = BuildFileName(fiscalDocument.IssuerRfc, fiscalDocument.Series, fiscalDocument.Folio, fiscalDocument.ReceiverRfc, fiscalStamp.Uuid, "pdf")
         };
     }
 
-    internal static string BuildFileName(string? series, string? folio, string uuid, string extension)
+    internal static string BuildFileName(string issuerRfc, string? series, string? folio, string receiverRfc, string fallbackToken, string extension)
     {
-        var documentToken = string.Concat((series ?? string.Empty).Trim(), (folio ?? string.Empty).Trim());
-        var baseName = string.IsNullOrWhiteSpace(documentToken)
-            ? uuid.Trim()
-            : $"{documentToken}_{uuid.Trim()}";
-
-        return $"{SanitizeFileName(baseName)}.{extension.TrimStart('.')}";
-    }
-
-    private static string SanitizeFileName(string value)
-    {
-        return string.Join(
-            string.Empty,
-            value.Select(static character => Path.GetInvalidFileNameChars().Contains(character) ? '_' : character));
+        return FiscalDocumentFileNameBuilder.Build(issuerRfc, series, folio, receiverRfc, fallbackToken, extension);
     }
 }

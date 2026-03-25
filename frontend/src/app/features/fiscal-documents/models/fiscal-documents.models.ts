@@ -9,6 +9,9 @@ export interface IssuerProfileResponse {
   hasPrivateKeyReference: boolean;
   hasPrivateKeyPasswordReference: boolean;
   pacEnvironment: string;
+  fiscalSeries?: string | null;
+  nextFiscalFolio?: number | null;
+  lastUsedFiscalFolio?: number | null;
   isActive: boolean;
 }
 
@@ -84,6 +87,8 @@ export interface FiscalDocumentResponse {
   status: string;
   cfdiVersion: string;
   documentType: string;
+  series?: string | null;
+  folio?: string | null;
   issuedAtUtc: string;
   currencyCode: string;
   exchangeRate?: number | null;

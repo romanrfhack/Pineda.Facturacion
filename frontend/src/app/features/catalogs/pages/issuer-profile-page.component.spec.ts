@@ -21,6 +21,9 @@ describe('IssuerProfilePageComponent', () => {
       logoFileName: 'logo.png',
       logoUpdatedAtUtc: '2026-03-24T12:00:00Z',
       pacEnvironment: 'Sandbox',
+      fiscalSeries: 'A',
+      nextFiscalFolio: 31787,
+      lastUsedFiscalFolio: 31786,
       isActive: true,
       createdAtUtc: '2026-03-24T12:00:00Z',
       updatedAtUtc: '2026-03-24T12:00:00Z'
@@ -120,6 +123,9 @@ describe('IssuerProfilePageComponent', () => {
         logoFileName: null,
         logoUpdatedAtUtc: null,
         pacEnvironment: 'Sandbox',
+        fiscalSeries: null,
+        nextFiscalFolio: 31787,
+        lastUsedFiscalFolio: null,
         isActive: true,
         createdAtUtc: '2026-03-24T12:00:00Z',
         updatedAtUtc: '2026-03-24T12:00:00Z'
@@ -129,5 +135,14 @@ describe('IssuerProfilePageComponent', () => {
 
     expect(api.getLogo).not.toHaveBeenCalled();
     expect(fixture.nativeElement.textContent).toContain('Sin logotipo cargado');
+  });
+
+  it('shows folio configuration preview from issuer profile data', async () => {
+    const { fixture } = await configure();
+
+    expect(fixture.componentInstance['draft'].fiscalSeries).toBe('A');
+    expect(fixture.componentInstance['draft'].nextFiscalFolio).toBe(31787);
+    expect(fixture.componentInstance['issuer']()?.lastUsedFiscalFolio).toBe(31786);
+    expect(fixture.componentInstance['nextComprobantePreview']()).toBe('A31787');
   });
 });

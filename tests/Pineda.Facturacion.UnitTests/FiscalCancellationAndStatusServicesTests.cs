@@ -423,6 +423,12 @@ public class FiscalCancellationAndStatusServicesTests
         public Task<FiscalDocument?> GetByBillingDocumentIdAsync(long billingDocumentId, CancellationToken cancellationToken = default)
             => Task.FromResult<FiscalDocument?>(null);
 
+        public Task<bool> ExistsByIssuerSeriesAndFolioAsync(string issuerRfc, string series, string folio, long? excludeFiscalDocumentId = null, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+
+        public Task<int?> GetLastUsedFolioAsync(string issuerRfc, string series, CancellationToken cancellationToken = default)
+            => Task.FromResult<int?>(null);
+
         public Task AddAsync(FiscalDocument fiscalDocument, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 

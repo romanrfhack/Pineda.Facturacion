@@ -846,11 +846,19 @@ internal sealed class MvpApiFactory : WebApplicationFactory<Program>, IAsyncDisp
                 PrivateKeyReference = "KEY_REF",
                 PrivateKeyPasswordReference = "PWD_REF",
                 PacEnvironment = "Sandbox",
+                FiscalSeries = "A",
+                NextFiscalFolio = 31787,
                 IsActive = true,
                 CreatedAtUtc = DateTime.UtcNow,
                 UpdatedAtUtc = DateTime.UtcNow
             };
             db.Add(issuer);
+        }
+        else
+        {
+            issuer.FiscalSeries ??= "A";
+            issuer.NextFiscalFolio ??= 31787;
+            issuer.UpdatedAtUtc = DateTime.UtcNow;
         }
 
         var receiver = await db.Set<FiscalReceiver>().FirstOrDefaultAsync(x => x.Rfc == "BBB010101BBB");

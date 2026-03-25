@@ -22,6 +22,10 @@ public class IssuerProfile
 
     public string PacEnvironment { get; set; } = string.Empty;
 
+    public string? FiscalSeries { get; set; }
+
+    public int? NextFiscalFolio { get; set; }
+
     public string? LogoStoragePath { get; set; }
 
     public string? LogoFileName { get; set; }

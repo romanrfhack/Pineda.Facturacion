@@ -1,17 +1,23 @@
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Common;
 using Pineda.Facturacion.Domain.Entities;
+using System.Globalization;
 
 namespace Pineda.Facturacion.Application.UseCases.IssuerProfiles;
 
 public class CreateIssuerProfileService
 {
     private readonly IIssuerProfileRepository _issuerProfileRepository;
+    private readonly IFiscalDocumentRepository _fiscalDocumentRepository;
     private readonly IUnitOfWork _unitOfWork;
 
-    public CreateIssuerProfileService(IIssuerProfileRepository issuerProfileRepository, IUnitOfWork unitOfWork)
+    public CreateIssuerProfileService(
+        IIssuerProfileRepository issuerProfileRepository,
+        IFiscalDocumentRepository fiscalDocumentRepository,
+        IUnitOfWork unitOfWork)
     {
         _issuerProfileRepository = issuerProfileRepository;
+        _fiscalDocumentRepository = fiscalDocumentRepository;
         _unitOfWork = unitOfWork;
     }
 
@@ -42,6 +48,27 @@ public class CreateIssuerProfileService
             }
         }
 
+        if (command.NextFiscalFolio.HasValue)
+        {
+            var configuredSeries = FiscalMasterDataNormalization.NormalizeOptionalText(command.FiscalSeries) ?? string.Empty;
+            var configuredFolio = command.NextFiscalFolio.Value.ToString(CultureInfo.InvariantCulture);
+            var folioAlreadyExists = await _fiscalDocumentRepository.ExistsByIssuerSeriesAndFolioAsync(
+                command.Rfc,
+                configuredSeries,
+                configuredFolio,
+                cancellationToken: cancellationToken);
+
+            if (folioAlreadyExists)
+            {
+                return new CreateIssuerProfileResult
+                {
+                    Outcome = CreateIssuerProfileOutcome.Conflict,
+                    IsSuccess = false,
+                    ErrorMessage = $"Fiscal folio '{configuredSeries}{configuredFolio}' is already used for issuer '{FiscalMasterDataNormalization.NormalizeRfc(command.Rfc)}'."
+                };
+            }
+        }
+
         var now = DateTime.UtcNow;
         var issuerProfile = new IssuerProfile
         {
@@ -54,6 +81,8 @@ public class CreateIssuerProfileService
             PrivateKeyReference = FiscalMasterDataNormalization.NormalizeRequiredText(command.PrivateKeyReference),
             PrivateKeyPasswordReference = FiscalMasterDataNormalization.NormalizeRequiredText(command.PrivateKeyPasswordReference),
             PacEnvironment = FiscalMasterDataNormalization.NormalizeRequiredCode(command.PacEnvironment),
+            FiscalSeries = FiscalMasterDataNormalization.NormalizeOptionalText(command.FiscalSeries),
+            NextFiscalFolio = command.NextFiscalFolio,
             IsActive = command.IsActive,
             CreatedAtUtc = now,
             UpdatedAtUtc = now
@@ -81,6 +110,8 @@ public class CreateIssuerProfileService
         if (string.IsNullOrWhiteSpace(command.PrivateKeyReference)) return "Private key reference is required.";
         if (string.IsNullOrWhiteSpace(command.PrivateKeyPasswordReference)) return "Private key password reference is required.";
         if (string.IsNullOrWhiteSpace(command.PacEnvironment)) return "PAC environment is required.";
+        if (!command.NextFiscalFolio.HasValue) return "Next fiscal folio is required.";
+        if (command.NextFiscalFolio <= 0) return "Next fiscal folio must be a positive integer.";
         return null;
     }
 }

@@ -12,10 +12,11 @@ public class FiscalDocumentServicesTests
     public async Task PrepareFiscalDocument_Succeeds_WithValidBillingDocumentAndMasterData()
     {
         var billingDocument = CreateBillingDocument();
+        var issuerRepository = new FakeIssuerProfileRepository { Active = CreateIssuerProfile() };
         var service = new PrepareFiscalDocumentService(
             new FakeBillingDocumentRepository { BillingDocumentById = billingDocument },
             new FakeFiscalDocumentRepository(),
-            new FakeIssuerProfileRepository { Active = CreateIssuerProfile() },
+            issuerRepository,
             new FakeFiscalReceiverRepository { ExistingById = CreateReceiver() },
             new FakeProductFiscalProfileRepository { ExistingByCode = CreateProductFiscalProfile() },
             new FakeUnitOfWork());
@@ -31,6 +32,7 @@ public class FiscalDocumentServicesTests
         Assert.True(result.IsSuccess);
         Assert.Equal(PrepareFiscalDocumentOutcome.Created, result.Outcome);
         Assert.Equal(FiscalDocumentStatus.ReadyForStamping, result.Status);
+        Assert.Equal(31788, issuerRepository.Active!.NextFiscalFolio);
     }
 
     [Fact]
@@ -228,6 +230,79 @@ public class FiscalDocumentServicesTests
         Assert.Equal("CSD_CERTIFICATE_REFERENCE", repository.Added.CertificateReference);
         Assert.Equal("CSD_PRIVATE_KEY_REFERENCE", repository.Added.PrivateKeyReference);
         Assert.Equal("CSD_PRIVATE_KEY_PASSWORD_REFERENCE", repository.Added.PrivateKeyPasswordReference);
+    }
+
+    [Fact]
+    public async Task PrepareFiscalDocument_AssignsConfiguredSeriesAndFolio_AndAdvancesNextFiscalFolio()
+    {
+        var repository = new FakeFiscalDocumentRepository();
+        var issuerRepository = new FakeIssuerProfileRepository { Active = CreateIssuerProfile() };
+        var service = new PrepareFiscalDocumentService(
+            new FakeBillingDocumentRepository { BillingDocumentById = CreateBillingDocument() },
+            repository,
+            issuerRepository,
+            new FakeFiscalReceiverRepository { ExistingById = CreateReceiver() },
+            new FakeProductFiscalProfileRepository { ExistingByCode = CreateProductFiscalProfile() },
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new PrepareFiscalDocumentCommand
+        {
+            BillingDocumentId = 5,
+            FiscalReceiverId = 11,
+            PaymentMethodSat = "PUE",
+            PaymentFormSat = "03"
+        });
+
+        Assert.Equal(PrepareFiscalDocumentOutcome.Created, result.Outcome);
+        Assert.Equal("A", repository.Added!.Series);
+        Assert.Equal("31787", repository.Added.Folio);
+        Assert.Equal(31788, issuerRepository.Active!.NextFiscalFolio);
+    }
+
+    [Fact]
+    public async Task PrepareFiscalDocument_Fails_WhenIssuerProfileNextFiscalFolioIsMissing()
+    {
+        var issuer = CreateIssuerProfile();
+        issuer.NextFiscalFolio = null;
+        var service = CreateService(activeIssuer: issuer);
+
+        var result = await service.ExecuteAsync(new PrepareFiscalDocumentCommand
+        {
+            BillingDocumentId = 5,
+            FiscalReceiverId = 11,
+            PaymentMethodSat = "PUE",
+            PaymentFormSat = "03"
+        });
+
+        Assert.Equal(PrepareFiscalDocumentOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("next fiscal folio", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task PrepareFiscalDocument_Fails_WhenConfiguredFiscalFolioAlreadyExists()
+    {
+        var repository = new FakeFiscalDocumentRepository
+        {
+            ExistingByIssuerSeriesAndFolio = new FiscalDocument
+            {
+                Id = 77,
+                IssuerRfc = "AAA010101AAA",
+                Series = "A",
+                Folio = "31787"
+            }
+        };
+        var service = CreateService(fiscalDocumentRepository: repository);
+
+        var result = await service.ExecuteAsync(new PrepareFiscalDocumentCommand
+        {
+            BillingDocumentId = 5,
+            FiscalReceiverId = 11,
+            PaymentMethodSat = "PUE",
+            PaymentFormSat = "03"
+        });
+
+        Assert.Equal(PrepareFiscalDocumentOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("already used", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -497,6 +572,8 @@ public class FiscalDocumentServicesTests
             PrivateKeyReference = "CSD_PRIVATE_KEY_REFERENCE",
             PrivateKeyPasswordReference = "CSD_PRIVATE_KEY_PASSWORD_REFERENCE",
             PacEnvironment = "SANDBOX",
+            FiscalSeries = "A",
+            NextFiscalFolio = 31787,
             IsActive = true
         };
     }
@@ -550,6 +627,7 @@ public class FiscalDocumentServicesTests
     {
         public FiscalDocument? ExistingById { get; init; }
         public FiscalDocument? ExistingByBillingDocumentId { get; set; }
+        public FiscalDocument? ExistingByIssuerSeriesAndFolio { get; set; }
         public FiscalDocument? Added { get; set; }
 
         public Task<FiscalDocument?> GetByIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default)
@@ -560,6 +638,22 @@ public class FiscalDocumentServicesTests
 
         public Task<FiscalDocument?> GetByBillingDocumentIdAsync(long billingDocumentId, CancellationToken cancellationToken = default)
             => Task.FromResult(ExistingByBillingDocumentId?.BillingDocumentId == billingDocumentId ? ExistingByBillingDocumentId : null);
+
+        public Task<bool> ExistsByIssuerSeriesAndFolioAsync(
+            string issuerRfc,
+            string series,
+            string folio,
+            long? excludeFiscalDocumentId = null,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(
+                ExistingByIssuerSeriesAndFolio is not null
+                && ExistingByIssuerSeriesAndFolio.IssuerRfc == issuerRfc
+                && ExistingByIssuerSeriesAndFolio.Series == series
+                && ExistingByIssuerSeriesAndFolio.Folio == folio
+                && (!excludeFiscalDocumentId.HasValue || ExistingByIssuerSeriesAndFolio.Id != excludeFiscalDocumentId.Value));
+
+        public Task<int?> GetLastUsedFolioAsync(string issuerRfc, string series, CancellationToken cancellationToken = default)
+            => Task.FromResult(ExistingByIssuerSeriesAndFolio?.Folio is not null && int.TryParse(ExistingByIssuerSeriesAndFolio.Folio, out var parsed) ? (int?)parsed : null);
 
         public Task AddAsync(FiscalDocument fiscalDocument, CancellationToken cancellationToken = default)
         {
@@ -572,12 +666,29 @@ public class FiscalDocumentServicesTests
 
     private sealed class FakeIssuerProfileRepository : IIssuerProfileRepository
     {
-        public IssuerProfile? Active { get; init; }
+        public IssuerProfile? Active { get; set; }
 
         public Task<IssuerProfile?> GetActiveAsync(CancellationToken cancellationToken = default) => Task.FromResult(Active);
 
+        public Task<IssuerProfile?> GetTrackedActiveAsync(CancellationToken cancellationToken = default) => Task.FromResult(Active);
+
         public Task<IssuerProfile?> GetByIdAsync(long issuerProfileId, CancellationToken cancellationToken = default)
             => Task.FromResult(Active?.Id == issuerProfileId ? Active : null);
+
+        public Task<bool> TryAdvanceNextFiscalFolioAsync(
+            long issuerProfileId,
+            int expectedNextFiscalFolio,
+            int newNextFiscalFolio,
+            CancellationToken cancellationToken = default)
+        {
+            if (Active?.Id != issuerProfileId || Active.NextFiscalFolio != expectedNextFiscalFolio)
+            {
+                return Task.FromResult(false);
+            }
+
+            Active.NextFiscalFolio = newNextFiscalFolio;
+            return Task.FromResult(true);
+        }
 
         public Task AddAsync(IssuerProfile issuerProfile, CancellationToken cancellationToken = default) => Task.CompletedTask;
 

@@ -12,6 +12,9 @@ import { StatusBadgeComponent } from '../../../shared/components/status-badge.co
         <div>
           <p class="eyebrow">Snapshot fiscal</p>
           <h3>Documento fiscal #{{ document().id }}</h3>
+          @if (document().series || document().folio) {
+            <p class="document-number">Folio fiscal asignado: {{ (document().series ?? '') + (document().folio ?? '') }}</p>
+          }
         </div>
         <app-status-badge [label]="document().status" [tone]="document().status === 'Stamped' ? 'success' : document().status.includes('Rejected') ? 'danger' : 'warning'" />
       </div>
@@ -56,6 +59,7 @@ import { StatusBadgeComponent } from '../../../shared/components/status-badge.co
     .header { display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; }
     .eyebrow { margin:0; text-transform:uppercase; letter-spacing:0.12em; font-size:0.72rem; color:#8a6a32; }
     h3 { margin:0.25rem 0 0; }
+    .document-number { margin:0.35rem 0 0; color:#5f6b76; font-weight:600; }
     .grid { margin:1rem 0; display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:0.75rem; }
     dt { font-size:0.82rem; color:#666; }
     dd { margin:0.2rem 0 0; font-weight:600; }

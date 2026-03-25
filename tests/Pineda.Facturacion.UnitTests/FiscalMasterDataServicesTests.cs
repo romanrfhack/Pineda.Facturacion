@@ -13,8 +13,9 @@ public class FiscalMasterDataServicesTests
     public async Task CreateIssuerProfile_CreatesActiveIssuerProfile()
     {
         var repository = new FakeIssuerProfileRepository();
+        var fiscalDocumentRepository = new FakeFiscalDocumentRepository();
         var unitOfWork = new FakeUnitOfWork();
-        var service = new CreateIssuerProfileService(repository, unitOfWork);
+        var service = new CreateIssuerProfileService(repository, fiscalDocumentRepository, unitOfWork);
 
         var result = await service.ExecuteAsync(new CreateIssuerProfileCommand
         {
@@ -27,6 +28,8 @@ public class FiscalMasterDataServicesTests
             PrivateKeyReference = "CSD_KEY_REF",
             PrivateKeyPasswordReference = "CSD_KEY_PASSWORD_REF",
             PacEnvironment = "sandbox",
+            FiscalSeries = "A",
+            NextFiscalFolio = 31787,
             IsActive = true
         });
 
@@ -34,6 +37,8 @@ public class FiscalMasterDataServicesTests
         Assert.Equal(CreateIssuerProfileOutcome.Created, result.Outcome);
         Assert.Equal(1, unitOfWork.SaveChangesCallCount);
         Assert.Equal("AAA010101AAA", repository.Added!.Rfc);
+        Assert.Equal("A", repository.Added.FiscalSeries);
+        Assert.Equal(31787, repository.Added.NextFiscalFolio);
         Assert.True(repository.Added.IsActive);
     }
 
@@ -165,6 +170,9 @@ public class FiscalMasterDataServicesTests
         Assert.Contains("HasCertificateReference", propertyNames);
         Assert.Contains("HasPrivateKeyReference", propertyNames);
         Assert.Contains("HasPrivateKeyPasswordReference", propertyNames);
+        Assert.Contains("FiscalSeries", propertyNames);
+        Assert.Contains("NextFiscalFolio", propertyNames);
+        Assert.Contains("LastUsedFiscalFolio", propertyNames);
     }
 
     private sealed class FakeIssuerProfileRepository : IIssuerProfileRepository
@@ -174,7 +182,12 @@ public class FiscalMasterDataServicesTests
 
         public Task<IssuerProfile?> GetActiveAsync(CancellationToken cancellationToken = default) => Task.FromResult(Active);
 
+        public Task<IssuerProfile?> GetTrackedActiveAsync(CancellationToken cancellationToken = default) => Task.FromResult(Active);
+
         public Task<IssuerProfile?> GetByIdAsync(long issuerProfileId, CancellationToken cancellationToken = default) => Task.FromResult<IssuerProfile?>(null);
+
+        public Task<bool> TryAdvanceNextFiscalFolioAsync(long issuerProfileId, int expectedNextFiscalFolio, int newNextFiscalFolio, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
 
         public Task AddAsync(IssuerProfile issuerProfile, CancellationToken cancellationToken = default)
         {
@@ -184,6 +197,16 @@ public class FiscalMasterDataServicesTests
         }
 
         public Task UpdateAsync(IssuerProfile issuerProfile, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class FakeFiscalDocumentRepository : IFiscalDocumentRepository
+    {
+        public Task<FiscalDocument?> GetByIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default) => Task.FromResult<FiscalDocument?>(null);
+        public Task<FiscalDocument?> GetTrackedByIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default) => Task.FromResult<FiscalDocument?>(null);
+        public Task<FiscalDocument?> GetByBillingDocumentIdAsync(long billingDocumentId, CancellationToken cancellationToken = default) => Task.FromResult<FiscalDocument?>(null);
+        public Task<bool> ExistsByIssuerSeriesAndFolioAsync(string issuerRfc, string series, string folio, long? excludeFiscalDocumentId = null, CancellationToken cancellationToken = default) => Task.FromResult(false);
+        public Task<int?> GetLastUsedFolioAsync(string issuerRfc, string series, CancellationToken cancellationToken = default) => Task.FromResult<int?>(null);
+        public Task AddAsync(FiscalDocument fiscalDocument, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     private sealed class FakeFiscalReceiverRepository : IFiscalReceiverRepository

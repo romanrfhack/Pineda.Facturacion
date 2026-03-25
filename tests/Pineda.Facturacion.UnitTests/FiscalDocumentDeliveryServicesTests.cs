@@ -23,7 +23,7 @@ public class FiscalDocumentDeliveryServicesTests
         var result = await service.ExecuteAsync(8);
 
         Assert.Equal(GetFiscalDocumentPdfOutcome.Found, result.Outcome);
-        Assert.Equal("A8_4cb4eed3-3d93-4938-8872-028106881e4c.pdf", result.FileName);
+        Assert.Equal("AAA010101AAA_A8_BBB010101BBB.pdf", result.FileName);
         Assert.Equal("%PDF-test"u8.ToArray(), result.Content);
     }
 
@@ -76,8 +76,8 @@ public class FiscalDocumentDeliveryServicesTests
         Assert.NotNull(emailSender.LastMessage);
         Assert.Equal(["cliente@example.com"], emailSender.LastMessage!.Recipients);
         Assert.Equal(2, emailSender.LastMessage.Attachments.Count);
-        Assert.Contains(emailSender.LastMessage.Attachments, attachment => attachment.ContentType == "application/xml");
-        Assert.Contains(emailSender.LastMessage.Attachments, attachment => attachment.ContentType == "application/pdf");
+        Assert.Contains(emailSender.LastMessage.Attachments, attachment => attachment.ContentType == "application/xml" && attachment.FileName == "AAA010101AAA_A8_BBB010101BBB.xml");
+        Assert.Contains(emailSender.LastMessage.Attachments, attachment => attachment.ContentType == "application/pdf" && attachment.FileName == "AAA010101AAA_A8_BBB010101BBB.pdf");
     }
 
     [Fact]
@@ -326,6 +326,8 @@ public class FiscalDocumentDeliveryServicesTests
         public Task<FiscalDocument?> GetByIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default) => Task.FromResult(Existing);
         public Task<FiscalDocument?> GetTrackedByIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default) => Task.FromResult(Existing);
         public Task<FiscalDocument?> GetByBillingDocumentIdAsync(long billingDocumentId, CancellationToken cancellationToken = default) => Task.FromResult(Existing);
+        public Task<bool> ExistsByIssuerSeriesAndFolioAsync(string issuerRfc, string series, string folio, long? excludeFiscalDocumentId = null, CancellationToken cancellationToken = default) => Task.FromResult(false);
+        public Task<int?> GetLastUsedFolioAsync(string issuerRfc, string series, CancellationToken cancellationToken = default) => Task.FromResult<int?>(null);
         public Task AddAsync(FiscalDocument fiscalDocument, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
@@ -365,7 +367,9 @@ public class FiscalDocumentDeliveryServicesTests
         };
 
         public Task<IssuerProfile?> GetActiveAsync(CancellationToken cancellationToken = default) => Task.FromResult(Existing);
+        public Task<IssuerProfile?> GetTrackedActiveAsync(CancellationToken cancellationToken = default) => Task.FromResult(Existing);
         public Task<IssuerProfile?> GetByIdAsync(long issuerProfileId, CancellationToken cancellationToken = default) => Task.FromResult(Existing?.Id == issuerProfileId ? Existing : null);
+        public Task<bool> TryAdvanceNextFiscalFolioAsync(long issuerProfileId, int expectedNextFiscalFolio, int newNextFiscalFolio, CancellationToken cancellationToken = default) => Task.FromResult(false);
         public Task AddAsync(IssuerProfile issuerProfile, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task UpdateAsync(IssuerProfile issuerProfile, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }

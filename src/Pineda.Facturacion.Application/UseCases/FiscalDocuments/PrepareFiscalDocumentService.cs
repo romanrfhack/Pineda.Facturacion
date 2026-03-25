@@ -2,6 +2,7 @@ using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Common;
 using Pineda.Facturacion.Domain.Entities;
 using Pineda.Facturacion.Domain.Enums;
+using System.Globalization;
 
 namespace Pineda.Facturacion.Application.UseCases.FiscalDocuments;
 
@@ -211,6 +212,12 @@ public class PrepareFiscalDocumentService
             });
         }
 
+        var folioAssignment = await ReserveFiscalFolioAsync(issuerProfile, cancellationToken);
+        if (folioAssignment.ErrorMessage is not null)
+        {
+            return ValidationFailure(command.BillingDocumentId, folioAssignment.ErrorMessage);
+        }
+
         var fiscalDocument = new FiscalDocument
         {
             BillingDocumentId = billingDocument.Id,
@@ -219,8 +226,8 @@ public class PrepareFiscalDocumentService
             Status = FiscalDocumentStatus.ReadyForStamping,
             CfdiVersion = issuerProfile.CfdiVersion,
             DocumentType = billingDocument.DocumentType,
-            Series = billingDocument.Series,
-            Folio = billingDocument.Folio,
+            Series = folioAssignment.Series,
+            Folio = folioAssignment.Folio,
             IssuedAtUtc = command.IssuedAtUtc ?? now,
             CurrencyCode = currencyCode,
             ExchangeRate = exchangeRate,
@@ -274,6 +281,58 @@ public class PrepareFiscalDocumentService
         }
 
         return await _issuerProfileRepository.GetActiveAsync(cancellationToken);
+    }
+
+    private async Task<(string Series, string Folio, string? ErrorMessage)> ReserveFiscalFolioAsync(
+        IssuerProfile issuerProfile,
+        CancellationToken cancellationToken)
+    {
+        if (!issuerProfile.NextFiscalFolio.HasValue || issuerProfile.NextFiscalFolio.Value <= 0)
+        {
+            return (string.Empty, string.Empty, "The issuer profile must define a positive next fiscal folio before preparing or stamping CFDI.");
+        }
+
+        var normalizedSeries = FiscalMasterDataNormalization.NormalizeOptionalText(issuerProfile.FiscalSeries) ?? string.Empty;
+        var normalizedIssuerRfc = FiscalMasterDataNormalization.NormalizeRfc(issuerProfile.Rfc);
+        var currentNextFolio = issuerProfile.NextFiscalFolio.Value;
+
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            var candidateFolio = currentNextFolio.ToString(CultureInfo.InvariantCulture);
+            var alreadyExists = await _fiscalDocumentRepository.ExistsByIssuerSeriesAndFolioAsync(
+                normalizedIssuerRfc,
+                normalizedSeries,
+                candidateFolio,
+                cancellationToken: cancellationToken);
+
+            if (alreadyExists)
+            {
+                return (string.Empty, string.Empty, $"Configured fiscal folio '{normalizedSeries}{candidateFolio}' is already used. Update the issuer profile next fiscal folio to continue.");
+            }
+
+            var reserved = await _issuerProfileRepository.TryAdvanceNextFiscalFolioAsync(
+                issuerProfile.Id,
+                currentNextFolio,
+                currentNextFolio + 1,
+                cancellationToken);
+
+            if (reserved)
+            {
+                return (normalizedSeries, candidateFolio, null);
+            }
+
+            issuerProfile = await _issuerProfileRepository.GetByIdAsync(issuerProfile.Id, cancellationToken)
+                ?? issuerProfile;
+
+            if (!issuerProfile.NextFiscalFolio.HasValue || issuerProfile.NextFiscalFolio.Value <= 0)
+            {
+                return (string.Empty, string.Empty, "The issuer profile must define a positive next fiscal folio before preparing or stamping CFDI.");
+            }
+
+            currentNextFolio = issuerProfile.NextFiscalFolio.Value;
+        }
+
+        return (string.Empty, string.Empty, "Unable to reserve a fiscal folio right now. Retry the operation.");
     }
 
     private static string? ResolveReceiverCfdiUseCode(PrepareFiscalDocumentCommand command, FiscalReceiver fiscalReceiver)

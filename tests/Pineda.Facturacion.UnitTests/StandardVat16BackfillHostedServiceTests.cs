@@ -186,6 +186,7 @@ public class StandardVat16BackfillHostedServiceTests
                 Status = FiscalDocumentStatus.ReadyForStamping,
                 CfdiVersion = "4.0",
                 DocumentType = "I",
+                Series = string.Empty,
                 CurrencyCode = "MXN",
                 Subtotal = 100m,
                 DiscountTotal = 0m,
