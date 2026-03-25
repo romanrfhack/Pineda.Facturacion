@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, OnChanges, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnChanges, SimpleChanges, input, output } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { FiscalReceiver, UpsertFiscalReceiverRequest } from '../models/catalogs.models';
 
@@ -66,7 +66,7 @@ import { FiscalReceiver, UpsertFiscalReceiverRequest } from '../models/catalogs.
         <p class="error">{{ errorMessage() }}</p>
       }
 
-      <button type="submit" [disabled]="readOnly()">{{ submitLabel() }}</button>
+      <button type="submit" [disabled]="readOnly() || submitting()">{{ submitting() ? 'Guardando...' : submitLabel() }}</button>
     </form>
   `,
   styles: [`
@@ -84,14 +84,20 @@ import { FiscalReceiver, UpsertFiscalReceiverRequest } from '../models/catalogs.
 })
 export class FiscalReceiverFormComponent implements OnChanges {
   readonly receiver = input<FiscalReceiver | null>(null);
+  readonly initialValue = input<UpsertFiscalReceiverRequest | null>(null);
   readonly submitLabel = input('Guardar receptor');
   readonly readOnly = input(false);
+  readonly submitting = input(false);
   readonly errorMessage = input<string | null>(null);
   readonly submitted = output<UpsertFiscalReceiverRequest>();
 
   protected draft: UpsertFiscalReceiverRequest = emptyReceiver();
 
-  ngOnChanges(): void {
+  ngOnChanges(changes: SimpleChanges): void {
+    if (!changes['receiver'] && !changes['initialValue']) {
+      return;
+    }
+
     const receiver = this.receiver();
     this.draft = receiver
       ? {
@@ -107,7 +113,7 @@ export class FiscalReceiverFormComponent implements OnChanges {
           searchAlias: receiver.searchAlias,
           isActive: receiver.isActive
         }
-      : emptyReceiver();
+      : cloneDraft(this.initialValue() ?? emptyReceiver());
   }
 
   protected submitForm(): void {
@@ -140,5 +146,21 @@ function emptyReceiver(): UpsertFiscalReceiverRequest {
     phone: '',
     searchAlias: '',
     isActive: true
+  };
+}
+
+function cloneDraft(draft: UpsertFiscalReceiverRequest): UpsertFiscalReceiverRequest {
+  return {
+    rfc: draft.rfc,
+    legalName: draft.legalName,
+    fiscalRegimeCode: draft.fiscalRegimeCode,
+    cfdiUseCodeDefault: draft.cfdiUseCodeDefault,
+    postalCode: draft.postalCode,
+    countryCode: draft.countryCode ?? null,
+    foreignTaxRegistration: draft.foreignTaxRegistration ?? null,
+    email: draft.email ?? null,
+    phone: draft.phone ?? null,
+    searchAlias: draft.searchAlias ?? null,
+    isActive: draft.isActive
   };
 }

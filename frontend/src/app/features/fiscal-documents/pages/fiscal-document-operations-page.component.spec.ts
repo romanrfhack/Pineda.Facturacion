@@ -6,6 +6,7 @@ import { FiscalDocumentsApiService } from '../infrastructure/fiscal-documents-ap
 import { FeedbackService } from '../../../core/ui/feedback.service';
 import { PermissionService } from '../../../core/auth/permission.service';
 import { ProductFiscalProfilesApiService } from '../../catalogs/infrastructure/product-fiscal-profiles-api.service';
+import { FiscalReceiversApiService } from '../../catalogs/infrastructure/fiscal-receivers-api.service';
 
 describe('FiscalDocumentOperationsPageComponent', () => {
   function createApi(overrides?: Partial<Record<keyof FiscalDocumentsApiService, unknown>>) {
@@ -121,7 +122,8 @@ describe('FiscalDocumentOperationsPageComponent', () => {
   async function configure(
     apiOverrides?: Partial<Record<keyof FiscalDocumentsApiService, unknown>>,
     routeOptions?: { id?: string | null; billingDocumentId?: string | null },
-    productApiOverrides?: Partial<Record<keyof ProductFiscalProfilesApiService, unknown>>
+    productApiOverrides?: Partial<Record<keyof ProductFiscalProfilesApiService, unknown>>,
+    receiverApiOverrides?: Partial<Record<keyof FiscalReceiversApiService, unknown>>
   ) {
     const routeId = routeOptions && 'id' in routeOptions ? routeOptions.id : '40';
 
@@ -154,6 +156,31 @@ describe('FiscalDocumentOperationsPageComponent', () => {
               id: 15
             })),
             ...productApiOverrides
+          }
+        },
+        {
+          provide: FiscalReceiversApiService,
+          useValue: {
+            search: vi.fn().mockReturnValue(of([])),
+            getByRfc: vi.fn().mockReturnValue(of({
+              id: 9,
+              rfc: 'BBB010101BBB',
+              legalName: 'Receiver One',
+              postalCode: '02000',
+              fiscalRegimeCode: '601',
+              cfdiUseCodeDefault: 'G03',
+              countryCode: 'MX',
+              foreignTaxRegistration: null,
+              email: 'cliente@example.com',
+              phone: null,
+              searchAlias: null,
+              isActive: true,
+              createdAtUtc: '2026-03-20T12:00:00Z',
+              updatedAtUtc: '2026-03-20T12:00:00Z'
+            })),
+            create: vi.fn().mockReturnValue(of({ outcome: 'Created', isSuccess: true, id: 9 })),
+            update: vi.fn(),
+            ...receiverApiOverrides
           }
         },
         {
@@ -337,6 +364,129 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).toContain('Sin coincidencias.');
+    expect(fixture.nativeElement.textContent).toContain('Agregar receptor');
+  });
+
+  it('opens the receiver creation modal with the searched RFC preloaded', async () => {
+    const fixture = await configure(undefined, { id: null, billingDocumentId: '30' });
+
+    fixture.componentInstance['receiverQuery'].set('XAXX010101000');
+    fixture.componentInstance['receiverSearchTouched'].set(true);
+    fixture.componentInstance['receiverResults'].set([]);
+    fixture.componentInstance['openReceiverCreateModal']();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Nuevo receptor');
+    expect(fixture.componentInstance['receiverCreateDraft']()?.rfc).toBe('XAXX010101000');
+  });
+
+  it('creates a receiver from the modal and selects it automatically', async () => {
+    const create = vi.fn().mockReturnValue(of({ outcome: 'Created', isSuccess: true, id: 12 }));
+    const getByRfc = vi.fn().mockReturnValue(of({
+      id: 12,
+      rfc: 'XAXX010101000',
+      legalName: 'Publico General',
+      postalCode: '01000',
+      fiscalRegimeCode: '616',
+      cfdiUseCodeDefault: 'S01',
+      countryCode: 'MX',
+      foreignTaxRegistration: null,
+      email: null,
+      phone: null,
+      searchAlias: null,
+      isActive: true,
+      createdAtUtc: '2026-03-20T12:00:00Z',
+      updatedAtUtc: '2026-03-20T12:00:00Z'
+    }));
+    const feedback = { show: vi.fn() };
+
+    await TestBed.configureTestingModule({
+      imports: [FiscalDocumentOperationsPageComponent],
+      providers: [
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            snapshot: {
+              queryParamMap: convertToParamMap({ billingDocumentId: '30' }),
+              paramMap: convertToParamMap({})
+            }
+          }
+        },
+        { provide: FiscalDocumentsApiService, useValue: createApi() },
+        { provide: ProductFiscalProfilesApiService, useValue: { create: vi.fn().mockReturnValue(of({ outcome: 'Created', isSuccess: true, id: 15 })) } },
+        { provide: FiscalReceiversApiService, useValue: { search: vi.fn(), create, getByRfc, update: vi.fn() } },
+        { provide: FeedbackService, useValue: feedback },
+        { provide: Router, useValue: { navigate: vi.fn().mockResolvedValue(true) } },
+        {
+          provide: PermissionService,
+          useValue: {
+            canStampFiscal: vi.fn().mockReturnValue(true),
+            canCancelFiscal: vi.fn().mockReturnValue(true),
+            canWriteMasterData: vi.fn().mockReturnValue(true)
+          }
+        }
+      ]
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(FiscalDocumentOperationsPageComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    fixture.componentInstance['receiverQuery'].set('XAXX010101000');
+    fixture.componentInstance['openReceiverCreateModal']();
+    await fixture.componentInstance['saveReceiver']({
+      rfc: 'XAXX010101000',
+      legalName: 'Publico General',
+      fiscalRegimeCode: '616',
+      cfdiUseCodeDefault: 'S01',
+      postalCode: '01000',
+      countryCode: 'MX',
+      foreignTaxRegistration: null,
+      email: null,
+      phone: null,
+      searchAlias: null,
+      isActive: true
+    });
+    fixture.detectChanges();
+
+    expect(create).toHaveBeenCalled();
+    expect(getByRfc).toHaveBeenCalledWith('XAXX010101000');
+    expect(fixture.componentInstance['selectedReceiverId']).toBe(12);
+    expect(fixture.componentInstance['showReceiverCreateModal']()).toBe(false);
+    expect(fixture.nativeElement.textContent).toContain('XAXX010101000 · Publico General');
+    expect(feedback.show).toHaveBeenCalledWith('success', 'Receptor creado y seleccionado.');
+  });
+
+  it('keeps the receiver creation modal open and preserves data when creation fails', async () => {
+    const fixture = await configure(
+      undefined,
+      { id: null, billingDocumentId: '30' },
+      undefined,
+      {
+        create: vi.fn().mockReturnValue(throwError(() => ({ error: { errorMessage: 'RFC ya existe.' } })))
+      }
+    );
+
+    fixture.componentInstance['receiverQuery'].set('XAXX010101000');
+    fixture.componentInstance['openReceiverCreateModal']();
+    await fixture.componentInstance['saveReceiver']({
+      rfc: 'XAXX010101000',
+      legalName: 'Publico General',
+      fiscalRegimeCode: '616',
+      cfdiUseCodeDefault: 'S01',
+      postalCode: '01000',
+      countryCode: 'MX',
+      foreignTaxRegistration: null,
+      email: 'cliente@example.com',
+      phone: null,
+      searchAlias: null,
+      isActive: true
+    });
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['showReceiverCreateModal']()).toBe(true);
+    expect(fixture.componentInstance['receiverCreateDraft']()?.rfc).toBe('XAXX010101000');
+    expect(fixture.nativeElement.textContent).toContain('RFC ya existe.');
   });
 
   it('shows autocomplete error state when receiver search fails', async () => {

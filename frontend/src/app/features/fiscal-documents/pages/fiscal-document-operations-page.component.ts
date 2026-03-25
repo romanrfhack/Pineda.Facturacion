@@ -24,12 +24,14 @@ import { getDisplayLabel } from '../../../shared/ui/display-labels';
 import { extractApiErrorMessage } from '../../../core/http/api-error-message';
 import { ProductFiscalProfileFormComponent } from '../../catalogs/components/product-fiscal-profile-form.component';
 import { ProductFiscalProfilesApiService } from '../../catalogs/infrastructure/product-fiscal-profiles-api.service';
-import { UpsertProductFiscalProfileRequest } from '../../catalogs/models/catalogs.models';
+import { FiscalReceiversApiService } from '../../catalogs/infrastructure/fiscal-receivers-api.service';
+import { FiscalReceiverFormComponent } from '../../catalogs/components/fiscal-receiver-form.component';
+import { UpsertFiscalReceiverRequest, UpsertProductFiscalProfileRequest } from '../../catalogs/models/catalogs.models';
 import { extractMissingProductFiscalProfileContext, MissingProductFiscalProfileContext } from '../application/missing-product-fiscal-profile';
 
 @Component({
   selector: 'app-fiscal-document-operations-page',
-  imports: [FormsModule, RouterLink, FiscalDocumentCardComponent, FiscalStampEvidenceCardComponent, FiscalCancellationCardComponent, FiscalStampEvidenceDetailComponent, XmlViewerPanelComponent, ProductFiscalProfileFormComponent],
+  imports: [FormsModule, RouterLink, FiscalDocumentCardComponent, FiscalStampEvidenceCardComponent, FiscalCancellationCardComponent, FiscalStampEvidenceDetailComponent, XmlViewerPanelComponent, ProductFiscalProfileFormComponent, FiscalReceiverFormComponent],
   template: `
     <section class="page">
       <header>
@@ -121,7 +123,14 @@ import { extractMissingProductFiscalProfileContext, MissingProductFiscalProfileC
                   } @else if (receiverSearchError()) {
                     <p class="error">{{ receiverSearchError() }}</p>
                   } @else if (!receiverResults().length) {
-                    <p class="helper">Sin coincidencias.</p>
+                    <div class="empty-receiver-state">
+                      <p class="helper">Sin coincidencias.</p>
+                      @if (permissionService.canWriteMasterData()) {
+                        <button type="button" class="link-button" (click)="openReceiverCreateModal()">
+                          Agregar receptor
+                        </button>
+                      }
+                    </div>
                   } @else {
                     <ul>
                       @for (receiver of receiverResults(); track receiverTrackBy($index, receiver)) {
@@ -336,6 +345,30 @@ import { extractMissingProductFiscalProfileContext, MissingProductFiscalProfileC
         </section>
       }
 
+      @if (showReceiverCreateModal()) {
+        <section class="modal-backdrop" (click)="closeReceiverCreateModal()">
+          <section class="modal-card" (click)="$event.stopPropagation()">
+            <header class="modal-header">
+              <div>
+                <p class="selected-title">Documento fiscal</p>
+                <h3>Nuevo receptor</h3>
+              </div>
+              <button type="button" class="secondary" (click)="closeReceiverCreateModal()" [disabled]="savingReceiver()">Cerrar</button>
+            </header>
+
+            <p class="helper">Completa los datos fiscales del receptor para continuar sin salir de este flujo.</p>
+
+            <app-fiscal-receiver-form
+              [initialValue]="receiverCreateDraft()"
+              [submitLabel]="'Crear receptor'"
+              [submitting]="savingReceiver()"
+              [errorMessage]="receiverCreateError()"
+              (submitted)="saveReceiver($event)"
+            />
+          </section>
+        </section>
+      }
+
       @if (cancellation(); as currentCancellation) {
         <app-fiscal-cancellation-card [cancellation]="currentCancellation" />
       }
@@ -363,10 +396,12 @@ import { extractMissingProductFiscalProfileContext, MissingProductFiscalProfileC
     .context-actions { display:flex; flex-wrap:wrap; gap:0.75rem; justify-content:flex-end; }
     .receiver-selector { grid-column:1 / -1; display:grid; gap:0.75rem; }
     .suggestions { border:1px solid #d8d1c2; border-radius:0.9rem; background:#fcfbf8; padding:0.5rem; }
+    .empty-receiver-state { display:flex; align-items:center; justify-content:space-between; gap:0.75rem; padding:0.35rem 0.15rem 0.1rem; }
     .suggestions ul { list-style:none; margin:0; padding:0; display:grid; gap:0.35rem; }
     .suggestion-button { width:100%; display:grid; gap:0.15rem; text-align:left; border:1px solid #ece5d7; border-radius:0.8rem; background:#fff; color:#182533; padding:0.75rem 0.9rem; cursor:pointer; }
     .suggestion-button:hover { background:#f7f2e7; }
     .suggestion-button small { color:#5f6b76; }
+    .link-button { border:none; background:transparent; color:#182533; padding:0; text-decoration:underline; text-underline-offset:0.18em; }
     .selected-receiver { display:flex; justify-content:space-between; gap:1rem; align-items:center; border:1px solid #d8d1c2; border-radius:0.9rem; background:#fffaf0; padding:0.85rem 1rem; }
     .selected-receiver div { display:grid; gap:0.2rem; }
     .selected-receiver span { color:#5f6b76; }
@@ -379,6 +414,10 @@ import { extractMissingProductFiscalProfileContext, MissingProductFiscalProfileC
     .checkbox { display:flex; align-items:center; gap:0.5rem; }
     .checkbox input { width:auto; }
     .button-row { display:flex; flex-wrap:wrap; gap:0.75rem; align-items:center; }
+    .modal-backdrop { position:fixed; inset:0; background:rgba(24, 37, 51, 0.42); display:grid; place-items:center; padding:1rem; z-index:50; }
+    .modal-card { width:min(880px, 100%); max-height:calc(100vh - 2rem); overflow:auto; border:1px solid #d8d1c2; border-radius:1rem; background:#fff; padding:1rem; display:grid; gap:1rem; box-shadow:0 24px 60px rgba(24, 37, 51, 0.24); }
+    .modal-header { display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; }
+    .modal-header h3 { margin:0.2rem 0 0; }
     button, a { border:none; border-radius:0.8rem; padding:0.75rem 1rem; background:#182533; color:#fff; cursor:pointer; text-decoration:none; display:inline-flex; }
     button.secondary { background:#d8c49b; color:#182533; }
     button.danger { background:#7a2020; }
@@ -390,6 +429,8 @@ import { extractMissingProductFiscalProfileContext, MissingProductFiscalProfileC
       .billing-context { flex-direction:column; align-items:stretch; }
       .selected-receiver { flex-direction:column; align-items:stretch; }
       .recovery-summary { flex-direction:column; align-items:stretch; }
+      .empty-receiver-state { flex-direction:column; align-items:flex-start; }
+      .modal-header { flex-direction:column; align-items:stretch; }
     }
   `],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -400,6 +441,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   private readonly router = inject(Router);
   private readonly feedbackService = inject(FeedbackService);
   private readonly productFiscalProfilesApi = inject(ProductFiscalProfilesApiService);
+  private readonly fiscalReceiversApi = inject(FiscalReceiversApiService);
   protected readonly permissionService = inject(PermissionService);
   protected readonly getDisplayLabel = getDisplayLabel;
 
@@ -438,6 +480,10 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected readonly missingProductFiscalProfile = signal<MissingProductFiscalProfileContext | null>(null);
   protected readonly showMissingProductProfileForm = signal(false);
   protected readonly missingProductProfileError = signal<string | null>(null);
+  protected readonly showReceiverCreateModal = signal(false);
+  protected readonly savingReceiver = signal(false);
+  protected readonly receiverCreateError = signal<string | null>(null);
+  protected readonly receiverCreateDraft = signal<UpsertFiscalReceiverRequest | null>(null);
   private readonly pendingPrepareRequest = signal<PrepareFiscalDocumentRequest | null>(null);
 
   protected readonly receiverQuery = signal('');
@@ -519,6 +565,33 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     this.receiverSearchTouched.set(false);
   }
 
+  protected openReceiverCreateModal(): void {
+    this.receiverCreateError.set(null);
+    this.receiverCreateDraft.set({
+      rfc: this.receiverQuery().trim(),
+      legalName: '',
+      fiscalRegimeCode: '',
+      cfdiUseCodeDefault: '',
+      postalCode: '',
+      countryCode: 'MX',
+      foreignTaxRegistration: '',
+      email: '',
+      phone: '',
+      searchAlias: '',
+      isActive: true
+    });
+    this.showReceiverCreateModal.set(true);
+  }
+
+  protected closeReceiverCreateModal(): void {
+    if (this.savingReceiver()) {
+      return;
+    }
+
+    this.showReceiverCreateModal.set(false);
+    this.receiverCreateError.set(null);
+  }
+
   protected receiverTrackBy(index: number, receiver: FiscalReceiverSearchResponse): number {
     return receiver.id;
   }
@@ -586,6 +659,37 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       this.receiverSearchError.set(extractApiErrorMessage(error, 'No fue posible buscar receptores.'));
     } finally {
       this.searchingReceivers.set(false);
+    }
+  }
+
+  protected async saveReceiver(request: UpsertFiscalReceiverRequest): Promise<void> {
+    if (!this.permissionService.canWriteMasterData() || this.savingReceiver()) {
+      return;
+    }
+
+    this.savingReceiver.set(true);
+    this.receiverCreateError.set(null);
+
+    try {
+      await firstValueFrom(this.fiscalReceiversApi.create(request));
+      const createdReceiver = await firstValueFrom(this.fiscalReceiversApi.getByRfc(request.rfc));
+      this.selectReceiver({
+        id: createdReceiver.id,
+        rfc: createdReceiver.rfc,
+        legalName: createdReceiver.legalName,
+        postalCode: createdReceiver.postalCode,
+        fiscalRegimeCode: createdReceiver.fiscalRegimeCode,
+        cfdiUseCodeDefault: createdReceiver.cfdiUseCodeDefault,
+        isActive: createdReceiver.isActive
+      });
+      this.showReceiverCreateModal.set(false);
+      this.receiverCreateDraft.set(null);
+      this.feedbackService.show('success', 'Receptor creado y seleccionado.');
+    } catch (error) {
+      this.showReceiverCreateModal.set(true);
+      this.receiverCreateError.set(extractApiErrorMessage(error, 'No fue posible crear el receptor.'));
+    } finally {
+      this.savingReceiver.set(false);
     }
   }
 
