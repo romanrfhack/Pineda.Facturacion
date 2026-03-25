@@ -181,12 +181,13 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
         CertificateMetadata certificateMetadata,
         string comprobanteFecha)
     {
+        var currencyScale = ResolveCurrencyScale(request.CurrencyCode);
         var itemPayloads = request.Items
             .OrderBy(x => x.LineNumber)
-            .Select(BuildConcepto)
+            .Select(item => BuildConcepto(item, currencyScale))
             .ToList();
-        var subTotal = itemPayloads.Sum(x => x.Importe);
-        var descuento = itemPayloads.Sum(x => x.Descuento ?? 0m);
+        var subTotal = RoundMonetary(itemPayloads.Sum(x => x.Importe), currencyScale);
+        var descuento = RoundMonetary(itemPayloads.Sum(x => x.Descuento ?? 0m), currencyScale);
 
         var traslados = itemPayloads
             .Where(x => x.Impuestos?.Traslados is { Count: > 0 })
@@ -194,15 +195,15 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
             .GroupBy(x => new { x.Impuesto, x.TipoFactor, x.TasaOCuota })
             .Select(group => new FacturaloPlusComprobanteTraslado
             {
-                Base = group.Sum(x => x.Base),
+                Base = RoundMonetary(group.Sum(x => x.Base), currencyScale),
                 Impuesto = group.Key.Impuesto,
                 TipoFactor = group.Key.TipoFactor,
                 TasaOCuota = group.Key.TasaOCuota,
-                Importe = group.Sum(x => x.Importe)
+                Importe = RoundMonetary(group.Sum(x => x.Importe), currencyScale)
             })
             .ToList();
-        var totalImpuestosTrasladados = traslados.Sum(x => x.Importe);
-        var total = subTotal - descuento + totalImpuestosTrasladados;
+        var totalImpuestosTrasladados = RoundMonetary(traslados.Sum(x => x.Importe), currencyScale);
+        var total = RoundMonetary(subTotal - descuento + totalImpuestosTrasladados, currencyScale);
 
         return new FacturaloPlusStampingPayload
         {
@@ -284,9 +285,15 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
         return true;
     }
 
-    private static FacturaloPlusComprobanteConcepto BuildConcepto(FiscalStampingRequestItem item)
+    private static FacturaloPlusComprobanteConcepto BuildConcepto(FiscalStampingRequestItem item, int currencyScale)
     {
-        var traslados = BuildConceptoTraslados(item);
+        var valorUnitario = RoundMonetary(item.UnitPrice, currencyScale);
+        var importe = RoundMonetary(valorUnitario * item.Quantity, currencyScale);
+        var descuento = item.DiscountAmount > 0
+            ? RoundMonetary(item.DiscountAmount, currencyScale)
+            : (decimal?)null;
+        var importeNeto = RoundMonetary(importe - (descuento ?? 0m), currencyScale);
+        var traslados = BuildConceptoTraslados(item, importeNeto, currencyScale);
 
         return new FacturaloPlusComprobanteConcepto
         {
@@ -296,9 +303,9 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
             ClaveUnidad = item.SatUnitCode,
             Unidad = item.UnitText,
             Descripcion = item.Description,
-            ValorUnitario = item.UnitPrice,
-            Importe = item.Subtotal + item.DiscountAmount,
-            Descuento = item.DiscountAmount > 0 ? item.DiscountAmount : null,
+            ValorUnitario = valorUnitario,
+            Importe = importe,
+            Descuento = descuento,
             ObjetoImp = item.TaxObjectCode,
             Impuestos = traslados.Count == 0
                 ? null
@@ -309,24 +316,36 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
         };
     }
 
-    private static List<FacturaloPlusComprobanteTraslado> BuildConceptoTraslados(FiscalStampingRequestItem item)
+    private static List<FacturaloPlusComprobanteTraslado> BuildConceptoTraslados(FiscalStampingRequestItem item, decimal importeNeto, int currencyScale)
     {
         if (!string.Equals(item.TaxObjectCode, "02", StringComparison.Ordinal))
         {
             return [];
         }
 
+        var trasladoImporte = RoundMonetary(importeNeto * item.VatRate, currencyScale);
+
         return
         [
             new FacturaloPlusComprobanteTraslado
             {
-                Base = item.Subtotal,
+                Base = importeNeto,
                 Impuesto = "002",
                 TipoFactor = "Tasa",
                 TasaOCuota = FormatTasaOCuota(item.VatRate),
-                Importe = item.TaxTotal
+                Importe = trasladoImporte
             }
         ];
+    }
+
+    private static int ResolveCurrencyScale(string currencyCode)
+    {
+        return string.Equals(currencyCode, "MXN", StringComparison.OrdinalIgnoreCase) ? 2 : 2;
+    }
+
+    private static decimal RoundMonetary(decimal value, int currencyScale)
+    {
+        return Math.Round(value, currencyScale, MidpointRounding.AwayFromZero);
     }
 
     private static string FormatTasaOCuota(decimal tasaOcuota)
