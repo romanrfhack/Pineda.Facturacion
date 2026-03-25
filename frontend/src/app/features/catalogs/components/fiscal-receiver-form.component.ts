@@ -163,7 +163,18 @@ import { FiscalReceiver, FiscalReceiverSatCatalog, FiscalReceiverSatCatalogOptio
     .form-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:1rem; align-items:end; }
     label { display:grid; gap:0.35rem; }
     input, button, select { font:inherit; }
-    input, select { border:1px solid #c9d1da; border-radius:0.8rem; padding:0.75rem 0.9rem; }
+    input, select {
+      border:1px solid #c9d1da;
+      border-radius:0.8rem;
+      padding:0.75rem 0.9rem;
+      width: 100%;
+      min-width: 0;
+      box-sizing: border-box;
+    }
+    select option {
+      white-space: normal;
+      word-break: break-word;
+    }
     .checkbox { display:flex; align-items:center; gap:0.5rem; }
     .checkbox input { width:auto; }
     button { border:none; border-radius:0.8rem; padding:0.75rem 1rem; background:#182533; color:#fff; cursor:pointer; }
