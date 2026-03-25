@@ -14,14 +14,14 @@ import { FiscalStampResponse } from '../models/fiscal-documents.models';
         </div>
       </div>
 
-      <dl class="grid">
-        <div><dt>Id de timbre</dt><dd>{{ stamp().id }}</dd></div>
-        <div><dt>Operación del proveedor</dt><dd>{{ stamp().providerOperation || 'N/D' }}</dd></div>
-        <div><dt>Id de tracking</dt><dd>{{ stamp().providerTrackingId || 'N/D' }}</dd></div>
-        <div><dt>Texto / URL QR</dt><dd>{{ stamp().qrCodeTextOrUrl || 'N/D' }}</dd></div>
-        <div><dt>Cadena original</dt><dd class="mono">{{ stamp().originalString || 'N/D' }}</dd></div>
-        <div><dt>Creado</dt><dd>{{ stamp().createdAtUtc | date: 'medium' }}</dd></div>
-        <div><dt>Actualizado</dt><dd>{{ stamp().updatedAtUtc | date: 'medium' }}</dd></div>
+      <dl class="details-list">
+        <div class="detail-row"><dt>Id de timbre</dt><dd>{{ stamp().id }}</dd></div>
+        <div class="detail-row"><dt>Operación del proveedor</dt><dd>{{ stamp().providerOperation || 'N/D' }}</dd></div>
+        <div class="detail-row"><dt>Id de tracking</dt><dd class="mono">{{ stamp().providerTrackingId || 'N/D' }}</dd></div>
+        <div class="detail-row"><dt>Texto / URL QR</dt><dd class="mono">{{ stamp().qrCodeTextOrUrl || 'N/D' }}</dd></div>
+        <div class="detail-row"><dt>Cadena original</dt><dd class="mono">{{ stamp().originalString || 'N/D' }}</dd></div>
+        <div class="detail-row"><dt>Creado</dt><dd>{{ stamp().createdAtUtc | date: 'medium' }}</dd></div>
+        <div class="detail-row"><dt>Actualizado</dt><dd>{{ stamp().updatedAtUtc | date: 'medium' }}</dd></div>
       </dl>
     </section>
   `,
@@ -29,10 +29,14 @@ import { FiscalStampResponse } from '../models/fiscal-documents.models';
     .panel { border:1px solid #d8d1c2; border-radius:1rem; padding:1rem; background:#fff; }
     .eyebrow { margin:0; text-transform:uppercase; letter-spacing:0.12em; font-size:0.72rem; color:#8a6a32; }
     h3 { margin:0.25rem 0 0; }
-    .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:0.75rem; margin-top:0.75rem; }
+    .details-list { display:grid; gap:0.65rem; margin-top:0.75rem; }
+    .detail-row { display:grid; grid-template-columns:minmax(140px, 190px) minmax(0, 1fr); gap:0.35rem 0.9rem; align-items:start; }
     dt { font-size:0.82rem; color:#666; }
-    dd { margin:0.2rem 0 0; font-weight:600; }
-    .mono { font-family:"SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-weight:500; word-break:break-word; }
+    dd { margin:0.2rem 0 0; font-weight:600; min-width:0; overflow-wrap:anywhere; word-break:break-word; }
+    .mono { font-family:"SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-weight:500; }
+    @media (max-width: 720px) {
+      .detail-row { grid-template-columns:1fr; }
+    }
   `],
   changeDetection: ChangeDetectionStrategy.OnPush
 })

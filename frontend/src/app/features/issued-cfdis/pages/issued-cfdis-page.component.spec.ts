@@ -71,14 +71,34 @@ describe('IssuedCfdisPageComponent', () => {
         discountTotal: 0,
         taxTotal: 16,
         total: 116,
-        items: []
+        items: [],
+        specialFields: [
+          {
+            id: 1,
+            fiscalReceiverSpecialFieldDefinitionId: 31,
+            fieldCode: 'AGENTE',
+            fieldLabelSnapshot: 'Agente',
+            dataType: 'text',
+            value: 'Juan Pérez',
+            displayOrder: 1
+          },
+          {
+            id: 2,
+            fiscalReceiverSpecialFieldDefinitionId: 32,
+            fieldCode: 'ORDEN_TRABAJO',
+            fieldLabelSnapshot: 'Orden de trabajo',
+            dataType: 'text',
+            value: 'OT-45678',
+            displayOrder: 2
+          }
+        ]
       })),
       getStamp: vi.fn().mockReturnValue(of({
         id: 11,
         fiscalDocumentId: 40,
         providerName: 'FacturaloPlus',
         providerOperation: 'stamp',
-        providerTrackingId: 'TRACK-1',
+        providerTrackingId: 'TRACK-1-ABCDEF1234567890-ABCDEFGHIJKLMNOPQRSTUVWXYZ-1234567890',
         status: 'Stamped',
         uuid: 'UUID-123',
         stampedAtUtc: '2026-03-24T12:05:00Z',
@@ -179,11 +199,67 @@ describe('IssuedCfdisPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Detalle de CFDI emitido');
     expect(fixture.nativeElement.textContent).toContain('Snapshot fiscal');
     expect(fixture.nativeElement.textContent).toContain('Evidencia de timbrado');
+    expect(fixture.nativeElement.textContent).toContain('Campos especiales de facturación');
+    expect(fixture.nativeElement.textContent).toContain('Agente');
+    expect(fixture.nativeElement.textContent).toContain('Juan Pérez');
+    expect(fixture.nativeElement.textContent).toContain('Orden de trabajo');
+    expect(fixture.nativeElement.textContent).toContain('OT-45678');
+    expect(fixture.nativeElement.textContent).toContain('TRACK-1-ABCDEF1234567890-ABCDEFGHIJKLMNOPQRSTUVWXYZ-1234567890');
 
     fixture.componentInstance['closeDetailModal']();
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).not.toContain('Detalle de CFDI emitido');
+  });
+
+  it('keeps the detail modal stable when the document has no special billing fields', async () => {
+    const getFiscalDocumentById = vi.fn().mockReturnValue(of({
+      id: 40,
+      billingDocumentId: 30,
+      issuerProfileId: 1,
+      fiscalReceiverId: 9,
+      status: 'Stamped',
+      cfdiVersion: '4.0',
+      documentType: 'I',
+      series: 'A',
+      folio: '31787',
+      issuedAtUtc: '2026-03-24T12:00:00Z',
+      currencyCode: 'MXN',
+      exchangeRate: 1,
+      paymentMethodSat: 'PPD',
+      paymentFormSat: '99',
+      paymentCondition: 'CREDITO',
+      isCreditSale: true,
+      creditDays: 7,
+      issuerRfc: 'AAA010101AAA',
+      issuerLegalName: 'Issuer SA',
+      issuerFiscalRegimeCode: '601',
+      issuerPostalCode: '01000',
+      pacEnvironment: 'Sandbox',
+      hasCertificateReference: true,
+      hasPrivateKeyReference: true,
+      hasPrivateKeyPasswordReference: true,
+      receiverRfc: 'BBB010101BBB',
+      receiverLegalName: 'Receiver One',
+      receiverFiscalRegimeCode: '601',
+      receiverCfdiUseCode: 'G03',
+      receiverPostalCode: '02000',
+      receiverCountryCode: 'MX',
+      receiverForeignTaxRegistration: null,
+      subtotal: 100,
+      discountTotal: 0,
+      taxTotal: 16,
+      total: 116,
+      items: [],
+      specialFields: []
+    }));
+    const fixture = await configure({ getFiscalDocumentById });
+
+    await fixture.componentInstance['openDetailModal'](fixture.componentInstance['items']()[0]);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Detalle de CFDI emitido');
+    expect(fixture.nativeElement.textContent).not.toContain('Campos especiales de facturación');
   });
 
   it('opens the email composer from the detail modal and sends without re-timbrar', async () => {

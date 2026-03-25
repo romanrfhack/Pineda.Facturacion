@@ -30,10 +30,10 @@ import { StatusBadgeComponent } from '../../../shared/components/status-badge.co
 
       @if (document().specialFields?.length) {
         <section class="special-fields">
-          <p class="eyebrow">Datos adicionales</p>
-          <dl class="grid">
+          <p class="eyebrow">Campos especiales de facturación</p>
+          <dl class="special-fields-list">
             @for (field of document().specialFields ?? []; track field.id) {
-              <div><dt>{{ field.fieldLabelSnapshot }}</dt><dd>{{ field.value || '—' }}</dd></div>
+              <div class="field-row"><dt>{{ field.fieldLabelSnapshot }}</dt><dd>{{ field.value || '—' }}</dd></div>
             }
           </dl>
         </section>
@@ -73,10 +73,15 @@ import { StatusBadgeComponent } from '../../../shared/components/status-badge.co
     .document-number { margin:0.35rem 0 0; color:#5f6b76; font-weight:600; }
     .grid { margin:1rem 0; display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:0.75rem; }
     .special-fields { border-top:1px solid #ece3d3; margin-top:0.5rem; padding-top:0.75rem; }
+    .special-fields-list { display:grid; gap:0.65rem; margin:0.75rem 0 0; }
+    .field-row { display:grid; grid-template-columns:minmax(160px, 220px) minmax(0, 1fr); gap:0.35rem 0.9rem; align-items:start; }
     dt { font-size:0.82rem; color:#666; }
-    dd { margin:0.2rem 0 0; font-weight:600; }
+    dd { margin:0.2rem 0 0; font-weight:600; min-width:0; overflow-wrap:anywhere; word-break:break-word; }
     table { width:100%; border-collapse:collapse; }
     th, td { text-align:left; padding:0.6rem; border-top:1px solid #ece3d3; }
+    @media (max-width: 720px) {
+      .field-row { grid-template-columns:1fr; }
+    }
   `],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
