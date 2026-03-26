@@ -787,10 +787,10 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
                 return startY;
             }
 
-            const float rightSafetyPadding = 12f;
-            const float labelValueGap = 4f;
+            const float rightSafetyPadding = 14f;
+            const float labelValueGap = 6f;
             var labelText = $"{FormatTimbreLabel(label)}: ";
-            var labelWidth = EstimateTextWidth(labelText, labelFontSize, PdfFont.Bold) + labelValueGap;
+            var labelWidth = PdfLayoutTextWrapper.EstimateConservativeTextWidth(labelText, labelFontSize, isBold: true) + labelValueGap;
             var remaining = value.Trim();
             var currentY = startY;
             var isFirstLine = true;

@@ -4,6 +4,9 @@ namespace Pineda.Facturacion.Infrastructure.Documents;
 
 internal static class PdfLayoutTextWrapper
 {
+    public const float ConservativeRegularMultiplier = 0.56f;
+    public const float ConservativeBoldMultiplier = 0.58f;
+
     public static string FitTextToWidth(string value, float availableWidth, float fontSize, bool isBold = false)
     {
         var remaining = value?.TrimStart() ?? string.Empty;
@@ -23,7 +26,7 @@ internal static class PdfLayoutTextWrapper
         foreach (var word in words)
         {
             var candidate = current.Length == 0 ? word : $"{current} {word}";
-            if (EstimateTextWidth(candidate, fontSize, isBold) <= safeWidth)
+            if (EstimateConservativeTextWidth(candidate, fontSize, isBold) <= safeWidth)
             {
                 current.Clear();
                 current.Append(candidate);
@@ -47,7 +50,7 @@ internal static class PdfLayoutTextWrapper
         foreach (var ch in token)
         {
             var candidate = $"{chunk}{ch}";
-            if (EstimateTextWidth(candidate, fontSize, isBold) > availableWidth && chunk.Length > 0)
+            if (EstimateConservativeTextWidth(candidate, fontSize, isBold) > availableWidth && chunk.Length > 0)
             {
                 return chunk.ToString();
             }
@@ -66,7 +69,7 @@ internal static class PdfLayoutTextWrapper
         }
 
         var labelText = $"{label}: ";
-        var labelWidth = EstimateTextWidth(labelText, labelFontSize, isBold: true) + labelValueGap;
+        var labelWidth = EstimateConservativeTextWidth(labelText, labelFontSize, isBold: true) + labelValueGap;
         var remaining = value.Trim();
         var lines = new List<string>();
         var isFirstLine = true;
@@ -91,20 +94,14 @@ internal static class PdfLayoutTextWrapper
         return lines.ToArray();
     }
 
-    private static float EstimateTextWidth(string text, float fontSize, bool isBold)
+    public static float EstimateConservativeTextWidth(string text, float fontSize, bool isBold)
     {
         if (string.IsNullOrWhiteSpace(text))
         {
             return 0f;
         }
 
-        var multiplier = isBold ? 0.56f : 0.54f;
+        var multiplier = isBold ? ConservativeBoldMultiplier : ConservativeRegularMultiplier;
         return text.Normalize(NormalizationForm.FormKD).Length * fontSize * multiplier;
-    }
-
-    private static int EstimateWrapLength(float width, float fontSize, bool isBold)
-    {
-        var averageCharacterWidth = fontSize * (isBold ? 0.56f : 0.54f);
-        return Math.Max(6, (int)Math.Floor(width / averageCharacterWidth));
     }
 }
