@@ -1,7 +1,11 @@
+using System.Text;
+
 namespace Pineda.Facturacion.Infrastructure.Documents;
 
 internal static class PdfLayoutTextWrapper
 {
+    private const float RightSafetyPadding = 10f;
+
     public static string[] WrapValueWithHangingLabel(string label, string value, float maxWidth, float labelFontSize, float valueFontSize)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -11,8 +15,8 @@ internal static class PdfLayoutTextWrapper
 
         var labelText = $"{label}: ";
         var labelWidth = EstimateTextWidth(labelText, labelFontSize, isBold: true) + 2f;
-        var firstLineLength = EstimateWrapLength(Math.Max(20f, maxWidth - labelWidth), valueFontSize, isBold: false);
-        var followingLineLength = EstimateWrapLength(maxWidth, valueFontSize, isBold: false);
+        var firstLineLength = EstimateWrapLength(Math.Max(20f, maxWidth - labelWidth - RightSafetyPadding), valueFontSize, isBold: false);
+        var followingLineLength = EstimateWrapLength(Math.Max(20f, maxWidth - RightSafetyPadding), valueFontSize, isBold: false);
 
         var remaining = value.Trim();
         if (remaining.Length == 0)
@@ -65,13 +69,13 @@ internal static class PdfLayoutTextWrapper
             return 0f;
         }
 
-        var multiplier = isBold ? 0.56f : 0.52f;
-        return text.Length * fontSize * multiplier;
+        var multiplier = isBold ? 0.56f : 0.54f;
+        return text.Normalize(NormalizationForm.FormKD).Length * fontSize * multiplier;
     }
 
     private static int EstimateWrapLength(float width, float fontSize, bool isBold)
     {
-        var averageCharacterWidth = fontSize * (isBold ? 0.56f : 0.52f);
+        var averageCharacterWidth = fontSize * (isBold ? 0.56f : 0.54f);
         return Math.Max(6, (int)Math.Floor(width / averageCharacterWidth));
     }
 }

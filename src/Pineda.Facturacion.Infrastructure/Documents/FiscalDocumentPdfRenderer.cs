@@ -450,13 +450,15 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
         }
 
         internal static string[] WrapValueWithHangingLabel(string label, string value, float maxWidth, float labelFontSize, float valueFontSize)
-            => PdfLayoutTextWrapper.WrapValueWithHangingLabel(label, value, maxWidth, labelFontSize, valueFontSize);
+            => PdfLayoutTextWrapper.WrapValueWithHangingLabel(FormatTimbreLabel(label), value, maxWidth, labelFontSize, valueFontSize);
 
         private static float MeasureHangingLabelBlockHeight(string label, string value, float maxWidth, float labelFontSize, float valueFontSize, float lineHeight)
         {
             var lines = WrapValueWithHangingLabel(label, value, maxWidth, labelFontSize, valueFontSize);
             return lines.Length == 0 ? lineHeight + 2f : (lines.Length * lineHeight) + 2f;
         }
+
+        private static string FormatTimbreLabel(string label) => label.Trim().ToUpperInvariant();
 
         private float DrawHangingLabelValue(string label, string value, float x, float y, float maxWidth, float labelFontSize, float valueFontSize, float lineHeight)
         {
@@ -692,6 +694,7 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
             var contentLeftX = Margin + innerPad;
             var contentRightX = PageWidth - Margin - innerPad;
 
+            const float labelFontSize = 8.5f;
             float sealFontSize = 6.2f;
             float sealLineHeight = 7.5f;
             float metaLineH = 10f;
@@ -733,6 +736,7 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
                 contentRightX,
                 qrBottomY,
                 qr is not null,
+                labelFontSize,
                 sealFontSize,
                 sealLineHeight,
                 metaLineH,
@@ -761,6 +765,7 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
                 contentRightX,
                 qrBottomY,
                 qr is not null,
+                labelFontSize,
                 sealFontSize,
                 sealLineHeight,
                 metaLineH,
@@ -777,6 +782,7 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
             float flowRightX,
             float qrBottomY,
             bool hasQr,
+            float labelFontSize,
             float sealFontSize,
             float sealLineHeight,
             float metaLineHeight,
@@ -786,9 +792,9 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
             foreach (var block in blocks)
             {
                 var isSeal = block.Label.StartsWith("SELLO") || block.Label.StartsWith("CADENA");
-                var fontSize = isSeal ? sealFontSize : 8.5f;
+                var valueFontSize = isSeal ? sealFontSize : 8.5f;
                 var lineHeight = isSeal ? sealLineHeight : metaLineHeight;
-                currentY = DrawFlowingKeyValueBlock(block.Label, block.Value, currentY, fullFlowLeftX, qrFlowLeftX, flowRightX, qrBottomY, hasQr, fontSize, lineHeight, draw);
+                currentY = DrawFlowingKeyValueBlock(block.Label, block.Value, currentY, fullFlowLeftX, qrFlowLeftX, flowRightX, qrBottomY, hasQr, labelFontSize, valueFontSize, lineHeight, draw);
                 currentY -= 3f;
             }
 
@@ -804,7 +810,8 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
             float flowRightX,
             float qrBottomY,
             bool hasQr,
-            float fontSize,
+            float labelFontSize,
+            float valueFontSize,
             float lineHeight,
             bool draw)
         {
@@ -813,8 +820,9 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
                 return startY;
             }
 
-            var labelText = $"{label}: ";
-            var labelWidth = EstimateTextWidth(labelText, fontSize, PdfFont.Bold) + 2f;
+            const float rightSafetyPadding = 10f;
+            var labelText = $"{FormatTimbreLabel(label)}: ";
+            var labelWidth = EstimateTextWidth(labelText, labelFontSize, PdfFont.Bold) + 2f;
             var remaining = value.Trim();
             var currentY = startY;
             var isFirstLine = true;
@@ -822,21 +830,21 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
             while (remaining.Length > 0)
             {
                 var lineLeftX = hasQr && currentY > qrBottomY ? qrFlowLeftX : fullFlowLeftX;
-                var lineWidth = Math.Max(20f, flowRightX - lineLeftX);
+                var lineWidth = Math.Max(20f, flowRightX - lineLeftX - rightSafetyPadding);
                 var availableWidth = isFirstLine ? Math.Max(20f, lineWidth - labelWidth) : lineWidth;
-                var maxLength = EstimateWrapLength(availableWidth, fontSize, PdfFont.Regular);
+                var maxLength = EstimateWrapLength(availableWidth, valueFontSize, PdfFont.Regular);
                 var segment = WrapText(remaining, maxLength).First();
 
                 if (draw)
                 {
                     if (isFirstLine)
                     {
-                        _page.DrawText(labelText, lineLeftX, currentY, fontSize, PdfFont.Bold, new PdfColor(120, 108, 84));
-                        _page.DrawText(segment, lineLeftX + labelWidth, currentY, fontSize, PdfFont.Regular, new PdfColor(50, 58, 70));
+                        _page.DrawText(labelText, lineLeftX, currentY, labelFontSize, PdfFont.Bold, new PdfColor(120, 108, 84));
+                        _page.DrawText(segment, lineLeftX + labelWidth, currentY, valueFontSize, PdfFont.Regular, new PdfColor(50, 58, 70));
                     }
                     else
                     {
-                        _page.DrawText(segment, lineLeftX, currentY, fontSize, PdfFont.Regular, new PdfColor(50, 58, 70));
+                        _page.DrawText(segment, lineLeftX, currentY, valueFontSize, PdfFont.Regular, new PdfColor(50, 58, 70));
                     }
                 }
 

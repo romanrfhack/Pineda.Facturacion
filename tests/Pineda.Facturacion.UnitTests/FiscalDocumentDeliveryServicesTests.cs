@@ -311,6 +311,18 @@ public class FiscalDocumentDeliveryServicesTests
         Assert.Equal("ABC123", lines[0]);
     }
 
+    [Fact]
+    public async Task FiscalDocumentPdfRenderer_Uses_Uniform_Uppercase_Timbre_Labels()
+    {
+        var renderer = new FiscalDocumentPdfRenderer(new FakeIssuerProfileRepository(), new FakeIssuerProfileLogoStorage());
+        var bytes = await renderer.RenderAsync(CreateFiscalDocument(), CreateFiscalStamp());
+
+        var pdfText = System.Text.Encoding.ASCII.GetString(bytes);
+
+        Assert.Contains("NO. SERIE CERTIFICADO SAT:", pdfText, StringComparison.Ordinal);
+        Assert.Contains("NO. SERIE CSD EMISOR:", pdfText, StringComparison.Ordinal);
+    }
+
     private static FiscalDocument CreateFiscalDocument()
     {
         return new FiscalDocument
