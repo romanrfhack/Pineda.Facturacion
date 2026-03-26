@@ -1,0 +1,90 @@
+name: Deploy Backend (Facturas API)
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') }}
+    runs-on: ubuntu-latest
+
+    env:
+      SSH_HOST: ${{ secrets.FACTURAS_SSH_HOST }}
+      SSH_PORT: ${{ secrets.FACTURAS_SSH_PORT }}
+      SSH_USER: ${{ secrets.FACTURAS_SSH_USER }}
+      SSH_KEY_B64: ${{ secrets.FACTURAS_SSH_KEY_B64 }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 2
+
+      - name: Detect backend changes for workflow_run
+        if: github.event_name == 'workflow_run'
+        id: changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git rev-parse HEAD^ >/dev/null 2>&1; then
+            CHANGED=$(git diff --name-only HEAD^ HEAD)
+          else
+            CHANGED=$(git show --pretty='' --name-only HEAD)
+          fi
+          echo "Changed files:"
+          echo "$CHANGED"
+          if echo "$CHANGED" | grep -q '^src/'; then
+            echo "backend_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "backend_changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip deploy when backend did not change
+        if: github.event_name == 'workflow_run' && steps.changed.outputs.backend_changed != 'true'
+        run: |
+          echo "No backend/** changes detected. Skipping API deploy."
+          exit 0
+
+      - name: Setup .NET
+        if: github.event_name == 'workflow_dispatch' || steps.changed.outputs.backend_changed == 'true'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Publish API
+        if: github.event_name == 'workflow_dispatch' || steps.changed.outputs.backend_changed == 'true'
+        run: |
+          dotnet restore Pineda.Facturacion.slnx
+          dotnet publish src/Pineda.Facturacion.Api/Pineda.Facturacion.Api.csproj -c Release -o out/api
+
+      - name: Setup SSH
+        if: github.event_name == 'workflow_dispatch' || steps.changed.outputs.backend_changed == 'true'
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "$SSH_KEY_B64" | base64 -d > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts
+
+      - name: Upload API to server
+        if: github.event_name == 'workflow_dispatch' || steps.changed.outputs.backend_changed == 'true'
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" \
+            "$SSH_USER@$SSH_HOST" \
+            "mkdir -p /var/www/facturas-backend && rm -rf /var/www/facturas-backend/*"
+
+          scp -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -P "$SSH_PORT" -r \
+            out/api/* "$SSH_USER@$SSH_HOST:/var/www/facturas-backend/"
+
+      - name: Restart service
+        if: github.event_name == 'workflow_dispatch' || steps.changed.outputs.backend_changed == 'true'
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" \
+            "$SSH_USER@$SSH_HOST" \
+            "sudo systemctl daemon-reload && \
+             sudo systemctl restart facturas-api && \
+             systemctl is-active --quiet facturas-api && \
+             systemctl status facturas-api --no-pager -l"

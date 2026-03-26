@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect changed areas
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            backend:
+              - 'src/**'
+              - '.github/workflows/**'
+              - 'Directory.Build.props'
+            frontend:
+              - 'frontend/**'
+              - '.github/workflows/**'
+
+  backend_tests:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: Strong_Passw0rd_2026!
+          MYSQL_DATABASE: facturas_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      ConnectionStrings__DefaultConnection: Server=localhost;Database=facturas_test;User=root;Password=Strong_Passw0rd_2026!;
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Restore
+        run: dotnet restore Pineda.Facturacion.slnx
+      - name: Build
+        run: dotnet build -c Release Pineda.Facturacion.slnx
+      - name: Test
+        run: dotnet test -c Release Pineda.Facturacion.slnx
+
+  frontend_tests:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+      - name: Unit tests
+        working-directory: frontend
+        run: npm run test:ci
