@@ -4,9 +4,61 @@ namespace Pineda.Facturacion.Infrastructure.Documents;
 
 internal static class PdfLayoutTextWrapper
 {
-    private const float RightSafetyPadding = 10f;
+    public static string FitTextToWidth(string value, float availableWidth, float fontSize, bool isBold = false)
+    {
+        var remaining = value?.TrimStart() ?? string.Empty;
+        if (remaining.Length == 0)
+        {
+            return string.Empty;
+        }
 
-    public static string[] WrapValueWithHangingLabel(string label, string value, float maxWidth, float labelFontSize, float valueFontSize)
+        var safeWidth = Math.Max(6f, availableWidth);
+        var words = remaining.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var current = new StringBuilder();
+        foreach (var word in words)
+        {
+            var candidate = current.Length == 0 ? word : $"{current} {word}";
+            if (EstimateTextWidth(candidate, fontSize, isBold) <= safeWidth)
+            {
+                current.Clear();
+                current.Append(candidate);
+                continue;
+            }
+
+            if (current.Length > 0)
+            {
+                return current.ToString();
+            }
+
+            return FitTokenToWidth(word, safeWidth, fontSize, isBold);
+        }
+
+        return current.ToString();
+    }
+
+    private static string FitTokenToWidth(string token, float availableWidth, float fontSize, bool isBold)
+    {
+        var chunk = new StringBuilder();
+        foreach (var ch in token)
+        {
+            var candidate = $"{chunk}{ch}";
+            if (EstimateTextWidth(candidate, fontSize, isBold) > availableWidth && chunk.Length > 0)
+            {
+                return chunk.ToString();
+            }
+
+            chunk.Append(ch);
+        }
+
+        return chunk.Length == 0 ? token[..1] : chunk.ToString();
+    }
+
+    public static string[] WrapValueWithHangingLabel(string label, string value, float maxWidth, float labelFontSize, float valueFontSize, float labelValueGap = 4f, float rightSafetyPadding = 12f)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
@@ -14,52 +66,29 @@ internal static class PdfLayoutTextWrapper
         }
 
         var labelText = $"{label}: ";
-        var labelWidth = EstimateTextWidth(labelText, labelFontSize, isBold: true) + 2f;
-        var firstLineLength = EstimateWrapLength(Math.Max(20f, maxWidth - labelWidth - RightSafetyPadding), valueFontSize, isBold: false);
-        var followingLineLength = EstimateWrapLength(Math.Max(20f, maxWidth - RightSafetyPadding), valueFontSize, isBold: false);
-
+        var labelWidth = EstimateTextWidth(labelText, labelFontSize, isBold: true) + labelValueGap;
         var remaining = value.Trim();
-        if (remaining.Length == 0)
-        {
-            return [];
-        }
-
         var lines = new List<string>();
-        var firstLine = WrapText(remaining, firstLineLength).First();
-        lines.Add(firstLine);
+        var isFirstLine = true;
 
-        remaining = remaining[firstLine.Length..].TrimStart();
-        if (remaining.Length > 0)
+        while (remaining.Length > 0)
         {
-            lines.AddRange(WrapText(remaining, followingLineLength));
+            var usableWidth = isFirstLine
+                ? Math.Max(20f, maxWidth - labelWidth - rightSafetyPadding)
+                : Math.Max(20f, maxWidth - rightSafetyPadding);
+
+            var segment = FitTextToWidth(remaining, usableWidth, valueFontSize);
+            if (string.IsNullOrEmpty(segment))
+            {
+                break;
+            }
+
+            lines.Add(segment);
+            remaining = remaining[segment.Length..].TrimStart();
+            isFirstLine = false;
         }
 
         return lines.ToArray();
-    }
-
-    private static IEnumerable<string> WrapText(string value, int maxLength)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return [];
-        }
-
-        var lines = new List<string>();
-        var remaining = value.Trim();
-        while (remaining.Length > maxLength)
-        {
-            var splitIndex = remaining.LastIndexOf(' ', maxLength);
-            if (splitIndex <= 0)
-            {
-                splitIndex = maxLength;
-            }
-
-            lines.Add(remaining[..splitIndex].TrimEnd());
-            remaining = remaining[splitIndex..].TrimStart();
-        }
-
-        lines.Add(remaining);
-        return lines;
     }
 
     private static float EstimateTextWidth(string text, float fontSize, bool isBold)

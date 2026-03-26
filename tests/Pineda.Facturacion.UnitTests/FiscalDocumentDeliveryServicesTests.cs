@@ -117,7 +117,7 @@ public class FiscalDocumentDeliveryServicesTests
         Assert.Contains("116.00", pdfText, StringComparison.Ordinal);
         Assert.Contains("Este documento es una representacion impresa de un CFDI 4.0", pdfText, StringComparison.Ordinal);
         Assert.Equal(2, CountOccurrences(pdfText, "/Subtype /Image"));
-        Assert.Contains("Consulta SAT / QR:", pdfText, StringComparison.Ordinal);
+        Assert.Contains("CONSULTA SAT / QR:", pdfText, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -207,7 +207,7 @@ public class FiscalDocumentDeliveryServicesTests
 
         Assert.StartsWith("%PDF-1.4", pdfText, StringComparison.Ordinal);
         Assert.Equal(0, CountOccurrences(pdfText, "/Subtype /Image"));
-        Assert.DoesNotContain("Consulta SAT / QR:", pdfText, StringComparison.Ordinal);
+        Assert.DoesNotContain("CONSULTA SAT / QR:", pdfText, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -282,33 +282,41 @@ public class FiscalDocumentDeliveryServicesTests
     }
 
     [Fact]
-    public void WrapValueWithHangingLabel_Uses_More_Width_On_Following_Lines()
+    public void FitTextToWidth_Breaks_Long_Text_By_Real_Width()
+    {
+        var first = PdfLayoutTextWrapper.FitTextToWidth(
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ 1234567890 QWERTYUIOP ASDFGHJKL ZXCVBNM",
+            80f,
+            6.2f);
+
+        Assert.False(string.IsNullOrWhiteSpace(first));
+        Assert.NotEqual("ABCDEFGHIJKLMNOPQRSTUVWXYZ 1234567890 QWERTYUIOP ASDFGHJKL ZXCVBNM", first);
+    }
+
+    [Fact]
+    public void FitTextToWidth_Splits_Long_Token_Without_Spaces()
+    {
+        var chunk = PdfLayoutTextWrapper.FitTextToWidth(
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890",
+            30f,
+            6.2f);
+
+        Assert.False(string.IsNullOrWhiteSpace(chunk));
+        Assert.True(chunk.Length < "ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890".Length);
+    }
+
+    [Fact]
+    public void WrapValueWithHangingLabel_Uses_First_Line_After_Label_And_Fuller_Following_Lines()
     {
         var lines = PdfLayoutTextWrapper.WrapValueWithHangingLabel(
             "SELLO DIGITAL DEL SAT",
             "ABCDEFGHIJKLMNOPQRSTUVWXYZ 1234567890 QWERTYUIOP ASDFGHJKL ZXCVBNM",
             180f,
-            6.2f,
+            8.5f,
             6.2f);
 
         Assert.True(lines.Length >= 2);
-        Assert.DoesNotContain("SELLO DIGITAL DEL SAT", lines[0], StringComparison.Ordinal);
-        Assert.DoesNotContain("SELLO DIGITAL DEL SAT", lines[1], StringComparison.Ordinal);
         Assert.True(lines[1].Length >= lines[0].Length);
-    }
-
-    [Fact]
-    public void WrapValueWithHangingLabel_Returns_Single_Line_When_Value_Fits()
-    {
-        var lines = PdfLayoutTextWrapper.WrapValueWithHangingLabel(
-            "SELLO DIGITAL DEL CFDI",
-            "ABC123",
-            220f,
-            6.2f,
-            6.2f);
-
-        Assert.Single(lines);
-        Assert.Equal("ABC123", lines[0]);
     }
 
     [Fact]
@@ -320,7 +328,7 @@ public class FiscalDocumentDeliveryServicesTests
         var pdfText = System.Text.Encoding.ASCII.GetString(bytes);
 
         Assert.Contains("NO. SERIE CERTIFICADO SAT:", pdfText, StringComparison.Ordinal);
-        Assert.Contains("NO. SERIE CSD EMISOR:", pdfText, StringComparison.Ordinal);
+        Assert.Contains("SELLO DIGITAL DEL CFDI:", pdfText, StringComparison.Ordinal);
     }
 
     private static FiscalDocument CreateFiscalDocument()

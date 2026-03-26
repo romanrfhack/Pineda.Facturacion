@@ -449,40 +449,7 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
             return currentY - 2f;
         }
 
-        internal static string[] WrapValueWithHangingLabel(string label, string value, float maxWidth, float labelFontSize, float valueFontSize)
-            => PdfLayoutTextWrapper.WrapValueWithHangingLabel(FormatTimbreLabel(label), value, maxWidth, labelFontSize, valueFontSize);
-
-        private static float MeasureHangingLabelBlockHeight(string label, string value, float maxWidth, float labelFontSize, float valueFontSize, float lineHeight)
-        {
-            var lines = WrapValueWithHangingLabel(label, value, maxWidth, labelFontSize, valueFontSize);
-            return lines.Length == 0 ? lineHeight + 2f : (lines.Length * lineHeight) + 2f;
-        }
-
         private static string FormatTimbreLabel(string label) => label.Trim().ToUpperInvariant();
-
-        private float DrawHangingLabelValue(string label, string value, float x, float y, float maxWidth, float labelFontSize, float valueFontSize, float lineHeight)
-        {
-            var labelText = $"{label}: ";
-            var labelWidth = EstimateTextWidth(labelText, labelFontSize, PdfFont.Bold) + 2f;
-            var lines = WrapValueWithHangingLabel(label, value, maxWidth, labelFontSize, valueFontSize);
-
-            _page.DrawText(labelText, x, y, labelFontSize, PdfFont.Bold, new PdfColor(120, 108, 84));
-            if (lines.Length == 0)
-            {
-                return y - lineHeight - 2f;
-            }
-
-            _page.DrawText(lines[0], x + labelWidth, y, valueFontSize, PdfFont.Regular, new PdfColor(50, 58, 70));
-
-            var currentY = y - lineHeight;
-            for (var index = 1; index < lines.Length; index++)
-            {
-                _page.DrawText(lines[index], x, currentY, valueFontSize, PdfFont.Regular, new PdfColor(50, 58, 70));
-                currentY -= lineHeight;
-            }
-
-            return currentY - 2f;
-        }
 
         // Renders label + value inline: "Label: valor" with proper indentation for wrapped lines
         private float DrawInlineKeyValueCompact(string label, string value, float x, float y, float maxWidth, float labelFontSize, float valueFontSize, float lineHeight)
@@ -820,9 +787,10 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
                 return startY;
             }
 
-            const float rightSafetyPadding = 10f;
+            const float rightSafetyPadding = 12f;
+            const float labelValueGap = 4f;
             var labelText = $"{FormatTimbreLabel(label)}: ";
-            var labelWidth = EstimateTextWidth(labelText, labelFontSize, PdfFont.Bold) + 2f;
+            var labelWidth = EstimateTextWidth(labelText, labelFontSize, PdfFont.Bold) + labelValueGap;
             var remaining = value.Trim();
             var currentY = startY;
             var isFirstLine = true;
@@ -832,8 +800,11 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
                 var lineLeftX = hasQr && currentY > qrBottomY ? qrFlowLeftX : fullFlowLeftX;
                 var lineWidth = Math.Max(20f, flowRightX - lineLeftX - rightSafetyPadding);
                 var availableWidth = isFirstLine ? Math.Max(20f, lineWidth - labelWidth) : lineWidth;
-                var maxLength = EstimateWrapLength(availableWidth, valueFontSize, PdfFont.Regular);
-                var segment = WrapText(remaining, maxLength).First();
+                var segment = PdfLayoutTextWrapper.FitTextToWidth(remaining, availableWidth, valueFontSize);
+                if (string.IsNullOrEmpty(segment))
+                {
+                    break;
+                }
 
                 if (draw)
                 {
