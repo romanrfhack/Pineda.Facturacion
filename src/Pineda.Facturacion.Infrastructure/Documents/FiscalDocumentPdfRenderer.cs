@@ -487,36 +487,55 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
 
         private void DrawReceiverSection(PdfViewModel model)
         {
-            var sectionHeight = 86f;
-            _page.FillRectangle(Margin, _cursorY - sectionHeight, PageWidth - (Margin * 2), sectionHeight, PdfColor.White);
-            _page.StrokeRectangle(Margin, _cursorY - sectionHeight, PageWidth - (Margin * 2), sectionHeight, new PdfColor(218, 213, 204), 0.8f);
-            _page.FillRectangle(Margin, _cursorY - 20f, PageWidth - (Margin * 2), 20f, new PdfColor(238, 235, 228));
-            _page.DrawText("Datos del cliente / receptor", Margin + 10f, _cursorY - 14f, 10f, PdfFont.Bold, new PdfColor(22, 30, 42));
+            const float innerPad = 10f;
+            const float columnGap = 14f;
+            const float headerHeight = 20f;
+            const float topPad = 10f;
+            const float bottomPad = 12f;
+            const float nameFontSize = 11f;
+            const float nameLineHeight = 13f;
+            const float fieldLabelFontSize = 9f;
+            const float fieldValueFontSize = 9.5f;
+            const float fieldLabelLineHeight = 10f;
+            const float fieldValueLineHeight = 10.5f;
 
-            // Nombre o razón social
-            _page.DrawText(model.ReceiverName, Margin + 10f, _cursorY - 38f, 11f, PdfFont.Bold, new PdfColor(22, 30, 42));
+            var sectionWidth = PageWidth - (Margin * 2);
+            var contentWidth = sectionWidth - (innerPad * 2);
+            var leftWidth = (contentWidth - columnGap) * 0.3f;
+            var rightWidth = contentWidth - columnGap - leftWidth;
+            var leftX = Margin + innerPad;
+            var rightX = leftX + leftWidth + columnGap;
+            var topY = _cursorY;
 
-            // Dos columnas
-            float colLeftX = Margin + 10f;
-            float colRightX = Margin + 280f;
-            float row1Y = _cursorY - 52f;
-            float row2Y = _cursorY - 66f;
+            var receiverNameLines = WrapTextConservatively(model.ReceiverName, contentWidth, nameFontSize, isBold: true);
+            var receiverNameHeight = Math.Max(nameLineHeight, receiverNameLines.Length * nameLineHeight);
+            var columnsStartY = topY - headerHeight - topPad - receiverNameHeight - 8f;
 
-            // Primera fila: RFC y Domicilio fiscal receptor
-            _page.DrawText("RFC:", colLeftX, row1Y, 9.5f, PdfFont.Bold, new PdfColor(76, 84, 96));
-            _page.DrawText(model.ReceiverRfc, colLeftX + 35f, row1Y, 9.5f, PdfFont.Regular, new PdfColor(76, 84, 96));
+            var leftHeight =
+                MeasureStackedFieldHeight(model.ReceiverRfc, leftWidth, fieldValueFontSize, fieldLabelLineHeight, fieldValueLineHeight) +
+                MeasureStackedFieldHeight(model.ReceiverPostalCode, leftWidth, fieldValueFontSize, fieldLabelLineHeight, fieldValueLineHeight);
+            var rightHeight =
+                MeasureStackedFieldHeight(model.ReceiverRegime, rightWidth, fieldValueFontSize, fieldLabelLineHeight, fieldValueLineHeight) +
+                MeasureStackedFieldHeight(model.ReceiverUse, rightWidth, fieldValueFontSize, fieldLabelLineHeight, fieldValueLineHeight);
+            var sectionHeight = headerHeight + topPad + receiverNameHeight + 8f + Math.Max(leftHeight, rightHeight) + bottomPad;
 
-            _page.DrawText("Domicilio fiscal receptor:", colRightX, row1Y, 9.5f, PdfFont.Bold, new PdfColor(76, 84, 96));
-            _page.DrawText(model.ReceiverPostalCode, colRightX + 130f, row1Y, 9.5f, PdfFont.Regular, new PdfColor(76, 84, 96));
+            _page.FillRectangle(Margin, topY - sectionHeight, sectionWidth, sectionHeight, PdfColor.White);
+            _page.StrokeRectangle(Margin, topY - sectionHeight, sectionWidth, sectionHeight, new PdfColor(218, 213, 204), 0.8f);
+            _page.FillRectangle(Margin, topY - headerHeight, sectionWidth, headerHeight, new PdfColor(238, 235, 228));
+            _page.DrawText("Datos del cliente / receptor", Margin + 10f, topY - 14f, 10f, PdfFont.Bold, new PdfColor(22, 30, 42));
 
-            // Segunda fila: Régimen fiscal receptor y Uso CFDI
-            _page.DrawText("Regimen fiscal receptor:", colLeftX, row2Y, 9.5f, PdfFont.Bold, new PdfColor(76, 84, 96));
-            _page.DrawText(model.ReceiverRegime, colLeftX + 130f, row2Y, 9.5f, PdfFont.Regular, new PdfColor(76, 84, 96));
+            var nameY = topY - headerHeight - topPad;
+            DrawWrappedTextLines(receiverNameLines, leftX, nameY, nameFontSize, nameLineHeight, PdfFont.Bold, new PdfColor(22, 30, 42));
 
-            _page.DrawText("Uso CFDI:", colRightX, row2Y, 9.5f, PdfFont.Bold, new PdfColor(76, 84, 96));
-            _page.DrawText(model.ReceiverUse, colRightX + 55f, row2Y, 9.5f, PdfFont.Regular, new PdfColor(76, 84, 96));
+            var leftY = columnsStartY;
+            leftY = DrawStackedField("RFC", model.ReceiverRfc, leftX, leftY, leftWidth, fieldLabelFontSize, fieldValueFontSize, fieldLabelLineHeight, fieldValueLineHeight);
+            leftY = DrawStackedField("Domicilio Fiscal", model.ReceiverPostalCode, leftX, leftY, leftWidth, fieldLabelFontSize, fieldValueFontSize, fieldLabelLineHeight, fieldValueLineHeight);
 
-            _cursorY -= sectionHeight + SectionGap;
+            var rightY = columnsStartY;
+            rightY = DrawStackedField("Régimen fiscal", model.ReceiverRegime, rightX, rightY, rightWidth, fieldLabelFontSize, fieldValueFontSize, fieldLabelLineHeight, fieldValueLineHeight);
+            rightY = DrawStackedField("Uso CFDI", model.ReceiverUse, rightX, rightY, rightWidth, fieldLabelFontSize, fieldValueFontSize, fieldLabelLineHeight, fieldValueLineHeight);
+
+            _cursorY = topY - sectionHeight - SectionGap;
         }
 
         private void DrawConceptTable(IReadOnlyList<PdfConceptRow> concepts)
@@ -618,42 +637,71 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
 
         private void DrawTotals(PdfViewModel model)
         {
+            const float headerHeight = 20f;
+            const float innerPad = 10f;
+            const float bottomPad = 12f;
+            const float wordsFontSize = 9.5f;
+            const float wordsLineHeight = 11f;
+            const float fieldLabelFontSize = 9f;
+            const float fieldValueFontSize = 9f;
+            const float fieldLabelLineHeight = 10f;
+            const float fieldValueLineHeight = 10f;
+            const float taxFontSize = 8f;
+            const float taxLineHeight = 10f;
+
             var summaryY = _cursorY;
             var leftWidth = 306f;
             var rightWidth = 232f;
+            var leftContentWidth = leftWidth - (innerPad * 2);
+            var wordsLines = WrapTextConservatively(model.TotalInWords, leftContentWidth, wordsFontSize, isBold: true);
+            var wordsHeight = Math.Max(wordsLineHeight, wordsLines.Length * wordsLineHeight);
+            var fieldHeight =
+                MeasureStackedFieldHeight(model.PaymentForm, leftContentWidth, fieldValueFontSize, fieldLabelLineHeight, fieldValueLineHeight) +
+                MeasureStackedFieldHeight(model.PaymentMethod, leftContentWidth, fieldValueFontSize, fieldLabelLineHeight, fieldValueLineHeight) +
+                MeasureStackedFieldHeight(model.ExportCode, leftContentWidth, fieldValueFontSize, fieldLabelLineHeight, fieldValueLineHeight) +
+                MeasureStackedFieldHeight(model.Currency, leftContentWidth, fieldValueFontSize, fieldLabelLineHeight, fieldValueLineHeight);
+            var taxLines = model.TaxesBreakdown.Take(2).Select(x => $"{x.Label} {x.Rate}: {x.Amount}").ToArray();
+            var taxHeight = taxLines.Length * taxLineHeight;
+            var leftHeight = headerHeight + 10f + wordsHeight + 8f + fieldHeight + (taxLines.Length > 0 ? 6f + taxHeight : 0f) + bottomPad;
 
-            _page.FillRectangle(Margin, summaryY - 108f, leftWidth, 108f, PdfColor.White);
-            _page.StrokeRectangle(Margin, summaryY - 108f, leftWidth, 108f, new PdfColor(218, 213, 204), 0.8f);
-            _page.FillRectangle(Margin, summaryY - 20f, leftWidth, 20f, new PdfColor(238, 235, 228));
+            var totalsHeight = 92f;
+            var sectionHeight = Math.Max(leftHeight, totalsHeight + 12f);
+
+            _page.FillRectangle(Margin, summaryY - leftHeight, leftWidth, leftHeight, PdfColor.White);
+            _page.StrokeRectangle(Margin, summaryY - leftHeight, leftWidth, leftHeight, new PdfColor(218, 213, 204), 0.8f);
+            _page.FillRectangle(Margin, summaryY - headerHeight, leftWidth, headerHeight, new PdfColor(238, 235, 228));
             _page.DrawText("Resumen fiscal", Margin + 10f, summaryY - 14f, 10f, PdfFont.Bold, new PdfColor(22, 30, 42));
-            _page.DrawText(model.TotalInWords, Margin + 10f, summaryY - 38f, 9.5f, PdfFont.Bold, new PdfColor(40, 48, 60));
 
-            _page.DrawText("Forma de pago:", Margin + 10f, summaryY - 56f, 9f, PdfFont.Bold, new PdfColor(76, 84, 96));
-            _page.DrawText(model.PaymentForm, Margin + 85f, summaryY - 56f, 9f, PdfFont.Regular, new PdfColor(76, 84, 96));
+            var leftX = Margin + innerPad;
+            var currentY = summaryY - headerHeight - 10f;
+            DrawWrappedTextLines(wordsLines, leftX, currentY, wordsFontSize, wordsLineHeight, PdfFont.Bold, new PdfColor(40, 48, 60));
+            currentY -= wordsHeight + 8f;
 
-            _page.DrawText("Método de pago:", Margin + 10f, summaryY - 68f, 9f, PdfFont.Bold, new PdfColor(76, 84, 96));
-            _page.DrawText(model.PaymentMethod, Margin + 85f, summaryY - 68f, 9f, PdfFont.Regular, new PdfColor(76, 84, 96));
+            currentY = DrawStackedField("Forma de pago", model.PaymentForm, leftX, currentY, leftContentWidth, fieldLabelFontSize, fieldValueFontSize, fieldLabelLineHeight, fieldValueLineHeight);
+            currentY = DrawStackedField("Método de pago", model.PaymentMethod, leftX, currentY, leftContentWidth, fieldLabelFontSize, fieldValueFontSize, fieldLabelLineHeight, fieldValueLineHeight);
+            currentY = DrawStackedField("Exportación", model.ExportCode, leftX, currentY, leftContentWidth, fieldLabelFontSize, fieldValueFontSize, fieldLabelLineHeight, fieldValueLineHeight);
+            currentY = DrawStackedField("Moneda", model.Currency, leftX, currentY, leftContentWidth, fieldLabelFontSize, fieldValueFontSize, fieldLabelLineHeight, fieldValueLineHeight);
 
-            _page.DrawText("Exportación:", Margin + 10f, summaryY - 80f, 9f, PdfFont.Bold, new PdfColor(76, 84, 96));
-            _page.DrawText($"{model.ExportCode} | Moneda:", Margin + 70f, summaryY - 80f, 9f, PdfFont.Bold, new PdfColor(76, 84, 96));
-            _page.DrawText(model.Currency, Margin + 155f, summaryY - 80f, 9f, PdfFont.Regular, new PdfColor(76, 84, 96));
-
-            var taxLines = model.TaxesBreakdown.Take(2).ToArray();
-            for (var index = 0; index < taxLines.Length; index++)
+            if (taxLines.Length > 0)
             {
-                _page.DrawText($"{taxLines[index].Label} {taxLines[index].Rate}: {taxLines[index].Amount}", Margin + 10f, summaryY - 94f - (index * 10f), 8f, PdfFont.Regular, new PdfColor(92, 98, 110));
+                currentY -= 2f;
+                foreach (var taxLine in taxLines)
+                {
+                    _page.DrawText(taxLine, leftX, currentY, taxFontSize, PdfFont.Regular, new PdfColor(92, 98, 110));
+                    currentY -= taxLineHeight;
+                }
             }
 
             var totalsX = PageWidth - Margin - rightWidth;
-            _page.FillRectangle(totalsX, summaryY - 92f, rightWidth, 92f, new PdfColor(248, 247, 243));
-            _page.StrokeRectangle(totalsX, summaryY - 92f, rightWidth, 92f, new PdfColor(218, 213, 204), 0.8f);
+            _page.FillRectangle(totalsX, summaryY - totalsHeight, rightWidth, totalsHeight, new PdfColor(248, 247, 243));
+            _page.StrokeRectangle(totalsX, summaryY - totalsHeight, rightWidth, totalsHeight, new PdfColor(218, 213, 204), 0.8f);
             DrawRightAlignedKeyValue("Subtotal", model.Subtotal, totalsX + 12f, summaryY - 22f, rightWidth - 24f);
             DrawRightAlignedKeyValue("Descuento", model.Discount, totalsX + 12f, summaryY - 40f, rightWidth - 24f);
             DrawRightAlignedKeyValue("Impuestos", model.Taxes, totalsX + 12f, summaryY - 58f, rightWidth - 24f);
             _page.DrawLine(totalsX + 12f, summaryY - 68f, totalsX + rightWidth - 12f, summaryY - 68f, new PdfColor(200, 194, 184), 0.8f);
             DrawRightAlignedKeyValue("Total", model.Total, totalsX + 12f, summaryY - 82f, rightWidth - 24f, 13f, PdfFont.Bold, new PdfColor(22, 30, 42));
 
-            _cursorY = summaryY - 108f - SectionGap;
+            _cursorY = summaryY - sectionHeight - SectionGap;
         }
 
         private void DrawTimbre(PdfViewModel model, PdfImageAsset? qr)
@@ -855,6 +903,57 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
             }
 
             return currentY - 2f;
+        }
+
+        private float DrawStackedField(string label, string value, float x, float startY, float width, float labelFontSize, float valueFontSize, float labelLineHeight, float valueLineHeight)
+        {
+            _page.DrawText($"{label}:", x, startY, labelFontSize, PdfFont.Bold, new PdfColor(76, 84, 96));
+
+            var valueLines = WrapTextConservatively(value, width, valueFontSize);
+            var currentY = startY - labelLineHeight;
+            DrawWrappedTextLines(valueLines, x, currentY, valueFontSize, valueLineHeight, PdfFont.Regular, new PdfColor(76, 84, 96));
+
+            return currentY - (valueLines.Length * valueLineHeight) - 4f;
+        }
+
+        private static float MeasureStackedFieldHeight(string value, float width, float valueFontSize, float labelLineHeight, float valueLineHeight)
+        {
+            var lineCount = WrapTextConservatively(value, width, valueFontSize).Length;
+            return labelLineHeight + Math.Max(1, lineCount) * valueLineHeight + 4f;
+        }
+
+        private void DrawWrappedTextLines(string[] lines, float x, float startY, float fontSize, float lineHeight, PdfFont font, PdfColor color)
+        {
+            var currentY = startY;
+            foreach (var line in lines)
+            {
+                _page.DrawText(line, x, currentY, fontSize, font, color);
+                currentY -= lineHeight;
+            }
+        }
+
+        private static string[] WrapTextConservatively(string? value, float availableWidth, float fontSize, bool isBold = false)
+        {
+            var remaining = value?.Trim() ?? string.Empty;
+            if (remaining.Length == 0)
+            {
+                return [string.Empty];
+            }
+
+            var lines = new List<string>();
+            while (remaining.Length > 0)
+            {
+                var segment = PdfLayoutTextWrapper.FitTextToWidth(remaining, availableWidth, fontSize, isBold);
+                if (string.IsNullOrWhiteSpace(segment))
+                {
+                    break;
+                }
+
+                lines.Add(segment);
+                remaining = remaining[segment.Length..].TrimStart();
+            }
+
+            return lines.Count == 0 ? [string.Empty] : [.. lines];
         }
 
         private void DrawFooter(PdfViewModel model)

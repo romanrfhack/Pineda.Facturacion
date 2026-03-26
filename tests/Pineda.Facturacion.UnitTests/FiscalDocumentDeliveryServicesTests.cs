@@ -117,6 +117,12 @@ public class FiscalDocumentDeliveryServicesTests
         Assert.Contains("03 - Transferencia electronica de fondos", pdfText, StringComparison.Ordinal);
         Assert.Contains("PUE - Pago en una sola exhibicion", pdfText, StringComparison.Ordinal);
         Assert.Contains("01 - No aplica", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Domicilio Fiscal:", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Regimen fiscal:", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Uso CFDI:", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Moneda:", pdfText, StringComparison.Ordinal);
+        Assert.DoesNotContain("Domicilio fiscal receptor:", pdfText, StringComparison.Ordinal);
+        Assert.DoesNotContain("Regimen fiscal receptor:", pdfText, StringComparison.Ordinal);
         Assert.Contains("CIENTO DIECISEIS PESOS 00/100 M.N.", pdfText, StringComparison.Ordinal);
         Assert.Contains("100.00", pdfText, StringComparison.Ordinal);
         Assert.Contains("16.00", pdfText, StringComparison.Ordinal);
