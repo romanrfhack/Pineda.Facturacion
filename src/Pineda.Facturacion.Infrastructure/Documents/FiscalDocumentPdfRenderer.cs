@@ -687,13 +687,10 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
         private void DrawTimbre(PdfViewModel model, PdfImageAsset? qr)
         {
             const float qrBoxSize = 92f;
-            const float qrColumnWidth = 112f;
-            // Padding igual en ambos lados
             const float innerPad = 10f;
-            var sectionInnerWidth = PageWidth - (Margin * 2) - (innerPad * 2);
-
-            var metaX = Margin + qrColumnWidth + 12f;
-            var metaWidth = PageWidth - Margin - innerPad - metaX;
+            const float qrGap = 8f;
+            var contentLeftX = Margin + innerPad;
+            var contentRightX = PageWidth - Margin - innerPad;
 
             float sealFontSize = 6.2f;
             float sealLineHeight = 7.5f;
@@ -708,9 +705,10 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
             if (!string.IsNullOrWhiteSpace(model.IssuerCertificate))
                 allBlocks.Add(("No. serie CSD emisor", model.IssuerCertificate!));
 
+            var qrPreviewWidth = PageWidth - (Margin * 2) - (innerPad * 2) - qrBoxSize - qrGap;
             var qrLines = string.IsNullOrWhiteSpace(model.Qr)
                 ? []
-                : WrapText(model.Qr!, EstimateWrapLength(metaWidth, 7.5f, PdfFont.Regular)).Take(3).ToArray();
+                : WrapText(model.Qr!, EstimateWrapLength(qrPreviewWidth, 7.5f, PdfFont.Regular)).Take(3).ToArray();
             if (qrLines.Length > 0)
                 allBlocks.Add(("Consulta SAT / QR", model.Qr!));
 
@@ -721,55 +719,33 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
             if (!string.IsNullOrWhiteSpace(model.OriginalString))
                 allBlocks.Add(("CADENA ORIGINAL DEL COMPLEMENTO DE CERTIFICACION DIGITAL DEL SAT", model.OriginalString!));
 
-            // --- Simular layout para calcular cuántos bloques caben a la derecha del QR ---
-            // La zona a la derecha del QR va desde _cursorY-8 hasta _cursorY-8-qrBoxSize
-            var qrZoneHeight = qrBoxSize; // espacio vertical disponible junto al QR
-            var qrZoneBottom = _cursorY - 8f - qrZoneHeight; // Y donde termina el QR
+            var qrBoxX = contentLeftX;
+            var qrBoxY = _cursorY - 8f - qrBoxSize;
+            var qrFlowStartX = qrBoxX + qrBoxSize + qrGap;
+            var qrBottomY = qrBoxY;
+            var textStartY = _cursorY - 16f;
 
-            // Simular cuántos bloques (y líneas) caben en la zona derecha del QR
-            float simY = qrZoneHeight; // espacio consumido (positivo hacia abajo)
-            int blocksInQrZone = 0;
-            foreach (var block in allBlocks)
-            {
-                float blockFontSize = block.Label.StartsWith("SELLO") || block.Label.StartsWith("CADENA") ? sealFontSize : 8.5f;
-                float blockLineH = block.Label.StartsWith("SELLO") || block.Label.StartsWith("CADENA") ? sealLineHeight : metaLineH;
-                float blockValueFontSize = block.Label.StartsWith("SELLO") || block.Label.StartsWith("CADENA") ? sealFontSize : 8.5f;
+            var textBottomY = LayoutTimbreBlocks(
+                allBlocks,
+                textStartY,
+                contentLeftX,
+                qrFlowStartX,
+                contentRightX,
+                qrBottomY,
+                qr is not null,
+                sealFontSize,
+                sealLineHeight,
+                metaLineH,
+                draw: false);
 
-                var blockH = MeasureHangingLabelBlockHeight(block.Label, block.Value, metaWidth, blockFontSize, blockValueFontSize, blockLineH) + 3f;
-
-                if (simY - blockH >= 0)
-                {
-                    simY -= blockH;
-                    blocksInQrZone++;
-                }
-                else
-                {
-                    break;
-                }
-            }
-
-            // --- Calcular altura de los bloques que van DEBAJO del QR (ancho completo) ---
-            float fullWidth = sectionInnerWidth;
-            var sealsHeight = 0f;
-            for (int i = blocksInQrZone; i < allBlocks.Count; i++)
-            {
-                var block = allBlocks[i];
-                float blockFontSize = block.Label.StartsWith("SELLO") || block.Label.StartsWith("CADENA") ? sealFontSize : 8.5f;
-                float blockLineH = block.Label.StartsWith("SELLO") || block.Label.StartsWith("CADENA") ? sealLineHeight : metaLineH;
-                float blockValueFontSize = blockFontSize;
-                sealsHeight += MeasureHangingLabelBlockHeight(block.Label, block.Value, fullWidth, blockFontSize, blockValueFontSize, blockLineH) + 3f;
-            }
-
-            var topZoneHeight = qrBoxSize + 12f;
-            var sectionHeight = topZoneHeight + sealsHeight + 8f;
+            var sectionBottomY = Math.Min(qr is not null ? qrBoxY : textBottomY, textBottomY) - 8f;
+            var sectionHeight = _cursorY - sectionBottomY;
 
             // --- Dibujar caja ---
             _page.FillRectangle(Margin, _cursorY - sectionHeight, PageWidth - (Margin * 2), sectionHeight, PdfColor.White);
             _page.StrokeRectangle(Margin, _cursorY - sectionHeight, PageWidth - (Margin * 2), sectionHeight, new PdfColor(218, 213, 204), 0.8f);
 
             // --- Dibujar QR ---
-            var qrBoxX = Margin + innerPad;
-            var qrBoxY = _cursorY - 8f - qrBoxSize;
             if (qr is not null)
             {
                 _page.FillRectangle(qrBoxX, qrBoxY, qrBoxSize, qrBoxSize, PdfColor.White);
@@ -777,30 +753,99 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
                 _page.DrawImage(qr, qrBoxX + 6f, qrBoxY + 6f, qrBoxSize - 12f, qrBoxSize - 12f);
             }
 
-            // --- Dibujar bloques a la derecha del QR ---
-            var metaY = _cursorY - 16f;
-            for (int i = 0; i < blocksInQrZone; i++)
+            LayoutTimbreBlocks(
+                allBlocks,
+                textStartY,
+                contentLeftX,
+                qrFlowStartX,
+                contentRightX,
+                qrBottomY,
+                qr is not null,
+                sealFontSize,
+                sealLineHeight,
+                metaLineH,
+                draw: true);
+
+            _cursorY = sectionBottomY - SectionGap;
+        }
+
+        private float LayoutTimbreBlocks(
+            IReadOnlyList<(string Label, string Value)> blocks,
+            float startY,
+            float fullFlowLeftX,
+            float qrFlowLeftX,
+            float flowRightX,
+            float qrBottomY,
+            bool hasQr,
+            float sealFontSize,
+            float sealLineHeight,
+            float metaLineHeight,
+            bool draw)
+        {
+            var currentY = startY;
+            foreach (var block in blocks)
             {
-                var block = allBlocks[i];
-                bool isSeal = block.Label.StartsWith("SELLO") || block.Label.StartsWith("CADENA");
-                float bFontSize = isSeal ? sealFontSize : 8.5f;
-                float bLineH = isSeal ? sealLineHeight : metaLineH;
-                metaY = DrawHangingLabelValue(block.Label, block.Value, metaX, metaY, metaWidth, bFontSize, bFontSize, bLineH);
+                var isSeal = block.Label.StartsWith("SELLO") || block.Label.StartsWith("CADENA");
+                var fontSize = isSeal ? sealFontSize : 8.5f;
+                var lineHeight = isSeal ? sealLineHeight : metaLineHeight;
+                currentY = DrawFlowingKeyValueBlock(block.Label, block.Value, currentY, fullFlowLeftX, qrFlowLeftX, flowRightX, qrBottomY, hasQr, fontSize, lineHeight, draw);
+                currentY -= 3f;
             }
 
-            // --- Dibujar bloques debajo del QR (ancho completo) ---
-            var sealY = _cursorY - 8f - topZoneHeight;
-            for (int i = blocksInQrZone; i < allBlocks.Count; i++)
+            return currentY;
+        }
+
+        private float DrawFlowingKeyValueBlock(
+            string label,
+            string value,
+            float startY,
+            float fullFlowLeftX,
+            float qrFlowLeftX,
+            float flowRightX,
+            float qrBottomY,
+            bool hasQr,
+            float fontSize,
+            float lineHeight,
+            bool draw)
+        {
+            if (string.IsNullOrWhiteSpace(value))
             {
-                var block = allBlocks[i];
-                bool isSeal = block.Label.StartsWith("SELLO") || block.Label.StartsWith("CADENA");
-                float bFontSize = isSeal ? sealFontSize : 8.5f;
-                float bLineH = isSeal ? sealLineHeight : metaLineH;
-                sealY = DrawHangingLabelValue(block.Label, block.Value, Margin + innerPad, sealY, fullWidth, bFontSize, bFontSize, bLineH);
-                sealY -= 3f;
+                return startY;
             }
 
-            _cursorY -= sectionHeight + SectionGap;
+            var labelText = $"{label}: ";
+            var labelWidth = EstimateTextWidth(labelText, fontSize, PdfFont.Bold) + 2f;
+            var remaining = value.Trim();
+            var currentY = startY;
+            var isFirstLine = true;
+
+            while (remaining.Length > 0)
+            {
+                var lineLeftX = hasQr && currentY > qrBottomY ? qrFlowLeftX : fullFlowLeftX;
+                var lineWidth = Math.Max(20f, flowRightX - lineLeftX);
+                var availableWidth = isFirstLine ? Math.Max(20f, lineWidth - labelWidth) : lineWidth;
+                var maxLength = EstimateWrapLength(availableWidth, fontSize, PdfFont.Regular);
+                var segment = WrapText(remaining, maxLength).First();
+
+                if (draw)
+                {
+                    if (isFirstLine)
+                    {
+                        _page.DrawText(labelText, lineLeftX, currentY, fontSize, PdfFont.Bold, new PdfColor(120, 108, 84));
+                        _page.DrawText(segment, lineLeftX + labelWidth, currentY, fontSize, PdfFont.Regular, new PdfColor(50, 58, 70));
+                    }
+                    else
+                    {
+                        _page.DrawText(segment, lineLeftX, currentY, fontSize, PdfFont.Regular, new PdfColor(50, 58, 70));
+                    }
+                }
+
+                remaining = remaining[segment.Length..].TrimStart();
+                currentY -= lineHeight;
+                isFirstLine = false;
+            }
+
+            return currentY - 2f;
         }
 
         private float DrawInlineKeyValueParagraph(string label, string value, float x, float y, float maxWidth, float fontSize, float lineHeight)
