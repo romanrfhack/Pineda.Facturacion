@@ -323,13 +323,14 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
             return [];
         }
 
-        var trasladoImporte = RoundMonetary(importeNeto * item.VatRate, currencyScale);
+        var baseReportable = RoundMonetary(item.Subtotal, currencyScale);
+        var trasladoImporte = RoundMonetary(item.TaxTotal, currencyScale);
 
         return
         [
             new FacturaloPlusComprobanteTraslado
             {
-                Base = importeNeto,
+                Base = baseReportable,
                 Impuesto = "002",
                 TipoFactor = "Tasa",
                 TasaOCuota = FormatTasaOCuota(item.VatRate),

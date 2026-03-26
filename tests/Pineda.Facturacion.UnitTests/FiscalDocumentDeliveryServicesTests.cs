@@ -1,6 +1,7 @@
 using System.Net.Mail;
 using Pineda.Facturacion.Application.Abstractions.Communication;
 using Pineda.Facturacion.Application.Abstractions.Documents;
+using Pineda.Facturacion.Application.Abstractions.FiscalReceivers;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Abstractions.Storage;
 using Pineda.Facturacion.Application.UseCases.FiscalDocuments;
@@ -104,13 +105,18 @@ public class FiscalDocumentDeliveryServicesTests
     [Fact]
     public async Task FiscalDocumentPdfRenderer_Generates_A_Real_Pdf_From_Stamped_Xml()
     {
-        var renderer = new FiscalDocumentPdfRenderer(new FakeIssuerProfileRepository(), new FakeIssuerProfileLogoStorage());
+        var renderer = new FiscalDocumentPdfRenderer(new FakeIssuerProfileRepository(), new FakeIssuerProfileLogoStorage(), new SatCatalogDescriptionProvider(new FakeFiscalReceiverSatCatalogProvider()));
         var bytes = await renderer.RenderAsync(CreateFiscalDocument(), CreateFiscalStamp());
         var pdfText = System.Text.Encoding.ASCII.GetString(bytes);
 
         Assert.StartsWith("%PDF-1.4", pdfText, StringComparison.Ordinal);
         Assert.Contains("FISCALDOM", pdfText, StringComparison.Ordinal);
         Assert.Contains("01000", pdfText, StringComparison.Ordinal);
+        Assert.Contains("601 - General de Ley Personas Morales", pdfText, StringComparison.Ordinal);
+        Assert.Contains("G03 - Gastos en general", pdfText, StringComparison.Ordinal);
+        Assert.Contains("03 - Transferencia electronica de fondos", pdfText, StringComparison.Ordinal);
+        Assert.Contains("PUE - Pago en una sola exhibicion", pdfText, StringComparison.Ordinal);
+        Assert.Contains("01 - No aplica", pdfText, StringComparison.Ordinal);
         Assert.Contains("CIENTO DIECISEIS PESOS 00/100 M.N.", pdfText, StringComparison.Ordinal);
         Assert.Contains("100.00", pdfText, StringComparison.Ordinal);
         Assert.Contains("16.00", pdfText, StringComparison.Ordinal);
@@ -125,7 +131,8 @@ public class FiscalDocumentDeliveryServicesTests
     {
         var renderer = new FiscalDocumentPdfRenderer(
             new FakeIssuerProfileRepository { Existing = new IssuerProfile { Id = 1, LogoStoragePath = "missing/logo.png" } },
-            new FakeIssuerProfileLogoStorage());
+            new FakeIssuerProfileLogoStorage(),
+            new SatCatalogDescriptionProvider(new FakeFiscalReceiverSatCatalogProvider()));
 
         var bytes = await renderer.RenderAsync(CreateFiscalDocument(), CreateFiscalStamp());
         var pdfText = System.Text.Encoding.ASCII.GetString(bytes);
@@ -166,7 +173,7 @@ public class FiscalDocumentDeliveryServicesTests
             }
         ];
 
-        var renderer = new FiscalDocumentPdfRenderer(new FakeIssuerProfileRepository(), new FakeIssuerProfileLogoStorage());
+        var renderer = new FiscalDocumentPdfRenderer(new FakeIssuerProfileRepository(), new FakeIssuerProfileLogoStorage(), new SatCatalogDescriptionProvider(new FakeFiscalReceiverSatCatalogProvider()));
         var bytes = await renderer.RenderAsync(fiscalDocument, CreateFiscalStamp());
         var pdfText = System.Text.Encoding.ASCII.GetString(bytes);
 
@@ -182,7 +189,8 @@ public class FiscalDocumentDeliveryServicesTests
     {
         var renderer = new FiscalDocumentPdfRenderer(
             new FakeIssuerProfileRepository { Existing = new IssuerProfile { Id = 1, LogoStoragePath = "missing/logo.png" } },
-            new FakeIssuerProfileLogoStorage());
+            new FakeIssuerProfileLogoStorage(),
+            new SatCatalogDescriptionProvider(new FakeFiscalReceiverSatCatalogProvider()));
 
         var bytes = await renderer.RenderAsync(
             CreateFiscalDocument(),
@@ -213,7 +221,7 @@ public class FiscalDocumentDeliveryServicesTests
     [Fact]
     public async Task FiscalDocumentPdfRenderer_Renders_Multiple_Concepts_In_Table()
     {
-        var renderer = new FiscalDocumentPdfRenderer(new FakeIssuerProfileRepository(), new FakeIssuerProfileLogoStorage());
+        var renderer = new FiscalDocumentPdfRenderer(new FakeIssuerProfileRepository(), new FakeIssuerProfileLogoStorage(), new SatCatalogDescriptionProvider(new FakeFiscalReceiverSatCatalogProvider()));
         var bytes = await renderer.RenderAsync(
             CreateFiscalDocument(),
             CreateFiscalStamp(
@@ -251,7 +259,7 @@ public class FiscalDocumentDeliveryServicesTests
     [Fact]
     public async Task FiscalDocumentPdfRenderer_Wraps_Long_Fiscal_And_Timbre_Text_Without_Losing_Content()
     {
-        var renderer = new FiscalDocumentPdfRenderer(new FakeIssuerProfileRepository(), new FakeIssuerProfileLogoStorage());
+        var renderer = new FiscalDocumentPdfRenderer(new FakeIssuerProfileRepository(), new FakeIssuerProfileLogoStorage(), new SatCatalogDescriptionProvider(new FakeFiscalReceiverSatCatalogProvider()));
         var bytes = await renderer.RenderAsync(
             CreateFiscalDocument(),
             CreateFiscalStamp(
@@ -322,13 +330,56 @@ public class FiscalDocumentDeliveryServicesTests
     [Fact]
     public async Task FiscalDocumentPdfRenderer_Uses_Uniform_Uppercase_Timbre_Labels()
     {
-        var renderer = new FiscalDocumentPdfRenderer(new FakeIssuerProfileRepository(), new FakeIssuerProfileLogoStorage());
+        var renderer = new FiscalDocumentPdfRenderer(new FakeIssuerProfileRepository(), new FakeIssuerProfileLogoStorage(), new SatCatalogDescriptionProvider(new FakeFiscalReceiverSatCatalogProvider()));
         var bytes = await renderer.RenderAsync(CreateFiscalDocument(), CreateFiscalStamp());
 
         var pdfText = System.Text.Encoding.ASCII.GetString(bytes);
 
         Assert.Contains("NO. SERIE CERTIFICADO SAT:", pdfText, StringComparison.Ordinal);
         Assert.Contains("SELLO DIGITAL DEL CFDI:", pdfText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task FiscalDocumentPdfRenderer_Falls_Back_To_Code_When_Sat_Description_Is_Missing()
+    {
+        var renderer = new FiscalDocumentPdfRenderer(new FakeIssuerProfileRepository(), new FakeIssuerProfileLogoStorage(), new SatCatalogDescriptionProvider(new FakeFiscalReceiverSatCatalogProvider()));
+        var fiscalDocument = CreateFiscalDocument();
+        fiscalDocument.IssuerFiscalRegimeCode = "999";
+        fiscalDocument.ReceiverFiscalRegimeCode = "998";
+        fiscalDocument.ReceiverCfdiUseCode = "ZZZ";
+        fiscalDocument.PaymentFormSat = "77";
+        fiscalDocument.PaymentMethodSat = "ABC";
+
+        var xml = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" Version="4.0" Serie="A" Folio="8" Fecha="2026-03-24T06:00:00" SubTotal="100.00" Total="116.00" Moneda="MXN" MetodoPago="ABC" FormaPago="77" Exportacion="88" LugarExpedicion="01000" Sello="SE1234567890ABCDEF1234567890ABCDEF">
+              <cfdi:Emisor Rfc="AAA010101AAA" Nombre="Emisor SA" RegimenFiscal="999" />
+              <cfdi:Receptor Rfc="BBB010101BBB" Nombre="Cliente SA" UsoCFDI="ZZZ" RegimenFiscalReceptor="998" DomicilioFiscalReceptor="02000" />
+              <cfdi:Conceptos>
+                <cfdi:Concepto ClaveProdServ="01010101" Cantidad="1" ClaveUnidad="H87" Descripcion="Producto" ValorUnitario="100.00" Importe="100.00" ObjetoImp="02" />
+              </cfdi:Conceptos>
+              <cfdi:Impuestos TotalImpuestosTrasladados="16.00" />
+              <cfdi:Complemento>
+                <tfd:TimbreFiscalDigital UUID="4cb4eed3-3d93-4938-8872-028106881e4c" FechaTimbrado="2026-03-24T06:05:59" NoCertificadoSAT="00001000000500001234" Version="1.1" />
+              </cfdi:Complemento>
+            </cfdi:Comprobante>
+            """;
+
+        var bytes = await renderer.RenderAsync(fiscalDocument, CreateFiscalStamp(xmlContent: xml));
+        var pdfText = System.Text.Encoding.ASCII.GetString(bytes);
+
+        Assert.Contains("999", pdfText, StringComparison.Ordinal);
+        Assert.DoesNotContain("999 -", pdfText, StringComparison.Ordinal);
+        Assert.Contains("998", pdfText, StringComparison.Ordinal);
+        Assert.DoesNotContain("998 -", pdfText, StringComparison.Ordinal);
+        Assert.Contains("ZZZ", pdfText, StringComparison.Ordinal);
+        Assert.DoesNotContain("ZZZ -", pdfText, StringComparison.Ordinal);
+        Assert.Contains("77", pdfText, StringComparison.Ordinal);
+        Assert.DoesNotContain("77 -", pdfText, StringComparison.Ordinal);
+        Assert.Contains("ABC", pdfText, StringComparison.Ordinal);
+        Assert.DoesNotContain("ABC -", pdfText, StringComparison.Ordinal);
+        Assert.Contains("88", pdfText, StringComparison.Ordinal);
+        Assert.DoesNotContain("88 -", pdfText, StringComparison.Ordinal);
     }
 
     private static FiscalDocument CreateFiscalDocument()
@@ -462,6 +513,37 @@ public class FiscalDocumentDeliveryServicesTests
         public Task<bool> TryAdvanceNextFiscalFolioAsync(long issuerProfileId, int expectedNextFiscalFolio, int newNextFiscalFolio, CancellationToken cancellationToken = default) => Task.FromResult(false);
         public Task AddAsync(IssuerProfile issuerProfile, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task UpdateAsync(IssuerProfile issuerProfile, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class FakeFiscalReceiverSatCatalogProvider : IFiscalReceiverSatCatalogProvider
+    {
+        private readonly FiscalReceiverSatCatalog _catalog = new()
+        {
+            RegimenFiscal =
+            [
+                new FiscalReceiverSatCatalogOption { Code = "601", Description = "General de Ley Personas Morales" },
+                new FiscalReceiverSatCatalogOption { Code = "612", Description = "Personas Fisicas con Actividades Empresariales y Profesionales" }
+            ],
+            UsoCfdi =
+            [
+                new FiscalReceiverSatCatalogOption { Code = "G01", Description = "Adquisicion de mercancias" },
+                new FiscalReceiverSatCatalogOption { Code = "G03", Description = "Gastos en general" }
+            ],
+            ByRegimenFiscal =
+            [
+                new FiscalReceiverSatRegimeCompatibility
+                {
+                    Code = "601",
+                    Description = "General de Ley Personas Morales",
+                    AllowedUsoCfdi = [new FiscalReceiverSatCatalogOption { Code = "G03", Description = "Gastos en general" }]
+                }
+            ]
+        };
+
+        public FiscalReceiverSatCatalog GetCatalog() => _catalog;
+        public bool FiscalRegimeExists(string code) => _catalog.RegimenFiscal.Any(x => string.Equals(x.Code, code, StringComparison.OrdinalIgnoreCase));
+        public bool CfdiUseExists(string code) => _catalog.UsoCfdi.Any(x => string.Equals(x.Code, code, StringComparison.OrdinalIgnoreCase));
+        public bool IsCfdiUseCompatibleWithRegime(string fiscalRegimeCode, string cfdiUseCode) => true;
     }
 
     private sealed class FakeIssuerProfileLogoStorage : IIssuerProfileLogoStorage

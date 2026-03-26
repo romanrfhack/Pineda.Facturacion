@@ -14,13 +14,16 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
 {
     private readonly IIssuerProfileRepository _issuerProfileRepository;
     private readonly IIssuerProfileLogoStorage _logoStorage;
+    private readonly ISatCatalogDescriptionProvider _satCatalogDescriptionProvider;
 
     public FiscalDocumentPdfRenderer(
         IIssuerProfileRepository issuerProfileRepository,
-        IIssuerProfileLogoStorage logoStorage)
+        IIssuerProfileLogoStorage logoStorage,
+        ISatCatalogDescriptionProvider satCatalogDescriptionProvider)
     {
         _issuerProfileRepository = issuerProfileRepository;
         _logoStorage = logoStorage;
+        _satCatalogDescriptionProvider = satCatalogDescriptionProvider;
     }
 
     public async Task<byte[]> RenderAsync(FiscalDocument fiscalDocument, FiscalStamp fiscalStamp, CancellationToken cancellationToken = default)
@@ -34,7 +37,7 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
         }
 
         var document = XDocument.Parse(fiscalStamp.XmlContent, LoadOptions.PreserveWhitespace);
-        var model = PdfViewModel.Create(fiscalDocument, fiscalStamp, document);
+        var model = PdfViewModel.Create(fiscalDocument, fiscalStamp, document, _satCatalogDescriptionProvider);
         var logo = await TryLoadIssuerLogoAsync(fiscalDocument.IssuerProfileId, cancellationToken);
         return FiscalPdfDocument.Create(model, logo, TryBuildQrAsset(model.QrPayload));
     }
@@ -138,7 +141,7 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
         public required IReadOnlyList<PdfTaxRow> TaxesBreakdown { get; init; }
         public required IReadOnlyList<PdfAdditionalFieldRow> AdditionalFields { get; init; }
 
-        public static PdfViewModel Create(FiscalDocument fiscalDocument, FiscalStamp fiscalStamp, XDocument document)
+        public static PdfViewModel Create(FiscalDocument fiscalDocument, FiscalStamp fiscalStamp, XDocument document, ISatCatalogDescriptionProvider satCatalogDescriptionProvider)
         {
             var comprobante = document.Descendants().FirstOrDefault(static node => node.Name.LocalName == "Comprobante");
             var emisor = document.Descendants().FirstOrDefault(static node => node.Name.LocalName == "Emisor");
@@ -156,19 +159,19 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
                 SeriesFolio = CombineDocumentNumber(GetAttribute(comprobante, "Serie"), GetAttribute(comprobante, "Folio")),
                 IssuedAt = GetAttribute(comprobante, "Fecha") ?? FormatUtc(fiscalDocument.IssuedAtUtc),
                 StampedAt = GetAttribute(timbre, "FechaTimbrado") ?? FormatUtc(fiscalStamp.StampedAtUtc),
-                PaymentMethod = GetAttribute(comprobante, "MetodoPago") ?? fiscalDocument.PaymentMethodSat,
-                PaymentForm = GetAttribute(comprobante, "FormaPago") ?? fiscalDocument.PaymentFormSat,
-                ExportCode = GetAttribute(comprobante, "Exportacion") ?? "01",
+                PaymentMethod = satCatalogDescriptionProvider.FormatPaymentMethod(GetAttribute(comprobante, "MetodoPago") ?? fiscalDocument.PaymentMethodSat),
+                PaymentForm = satCatalogDescriptionProvider.FormatPaymentForm(GetAttribute(comprobante, "FormaPago") ?? fiscalDocument.PaymentFormSat),
+                ExportCode = satCatalogDescriptionProvider.FormatExportCode(GetAttribute(comprobante, "Exportacion") ?? "01"),
                 Currency = GetAttribute(comprobante, "Moneda") ?? fiscalDocument.CurrencyCode,
                 PlaceOfIssue = GetAttribute(comprobante, "LugarExpedicion") ?? fiscalDocument.IssuerPostalCode,
                 IssuerName = GetAttribute(emisor, "Nombre") ?? fiscalDocument.IssuerLegalName,
                 IssuerRfc = GetAttribute(emisor, "Rfc") ?? fiscalDocument.IssuerRfc,
-                IssuerRegime = GetAttribute(emisor, "RegimenFiscal") ?? fiscalDocument.IssuerFiscalRegimeCode,
+                IssuerRegime = satCatalogDescriptionProvider.FormatFiscalRegime(GetAttribute(emisor, "RegimenFiscal") ?? fiscalDocument.IssuerFiscalRegimeCode),
                 IssuerCertificate = GetAttribute(comprobante, "NoCertificado"),
                 ReceiverName = GetAttribute(receptor, "Nombre") ?? fiscalDocument.ReceiverLegalName,
                 ReceiverRfc = GetAttribute(receptor, "Rfc") ?? fiscalDocument.ReceiverRfc,
-                ReceiverUse = GetAttribute(receptor, "UsoCFDI") ?? fiscalDocument.ReceiverCfdiUseCode,
-                ReceiverRegime = GetAttribute(receptor, "RegimenFiscalReceptor") ?? fiscalDocument.ReceiverFiscalRegimeCode,
+                ReceiverUse = satCatalogDescriptionProvider.FormatCfdiUse(GetAttribute(receptor, "UsoCFDI") ?? fiscalDocument.ReceiverCfdiUseCode),
+                ReceiverRegime = satCatalogDescriptionProvider.FormatFiscalRegime(GetAttribute(receptor, "RegimenFiscalReceptor") ?? fiscalDocument.ReceiverFiscalRegimeCode),
                 ReceiverPostalCode = GetAttribute(receptor, "DomicilioFiscalReceptor") ?? fiscalDocument.ReceiverPostalCode,
                 TotalInWords = string.Equals(GetAttribute(comprobante, "Moneda") ?? fiscalDocument.CurrencyCode, "MXN", StringComparison.OrdinalIgnoreCase)
                     ? SpanishCurrencyTextFormatter.FormatMx(total)

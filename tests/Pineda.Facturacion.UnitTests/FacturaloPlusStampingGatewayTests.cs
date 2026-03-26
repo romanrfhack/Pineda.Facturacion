@@ -304,6 +304,90 @@ public class FacturaloPlusStampingGatewayTests
     }
 
     [Fact]
+    public async Task StampAsync_Keeps_Total_Consistent_With_Rounded_Subtotal_And_Taxes()
+    {
+        using var rsa = RSA.Create(2048);
+        var request = new CertificateRequest(
+            "CN=FacturaloPlus Test",
+            rsa,
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
+        var serialBytes = Encoding.ASCII.GetBytes("30001000000500003416");
+        var certificate = request.Create(
+            new X500DistinguishedName("CN=FacturaloPlus Test"),
+            X509SignatureGenerator.CreateForRSA(rsa, RSASignaturePadding.Pkcs1),
+            DateTimeOffset.UtcNow.AddDays(-1),
+            DateTimeOffset.UtcNow.AddYears(1),
+            serialBytes);
+        var certificatePem = new string(PemEncoding.Write("CERTIFICATE", certificate.Export(X509ContentType.Cert)));
+
+        var handler = new RecordingHandler(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""
+                {
+                  "success": true,
+                  "trackingId": "TRACK-1",
+                  "uuid": "UUID-1",
+                  "stampedAtUtc": "2026-03-21T12:00:00Z",
+                  "xmlContent": "<cfdi:Comprobante Version=\"4.0\" />"
+                }
+                """, Encoding.UTF8, "application/json")
+        });
+
+        var client = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://dev.facturaloplus.com/api/rest/servicio/")
+        };
+        var secretResolver = new RecordingSecretResolver(new Dictionary<string, string?>
+        {
+            ["FACTURALOPLUS_API_KEY_REFERENCE"] = "APIKEY-TEST",
+            ["CERT_REF"] = certificatePem,
+            ["KEY_REF"] = "PRIVATE-KEY-PEM"
+        });
+
+        var gateway = new FacturaloPlusStampingGateway(
+            client,
+            Options.Create(new FacturaloPlusOptions
+            {
+                BaseUrl = "https://dev.facturaloplus.com/api/rest/servicio/",
+                StampPath = "timbrarJSON3",
+                ApiKeyReference = "FACTURALOPLUS_API_KEY_REFERENCE",
+                ApiKeyHeaderName = "X-Api-Key"
+            }),
+            secretResolver);
+
+        var requestPayload = CreateRequest();
+        requestPayload.Subtotal = 560.344828m;
+        requestPayload.DiscountTotal = 0m;
+        requestPayload.TaxTotal = 89.655172m;
+        requestPayload.Total = 650m;
+        requestPayload.Items[0].Quantity = 1m;
+        requestPayload.Items[0].UnitPrice = 560.344828m;
+        requestPayload.Items[0].DiscountAmount = 0m;
+        requestPayload.Items[0].Subtotal = 560.344828m;
+        requestPayload.Items[0].TaxTotal = 89.655172m;
+        requestPayload.Items[0].Total = 650m;
+        requestPayload.Items[0].VatRate = 0.16m;
+
+        await gateway.StampAsync(requestPayload);
+
+        var form = ParseFormBody(handler.LastBody!);
+        var decodedJson = Encoding.UTF8.GetString(Convert.FromBase64String(form["jsonB64"]));
+        using var json = JsonDocument.Parse(decodedJson);
+        var comprobante = json.RootElement.GetProperty("Comprobante");
+        var conceptoTraslado = comprobante.GetProperty("Conceptos")[0].GetProperty("Impuestos").GetProperty("Traslados")[0];
+        var comprobanteTraslado = comprobante.GetProperty("Impuestos").GetProperty("Traslados")[0];
+
+        Assert.Equal(560.34m, comprobante.GetProperty("SubTotal").GetDecimal());
+        Assert.Equal(89.66m, comprobante.GetProperty("Impuestos").GetProperty("TotalImpuestosTrasladados").GetDecimal());
+        Assert.Equal(650.00m, comprobante.GetProperty("Total").GetDecimal());
+        Assert.Equal(560.34m, conceptoTraslado.GetProperty("Base").GetDecimal());
+        Assert.Equal(89.66m, conceptoTraslado.GetProperty("Importe").GetDecimal());
+        Assert.Equal(560.34m, comprobanteTraslado.GetProperty("Base").GetDecimal());
+        Assert.Equal(89.66m, comprobanteTraslado.GetProperty("Importe").GetDecimal());
+    }
+
+    [Fact]
     public async Task StampAsync_Treats_Code200_With_NestedDataString_And_StampedXml_As_Success()
     {
         using var rsa = RSA.Create(2048);

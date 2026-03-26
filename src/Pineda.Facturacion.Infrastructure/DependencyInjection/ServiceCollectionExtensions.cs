@@ -48,6 +48,7 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<IContentHashGenerator, Sha256ContentHashGenerator>();
         services.AddSingleton<IFiscalReceiverSatCatalogProvider, FiscalReceiverSatCatalogProvider>();
+        services.AddSingleton<ISatCatalogDescriptionProvider, SatCatalogDescriptionProvider>();
         services.AddSingleton<IExcelWorksheetReader, ClosedXmlWorksheetReader>();
         services.AddScoped<IFiscalDocumentPdfRenderer, FiscalDocumentPdfRenderer>();
         services.AddSingleton<IIssuerProfileLogoStorage, IssuerProfileLogoStorage>();
