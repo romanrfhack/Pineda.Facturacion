@@ -63,6 +63,9 @@ jobs:
       - name: Build
         run: dotnet build -c Release Pineda.Facturacion.slnx
       - name: Test
+        env:
+          DOTNET_ENVIRONMENT: Development
+          ASPNETCORE_ENVIRONMENT: Development
         run: dotnet test -c Release Pineda.Facturacion.slnx
 
   frontend_tests:
