@@ -17,6 +17,7 @@ jobs:
   build-and-deploy:
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') }}
     runs-on: ubuntu-latest
+    environment: facturas-production
 
     env:
       SSH_HOST: ${{ secrets.FACTURAS_SSH_HOST }}
@@ -54,6 +55,15 @@ jobs:
           test -f out/api/appsettings.json
           echo "Expected VPS environment: $ASPNETCORE_ENVIRONMENT"
           ls -la out/api
+
+      - name: Validate deploy secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "${SSH_HOST:-}" ] || { echo "ERROR: falta FACTURAS_SSH_HOST"; exit 1; }
+          [ -n "${SSH_PORT:-}" ] || { echo "ERROR: falta FACTURAS_SSH_PORT"; exit 1; }
+          [ -n "${SSH_USER:-}" ] || { echo "ERROR: falta FACTURAS_SSH_USER"; exit 1; }
+          [ -n "${SSH_KEY_B64:-}" ] || { echo "ERROR: falta FACTURAS_SSH_KEY_B64"; exit 1; }
 
       - name: Setup SSH
         run: |
