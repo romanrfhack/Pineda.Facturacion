@@ -80,13 +80,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ -d "frontend/dist/facturas-frontend/browser" ]; then
-            echo "DIST_DIR=frontend/dist/facturas-frontend/browser" >> $GITHUB_ENV
-          elif [ -d "frontend/dist/facturas-frontend" ]; then
-            echo "DIST_DIR=frontend/dist/facturas-frontend" >> $GITHUB_ENV
+          # Angular default output: dist/<projectName>/browser
+          if [ -d "frontend/dist/frontend/browser" ]; then
+            echo "DIST_DIR=frontend/dist/frontend/browser" >> $GITHUB_ENV
+          elif [ -d "frontend/dist/frontend" ]; then
+            echo "DIST_DIR=frontend/dist/frontend" >> $GITHUB_ENV
           else
             echo "ERROR: No se encontró el directorio de salida"
-            find frontend/dist -maxdepth 3 -type d -name "browser" -o -name "facturas-frontend" | head -5
+            find frontend/dist -maxdepth 3 -type d -name "browser" -o -name "frontend" | head -5
             exit 1
           fi
 
@@ -118,3 +119,10 @@ jobs:
             "$DIST_DIR"/ \
             -e "ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p $SSH_PORT" \
             "$SSH_USER@$SSH_HOST:$WEB_PATH/"
+      
+      - name: Set ownership and permissions
+        if: github.event_name == 'workflow_dispatch' || steps.changed.outputs.frontend_changed == 'true'
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" \
+            "$SSH_USER@$SSH_HOST" \
+            "sudo chown -R www-data:www-data $WEB_PATH && sudo chmod -R 755 $WEB_PATH"
