@@ -9,8 +9,8 @@ import { FeedbackService } from '../../../core/ui/feedback.service';
   imports: [FormsModule],
   template: `
     <section class="login-page">
-      <form class="login-card" (ngSubmit)="submit()">
-        <p class="eyebrow">Acceso administrativo</p>
+      <form class="login-card" (ngSubmit)="submit()">        
+        <p class="eyebrow">Acceso administrativo autorefacciones Pineda</p>
         <h1>Iniciar sesión</h1>        
 
         <label>
