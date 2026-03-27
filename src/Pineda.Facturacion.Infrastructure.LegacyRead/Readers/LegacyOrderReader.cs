@@ -11,76 +11,9 @@ public class LegacyOrderReader : ILegacyOrderReader
 {
     private static readonly string[] OrderDateColumnCandidates = ["Fecha", "FechaPedido", "FecPedido", "fecha", "fechaPedido"];
 
-    private const string HeaderSql = """
-        SELECT
-            p.noPedido AS LegacyOrderId,
-            p.refPedido AS LegacyOrderNumber,
-            p.TipoPedido AS LegacyOrderType,
-            p.noCliente AS CustomerLegacyId,
-            COALESCE(
-                NULLIF(TRIM(c.XRazonSocial), ''),
-                NULLIF(TRIM(CONCAT_WS(' ', NULLIF(c.Nombre, ''), NULLIF(c.Paterno, ''), NULLIF(c.Materno, ''))), ''),
-                NULLIF(TRIM(c.Cliente), ''),
-                CONCAT('Cliente ', p.noCliente)
-            ) AS CustomerName,
-            c.RFC AS CustomerRfc,
-            p.condPagoPedido AS PaymentCondition,
-            c.TipoCliente AS PriceListCode,
-            p.TipoEntrega AS DeliveryType,
-            COALESCE((
-                SELECT SUM(d.SuPrecio * d.Cantidad)
-                FROM pedidosdet d
-                WHERE d.noPedido = p.noPedido
-            ), 0) AS Subtotal,
-            0 AS DiscountTotal,
-            0 AS TaxTotal,
-            p.MontoPedido AS Total
-        FROM pedidos p
-        INNER JOIN clientes c
-            ON p.noCliente = c.noCliente
-        WHERE p.noPedido = @legacyOrderId
-          AND p.noCliente <> 0
-          AND p.MontoPedido <> 0.00
-          AND p.refPedido IS NOT NULL
-        LIMIT 1;
-        """;
-
-    private const string DetailSql = """
-        SELECT
-            d.cveArticulo AS LegacyArticleId,
-            d.cveArticulo AS Sku,
-            n.NomArt AS NomArt,
-            a.Articulo AS ArticleName,
-            a.Especificacion AS ArticleSpecification,
-            d.uniMedida AS UnitCode,
-            a.uniMedida AS UnitName,
-            d.Cantidad AS Quantity,
-            d.SuPrecio AS GrossEffectiveUnitPrice,
-            0 AS TaxRate,
-            0 AS TaxAmount,
-            0 AS LineTotal
-        FROM pedidosdet d
-        INNER JOIN articulos a
-            ON d.cveArticulo = a.cveArticulo
-           AND d.cveMarcaArticulo = a.cveMarcaArticulo
-        LEFT JOIN nombresarticulos n
-            ON a.cveNomArt = n.cveNomArt
-        WHERE d.noPedido = @legacyOrderId
-        ORDER BY d.cveArticulo, d.cveMarcaArticulo, d.SuPrecio, d.Cantidad, d.uniMedida;
-        """;
-
-    private const string OrderDateColumnSql = """
-        SELECT COLUMN_NAME
-        FROM INFORMATION_SCHEMA.COLUMNS
-        WHERE TABLE_SCHEMA = DATABASE()
-          AND TABLE_NAME = 'pedidos'
-          AND COLUMN_NAME IN ('Fecha', 'FechaPedido', 'FecPedido', 'fecha', 'fechaPedido')
-        ORDER BY FIELD(COLUMN_NAME, 'Fecha', 'FechaPedido', 'FecPedido', 'fecha', 'fechaPedido')
-        LIMIT 1;
-        """;
-
     private readonly string _connectionString;
-    private string? _orderDateColumnName;
+    private readonly LegacySchemaResolver _schemaResolver = new();
+    private LegacyOrderReadSchema? _schema;
 
     public LegacyOrderReader(LegacyReadOptions options)
     {
@@ -98,15 +31,16 @@ public class LegacyOrderReader : ILegacyOrderReader
     {
         await using var connection = new MySqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
+        var schema = await ResolveSchemaAsync(connection, cancellationToken);
 
-        var header = await ReadHeaderAsync(connection, legacyOrderId, cancellationToken);
+        var header = await ReadHeaderAsync(connection, schema, legacyOrderId, cancellationToken);
 
         if (header is null)
         {
             return null;
         }
 
-        header.Items = await ReadItemsAsync(connection, legacyOrderId, cancellationToken);
+        header.Items = await ReadItemsAsync(connection, schema, legacyOrderId, cancellationToken);
         return header;
     }
 
@@ -114,10 +48,10 @@ public class LegacyOrderReader : ILegacyOrderReader
     {
         await using var connection = new MySqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
+        var schema = await ResolveSchemaAsync(connection, cancellationToken);
 
-        var orderDateColumn = await ResolveOrderDateColumnAsync(connection, cancellationToken);
-        var countSql = BuildCountSql(orderDateColumn);
-        var listSql = BuildListSql(orderDateColumn);
+        var countSql = BuildCountSql(schema);
+        var listSql = BuildListSql(schema);
 
         var totalCount = await CountAsync(connection, countSql, search, cancellationToken);
         var items = await ReadPageAsync(connection, listSql, search, cancellationToken);
@@ -133,10 +67,11 @@ public class LegacyOrderReader : ILegacyOrderReader
 
     private static async Task<LegacyOrderReadModel?> ReadHeaderAsync(
         MySqlConnection connection,
+        LegacyOrderReadSchema schema,
         string legacyOrderId,
         CancellationToken cancellationToken)
     {
-        await using var command = new MySqlCommand(HeaderSql, connection);
+        await using var command = new MySqlCommand(BuildHeaderSql(schema), connection);
         command.Parameters.AddWithValue("@legacyOrderId", legacyOrderId);
 
         await using var reader = await command.ExecuteReaderAsync(CommandBehavior.SingleRow, cancellationToken);
@@ -167,12 +102,13 @@ public class LegacyOrderReader : ILegacyOrderReader
 
     private static async Task<List<LegacyOrderItemReadModel>> ReadItemsAsync(
         MySqlConnection connection,
+        LegacyOrderReadSchema schema,
         string legacyOrderId,
         CancellationToken cancellationToken)
     {
         var items = new List<LegacyOrderItemReadModel>();
 
-        await using var command = new MySqlCommand(DetailSql, connection);
+        await using var command = new MySqlCommand(BuildDetailSql(schema), connection);
         command.Parameters.AddWithValue("@legacyOrderId", legacyOrderId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -210,64 +146,162 @@ public class LegacyOrderReader : ILegacyOrderReader
         return items;
     }
 
-    private async Task<string> ResolveOrderDateColumnAsync(MySqlConnection connection, CancellationToken cancellationToken)
+    private async Task<LegacyOrderReadSchema> ResolveSchemaAsync(MySqlConnection connection, CancellationToken cancellationToken)
     {
-        if (!string.IsNullOrWhiteSpace(_orderDateColumnName))
+        if (_schema is not null)
         {
-            return _orderDateColumnName;
+            return _schema;
         }
 
-        await using var command = new MySqlCommand(OrderDateColumnSql, connection);
-        var result = await command.ExecuteScalarAsync(cancellationToken);
-        var columnName = Convert.ToString(result, CultureInfo.InvariantCulture);
+        var orders = await ResolveTableAsync(
+            connection,
+            "pedidos",
+            ["noPedido", "refPedido", "TipoPedido", "noCliente", "condPagoPedido", "TipoEntrega", "MontoPedido"],
+            cancellationToken);
+        var customers = await ResolveTableAsync(
+            connection,
+            "clientes",
+            ["XRazonSocial", "Nombre", "Paterno", "Materno", "Cliente", "RFC", "TipoCliente", "noCliente"],
+            cancellationToken);
+        var orderItems = await ResolveTableAsync(
+            connection,
+            "pedidosdet",
+            ["SuPrecio", "Cantidad", "noPedido", "cveArticulo", "cveMarcaArticulo", "uniMedida"],
+            cancellationToken);
+        var articles = await ResolveTableAsync(
+            connection,
+            "articulos",
+            ["cveArticulo", "cveMarcaArticulo", "Articulo", "Especificacion", "uniMedida", "cveNomArt"],
+            cancellationToken);
+        var articleNames = await ResolveTableAsync(
+            connection,
+            "nombresarticulos",
+            ["NomArt", "cveNomArt"],
+            cancellationToken);
+        var orderDateColumn = await _schemaResolver.ResolveColumnAsync(
+            connection,
+            orders.ActualName,
+            orders.LogicalName,
+            OrderDateColumnCandidates,
+            cancellationToken);
 
-        if (string.IsNullOrWhiteSpace(columnName))
-        {
-            throw new InvalidOperationException("No supported legacy order date column was found in table 'pedidos'.");
-        }
-
-        _orderDateColumnName = columnName;
-        return columnName;
+        _schema = new LegacyOrderReadSchema(orders, customers, orderItems, articles, articleNames, orderDateColumn);
+        return _schema;
     }
 
-    private static string BuildCountSql(string orderDateColumn)
+    private async Task<ResolvedLegacyTable> ResolveTableAsync(
+        MySqlConnection connection,
+        string logicalTableName,
+        IReadOnlyList<string> requiredColumns,
+        CancellationToken cancellationToken)
     {
-        return $"""
-            SELECT COUNT(*)
-            FROM pedidos p
-            INNER JOIN clientes c
-                ON p.noCliente = c.noCliente
-            WHERE p.{orderDateColumn} >= @fromDateUtc
-              AND p.{orderDateColumn} < @toDateUtcExclusive
-              AND p.noCliente <> 0
-              AND p.MontoPedido <> 0.00
-              AND p.refPedido IS NOT NULL;
-            """;
+        var actualTableName = await _schemaResolver.ResolveTableAsync(connection, logicalTableName, cancellationToken);
+        var columns = await _schemaResolver.ResolveColumnsAsync(connection, actualTableName, logicalTableName, requiredColumns, cancellationToken);
+        return new ResolvedLegacyTable(logicalTableName, actualTableName, columns);
     }
 
-    private static string BuildListSql(string orderDateColumn)
+    internal static string BuildHeaderSql(LegacyOrderReadSchema schema)
     {
         return $"""
             SELECT
-                p.noPedido AS LegacyOrderId,
-                p.{orderDateColumn} AS OrderDateUtc,
-                p.TipoPedido AS LegacyOrderType,
+                p.{Q(schema.Orders["noPedido"])} AS LegacyOrderId,
+                p.{Q(schema.Orders["refPedido"])} AS LegacyOrderNumber,
+                p.{Q(schema.Orders["TipoPedido"])} AS LegacyOrderType,
+                p.{Q(schema.Orders["noCliente"])} AS CustomerLegacyId,
                 COALESCE(
-                    NULLIF(TRIM(c.XRazonSocial), ''),
-                    NULLIF(TRIM(CONCAT_WS(' ', NULLIF(c.Nombre, ''), NULLIF(c.Paterno, ''), NULLIF(c.Materno, ''))), ''),
-                    NULLIF(TRIM(c.Cliente), ''),
-                    CONCAT('Cliente ', p.noCliente)
+                    NULLIF(TRIM(c.{Q(schema.Customers["XRazonSocial"])}), ''),
+                    NULLIF(TRIM(CONCAT_WS(' ', NULLIF(c.{Q(schema.Customers["Nombre"])}, ''), NULLIF(c.{Q(schema.Customers["Paterno"])}, ''), NULLIF(c.{Q(schema.Customers["Materno"])}, ''))), ''),
+                    NULLIF(TRIM(c.{Q(schema.Customers["Cliente"])}), ''),
+                    CONCAT('Cliente ', p.{Q(schema.Orders["noCliente"])})
                 ) AS CustomerName,
-                p.MontoPedido AS Total
-            FROM pedidos p
-            INNER JOIN clientes c
-                ON p.noCliente = c.noCliente
-            WHERE p.{orderDateColumn} >= @fromDateUtc
-              AND p.{orderDateColumn} < @toDateUtcExclusive
-              AND p.noCliente <> 0
-              AND p.MontoPedido <> 0.00
-              AND p.refPedido IS NOT NULL
-            ORDER BY p.{orderDateColumn} DESC, p.noPedido DESC
+                c.{Q(schema.Customers["RFC"])} AS CustomerRfc,
+                p.{Q(schema.Orders["condPagoPedido"])} AS PaymentCondition,
+                c.{Q(schema.Customers["TipoCliente"])} AS PriceListCode,
+                p.{Q(schema.Orders["TipoEntrega"])} AS DeliveryType,
+                COALESCE((
+                    SELECT SUM(d.{Q(schema.OrderItems["SuPrecio"])} * d.{Q(schema.OrderItems["Cantidad"])})
+                    FROM {Q(schema.OrderItems.ActualName)} d
+                    WHERE d.{Q(schema.OrderItems["noPedido"])} = p.{Q(schema.Orders["noPedido"])}
+                ), 0) AS Subtotal,
+                0 AS DiscountTotal,
+                0 AS TaxTotal,
+                p.{Q(schema.Orders["MontoPedido"])} AS Total
+            FROM {Q(schema.Orders.ActualName)} p
+            INNER JOIN {Q(schema.Customers.ActualName)} c
+                ON p.{Q(schema.Orders["noCliente"])} = c.{Q(schema.Customers["noCliente"])}
+            WHERE p.{Q(schema.Orders["noPedido"])} = @legacyOrderId
+              AND p.{Q(schema.Orders["noCliente"])} <> 0
+              AND p.{Q(schema.Orders["MontoPedido"])} <> 0.00
+              AND p.{Q(schema.Orders["refPedido"])} IS NOT NULL
+            LIMIT 1;
+            """;
+    }
+
+    internal static string BuildDetailSql(LegacyOrderReadSchema schema)
+    {
+        return $"""
+            SELECT
+                d.{Q(schema.OrderItems["cveArticulo"])} AS LegacyArticleId,
+                d.{Q(schema.OrderItems["cveArticulo"])} AS Sku,
+                n.{Q(schema.ArticleNames["NomArt"])} AS NomArt,
+                a.{Q(schema.Articles["Articulo"])} AS ArticleName,
+                a.{Q(schema.Articles["Especificacion"])} AS ArticleSpecification,
+                d.{Q(schema.OrderItems["uniMedida"])} AS UnitCode,
+                a.{Q(schema.Articles["uniMedida"])} AS UnitName,
+                d.{Q(schema.OrderItems["Cantidad"])} AS Quantity,
+                d.{Q(schema.OrderItems["SuPrecio"])} AS GrossEffectiveUnitPrice,
+                0 AS TaxRate,
+                0 AS TaxAmount,
+                0 AS LineTotal
+            FROM {Q(schema.OrderItems.ActualName)} d
+            INNER JOIN {Q(schema.Articles.ActualName)} a
+                ON d.{Q(schema.OrderItems["cveArticulo"])} = a.{Q(schema.Articles["cveArticulo"])}
+               AND d.{Q(schema.OrderItems["cveMarcaArticulo"])} = a.{Q(schema.Articles["cveMarcaArticulo"])}
+            LEFT JOIN {Q(schema.ArticleNames.ActualName)} n
+                ON a.{Q(schema.Articles["cveNomArt"])} = n.{Q(schema.ArticleNames["cveNomArt"])}
+            WHERE d.{Q(schema.OrderItems["noPedido"])} = @legacyOrderId
+            ORDER BY d.{Q(schema.OrderItems["cveArticulo"])}, d.{Q(schema.OrderItems["cveMarcaArticulo"])}, d.{Q(schema.OrderItems["SuPrecio"])}, d.{Q(schema.OrderItems["Cantidad"])}, d.{Q(schema.OrderItems["uniMedida"])};
+            """;
+    }
+
+    private static string BuildCountSql(LegacyOrderReadSchema schema)
+    {
+        return $"""
+            SELECT COUNT(*)
+            FROM {Q(schema.Orders.ActualName)} p
+            INNER JOIN {Q(schema.Customers.ActualName)} c
+                ON p.{Q(schema.Orders["noCliente"])} = c.{Q(schema.Customers["noCliente"])}
+            WHERE p.{Q(schema.OrderDateColumn)} >= @fromDateUtc
+              AND p.{Q(schema.OrderDateColumn)} < @toDateUtcExclusive
+              AND p.{Q(schema.Orders["noCliente"])} <> 0
+              AND p.{Q(schema.Orders["MontoPedido"])} <> 0.00
+              AND p.{Q(schema.Orders["refPedido"])} IS NOT NULL;
+            """;
+    }
+
+    private static string BuildListSql(LegacyOrderReadSchema schema)
+    {
+        return $"""
+            SELECT
+                p.{Q(schema.Orders["noPedido"])} AS LegacyOrderId,
+                p.{Q(schema.OrderDateColumn)} AS OrderDateUtc,
+                p.{Q(schema.Orders["TipoPedido"])} AS LegacyOrderType,
+                COALESCE(
+                    NULLIF(TRIM(c.{Q(schema.Customers["XRazonSocial"])}), ''),
+                    NULLIF(TRIM(CONCAT_WS(' ', NULLIF(c.{Q(schema.Customers["Nombre"])}, ''), NULLIF(c.{Q(schema.Customers["Paterno"])}, ''), NULLIF(c.{Q(schema.Customers["Materno"])}, ''))), ''),
+                    NULLIF(TRIM(c.{Q(schema.Customers["Cliente"])}), ''),
+                    CONCAT('Cliente ', p.{Q(schema.Orders["noCliente"])})
+                ) AS CustomerName,
+                p.{Q(schema.Orders["MontoPedido"])} AS Total
+            FROM {Q(schema.Orders.ActualName)} p
+            INNER JOIN {Q(schema.Customers.ActualName)} c
+                ON p.{Q(schema.Orders["noCliente"])} = c.{Q(schema.Customers["noCliente"])}
+            WHERE p.{Q(schema.OrderDateColumn)} >= @fromDateUtc
+              AND p.{Q(schema.OrderDateColumn)} < @toDateUtcExclusive
+              AND p.{Q(schema.Orders["noCliente"])} <> 0
+              AND p.{Q(schema.Orders["MontoPedido"])} <> 0.00
+              AND p.{Q(schema.Orders["refPedido"])} IS NOT NULL
+            ORDER BY p.{Q(schema.OrderDateColumn)} DESC, p.{Q(schema.Orders["noPedido"])} DESC
             LIMIT @skip, @take;
             """;
     }
@@ -394,5 +428,10 @@ public class LegacyOrderReader : ILegacyOrderReader
         return string.IsNullOrWhiteSpace(composed)
             ? fallbackArticleId?.Trim() ?? string.Empty
             : composed;
+    }
+
+    private static string Q(string identifier)
+    {
+        return $"`{identifier.Replace("`", "``", StringComparison.Ordinal)}`";
     }
 }
