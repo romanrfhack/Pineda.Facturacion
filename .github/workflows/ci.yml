@@ -87,8 +87,8 @@ jobs:
         working-directory: frontend
         run: npm run build
       - name: Unit tests
-      working-directory: frontend
-      run: npm run test
+        working-directory: frontend
+        run: npm run test
 
       - name: Cache Playwright browsers
         uses: actions/cache@v4
