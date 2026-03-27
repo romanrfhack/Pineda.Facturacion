@@ -11,8 +11,7 @@ import { FeedbackService } from '../../../core/ui/feedback.service';
     <section class="login-page">
       <form class="login-card" (ngSubmit)="submit()">
         <p class="eyebrow">Acceso administrativo</p>
-        <h1>Iniciar sesión</h1>
-        <p class="hint">Usa una cuenta local con el rol requerido para la operación fiscal que necesitas realizar.</p>
+        <h1>Iniciar sesión</h1>        
 
         <label>
           <span>Usuario</span>
