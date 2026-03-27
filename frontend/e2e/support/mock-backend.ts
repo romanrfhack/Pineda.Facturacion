@@ -65,6 +65,26 @@ export async function mockHappyPathBackend(page: Page): Promise<void> {
     });
   });
 
+  await page.route('**/api/fiscal/receivers/by-rfc/BBB010101BBB', async (route) => {
+    await route.fulfill({
+      json: {
+        id: 9,
+        rfc: 'BBB010101BBB',
+        legalName: 'Receiver One',
+        postalCode: '02000',
+        fiscalRegimeCode: '601',
+        cfdiUseCodeDefault: 'G03',
+        countryCode: 'MX',
+        foreignTaxRegistration: null,
+        email: 'receiver.one@example.com',
+        phone: '5550000001',
+        searchAlias: 'Receiver One',
+        isActive: true,
+        specialFields: []
+      }
+    });
+  });
+
   await page.route('**/api/orders/legacy**', async (route) => {
     await route.fulfill({
       json: {
