@@ -27,6 +27,7 @@ jobs:
           filters: |
             backend:
               - 'src/**'
+              - 'tests/**'
               - '.github/workflows/**'
               - 'Directory.Build.props'
             frontend:
