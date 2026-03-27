@@ -17,6 +17,7 @@ jobs:
       SSH_USER: ${{ secrets.FACTURAS_SSH_USER }}
       SSH_KEY_B64: ${{ secrets.FACTURAS_SSH_KEY_B64 }}
       DEPLOY_PATH: /var/www/facturas-backend/publish   # Agregado
+      ASPNETCORE_ENVIRONMENT: Sandbox
 
     steps:
       - uses: actions/checkout@v4
