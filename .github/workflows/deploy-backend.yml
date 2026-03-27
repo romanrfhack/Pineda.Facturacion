@@ -6,6 +6,13 @@ on:
     types: [completed]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-backend-main
+  cancel-in-progress: true
+
 jobs:
   build-and-deploy:
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') }}
@@ -16,20 +23,41 @@ jobs:
       SSH_PORT: ${{ secrets.FACTURAS_SSH_PORT }}
       SSH_USER: ${{ secrets.FACTURAS_SSH_USER }}
       SSH_KEY_B64: ${{ secrets.FACTURAS_SSH_KEY_B64 }}
-      DEPLOY_PATH: /var/www/facturas-backend/publish   # Agregado
+      # Expected runtime environment on the VPS. The systemd service must enforce this server-side.
       ASPNETCORE_ENVIRONMENT: Sandbox
+      DEPLOY_PATH: /var/www/facturas-backend/publish
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
-          fetch-depth: 2
+          fetch-depth: 1
 
-      # ... (detect changes, skip, setup .NET, publish) ...
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore Pineda.Facturacion.slnx
+
+      - name: Publish API
+        run: dotnet publish src/Pineda.Facturacion.Api/Pineda.Facturacion.Api.csproj -c Release -o out/api
+
+      - name: Validate publish output
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d out/api
+          test -f out/api/Pineda.Facturacion.Api.dll
+          test -f out/api/appsettings.json
+          echo "Expected VPS environment: $ASPNETCORE_ENVIRONMENT"
+          ls -la out/api
 
       - name: Setup SSH
-        if: github.event_name == 'workflow_dispatch' || steps.changed.outputs.backend_changed == 'true'
         run: |
+          set -euo pipefail
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
           echo "$SSH_KEY_B64" | base64 -d > ~/.ssh/id_ed25519
@@ -37,27 +65,34 @@ jobs:
           ssh-keyscan -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts
 
       - name: Upload API to server
-        if: github.event_name == 'workflow_dispatch' || steps.changed.outputs.backend_changed == 'true'
         run: |
-          # Crear la carpeta publish y limpiar su contenido
+          set -euo pipefail
           ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" \
             "$SSH_USER@$SSH_HOST" \
-            "mkdir -p $DEPLOY_PATH && rm -rf $DEPLOY_PATH/*"
+            "mkdir -p '$DEPLOY_PATH'"
+          rsync -az --delete -O --no-perms --no-owner --no-group \
+            out/api/ \
+            -e "ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p $SSH_PORT" \
+            "$SSH_USER@$SSH_HOST:$DEPLOY_PATH/"
 
-          # Subir archivos a la carpeta publish
-          scp -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -P "$SSH_PORT" -r \
-            out/api/* "$SSH_USER@$SSH_HOST:$DEPLOY_PATH/"
+      - name: Verify remote publish content
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" \
+            "$SSH_USER@$SSH_HOST" \
+            "ls -la '$DEPLOY_PATH' && test -f '$DEPLOY_PATH/Pineda.Facturacion.Api.dll' && test -f '$DEPLOY_PATH/appsettings.json'"
 
       - name: Set ownership and permissions
-        if: github.event_name == 'workflow_dispatch' || steps.changed.outputs.backend_changed == 'true'
         run: |
+          set -euo pipefail
           ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" \
             "$SSH_USER@$SSH_HOST" \
             "sudo chown -R www-data:www-data /var/www/facturas-backend && sudo chmod -R 755 /var/www/facturas-backend"
 
       - name: Restart service
-        if: github.event_name == 'workflow_dispatch' || steps.changed.outputs.backend_changed == 'true'
         run: |
+          set -euo pipefail
           ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" \
             "$SSH_USER@$SSH_HOST" \
             "sudo systemctl daemon-reload && \
