@@ -23,7 +23,7 @@ jobs:
       SSH_HOST: ${{ secrets.FACTURAS_SSH_HOST }}
       SSH_PORT: ${{ secrets.FACTURAS_SSH_PORT }}
       SSH_USER: ${{ secrets.FACTURAS_SSH_USER }}
-      SSH_KEY_B64: ${{ secrets.FACTURAS_SSH_KEY_B64 }}
+      SSH_KEY: ${{ secrets.FACTURAS_SSH_KEY }}
       WEB_PATH: /var/www/facturas-frontend
 
     steps:
@@ -78,7 +78,7 @@ jobs:
           [ -n "${SSH_HOST:-}" ] || { echo "ERROR: falta FACTURAS_SSH_HOST"; exit 1; }
           [ -n "${SSH_PORT:-}" ] || { echo "ERROR: falta FACTURAS_SSH_PORT"; exit 1; }
           [ -n "${SSH_USER:-}" ] || { echo "ERROR: falta FACTURAS_SSH_USER"; exit 1; }
-          [ -n "${SSH_KEY_B64:-}" ] || { echo "ERROR: falta FACTURAS_SSH_KEY_B64"; exit 1; }
+          [ -n "${SSH_KEY:-}" ] || { echo "ERROR: falta FACTURAS_SSH_KEY"; exit 1; }
 
       - name: Setup SSH
         shell: bash
@@ -86,8 +86,9 @@ jobs:
           set -euo pipefail
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          echo "$SSH_KEY_B64" | base64 -d > ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
+          ssh-keygen -y -f ~/.ssh/id_ed25519 > /dev/null
           ssh-keyscan -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts
 
       - name: Deploy via rsync
