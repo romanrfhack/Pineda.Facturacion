@@ -63,6 +63,14 @@ jobs:
         run: dotnet restore Pineda.Facturacion.slnx
       - name: Build
         run: dotnet build -c Release Pineda.Facturacion.slnx
+      - name: Diagnose test environment
+        env:
+          DOTNET_ENVIRONMENT: Development
+          ASPNETCORE_ENVIRONMENT: Development
+        run: |
+          dotnet --info
+          echo "DOTNET_ENVIRONMENT=$DOTNET_ENVIRONMENT"
+          echo "ASPNETCORE_ENVIRONMENT=$ASPNETCORE_ENVIRONMENT"
       - name: Test
         env:
           DOTNET_ENVIRONMENT: Development

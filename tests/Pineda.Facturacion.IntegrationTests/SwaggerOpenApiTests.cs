@@ -3,11 +3,13 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Infrastructure.BillingWrite.Persistence;
+using Xunit.Sdk;
 
 namespace Pineda.Facturacion.IntegrationTests;
 
@@ -18,12 +20,13 @@ public class SwaggerOpenApiTests
     {
         await using var factory = new SwaggerApiFactory("Development", enableSwagger: true);
         var client = factory.CreateClient();
+        var diagnostics = factory.GetDiagnostics();
 
         var uiResponse = await client.GetAsync("/swagger/index.html");
-        Assert.Equal(HttpStatusCode.OK, uiResponse.StatusCode);
+        await AssertSuccessWithDiagnosticsAsync(uiResponse, "/swagger/index.html", diagnostics);
 
         var jsonResponse = await client.GetAsync("/swagger/v1/swagger.json");
-        Assert.Equal(HttpStatusCode.OK, jsonResponse.StatusCode);
+        await AssertSuccessWithDiagnosticsAsync(jsonResponse, "/swagger/v1/swagger.json", diagnostics);
 
         using var document = JsonDocument.Parse(await jsonResponse.Content.ReadAsStringAsync());
         var securitySchemes = document.RootElement
@@ -40,12 +43,36 @@ public class SwaggerOpenApiTests
     {
         await using var factory = new SwaggerApiFactory("Production", enableSwagger: false);
         var client = factory.CreateClient();
+        var diagnostics = factory.GetDiagnostics();
 
         var uiResponse = await client.GetAsync("/swagger/index.html");
-        Assert.Equal(HttpStatusCode.NotFound, uiResponse.StatusCode);
+        await AssertStatusCodeWithDiagnosticsAsync(uiResponse, "/swagger/index.html", HttpStatusCode.NotFound, diagnostics);
 
         var jsonResponse = await client.GetAsync("/swagger/v1/swagger.json");
-        Assert.Equal(HttpStatusCode.NotFound, jsonResponse.StatusCode);
+        await AssertStatusCodeWithDiagnosticsAsync(jsonResponse, "/swagger/v1/swagger.json", HttpStatusCode.NotFound, diagnostics);
+    }
+
+    private static async Task AssertSuccessWithDiagnosticsAsync(HttpResponseMessage response, string url, SwaggerHostDiagnostics diagnostics)
+    {
+        await AssertStatusCodeWithDiagnosticsAsync(response, url, HttpStatusCode.OK, diagnostics);
+    }
+
+    private static async Task AssertStatusCodeWithDiagnosticsAsync(HttpResponseMessage response, string url, HttpStatusCode expectedStatusCode, SwaggerHostDiagnostics diagnostics)
+    {
+        if (response.StatusCode == expectedStatusCode)
+        {
+            return;
+        }
+
+        var body = await response.Content.ReadAsStringAsync();
+        var message = $"Unexpected Swagger response for '{url}'. "
+            + $"Expected={(int)expectedStatusCode} {expectedStatusCode}, "
+            + $"Actual={(int)response.StatusCode} {response.StatusCode}, "
+            + $"HostEnvironment='{diagnostics.EnvironmentName}', "
+            + $"OpenApi:EnableSwagger='{diagnostics.EnableSwaggerValue ?? "<null>"}', "
+            + $"Body='{body}'.";
+
+        throw new XunitException(message);
     }
 }
 
@@ -104,4 +131,17 @@ internal sealed class SwaggerApiFactory : WebApplicationFactory<Program>, IAsync
             services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<BillingDbContext>());
         });
     }
+
+    public SwaggerHostDiagnostics GetDiagnostics()
+    {
+        using var scope = Services.CreateScope();
+        var environment = scope.ServiceProvider.GetRequiredService<IHostEnvironment>();
+        var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+
+        return new SwaggerHostDiagnostics(
+            environment.EnvironmentName,
+            configuration["OpenApi:EnableSwagger"]);
+    }
 }
+
+internal sealed record SwaggerHostDiagnostics(string EnvironmentName, string? EnableSwaggerValue);

@@ -18,8 +18,6 @@ if (builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Sa
     builder.Configuration.AddUserSecrets<Program>(optional: true);
 }
 
-var enableSwagger = builder.Configuration.GetValue<bool?>("OpenApi:EnableSwagger") ?? IsSwaggerEnabledByEnvironment(builder.Environment);
-
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -84,6 +82,8 @@ builder.Services.AddAuthorization(options =>
 });
 
 var app = builder.Build();
+
+var enableSwagger = app.Configuration.GetValue<bool?>("OpenApi:EnableSwagger") ?? IsSwaggerEnabledByEnvironment(app.Environment);
 
 if (enableSwagger)
 {
