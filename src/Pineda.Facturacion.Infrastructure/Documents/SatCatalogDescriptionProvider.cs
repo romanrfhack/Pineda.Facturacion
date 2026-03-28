@@ -54,6 +54,12 @@ public sealed class SatCatalogDescriptionProvider : ISatCatalogDescriptionProvid
     public string FormatFiscalRegime(string? code)
         => Format(code, TryGetFiscalRegimeDescription(code));
 
+    public IReadOnlyDictionary<string, string> GetPaymentForms()
+        => PaymentForms;
+
+    public IReadOnlyDictionary<string, string> GetPaymentMethods()
+        => PaymentMethods;
+
     public string FormatCfdiUse(string? code)
         => Format(code, TryGetCfdiUseDescription(code));
 

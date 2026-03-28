@@ -26,7 +26,7 @@ import { ProductFiscalProfileFormComponent } from '../../catalogs/components/pro
 import { ProductFiscalProfilesApiService } from '../../catalogs/infrastructure/product-fiscal-profiles-api.service';
 import { FiscalReceiversApiService } from '../../catalogs/infrastructure/fiscal-receivers-api.service';
 import { FiscalReceiverFormComponent } from '../../catalogs/components/fiscal-receiver-form.component';
-import { FiscalReceiver, UpsertFiscalReceiverRequest, UpsertProductFiscalProfileRequest } from '../../catalogs/models/catalogs.models';
+import { FiscalReceiver, FiscalReceiverSatCatalogOption, UpsertFiscalReceiverRequest, UpsertProductFiscalProfileRequest } from '../../catalogs/models/catalogs.models';
 import { extractMissingProductFiscalProfileContext, MissingProductFiscalProfileContext } from '../application/missing-product-fiscal-profile';
 import { buildFiscalDocumentFileName } from '../application/fiscal-document-file-name';
 
@@ -197,30 +197,61 @@ import { buildFiscalDocumentFileName } from '../application/fiscal-document-file
 
             <label>
               <span>Método de pago SAT</span>
-              <input [(ngModel)]="paymentMethodSat" name="paymentMethodSat" required />
+              <select
+                [ngModel]="paymentMethodSat"
+                (ngModelChange)="onPaymentMethodChange($event)"
+                name="paymentMethodSat"
+                required>
+                <option value="">Selecciona método de pago</option>
+                @for (option of paymentMethodOptions(); track option.code) {
+                  <option [value]="option.code">{{ option.code }} - {{ option.description }}</option>
+                }
+              </select>
+              <small class="helper">Selecciona primero el método SAT para guiar la forma de pago.</small>
             </label>
 
             <label>
               <span>Forma de pago SAT</span>
-              <input [(ngModel)]="paymentFormSat" name="paymentFormSat" required />
+              <select
+                [ngModel]="paymentFormSat"
+                (ngModelChange)="onPaymentFormChange($event)"
+                name="paymentFormSat"
+                required>
+                <option value="">Selecciona forma de pago</option>
+                @for (option of availablePaymentFormOptions(); track option.code) {
+                  <option [value]="option.code">{{ option.code }} - {{ option.description }}</option>
+                }
+              </select>
+              @if (normalizedPaymentMethodSat() === 'PPD') {
+                <small class="helper">Para PPD, la forma de pago SAT se restringe a 99 - Por definir.</small>
+              } @else {
+                <small class="helper">Para PUE, selecciona una forma de pago real del catálogo SAT.</small>
+              }
             </label>
 
             <label>
               <span>Condición de pago</span>
-              <input [(ngModel)]="paymentCondition" name="paymentCondition" />
+              <input
+                [ngModel]="paymentCondition"
+                (ngModelChange)="onPaymentConditionChange($event)"
+                name="paymentCondition"
+                maxlength="50"
+                required
+              />
+              <small class="helper">Texto comercial controlado por la aplicación. No es un catálogo SAT cerrado.</small>
             </label>
 
             <label class="checkbox">
-              <input [(ngModel)]="isCreditSale" name="isCreditSale" type="checkbox" />
+              <input [ngModel]="isCreditSale" (ngModelChange)="onCreditSaleChange($event)" name="isCreditSale" type="checkbox" />
               <span>Venta a crédito</span>
             </label>
 
             <label>
               <span>Días de crédito</span>
-              <input [(ngModel)]="creditDays" name="creditDays" type="number" min="1" />
+              <input [ngModel]="creditDays" (ngModelChange)="onCreditDaysChange($event)" name="creditDays" type="number" min="1" />
             </label>
 
-            <button type="submit" [disabled]="loadingPrepare() || savingMissingProductProfile()"> {{ loadingPrepare() ? 'Preparando...' : 'Preparar documento fiscal' }} </button>
+            <button type="submit" [disabled]="!canPrepareFiscalDocument()"> {{ loadingPrepare() ? 'Preparando...' : 'Preparar documento fiscal' }} </button>
           </form>
 
           @if (missingProductFiscalProfile(); as missingProduct) {
@@ -514,19 +545,22 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected readonly receiverCreateError = signal<string | null>(null);
   protected readonly receiverCreateDraft = signal<UpsertFiscalReceiverRequest | null>(null);
   protected readonly specialFieldDrafts = signal<ReceiverSpecialFieldDraft[]>([]);
+  protected readonly paymentMethodCatalog = signal<FiscalReceiverSatCatalogOption[]>([]);
+  protected readonly paymentFormCatalog = signal<FiscalReceiverSatCatalogOption[]>([]);
   private readonly pendingPrepareRequest = signal<PrepareFiscalDocumentRequest | null>(null);
 
   protected readonly receiverQuery = signal('');
   protected billingDocumentQuery = '';
   protected selectedReceiverId: number | null = null;
-  protected paymentMethodSat = 'PPD';
-  protected paymentFormSat = '99';
-  protected paymentCondition = 'CREDITO';
+  protected paymentMethodSat = '';
+  protected paymentFormSat = '';
+  protected paymentCondition = '';
   protected isCreditSale = true;
-  protected creditDays = 7;
+  protected creditDays: number | null = 7;
   protected emailRecipientsInput = '';
   protected emailSubject = '';
   protected emailBody = '';
+  private paymentConditionEditedByUser = false;
 
   protected readonly activeIssuerLabel = computed(() => {
     const issuer = this.activeIssuer();
@@ -543,6 +577,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
 
   constructor() {
     void this.loadIssuer();
+    void this.loadSatCatalogs();
     if (this.fiscalDocumentId()) {
       void this.loadFiscalDocument(this.fiscalDocumentId()!);
     } else if (this.billingDocumentId()) {
@@ -578,6 +613,65 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     this.receiverSearchTimer = window.setTimeout(() => {
       void this.searchReceivers(trimmed);
     }, 250);
+  }
+
+  protected paymentMethodOptions(): FiscalReceiverSatCatalogOption[] {
+    return this.paymentMethodCatalog();
+  }
+
+  protected availablePaymentFormOptions(): FiscalReceiverSatCatalogOption[] {
+    const paymentMethod = this.normalizedPaymentMethodSat();
+    const options = this.paymentFormCatalog();
+    if (paymentMethod === 'PPD') {
+      return options.filter((option) => option.code === '99');
+    }
+
+    if (paymentMethod === 'PUE') {
+      return options.filter((option) => option.code !== '99');
+    }
+
+    return options;
+  }
+
+  protected normalizedPaymentMethodSat(): string {
+    return normalizeSatCode(this.paymentMethodSat);
+  }
+
+  protected canPrepareFiscalDocument(): boolean {
+    return !this.loadingPrepare()
+      && !this.savingMissingProductProfile()
+      && !!this.selectedReceiverId
+      && !this.validateSpecialFields()
+      && !this.getPaymentPreparationValidationError();
+  }
+
+  protected onPaymentMethodChange(value: string): void {
+    this.paymentMethodSat = normalizeSatCode(value);
+    this.syncPaymentMethodDependencies(true);
+  }
+
+  protected onPaymentFormChange(value: string): void {
+    this.paymentFormSat = normalizeSatCode(value);
+  }
+
+  protected onPaymentConditionChange(value: string): void {
+    this.paymentConditionEditedByUser = true;
+    this.paymentCondition = value;
+  }
+
+  protected onCreditSaleChange(value: boolean): void {
+    this.isCreditSale = value;
+    this.paymentMethodSat = value ? 'PPD' : 'PUE';
+    this.syncPaymentMethodDependencies(true);
+    this.paymentConditionEditedByUser = false;
+    this.applySuggestedPaymentCondition();
+  }
+
+  protected onCreditDaysChange(value: number | string | null): void {
+    this.creditDays = normalizeCreditDays(value);
+    if (this.isCreditSale) {
+      this.applySuggestedPaymentCondition();
+    }
   }
 
   protected async selectReceiver(receiver: FiscalReceiverSearchResponse): Promise<void> {
@@ -770,6 +864,12 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       return;
     }
 
+    const paymentValidationError = this.getPaymentPreparationValidationError();
+    if (paymentValidationError) {
+      this.feedbackService.show('error', paymentValidationError);
+      return;
+    }
+
     const specialFieldValidationError = this.validateSpecialFields();
     if (specialFieldValidationError) {
       this.feedbackService.show('error', specialFieldValidationError);
@@ -779,9 +879,9 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     const request: PrepareFiscalDocumentRequest = {
       fiscalReceiverId: this.selectedReceiverId,
       issuerProfileId: this.activeIssuer()?.id ?? null,
-      paymentMethodSat: this.paymentMethodSat,
-      paymentFormSat: this.paymentFormSat,
-      paymentCondition: this.paymentCondition,
+      paymentMethodSat: this.normalizedPaymentMethodSat(),
+      paymentFormSat: normalizeSatCode(this.paymentFormSat),
+      paymentCondition: this.paymentCondition.trim(),
       isCreditSale: this.isCreditSale,
       creditDays: this.creditDays,
       specialFields: this.activeReceiverSpecialFields().map((field) => ({
@@ -1037,6 +1137,23 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     }
   }
 
+  private async loadSatCatalogs(): Promise<void> {
+    try {
+      const catalog = await firstValueFrom(this.fiscalReceiversApi.getSatCatalog());
+      this.paymentMethodCatalog.set(catalog.paymentMethods ?? []);
+      this.paymentFormCatalog.set(catalog.paymentForms ?? []);
+      if (!this.paymentMethodSat) {
+        this.paymentMethodSat = this.isCreditSale ? 'PPD' : 'PUE';
+      }
+      this.syncPaymentMethodDependencies(false);
+      this.applySuggestedPaymentCondition();
+    } catch {
+      this.paymentMethodCatalog.set([]);
+      this.paymentFormCatalog.set([]);
+      this.feedbackService.show('warning', 'No se pudieron cargar los catálogos SAT de método y forma de pago.');
+    }
+  }
+
   private async loadFiscalDocument(fiscalDocumentId: number, syncRoute = false): Promise<void> {
     this.fiscalDocumentId.set(fiscalDocumentId);
     this.showStampDetail.set(false);
@@ -1183,6 +1300,70 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       this.loadingPdf.set(false);
     }
   }
+
+  private getPaymentPreparationValidationError(): string | null {
+    const paymentMethod = this.normalizedPaymentMethodSat();
+    if (!paymentMethod || !this.paymentMethodCatalog().some((option) => option.code === paymentMethod)) {
+      return 'Selecciona un método de pago SAT válido.';
+    }
+
+    const paymentForm = normalizeSatCode(this.paymentFormSat);
+    const availablePaymentForms = this.availablePaymentFormOptions();
+    if (!paymentForm || !availablePaymentForms.some((option) => option.code === paymentForm)) {
+      return paymentMethod === 'PPD'
+        ? 'Forma de pago SAT debe ser 99 - Por definir cuando el método es PPD.'
+        : 'Selecciona una forma de pago SAT válida.';
+    }
+
+    if (paymentMethod === 'PUE' && paymentForm === '99') {
+      return 'Forma de pago SAT 99 - Por definir no aplica cuando el método es PUE.';
+    }
+
+    const paymentCondition = this.paymentCondition.trim();
+    if (!paymentCondition) {
+      return 'Captura una condición de pago.';
+    }
+
+    if (paymentCondition.length > 50) {
+      return 'La condición de pago no puede exceder 50 caracteres.';
+    }
+
+    if (this.isCreditSale) {
+      if (!Number.isInteger(this.creditDays) || (this.creditDays ?? 0) <= 0) {
+        return 'Captura días de crédito válidos para una venta a crédito.';
+      }
+
+      if (paymentMethod !== 'PPD' || paymentForm !== '99') {
+        return 'Las ventas a crédito requieren método PPD y forma de pago 99.';
+      }
+    }
+
+    return null;
+  }
+
+  private syncPaymentMethodDependencies(resetImmediateFormSelection: boolean): void {
+    const paymentMethod = this.normalizedPaymentMethodSat();
+    const paymentForm = normalizeSatCode(this.paymentFormSat);
+
+    if (paymentMethod === 'PPD') {
+      this.paymentFormSat = '99';
+      return;
+    }
+
+    if (paymentMethod === 'PUE' && paymentForm === '99') {
+      this.paymentFormSat = resetImmediateFormSelection ? '' : this.paymentFormSat;
+    }
+  }
+
+  private applySuggestedPaymentCondition(): void {
+    if (this.paymentConditionEditedByUser && this.paymentCondition.trim().length > 0) {
+      return;
+    }
+
+    this.paymentCondition = this.isCreditSale
+      ? buildCreditPaymentCondition(this.creditDays)
+      : 'Contado';
+  }
 }
 
 function parseNumber(value: string | null): number | null {
@@ -1207,6 +1388,29 @@ function parseRecipients(value: string): string[] {
 
 function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function normalizeSatCode(value: string | null | undefined): string {
+  return value?.trim().toUpperCase() ?? '';
+}
+
+function normalizeCreditDays(value: number | string | null): number | null {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && value > 0 ? Math.trunc(value) : null;
+  }
+
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : null;
+  }
+
+  return null;
+}
+
+function buildCreditPaymentCondition(creditDays: number | null): string {
+  return creditDays && creditDays > 0
+    ? `Crédito a ${creditDays} días`
+    : 'Crédito';
 }
 
 interface ReceiverSpecialFieldDraft {

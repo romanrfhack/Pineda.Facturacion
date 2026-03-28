@@ -1,3 +1,4 @@
+using Pineda.Facturacion.Application.Abstractions.Documents;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Common;
 using Pineda.Facturacion.Domain.Entities;
@@ -13,6 +14,7 @@ public class PrepareFiscalDocumentService
     private readonly IIssuerProfileRepository _issuerProfileRepository;
     private readonly IFiscalReceiverRepository _fiscalReceiverRepository;
     private readonly IProductFiscalProfileRepository _productFiscalProfileRepository;
+    private readonly ISatCatalogDescriptionProvider _satCatalogDescriptionProvider;
     private readonly IUnitOfWork _unitOfWork;
 
     public PrepareFiscalDocumentService(
@@ -21,6 +23,7 @@ public class PrepareFiscalDocumentService
         IIssuerProfileRepository issuerProfileRepository,
         IFiscalReceiverRepository fiscalReceiverRepository,
         IProductFiscalProfileRepository productFiscalProfileRepository,
+        ISatCatalogDescriptionProvider satCatalogDescriptionProvider,
         IUnitOfWork unitOfWork)
     {
         _billingDocumentRepository = billingDocumentRepository;
@@ -28,6 +31,7 @@ public class PrepareFiscalDocumentService
         _issuerProfileRepository = issuerProfileRepository;
         _fiscalReceiverRepository = fiscalReceiverRepository;
         _productFiscalProfileRepository = productFiscalProfileRepository;
+        _satCatalogDescriptionProvider = satCatalogDescriptionProvider;
         _unitOfWork = unitOfWork;
     }
 
@@ -55,6 +59,42 @@ public class PrepareFiscalDocumentService
             return ValidationFailure(command.BillingDocumentId, "Payment form SAT is required.");
         }
 
+        var paymentMethodSat = FiscalMasterDataNormalization.NormalizeRequiredCode(command.PaymentMethodSat);
+        var paymentFormSat = FiscalMasterDataNormalization.NormalizeRequiredCode(command.PaymentFormSat);
+        var paymentCondition = FiscalMasterDataNormalization.NormalizeOptionalText(command.PaymentCondition);
+
+        if (string.IsNullOrWhiteSpace(paymentCondition))
+        {
+            return ValidationFailure(command.BillingDocumentId, "Payment condition is required.");
+        }
+
+        if (paymentCondition.Length > 50)
+        {
+            return ValidationFailure(command.BillingDocumentId, "Payment condition must be 50 characters or fewer.");
+        }
+
+        if (!_satCatalogDescriptionProvider.GetPaymentMethods().ContainsKey(paymentMethodSat))
+        {
+            return ValidationFailure(command.BillingDocumentId, $"Payment method SAT '{paymentMethodSat}' is not valid.");
+        }
+
+        if (!_satCatalogDescriptionProvider.GetPaymentForms().ContainsKey(paymentFormSat))
+        {
+            return ValidationFailure(command.BillingDocumentId, $"Payment form SAT '{paymentFormSat}' is not valid.");
+        }
+
+        if (string.Equals(paymentMethodSat, "PPD", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(paymentFormSat, "99", StringComparison.OrdinalIgnoreCase))
+        {
+            return ValidationFailure(command.BillingDocumentId, "Payment method SAT 'PPD' requires payment form SAT '99'.");
+        }
+
+        if (string.Equals(paymentMethodSat, "PUE", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(paymentFormSat, "99", StringComparison.OrdinalIgnoreCase))
+        {
+            return ValidationFailure(command.BillingDocumentId, "Payment method SAT 'PUE' does not allow payment form SAT '99'.");
+        }
+
         if (command.IsCreditSale)
         {
             if (command.CreditDays is null or <= 0)
@@ -62,9 +102,14 @@ public class PrepareFiscalDocumentService
                 return ValidationFailure(command.BillingDocumentId, "Credit days must be greater than zero for credit sales.");
             }
 
-            if (!string.Equals(command.PaymentMethodSat.Trim(), "PPD", StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(paymentMethodSat, "PPD", StringComparison.OrdinalIgnoreCase))
             {
                 return ValidationFailure(command.BillingDocumentId, "Credit sales require payment method SAT 'PPD'.");
+            }
+
+            if (!string.Equals(paymentFormSat, "99", StringComparison.OrdinalIgnoreCase))
+            {
+                return ValidationFailure(command.BillingDocumentId, "Credit sales require payment form SAT '99'.");
             }
         }
 
@@ -237,9 +282,9 @@ public class PrepareFiscalDocumentService
             IssuedAtUtc = command.IssuedAtUtc ?? now,
             CurrencyCode = currencyCode,
             ExchangeRate = exchangeRate,
-            PaymentMethodSat = FiscalMasterDataNormalization.NormalizeRequiredCode(command.PaymentMethodSat),
-            PaymentFormSat = FiscalMasterDataNormalization.NormalizeRequiredCode(command.PaymentFormSat),
-            PaymentCondition = FiscalMasterDataNormalization.NormalizeOptionalText(command.PaymentCondition) ?? billingDocument.PaymentCondition,
+            PaymentMethodSat = paymentMethodSat,
+            PaymentFormSat = paymentFormSat,
+            PaymentCondition = paymentCondition,
             IsCreditSale = command.IsCreditSale,
             CreditDays = command.IsCreditSale ? command.CreditDays : null,
             IssuerRfc = issuerProfile.Rfc,

@@ -32,6 +32,14 @@ describe('FiscalReceiversPageComponent', () => {
               usoCfdi: [
                 { code: 'G03', description: 'Gastos en general' }
               ],
+              paymentMethods: [
+                { code: 'PUE', description: 'Pago en una sola exhibición' },
+                { code: 'PPD', description: 'Pago en parcialidades o diferido' }
+              ],
+              paymentForms: [
+                { code: '03', description: 'Transferencia electrónica de fondos' },
+                { code: '99', description: 'Por definir' }
+              ],
               byRegimenFiscal: [
                 {
                   code: '601',

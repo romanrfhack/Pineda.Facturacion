@@ -1,3 +1,4 @@
+using Pineda.Facturacion.Application.Abstractions.Documents;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.UseCases.FiscalDocuments;
 using Pineda.Facturacion.Api.Endpoints;
@@ -19,6 +20,7 @@ public class FiscalDocumentServicesTests
             issuerRepository,
             new FakeFiscalReceiverRepository { ExistingById = CreateReceiver() },
             new FakeProductFiscalProfileRepository { ExistingByCode = CreateProductFiscalProfile() },
+            new FakeSatCatalogDescriptionProvider(),
             new FakeUnitOfWork());
 
         var result = await service.ExecuteAsync(new PrepareFiscalDocumentCommand
@@ -26,7 +28,8 @@ public class FiscalDocumentServicesTests
             BillingDocumentId = billingDocument.Id,
             FiscalReceiverId = 11,
             PaymentMethodSat = "PUE",
-            PaymentFormSat = "03"
+            PaymentFormSat = "03",
+            PaymentCondition = "Contado"
         });
 
         Assert.True(result.IsSuccess);
@@ -54,6 +57,7 @@ public class FiscalDocumentServicesTests
             new FakeIssuerProfileRepository { Active = CreateIssuerProfile() },
             new FakeFiscalReceiverRepository { ExistingById = CreateReceiver() },
             new FakeProductFiscalProfileRepository { ExistingByCode = CreateProductFiscalProfile() },
+            new FakeSatCatalogDescriptionProvider(),
             new FakeUnitOfWork());
 
         var result = await service.ExecuteAsync(new PrepareFiscalDocumentCommand
@@ -61,7 +65,8 @@ public class FiscalDocumentServicesTests
             BillingDocumentId = billingDocument.Id,
             FiscalReceiverId = 11,
             PaymentMethodSat = "PUE",
-            PaymentFormSat = "03"
+            PaymentFormSat = "03",
+            PaymentCondition = "Contado"
         });
 
         Assert.Equal(PrepareFiscalDocumentOutcome.Conflict, result.Outcome);
@@ -77,6 +82,7 @@ public class FiscalDocumentServicesTests
             new FakeIssuerProfileRepository { Active = null },
             new FakeFiscalReceiverRepository { ExistingById = CreateReceiver() },
             new FakeProductFiscalProfileRepository { ExistingByCode = CreateProductFiscalProfile() },
+            new FakeSatCatalogDescriptionProvider(),
             new FakeUnitOfWork());
 
         var result = await service.ExecuteAsync(new PrepareFiscalDocumentCommand
@@ -84,7 +90,8 @@ public class FiscalDocumentServicesTests
             BillingDocumentId = 5,
             FiscalReceiverId = 11,
             PaymentMethodSat = "PUE",
-            PaymentFormSat = "03"
+            PaymentFormSat = "03",
+            PaymentCondition = "Contado"
         });
 
         Assert.Equal(PrepareFiscalDocumentOutcome.MissingIssuerProfile, result.Outcome);
@@ -99,6 +106,7 @@ public class FiscalDocumentServicesTests
             new FakeIssuerProfileRepository { Active = CreateIssuerProfile() },
             new FakeFiscalReceiverRepository { ExistingById = null },
             new FakeProductFiscalProfileRepository { ExistingByCode = CreateProductFiscalProfile() },
+            new FakeSatCatalogDescriptionProvider(),
             new FakeUnitOfWork());
 
         var result = await service.ExecuteAsync(new PrepareFiscalDocumentCommand
@@ -106,7 +114,8 @@ public class FiscalDocumentServicesTests
             BillingDocumentId = 5,
             FiscalReceiverId = 11,
             PaymentMethodSat = "PUE",
-            PaymentFormSat = "03"
+            PaymentFormSat = "03",
+            PaymentCondition = "Contado"
         });
 
         Assert.Equal(PrepareFiscalDocumentOutcome.MissingReceiver, result.Outcome);
@@ -121,6 +130,7 @@ public class FiscalDocumentServicesTests
             new FakeIssuerProfileRepository { Active = CreateIssuerProfile() },
             new FakeFiscalReceiverRepository { ExistingById = CreateReceiver() },
             new FakeProductFiscalProfileRepository { ExistingByCode = null },
+            new FakeSatCatalogDescriptionProvider(),
             new FakeUnitOfWork());
 
         var result = await service.ExecuteAsync(new PrepareFiscalDocumentCommand
@@ -128,7 +138,8 @@ public class FiscalDocumentServicesTests
             BillingDocumentId = 5,
             FiscalReceiverId = 11,
             PaymentMethodSat = "PUE",
-            PaymentFormSat = "03"
+            PaymentFormSat = "03",
+            PaymentCondition = "Contado"
         });
 
         Assert.Equal(PrepareFiscalDocumentOutcome.MissingProductFiscalProfile, result.Outcome);
@@ -146,7 +157,8 @@ public class FiscalDocumentServicesTests
             BillingDocumentId = 5,
             FiscalReceiverId = 11,
             PaymentMethodSat = "PUE",
-            PaymentFormSat = "03"
+            PaymentFormSat = "03",
+            PaymentCondition = "Contado"
         });
 
         Assert.Equal("G03", repository.Added!.ReceiverCfdiUseCode);
@@ -161,6 +173,7 @@ public class FiscalDocumentServicesTests
             new FakeIssuerProfileRepository { Active = CreateIssuerProfile() },
             new FakeFiscalReceiverRepository { ExistingById = CreateReceiver() },
             new FakeProductFiscalProfileRepository { ExistingByCode = CreateProductFiscalProfile() },
+            new FakeSatCatalogDescriptionProvider(),
             new FakeUnitOfWork());
 
         var overrideResult = await service.ExecuteAsync(new PrepareFiscalDocumentCommand
@@ -169,6 +182,7 @@ public class FiscalDocumentServicesTests
             FiscalReceiverId = 11,
             PaymentMethodSat = "PUE",
             PaymentFormSat = "03",
+            PaymentCondition = "Contado",
             ReceiverCfdiUseCode = " D01 "
         });
 
@@ -189,6 +203,7 @@ public class FiscalDocumentServicesTests
             FiscalReceiverId = 11,
             PaymentMethodSat = "PPD",
             PaymentFormSat = "99",
+            PaymentCondition = "Crédito a 30 días",
             IsCreditSale = true
         });
 
@@ -200,6 +215,7 @@ public class FiscalDocumentServicesTests
             FiscalReceiverId = 11,
             PaymentMethodSat = "PPD",
             PaymentFormSat = "99",
+            PaymentCondition = "Crédito a 30 días",
             IsCreditSale = true,
             CreditDays = 30
         });
@@ -209,6 +225,96 @@ public class FiscalDocumentServicesTests
         Assert.Equal(30, repository.Added.CreditDays);
         Assert.Equal("PPD", repository.Added.PaymentMethodSat);
         Assert.Equal("99", repository.Added.PaymentFormSat);
+    }
+
+    [Fact]
+    public async Task PrepareFiscalDocument_Fails_WhenPaymentMethodSatIsInvalid()
+    {
+        var service = CreateService();
+
+        var result = await service.ExecuteAsync(new PrepareFiscalDocumentCommand
+        {
+            BillingDocumentId = 5,
+            FiscalReceiverId = 11,
+            PaymentMethodSat = "ABC",
+            PaymentFormSat = "03",
+            PaymentCondition = "Contado"
+        });
+
+        Assert.Equal(PrepareFiscalDocumentOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("Payment method SAT", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task PrepareFiscalDocument_Fails_WhenPaymentFormSatIsInvalid()
+    {
+        var service = CreateService();
+
+        var result = await service.ExecuteAsync(new PrepareFiscalDocumentCommand
+        {
+            BillingDocumentId = 5,
+            FiscalReceiverId = 11,
+            PaymentMethodSat = "PUE",
+            PaymentFormSat = "77",
+            PaymentCondition = "Contado"
+        });
+
+        Assert.Equal(PrepareFiscalDocumentOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("Payment form SAT", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task PrepareFiscalDocument_Fails_WhenPaymentConditionIsMissing()
+    {
+        var service = CreateService();
+
+        var result = await service.ExecuteAsync(new PrepareFiscalDocumentCommand
+        {
+            BillingDocumentId = 5,
+            FiscalReceiverId = 11,
+            PaymentMethodSat = "PUE",
+            PaymentFormSat = "03",
+            PaymentCondition = "   "
+        });
+
+        Assert.Equal(PrepareFiscalDocumentOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("Payment condition", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task PrepareFiscalDocument_Fails_WhenPpdDoesNotUseForm99()
+    {
+        var service = CreateService();
+
+        var result = await service.ExecuteAsync(new PrepareFiscalDocumentCommand
+        {
+            BillingDocumentId = 5,
+            FiscalReceiverId = 11,
+            PaymentMethodSat = "PPD",
+            PaymentFormSat = "03",
+            PaymentCondition = "Crédito a 30 días"
+        });
+
+        Assert.Equal(PrepareFiscalDocumentOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("'99'", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task PrepareFiscalDocument_Fails_WhenPueUsesForm99()
+    {
+        var service = CreateService();
+
+        var result = await service.ExecuteAsync(new PrepareFiscalDocumentCommand
+        {
+            BillingDocumentId = 5,
+            FiscalReceiverId = 11,
+            PaymentMethodSat = "PUE",
+            PaymentFormSat = "99",
+            PaymentCondition = "Contado"
+        });
+
+        Assert.Equal(PrepareFiscalDocumentOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("does not allow", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -222,7 +328,8 @@ public class FiscalDocumentServicesTests
             BillingDocumentId = 5,
             FiscalReceiverId = 11,
             PaymentMethodSat = "PUE",
-            PaymentFormSat = "03"
+            PaymentFormSat = "03",
+            PaymentCondition = "Contado"
         });
 
         Assert.Equal(PrepareFiscalDocumentOutcome.Created, result.Outcome);
@@ -243,6 +350,7 @@ public class FiscalDocumentServicesTests
             issuerRepository,
             new FakeFiscalReceiverRepository { ExistingById = CreateReceiver() },
             new FakeProductFiscalProfileRepository { ExistingByCode = CreateProductFiscalProfile() },
+            new FakeSatCatalogDescriptionProvider(),
             new FakeUnitOfWork());
 
         var result = await service.ExecuteAsync(new PrepareFiscalDocumentCommand
@@ -250,7 +358,8 @@ public class FiscalDocumentServicesTests
             BillingDocumentId = 5,
             FiscalReceiverId = 11,
             PaymentMethodSat = "PUE",
-            PaymentFormSat = "03"
+            PaymentFormSat = "03",
+            PaymentCondition = "Contado"
         });
 
         Assert.Equal(PrepareFiscalDocumentOutcome.Created, result.Outcome);
@@ -271,7 +380,8 @@ public class FiscalDocumentServicesTests
             BillingDocumentId = 5,
             FiscalReceiverId = 11,
             PaymentMethodSat = "PUE",
-            PaymentFormSat = "03"
+            PaymentFormSat = "03",
+            PaymentCondition = "Contado"
         });
 
         Assert.Equal(PrepareFiscalDocumentOutcome.ValidationFailed, result.Outcome);
@@ -298,7 +408,8 @@ public class FiscalDocumentServicesTests
             BillingDocumentId = 5,
             FiscalReceiverId = 11,
             PaymentMethodSat = "PUE",
-            PaymentFormSat = "03"
+            PaymentFormSat = "03",
+            PaymentCondition = "Contado"
         });
 
         Assert.Equal(PrepareFiscalDocumentOutcome.ValidationFailed, result.Outcome);
@@ -332,7 +443,8 @@ public class FiscalDocumentServicesTests
             BillingDocumentId = 5,
             FiscalReceiverId = 11,
             PaymentMethodSat = "PUE",
-            PaymentFormSat = "03"
+            PaymentFormSat = "03",
+            PaymentCondition = "Contado"
         });
 
         Assert.Equal(PrepareFiscalDocumentOutcome.ValidationFailed, result.Outcome);
@@ -382,6 +494,7 @@ public class FiscalDocumentServicesTests
             FiscalReceiverId = 11,
             PaymentMethodSat = "PUE",
             PaymentFormSat = "03",
+            PaymentCondition = "Contado",
             SpecialFields =
             [
                 new PrepareFiscalDocumentSpecialFieldValueCommand { FieldCode = "AGENTE", Value = "Juan Perez" },
@@ -489,6 +602,7 @@ public class FiscalDocumentServicesTests
             new FakeIssuerProfileRepository { Active = CreateIssuerProfile() },
             new FakeFiscalReceiverRepository { ExistingById = CreateReceiver() },
             new FakeProductFiscalProfileRepository { ExistingByCode = CreateProductFiscalProfile() },
+            new FakeSatCatalogDescriptionProvider(),
             new FakeUnitOfWork());
 
         var result = await service.ExecuteAsync(new PrepareFiscalDocumentCommand
@@ -496,7 +610,8 @@ public class FiscalDocumentServicesTests
             BillingDocumentId = billingDocument.Id,
             FiscalReceiverId = 11,
             PaymentMethodSat = "PUE",
-            PaymentFormSat = "03"
+            PaymentFormSat = "03",
+            PaymentCondition = "Contado"
         });
 
         Assert.Equal(PrepareFiscalDocumentOutcome.Created, result.Outcome);
@@ -517,6 +632,7 @@ public class FiscalDocumentServicesTests
             new FakeIssuerProfileRepository { Active = CreateIssuerProfile() },
             new FakeFiscalReceiverRepository { ExistingById = CreateReceiver() },
             new FakeProductFiscalProfileRepository { ExistingByCode = CreateProductFiscalProfile() },
+            new FakeSatCatalogDescriptionProvider(),
             new FakeUnitOfWork());
 
         var result = await service.ExecuteAsync(new PrepareFiscalDocumentCommand
@@ -524,7 +640,8 @@ public class FiscalDocumentServicesTests
             BillingDocumentId = billingDocument.Id,
             FiscalReceiverId = 11,
             PaymentMethodSat = "PUE",
-            PaymentFormSat = "03"
+            PaymentFormSat = "03",
+            PaymentCondition = "Contado"
         });
 
         Assert.Equal(PrepareFiscalDocumentOutcome.ValidationFailed, result.Outcome);
@@ -545,6 +662,7 @@ public class FiscalDocumentServicesTests
             new FakeIssuerProfileRepository { Active = CreateIssuerProfile() },
             new FakeFiscalReceiverRepository { ExistingById = CreateReceiver() },
             new FakeProductFiscalProfileRepository { ExistingByCode = CreateProductFiscalProfile() },
+            new FakeSatCatalogDescriptionProvider(),
             new FakeUnitOfWork());
 
         var result = await service.ExecuteAsync(new PrepareFiscalDocumentCommand
@@ -552,7 +670,8 @@ public class FiscalDocumentServicesTests
             BillingDocumentId = billingDocument.Id,
             FiscalReceiverId = 11,
             PaymentMethodSat = "PUE",
-            PaymentFormSat = "03"
+            PaymentFormSat = "03",
+            PaymentCondition = "Contado"
         });
 
         Assert.Equal(PrepareFiscalDocumentOutcome.Created, result.Outcome);
@@ -571,6 +690,7 @@ public class FiscalDocumentServicesTests
             new FakeIssuerProfileRepository { Active = CreateIssuerProfile() },
             new FakeFiscalReceiverRepository { ExistingById = CreateReceiver() },
             new FakeProductFiscalProfileRepository { ExistingByCode = CreateProductFiscalProfile() },
+            new FakeSatCatalogDescriptionProvider(),
             new FakeUnitOfWork());
 
         var result = await service.ExecuteAsync(new PrepareFiscalDocumentCommand
@@ -578,7 +698,8 @@ public class FiscalDocumentServicesTests
             BillingDocumentId = billingDocument.Id,
             FiscalReceiverId = 11,
             PaymentMethodSat = "PUE",
-            PaymentFormSat = "03"
+            PaymentFormSat = "03",
+            PaymentCondition = "Contado"
         });
 
         Assert.Equal(PrepareFiscalDocumentOutcome.MissingProductFiscalProfile, result.Outcome);
@@ -621,6 +742,7 @@ public class FiscalDocumentServicesTests
             new FakeIssuerProfileRepository { Active = activeIssuer ?? CreateIssuerProfile() },
             new FakeFiscalReceiverRepository { ExistingById = receiver ?? CreateReceiver() },
             new FakeProductFiscalProfileRepository { ExistingByCode = productFiscalProfile ?? CreateProductFiscalProfile() },
+            new FakeSatCatalogDescriptionProvider(),
             new FakeUnitOfWork());
     }
 
@@ -711,6 +833,39 @@ public class FiscalDocumentServicesTests
             DefaultUnitText = "PIEZA",
             IsActive = true
         };
+    }
+
+    private sealed class FakeSatCatalogDescriptionProvider : ISatCatalogDescriptionProvider
+    {
+        private static readonly IReadOnlyDictionary<string, string> PaymentMethods = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["PUE"] = "Pago en una sola exhibicion",
+            ["PPD"] = "Pago en parcialidades o diferido"
+        };
+
+        private static readonly IReadOnlyDictionary<string, string> PaymentForms = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["01"] = "Efectivo",
+            ["02"] = "Cheque nominativo",
+            ["03"] = "Transferencia electronica de fondos",
+            ["04"] = "Tarjeta de credito",
+            ["28"] = "Tarjeta de debito",
+            ["99"] = "Por definir"
+        };
+
+        public IReadOnlyDictionary<string, string> GetPaymentForms() => PaymentForms;
+
+        public IReadOnlyDictionary<string, string> GetPaymentMethods() => PaymentMethods;
+
+        public string FormatFiscalRegime(string? code) => code ?? "N/D";
+
+        public string FormatCfdiUse(string? code) => code ?? "N/D";
+
+        public string FormatPaymentForm(string? code) => code ?? "N/D";
+
+        public string FormatPaymentMethod(string? code) => code ?? "N/D";
+
+        public string FormatExportCode(string? code) => code ?? "N/D";
     }
 
     private sealed class FakeBillingDocumentRepository : IBillingDocumentRepository

@@ -25,6 +25,14 @@ describe('FiscalReceiverFormComponent', () => {
         description: 'Sueldos y Salarios',
         allowedUsoCfdi: [{ code: 'CN01', description: 'Nómina' }]
       }
+    ],
+    paymentMethods: [
+      { code: 'PUE', description: 'Pago en una sola exhibición' },
+      { code: 'PPD', description: 'Pago en parcialidades o diferido' }
+    ],
+    paymentForms: [
+      { code: '03', description: 'Transferencia electrónica de fondos' },
+      { code: '99', description: 'Por definir' }
     ]
   };
 

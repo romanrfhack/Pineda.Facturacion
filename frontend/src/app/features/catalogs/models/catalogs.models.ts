@@ -104,6 +104,8 @@ export interface FiscalReceiverSatCatalog {
   regimenFiscal: FiscalReceiverSatCatalogOption[];
   usoCfdi: FiscalReceiverSatCatalogOption[];
   byRegimenFiscal: FiscalReceiverSatRegimeCompatibility[];
+  paymentMethods: FiscalReceiverSatCatalogOption[];
+  paymentForms: FiscalReceiverSatCatalogOption[];
 }
 
 export interface ProductFiscalProfileSearchItem {

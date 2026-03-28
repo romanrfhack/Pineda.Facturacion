@@ -1,6 +1,35 @@
 import type { Page } from '@playwright/test';
 
 export async function mockHappyPathBackend(page: Page): Promise<void> {
+  await page.route('**/api/fiscal/receivers/sat-catalogs', async (route) => {
+    await route.fulfill({
+      json: {
+        regimenFiscal: [
+          { code: '601', description: 'General de Ley Personas Morales' }
+        ],
+        usoCfdi: [
+          { code: 'G03', description: 'Gastos en general' }
+        ],
+        paymentMethods: [
+          { code: 'PUE', description: 'Pago en una sola exhibición' },
+          { code: 'PPD', description: 'Pago en parcialidades o diferido' }
+        ],
+        paymentForms: [
+          { code: '03', description: 'Transferencia electrónica de fondos' },
+          { code: '28', description: 'Tarjeta de débito' },
+          { code: '99', description: 'Por definir' }
+        ],
+        byRegimenFiscal: [
+          {
+            code: '601',
+            description: 'General de Ley Personas Morales',
+            allowedUsoCfdi: [{ code: 'G03', description: 'Gastos en general' }]
+          }
+        ]
+      }
+    });
+  });
+
   await page.route('**/api/auth/login', async (route) => {
     await route.fulfill({
       json: {
@@ -232,4 +261,103 @@ export async function mockHappyPathBackend(page: Page): Promise<void> {
       }
     });
   });
+}
+
+export async function mockFiscalPreparationFlow(page: Page): Promise<{ getLastPreparePayload: () => Record<string, unknown> | null }> {
+  let lastPreparePayload: Record<string, unknown> | null = null;
+
+  await mockHappyPathBackend(page);
+
+  await page.route('**/api/billing-documents/30/fiscal-documents', async (route) => {
+    lastPreparePayload = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({
+      json: {
+        outcome: 'Created',
+        isSuccess: true,
+        billingDocumentId: 30,
+        fiscalDocumentId: 40,
+        status: 'ReadyForStamping'
+      }
+    });
+  });
+
+  await page.route('**/api/fiscal-documents/40', async (route) => {
+    const paymentMethodSat = typeof lastPreparePayload?.paymentMethodSat === 'string' ? lastPreparePayload.paymentMethodSat : 'PUE';
+    const paymentFormSat = typeof lastPreparePayload?.paymentFormSat === 'string' ? lastPreparePayload.paymentFormSat : '03';
+    const paymentCondition = typeof lastPreparePayload?.paymentCondition === 'string' ? lastPreparePayload.paymentCondition : 'Contado';
+    const isCreditSale = lastPreparePayload?.isCreditSale === true;
+    const creditDays = typeof lastPreparePayload?.creditDays === 'number' ? lastPreparePayload.creditDays : null;
+
+    await route.fulfill({
+      json: {
+        id: 40,
+        billingDocumentId: 30,
+        issuerProfileId: 1,
+        fiscalReceiverId: 9,
+        status: 'ReadyForStamping',
+        cfdiVersion: '4.0',
+        documentType: 'I',
+        issuedAtUtc: new Date().toISOString(),
+        currencyCode: 'MXN',
+        exchangeRate: 1,
+        paymentMethodSat,
+        paymentFormSat,
+        paymentCondition,
+        isCreditSale,
+        creditDays,
+        issuerRfc: 'AAA010101AAA',
+        issuerLegalName: 'Issuer SA',
+        issuerFiscalRegimeCode: '601',
+        issuerPostalCode: '01000',
+        pacEnvironment: 'Sandbox',
+        hasCertificateReference: true,
+        hasPrivateKeyReference: true,
+        hasPrivateKeyPasswordReference: true,
+        receiverRfc: 'BBB010101BBB',
+        receiverLegalName: 'Receiver One',
+        receiverFiscalRegimeCode: '601',
+        receiverCfdiUseCode: 'G03',
+        receiverPostalCode: '02000',
+        receiverCountryCode: 'MX',
+        receiverForeignTaxRegistration: null,
+        subtotal: 100,
+        discountTotal: 0,
+        taxTotal: 16,
+        total: 116,
+        items: [
+          {
+            id: 400,
+            fiscalDocumentId: 40,
+            lineNumber: 1,
+            billingDocumentItemId: 300,
+            internalCode: 'SKU-1',
+            description: 'Product SKU-1',
+            quantity: 1,
+            unitPrice: 100,
+            discountAmount: 0,
+            subtotal: 100,
+            taxTotal: 16,
+            total: 116,
+            satProductServiceCode: '01010101',
+            satUnitCode: 'H87',
+            taxObjectCode: '02',
+            vatRate: 0.16,
+            unitText: 'Pieza'
+          }
+        ]
+      }
+    });
+  });
+
+  await page.route('**/api/fiscal-documents/40/stamp', async (route) => {
+    await route.fulfill({ status: 404, json: {} });
+  });
+
+  await page.route('**/api/fiscal-documents/40/cancellation', async (route) => {
+    await route.fulfill({ status: 404, json: {} });
+  });
+
+  return {
+    getLastPreparePayload: () => lastPreparePayload
+  };
 }

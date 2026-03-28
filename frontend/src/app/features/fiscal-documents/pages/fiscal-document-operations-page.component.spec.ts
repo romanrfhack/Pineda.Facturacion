@@ -194,6 +194,15 @@ describe('FiscalDocumentOperationsPageComponent', () => {
               usoCfdi: [
                 { code: 'G03', description: 'Gastos en general' }
               ],
+              paymentMethods: [
+                { code: 'PUE', description: 'Pago en una sola exhibición' },
+                { code: 'PPD', description: 'Pago en parcialidades o diferido' }
+              ],
+              paymentForms: [
+                { code: '03', description: 'Transferencia electrónica de fondos' },
+                { code: '28', description: 'Tarjeta de débito' },
+                { code: '99', description: 'Por definir' }
+              ],
               byRegimenFiscal: [
                 {
                   code: '601',
@@ -422,6 +431,86 @@ describe('FiscalDocumentOperationsPageComponent', () => {
 
     expect(fixture.nativeElement.textContent).toContain('Sin coincidencias.');
     expect(fixture.nativeElement.textContent).toContain('Agregar receptor');
+  });
+
+  it('renders SAT payment catalogs and disables prepare until the capture is valid', async () => {
+    const fixture = await configure(undefined, { id: null, billingDocumentId: '30' });
+    fixture.componentInstance['selectedReceiverId'] = 9;
+    fixture.componentInstance['selectedReceiver'].set({
+      id: 9,
+      rfc: 'BBB010101BBB',
+      legalName: 'Receiver One',
+      postalCode: '02000',
+      fiscalRegimeCode: '601',
+      cfdiUseCodeDefault: 'G03',
+      countryCode: 'MX',
+      foreignTaxRegistration: null,
+      email: 'cliente@example.com',
+      phone: null,
+      searchAlias: null,
+      isActive: true,
+      createdAtUtc: '2026-03-20T12:00:00Z',
+      updatedAtUtc: '2026-03-20T12:00:00Z'
+    });
+    fixture.componentInstance['paymentMethodSat'] = '';
+    fixture.componentInstance['paymentFormSat'] = '';
+    fixture.componentInstance['paymentCondition'] = '';
+    fixture.detectChanges();
+
+    const submitButton = Array.from(fixture.nativeElement.querySelectorAll('button[type="submit"]') as NodeListOf<HTMLButtonElement>)
+      .find((button: HTMLButtonElement) => button.textContent?.includes('Preparar documento fiscal')) as HTMLButtonElement;
+    expect(fixture.nativeElement.textContent).toContain('PUE - Pago en una sola exhibición');
+    expect(fixture.nativeElement.textContent).toContain('99 - Por definir');
+    expect(submitButton.disabled).toBe(true);
+
+    fixture.componentInstance['onCreditSaleChange'](false);
+    fixture.componentInstance['onPaymentMethodChange']('PUE');
+    fixture.componentInstance['onPaymentFormChange']('03');
+    fixture.componentInstance['onPaymentConditionChange']('Contado');
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['canPrepareFiscalDocument']()).toBe(true);
+  });
+
+  it('forces payment form 99 and suggests credit condition when credit sale is enabled', async () => {
+    const fixture = await configure(undefined, { id: null, billingDocumentId: '30' });
+
+    fixture.componentInstance['onCreditDaysChange'](21);
+    fixture.componentInstance['onCreditSaleChange'](true);
+
+    expect(fixture.componentInstance['paymentMethodSat']).toBe('PPD');
+    expect(fixture.componentInstance['paymentFormSat']).toBe('99');
+    expect(fixture.componentInstance['paymentCondition']).toBe('Crédito a 21 días');
+    expect(fixture.componentInstance['availablePaymentFormOptions']()).toEqual([
+      { code: '99', description: 'Por definir' }
+    ]);
+  });
+
+  it('sends only SAT codes plus payment condition text when preparing', async () => {
+    const prepareFiscalDocument = vi.fn().mockReturnValue(of({
+      outcome: 'Created',
+      isSuccess: true,
+      fiscalDocumentId: 40
+    }));
+    const fixture = await configure(
+      { prepareFiscalDocument },
+      { id: null, billingDocumentId: '30' }
+    );
+
+    fixture.componentInstance['selectedReceiverId'] = 9;
+    fixture.componentInstance['onCreditSaleChange'](false);
+    fixture.componentInstance['onPaymentMethodChange']('PUE');
+    fixture.componentInstance['onPaymentFormChange']('03');
+    fixture.componentInstance['onPaymentConditionChange']('Contado');
+
+    await fixture.componentInstance['prepare']();
+
+    expect(prepareFiscalDocument).toHaveBeenCalledWith(30, expect.objectContaining({
+      fiscalReceiverId: 9,
+      paymentMethodSat: 'PUE',
+      paymentFormSat: '03',
+      paymentCondition: 'Contado'
+    }));
   });
 
   it('renders dynamic special billing fields for the selected receiver', async () => {
@@ -799,6 +888,34 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         },
         { provide: FiscalDocumentsApiService, useValue: createApi({ prepareFiscalDocument }) },
         { provide: ProductFiscalProfilesApiService, useValue: { create: vi.fn().mockReturnValue(of({ outcome: 'Created', isSuccess: true, id: 15 })) } },
+        {
+          provide: FiscalReceiversApiService,
+          useValue: {
+            search: vi.fn().mockReturnValue(of([])),
+            getByRfc: vi.fn(),
+            getSatCatalog: vi.fn().mockReturnValue(of({
+              regimenFiscal: [{ code: '601', description: 'General de Ley Personas Morales' }],
+              usoCfdi: [{ code: 'G03', description: 'Gastos en general' }],
+              paymentMethods: [
+                { code: 'PUE', description: 'Pago en una sola exhibición' },
+                { code: 'PPD', description: 'Pago en parcialidades o diferido' }
+              ],
+              paymentForms: [
+                { code: '03', description: 'Transferencia electrónica de fondos' },
+                { code: '99', description: 'Por definir' }
+              ],
+              byRegimenFiscal: [
+                {
+                  code: '601',
+                  description: 'General de Ley Personas Morales',
+                  allowedUsoCfdi: [{ code: 'G03', description: 'Gastos en general' }]
+                }
+              ]
+            })),
+            create: vi.fn(),
+            update: vi.fn()
+          }
+        },
         { provide: FeedbackService, useValue: feedback },
         { provide: Router, useValue: { navigate: vi.fn().mockResolvedValue(true) } },
         {
@@ -867,6 +984,34 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         },
         { provide: FiscalDocumentsApiService, useValue: createApi({ prepareFiscalDocument }) },
         { provide: ProductFiscalProfilesApiService, useValue: { create } },
+        {
+          provide: FiscalReceiversApiService,
+          useValue: {
+            search: vi.fn().mockReturnValue(of([])),
+            getByRfc: vi.fn(),
+            getSatCatalog: vi.fn().mockReturnValue(of({
+              regimenFiscal: [{ code: '601', description: 'General de Ley Personas Morales' }],
+              usoCfdi: [{ code: 'G03', description: 'Gastos en general' }],
+              paymentMethods: [
+                { code: 'PUE', description: 'Pago en una sola exhibición' },
+                { code: 'PPD', description: 'Pago en parcialidades o diferido' }
+              ],
+              paymentForms: [
+                { code: '03', description: 'Transferencia electrónica de fondos' },
+                { code: '99', description: 'Por definir' }
+              ],
+              byRegimenFiscal: [
+                {
+                  code: '601',
+                  description: 'General de Ley Personas Morales',
+                  allowedUsoCfdi: [{ code: 'G03', description: 'Gastos en general' }]
+                }
+              ]
+            })),
+            create: vi.fn(),
+            update: vi.fn()
+          }
+        },
         { provide: FeedbackService, useValue: feedback },
         { provide: Router, useValue: { navigate: vi.fn().mockResolvedValue(true) } },
         {
