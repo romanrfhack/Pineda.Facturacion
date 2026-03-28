@@ -242,7 +242,13 @@ import { buildFiscalDocumentFileName } from '../application/fiscal-document-file
             </label>
 
             <label class="checkbox">
-              <input [ngModel]="isCreditSale" (ngModelChange)="onCreditSaleChange($event)" name="isCreditSale" type="checkbox" />
+              <input
+                [ngModel]="isCreditSale"
+                (ngModelChange)="onCreditSaleChange($event)"
+                name="isCreditSale"
+                type="checkbox"
+                [disabled]="isCreditSaleCheckboxDisabled()"
+              />
               <span>Venta a crédito</span>
             </label>
 
@@ -444,8 +450,8 @@ import { buildFiscalDocumentFileName } from '../application/fiscal-document-file
     .search-row { display:flex; gap:0.75rem; align-items:end; }
     .form-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:1rem; align-items:start; }
     label { display:grid; gap:0.35rem; }
-    input, select, button { font:inherit; }
-    input, select { border:1px solid #c9d1da; border-radius:0.8rem; padding:0.75rem 0.9rem; }
+    input, select, textarea { width:100%; box-sizing:border-box; font:inherit; }
+    input, select, textarea { border:1px solid #c9d1da; border-radius:0.8rem; padding:0.75rem 0.9rem; }
     .context-results { display:grid; gap:0.5rem; margin-top:1rem; }
     .context-result { width:100%; display:grid; gap:0.15rem; text-align:left; border:1px solid #ece5d7; border-radius:0.8rem; background:#fff; color:#182533; padding:0.75rem 0.9rem; cursor:pointer; }
     .context-result:hover { background:#f7f2e7; }
@@ -572,6 +578,9 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     && (this.searchingReceivers() || this.receiverResults().length > 0 || !!this.receiverSearchError() || this.receiverSearchTouched())
   );
   protected readonly activeReceiverSpecialFields = computed(() => this.specialFieldDrafts().filter((field) => field.isActive));
+  protected readonly isCreditSaleCheckboxDisabled = computed(
+    () => this.normalizedPaymentMethodSat() !== 'PPD'
+  );
 
   private receiverSearchTimer: number | null = null;
 
@@ -648,6 +657,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected onPaymentMethodChange(value: string): void {
     this.paymentMethodSat = normalizeSatCode(value);
     this.syncPaymentMethodDependencies(true);
+    this.syncCreditSaleWithPaymentMethod();
   }
 
   protected onPaymentFormChange(value: string): void {
@@ -1146,6 +1156,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
         this.paymentMethodSat = this.isCreditSale ? 'PPD' : 'PUE';
       }
       this.syncPaymentMethodDependencies(false);
+      this.syncCreditSaleWithPaymentMethod();
       this.applySuggestedPaymentCondition();
     } catch {
       this.paymentMethodCatalog.set([]);
@@ -1353,6 +1364,16 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     if (paymentMethod === 'PUE' && paymentForm === '99') {
       this.paymentFormSat = resetImmediateFormSelection ? '' : this.paymentFormSat;
     }
+  }
+
+  private syncCreditSaleWithPaymentMethod(): void {
+    const method = this.normalizedPaymentMethodSat();
+    if (method === 'PPD') {
+      this.isCreditSale = true;
+    } else {
+      this.isCreditSale = false;
+    }
+    this.applySuggestedPaymentCondition();
   }
 
   private applySuggestedPaymentCondition(): void {
