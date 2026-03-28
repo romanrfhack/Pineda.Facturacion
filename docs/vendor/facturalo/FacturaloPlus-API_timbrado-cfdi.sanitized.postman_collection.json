@@ -1,0 +1,449 @@
+{
+  "info": {
+    "_postman_id": "1dedc461-2172-4ee2-b899-22c8f5858c97",
+    "name": "FacturaloPlus-API_timbrado-cfdi",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Sanitized copy for code audit and integration analysis. Secrets, certificates, private keys, passwords, PFX blobs, and large sample payloads were replaced with placeholders."
+  },
+  "item": [
+    {
+      "name": "timbrar",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "key": "apikey",
+              "value": "{{FACTURALO_API_KEY}}",
+              "type": "text"
+            },
+            {
+              "key": "xmlCFDI",
+              "value": "<CFDI_XML_CONTENT>",
+              "type": "text"
+            }
+          ]
+        },
+        "url": {
+          "raw": "https://dev.facturaloplus.com/api/rest/servicio/timbrar",
+          "protocol": "https",
+          "host": [
+            "dev",
+            "facturaloplus",
+            "com"
+          ],
+          "path": [
+            "api",
+            "rest",
+            "servicio",
+            "timbrar"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "timbrarTFD",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "key": "apikey",
+              "value": "{{FACTURALO_API_KEY}}",
+              "type": "text"
+            },
+            {
+              "key": "xmlCFDI",
+              "value": "<CFDI_XML_CONTENT>",
+              "type": "text"
+            }
+          ]
+        },
+        "url": {
+          "raw": "https://dev.facturaloplus.com/api/rest/servicio/timbrarTFD",
+          "protocol": "https",
+          "host": [
+            "dev",
+            "facturaloplus",
+            "com"
+          ],
+          "path": [
+            "api",
+            "rest",
+            "servicio",
+            "timbrarTFD"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "timbrarConSello",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "key": "apikey",
+              "value": "{{FACTURALO_API_KEY}}",
+              "type": "text"
+            },
+            {
+              "key": "xmlCFDI",
+              "value": "<CFDI_XML_CONTENT>",
+              "type": "text"
+            },
+            {
+              "key": "keyPEM",
+              "value": "-----BEGIN PRIVATE KEY-----\n<PRIVATE_KEY_PEM>\n-----END PRIVATE KEY-----",
+              "type": "text"
+            }
+          ]
+        },
+        "url": {
+          "raw": "https://dev.facturaloplus.com/api/rest/servicio/timbrarConSello",
+          "protocol": "https",
+          "host": [
+            "dev",
+            "facturaloplus",
+            "com"
+          ],
+          "path": [
+            "api",
+            "rest",
+            "servicio",
+            "timbrarConSello"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "timbrarJSON",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "key": "apikey",
+              "value": "{{FACTURALO_API_KEY}}",
+              "type": "text"
+            },
+            {
+              "key": "jsonB64",
+              "value": "<BASE64_ENCODED_CFDI_JSON>",
+              "type": "text"
+            },
+            {
+              "key": "keyPEM",
+              "value": "-----BEGIN PRIVATE KEY-----\n<PRIVATE_KEY_PEM>\n-----END PRIVATE KEY-----",
+              "type": "text"
+            },
+            {
+              "key": "cerPEM",
+              "value": "-----BEGIN CERTIFICATE-----\n<PUBLIC_CERT_PEM>\n-----END CERTIFICATE-----",
+              "type": "text"
+            }
+          ]
+        },
+        "url": {
+          "raw": "https://dev.facturaloplus.com/api/rest/servicio/timbrarJSON",
+          "protocol": "https",
+          "host": [
+            "dev",
+            "facturaloplus",
+            "com"
+          ],
+          "path": [
+            "api",
+            "rest",
+            "servicio",
+            "timbrarJSON"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "timbrarJSON2",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "key": "apikey",
+              "value": "{{FACTURALO_API_KEY}}",
+              "type": "text"
+            },
+            {
+              "key": "jsonB64",
+              "value": "<BASE64_ENCODED_CFDI_JSON>",
+              "type": "text"
+            },
+            {
+              "key": "keyPEM",
+              "value": "-----BEGIN PRIVATE KEY-----\n<PRIVATE_KEY_PEM>\n-----END PRIVATE KEY-----",
+              "type": "text"
+            },
+            {
+              "key": "cerPEM",
+              "value": "-----BEGIN CERTIFICATE-----\n<PUBLIC_CERT_PEM>\n-----END CERTIFICATE-----",
+              "type": "text"
+            },
+            {
+              "key": "plantilla",
+              "value": "1",
+              "type": "text"
+            }
+          ]
+        },
+        "url": {
+          "raw": "https://dev.facturaloplus.com/api/rest/servicio/timbrarJSON2",
+          "protocol": "https",
+          "host": [
+            "dev",
+            "facturaloplus",
+            "com"
+          ],
+          "path": [
+            "api",
+            "rest",
+            "servicio",
+            "timbrarJSON2"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "timbrarJSON3",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "key": "apikey",
+              "value": "{{FACTURALO_API_KEY}}",
+              "type": "text"
+            },
+            {
+              "key": "jsonB64",
+              "value": "<BASE64_ENCODED_CFDI_JSON>",
+              "type": "text"
+            },
+            {
+              "key": "keyPEM",
+              "value": "-----BEGIN PRIVATE KEY-----\n<PRIVATE_KEY_PEM>\n-----END PRIVATE KEY-----",
+              "type": "text"
+            },
+            {
+              "key": "cerPEM",
+              "value": "-----BEGIN CERTIFICATE-----\n<PUBLIC_CERT_PEM>\n-----END CERTIFICATE-----",
+              "type": "text"
+            }
+          ]
+        },
+        "url": {
+          "raw": "https://dev.facturaloplus.com/api/rest/servicio/timbrarJSON3",
+          "protocol": "https",
+          "host": [
+            "dev",
+            "facturaloplus",
+            "com"
+          ],
+          "path": [
+            "api",
+            "rest",
+            "servicio",
+            "timbrarJSON3"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "timbrarTXT",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "key": "apikey",
+              "value": "{{FACTURALO_API_KEY}}",
+              "type": "text"
+            },
+            {
+              "key": "txtB64",
+              "value": "<BASE64_ENCODED_CFDI_TXT>",
+              "type": "text"
+            },
+            {
+              "key": "keyPEM",
+              "value": "-----BEGIN PRIVATE KEY-----\n<PRIVATE_KEY_PEM>\n-----END PRIVATE KEY-----",
+              "type": "text"
+            },
+            {
+              "key": "cerPEM",
+              "value": "-----BEGIN CERTIFICATE-----\n<PUBLIC_CERT_PEM>\n-----END CERTIFICATE-----",
+              "type": "text"
+            }
+          ]
+        },
+        "url": {
+          "raw": "https://dev.facturaloplus.com/api/rest/servicio/timbrarTXT",
+          "protocol": "https",
+          "host": [
+            "dev",
+            "facturaloplus",
+            "com"
+          ],
+          "path": [
+            "api",
+            "rest",
+            "servicio",
+            "timbrarTXT"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "timbrarTXT2",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "key": "apikey",
+              "value": "{{FACTURALO_API_KEY}}",
+              "type": "text"
+            },
+            {
+              "key": "txtB64",
+              "value": "<BASE64_ENCODED_CFDI_TXT>",
+              "type": "text"
+            },
+            {
+              "key": "keyPEM",
+              "value": "-----BEGIN PRIVATE KEY-----\n<PRIVATE_KEY_PEM>\n-----END PRIVATE KEY-----",
+              "type": "text"
+            },
+            {
+              "key": "cerPEM",
+              "value": "-----BEGIN CERTIFICATE-----\n<PUBLIC_CERT_PEM>\n-----END CERTIFICATE-----",
+              "type": "text"
+            },
+            {
+              "key": "plantilla",
+              "value": "1",
+              "type": "text"
+            }
+          ]
+        },
+        "url": {
+          "raw": "https://dev.facturaloplus.com/api/rest/servicio/timbrarTXT2",
+          "protocol": "https",
+          "host": [
+            "dev",
+            "facturaloplus",
+            "com"
+          ],
+          "path": [
+            "api",
+            "rest",
+            "servicio",
+            "timbrarTXT2"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "consultarCreditosDisponibles",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "key": "apikey",
+              "value": "{{FACTURALO_API_KEY}}",
+              "type": "text"
+            }
+          ]
+        },
+        "url": {
+          "raw": "https://dev.facturaloplus.com/api/rest/servicio/consultarCreditosDisponibles",
+          "protocol": "https",
+          "host": [
+            "dev",
+            "facturaloplus",
+            "com"
+          ],
+          "path": [
+            "api",
+            "rest",
+            "servicio",
+            "consultarCreditosDisponibles"
+          ]
+        }
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "FACTURALO_API_KEY",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "FACTURALO_CSD_PASSWORD",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "FACTURALO_PFX_PASSWORD",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "RFC_EMISOR",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "RFC_RECEPTOR",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "CFDI_UUID",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "CFDI_TOTAL",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}

@@ -1,0 +1,332 @@
+{
+  "info": {
+    "_postman_id": "ca0c50f7-e658-4f28-8633-52744f8013c7",
+    "name": "FacturaloPlus-API_cancelacion-cfdi",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Sanitized copy for code audit and integration analysis. Secrets, certificates, private keys, passwords, PFX blobs, and large sample payloads were replaced with placeholders."
+  },
+  "item": [
+    {
+      "name": "cancelar2",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "key": "apikey",
+              "value": "{{FACTURALO_API_KEY}}",
+              "type": "text"
+            },
+            {
+              "key": "keyCSD",
+              "value": "<BASE64_CSD_PRIVATE_KEY>",
+              "type": "text"
+            },
+            {
+              "key": "cerCSD",
+              "value": "<BASE64_CSD_CERTIFICATE>",
+              "type": "text"
+            },
+            {
+              "key": "passCSD",
+              "value": "{{FACTURALO_CSD_PASSWORD}}",
+              "type": "text"
+            },
+            {
+              "key": "uuid",
+              "value": "{{CFDI_UUID}}",
+              "type": "text"
+            },
+            {
+              "key": "rfcEmisor",
+              "value": "{{RFC_EMISOR}}",
+              "type": "text"
+            },
+            {
+              "key": "rfcReceptor",
+              "value": "{{RFC_RECEPTOR}}",
+              "type": "text"
+            },
+            {
+              "key": "total",
+              "value": "{{CFDI_TOTAL}}",
+              "type": "text"
+            },
+            {
+              "key": "motivo",
+              "value": "02",
+              "type": "default"
+            }
+          ]
+        },
+        "url": {
+          "raw": "https://dev.facturaloplus.com/api/rest/servicio/cancelar2",
+          "protocol": "https",
+          "host": [
+            "dev",
+            "facturaloplus",
+            "com"
+          ],
+          "path": [
+            "api",
+            "rest",
+            "servicio",
+            "cancelar2"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "cancelarPFX2",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "key": "apikey",
+              "value": "{{FACTURALO_API_KEY}}",
+              "type": "text"
+            },
+            {
+              "key": "filePFX",
+              "value": "<BASE64_PFX_FILE>",
+              "type": "text"
+            },
+            {
+              "key": "passPFX",
+              "value": "{{FACTURALO_PFX_PASSWORD}}",
+              "type": "text"
+            },
+            {
+              "key": "uuid",
+              "value": "{{CFDI_UUID}}",
+              "type": "text"
+            },
+            {
+              "key": "rfcEmisor",
+              "value": "{{RFC_EMISOR}}",
+              "type": "text"
+            },
+            {
+              "key": "rfcReceptor",
+              "value": "{{RFC_RECEPTOR}}",
+              "type": "text"
+            },
+            {
+              "key": "motivo",
+              "value": "02",
+              "type": "default"
+            }
+          ]
+        },
+        "url": {
+          "raw": "https://dev.facturaloplus.com/api/rest/servicio/cancelarPFX2",
+          "protocol": "https",
+          "host": [
+            "dev",
+            "facturaloplus",
+            "com"
+          ],
+          "path": [
+            "api",
+            "rest",
+            "servicio",
+            "cancelarPFX2"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "consultarEstadoSAT",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "key": "apikey",
+              "value": "{{FACTURALO_API_KEY}}",
+              "type": "text"
+            },
+            {
+              "key": "uuid",
+              "value": "{{CFDI_UUID}}",
+              "type": "text"
+            },
+            {
+              "key": "rfcEmisor",
+              "value": "{{RFC_EMISOR}}",
+              "type": "text"
+            },
+            {
+              "key": "rfcReceptor",
+              "value": "{{RFC_RECEPTOR}}",
+              "type": "text"
+            },
+            {
+              "key": "total",
+              "value": "{{CFDI_TOTAL}}",
+              "type": "text"
+            }
+          ]
+        },
+        "url": {
+          "raw": "https://dev.facturaloplus.com/api/rest/servicio/consultarEstadoSAT",
+          "protocol": "https",
+          "host": [
+            "dev",
+            "facturaloplus",
+            "com"
+          ],
+          "path": [
+            "api",
+            "rest",
+            "servicio",
+            "consultarEstadoSAT"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "consultarAutorizacionesPendientes",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "key": "apikey",
+              "value": "{{FACTURALO_API_KEY}}",
+              "type": "text"
+            },
+            {
+              "key": "keyPEM",
+              "value": "-----BEGIN PRIVATE KEY-----\n<PRIVATE_KEY_PEM>\n-----END PRIVATE KEY-----",
+              "type": "text"
+            },
+            {
+              "key": "cerPEM",
+              "value": "-----BEGIN CERTIFICATE-----\n<PUBLIC_CERT_PEM>\n-----END CERTIFICATE-----",
+              "type": "text"
+            }
+          ]
+        },
+        "url": {
+          "raw": "https://dev.facturaloplus.com/api/rest/servicio/consultarAutorizacionesPendientes",
+          "protocol": "https",
+          "host": [
+            "dev",
+            "facturaloplus",
+            "com"
+          ],
+          "path": [
+            "api",
+            "rest",
+            "servicio",
+            "consultarAutorizacionesPendientes"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "autorizarCancelacion",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "key": "apikey",
+              "value": "{{FACTURALO_API_KEY}}",
+              "type": "text"
+            },
+            {
+              "key": "keyPEM",
+              "value": "-----BEGIN PRIVATE KEY-----\n<PRIVATE_KEY_PEM>\n-----END PRIVATE KEY-----",
+              "type": "text"
+            },
+            {
+              "key": "cerPEM",
+              "value": "-----BEGIN CERTIFICATE-----\n<PUBLIC_CERT_PEM>\n-----END CERTIFICATE-----",
+              "type": "text"
+            },
+            {
+              "key": "uuid",
+              "value": "{{CFDI_UUID}}",
+              "type": "text"
+            },
+            {
+              "key": "respuesta",
+              "value": "Aceptar",
+              "type": "text"
+            }
+          ]
+        },
+        "url": {
+          "raw": "https://dev.timbradorxpress.mx/api/rest/servicio/autorizarCancelacion",
+          "protocol": "https",
+          "host": [
+            "dev",
+            "timbradorxpress",
+            "mx"
+          ],
+          "path": [
+            "api",
+            "rest",
+            "servicio",
+            "autorizarCancelacion"
+          ]
+        }
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "FACTURALO_API_KEY",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "FACTURALO_CSD_PASSWORD",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "FACTURALO_PFX_PASSWORD",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "RFC_EMISOR",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "RFC_RECEPTOR",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "CFDI_UUID",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "CFDI_TOTAL",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}
