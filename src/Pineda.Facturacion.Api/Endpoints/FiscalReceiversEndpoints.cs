@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http.HttpResults;
 using Pineda.Facturacion.Api.Security;
+using Pineda.Facturacion.Application.Abstractions.Documents;
 using Pineda.Facturacion.Application.Abstractions.FiscalReceivers;
 using Pineda.Facturacion.Application.Abstractions.Security;
 using Pineda.Facturacion.Application.Security;
@@ -79,7 +80,8 @@ public static class FiscalReceiversEndpoints
     }
 
     private static Ok<FiscalReceiverSatCatalogResponse> GetFiscalReceiverSatCatalogAsync(
-        IFiscalReceiverSatCatalogProvider catalogProvider)
+        IFiscalReceiverSatCatalogProvider catalogProvider,
+        ISatCatalogDescriptionProvider satCatalogDescriptionProvider)
     {
         var catalog = catalogProvider.GetCatalog();
 
@@ -99,6 +101,20 @@ public static class FiscalReceiversEndpoints
                     AllowedUsoCfdi = regime.AllowedUsoCfdi
                         .Select(MapCatalogOption)
                         .ToArray()
+                })
+                .ToArray(),
+            PaymentMethods = satCatalogDescriptionProvider.GetPaymentMethods()
+                .Select(option => new FiscalReceiverSatCatalogOptionResponse
+                {
+                    Code = option.Key,
+                    Description = option.Value
+                })
+                .ToArray(),
+            PaymentForms = satCatalogDescriptionProvider.GetPaymentForms()
+                .Select(option => new FiscalReceiverSatCatalogOptionResponse
+                {
+                    Code = option.Key,
+                    Description = option.Value
                 })
                 .ToArray()
         });
@@ -376,6 +392,8 @@ public static class FiscalReceiversEndpoints
         public IReadOnlyList<FiscalReceiverSatCatalogOptionResponse> RegimenFiscal { get; init; } = [];
         public IReadOnlyList<FiscalReceiverSatCatalogOptionResponse> UsoCfdi { get; init; } = [];
         public IReadOnlyList<FiscalReceiverSatRegimeCompatibilityResponse> ByRegimenFiscal { get; init; } = [];
+        public IReadOnlyList<FiscalReceiverSatCatalogOptionResponse> PaymentMethods { get; init; } = [];
+        public IReadOnlyList<FiscalReceiverSatCatalogOptionResponse> PaymentForms { get; init; } = [];
     }
 
     public class FiscalReceiverSatCatalogOptionResponse
