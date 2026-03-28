@@ -261,6 +261,14 @@ export async function mockHappyPathBackend(page: Page): Promise<void> {
       }
     });
   });
+
+  await page.route('**/api/fiscal-documents/40/stamp', async (route) => {
+    await route.fulfill({ status: 404, json: { errorMessage: 'No encontrado.' } });
+  });
+
+  await page.route('**/api/fiscal-documents/40/cancellation', async (route) => {
+    await route.fulfill({ status: 404, json: { errorMessage: 'No encontrado.' } });
+  });
 }
 
 export async function mockFiscalPreparationFlow(page: Page): Promise<{ getLastPreparePayload: () => Record<string, unknown> | null }> {

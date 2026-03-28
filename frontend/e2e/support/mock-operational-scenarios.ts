@@ -487,6 +487,48 @@ export async function mockSession(page: Page, options: SessionOptions): Promise<
   await page.route('**/api/auth/me', async (route) => {
     await route.fulfill({ json: user });
   });
+
+  await page.route('**/api/orders/legacy**', async (route) => {
+    await route.fulfill({
+      json: {
+        isSuccess: true,
+        totalCount: 0,
+        totalPages: 0,
+        page: 1,
+        pageSize: 10,
+        items: []
+      }
+    });
+  });
+
+  await page.route('**/api/fiscal/receivers/sat-catalogs', async (route) => {
+    await route.fulfill({
+      json: {
+        regimenFiscal: [
+          { code: '601', description: 'General de Ley Personas Morales' }
+        ],
+        usoCfdi: [
+          { code: 'G03', description: 'Gastos en general' }
+        ],
+        paymentMethods: [
+          { code: 'PUE', description: 'Pago en una sola exhibición' },
+          { code: 'PPD', description: 'Pago en parcialidades o diferido' }
+        ],
+        paymentForms: [
+          { code: '03', description: 'Transferencia electrónica de fondos' },
+          { code: '28', description: 'Tarjeta de débito' },
+          { code: '99', description: 'Por definir' }
+        ],
+        byRegimenFiscal: [
+          {
+            code: '601',
+            description: 'General de Ley Personas Morales',
+            allowedUsoCfdi: [{ code: 'G03', description: 'Gastos en general' }]
+          }
+        ]
+      }
+    });
+  });
 }
 
 async function mockIssuerAndReceiverLookup(page: Page): Promise<void> {
