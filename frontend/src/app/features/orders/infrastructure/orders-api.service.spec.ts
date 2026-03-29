@@ -28,6 +28,7 @@ describe('OrdersApiService', () => {
     service.searchLegacyOrders({
       fromDate: '2026-03-23',
       toDate: '2026-03-23',
+      customerQuery: 'Cliente Uno',
       page: 1,
       pageSize: 10
     }).subscribe();
@@ -36,6 +37,7 @@ describe('OrdersApiService', () => {
       request.url === '/api/orders/legacy'
       && request.params.get('fromDate') === '2026-03-23'
       && request.params.get('toDate') === '2026-03-23'
+      && request.params.get('customerQuery') === 'Cliente Uno'
       && request.params.get('page') === '1'
       && request.params.get('pageSize') === '10');
 

@@ -273,6 +273,7 @@ public class LegacyOrderReader : ILegacyOrderReader
                 ON p.{Q(schema.Orders["noCliente"])} = c.{Q(schema.Customers["noCliente"])}
             WHERE p.{Q(schema.OrderDateColumn)} >= @fromDateUtc
               AND p.{Q(schema.OrderDateColumn)} < @toDateUtcExclusive
+              AND (@customerQuery IS NULL OR {BuildCustomerNameExpression(schema)} LIKE @customerQueryLike)
               AND p.{Q(schema.Orders["noCliente"])} <> 0
               AND p.{Q(schema.Orders["MontoPedido"])} <> 0.00
               AND p.{Q(schema.Orders["refPedido"])} IS NOT NULL;
@@ -298,11 +299,24 @@ public class LegacyOrderReader : ILegacyOrderReader
                 ON p.{Q(schema.Orders["noCliente"])} = c.{Q(schema.Customers["noCliente"])}
             WHERE p.{Q(schema.OrderDateColumn)} >= @fromDateUtc
               AND p.{Q(schema.OrderDateColumn)} < @toDateUtcExclusive
+              AND (@customerQuery IS NULL OR {BuildCustomerNameExpression(schema)} LIKE @customerQueryLike)
               AND p.{Q(schema.Orders["noCliente"])} <> 0
               AND p.{Q(schema.Orders["MontoPedido"])} <> 0.00
               AND p.{Q(schema.Orders["refPedido"])} IS NOT NULL
             ORDER BY p.{Q(schema.OrderDateColumn)} DESC, p.{Q(schema.Orders["noPedido"])} DESC
             LIMIT @skip, @take;
+            """;
+    }
+
+    private static string BuildCustomerNameExpression(LegacyOrderReadSchema schema)
+    {
+        return $"""
+            COALESCE(
+                NULLIF(TRIM(c.{Q(schema.Customers["XRazonSocial"])}), ''),
+                NULLIF(TRIM(CONCAT_WS(' ', NULLIF(c.{Q(schema.Customers["Nombre"])}, ''), NULLIF(c.{Q(schema.Customers["Paterno"])}, ''), NULLIF(c.{Q(schema.Customers["Materno"])}, ''))), ''),
+                NULLIF(TRIM(c.{Q(schema.Customers["Cliente"])}), ''),
+                CONCAT('Cliente ', p.{Q(schema.Orders["noCliente"])})
+            )
             """;
     }
 
@@ -315,6 +329,8 @@ public class LegacyOrderReader : ILegacyOrderReader
         await using var command = new MySqlCommand(sql, connection);
         command.Parameters.AddWithValue("@fromDateUtc", search.FromDateUtc);
         command.Parameters.AddWithValue("@toDateUtcExclusive", search.ToDateUtcExclusive);
+        command.Parameters.AddWithValue("@customerQuery", string.IsNullOrWhiteSpace(search.CustomerQuery) ? DBNull.Value : search.CustomerQuery);
+        command.Parameters.AddWithValue("@customerQueryLike", BuildLikeValue(search.CustomerQuery));
 
         var result = await command.ExecuteScalarAsync(cancellationToken);
         return Convert.ToInt32(result, CultureInfo.InvariantCulture);
@@ -331,6 +347,8 @@ public class LegacyOrderReader : ILegacyOrderReader
         await using var command = new MySqlCommand(sql, connection);
         command.Parameters.AddWithValue("@fromDateUtc", search.FromDateUtc);
         command.Parameters.AddWithValue("@toDateUtcExclusive", search.ToDateUtcExclusive);
+        command.Parameters.AddWithValue("@customerQuery", string.IsNullOrWhiteSpace(search.CustomerQuery) ? DBNull.Value : search.CustomerQuery);
+        command.Parameters.AddWithValue("@customerQueryLike", BuildLikeValue(search.CustomerQuery));
         command.Parameters.AddWithValue("@skip", (search.Page - 1) * search.PageSize);
         command.Parameters.AddWithValue("@take", search.PageSize);
 
@@ -349,6 +367,16 @@ public class LegacyOrderReader : ILegacyOrderReader
         }
 
         return items;
+    }
+
+    private static object BuildLikeValue(string? customerQuery)
+    {
+        if (string.IsNullOrWhiteSpace(customerQuery))
+        {
+            return DBNull.Value;
+        }
+
+        return $"%{customerQuery.Trim()}%";
     }
 
     private static string GetRequiredString(MySqlDataReader reader, string columnName)

@@ -6,6 +6,8 @@ public sealed class SearchLegacyOrdersFilter
 
     public DateTime ToDateUtcExclusive { get; init; }
 
+    public string? CustomerQuery { get; init; }
+
     public int Page { get; init; } = 1;
 
     public int PageSize { get; init; } = 10;

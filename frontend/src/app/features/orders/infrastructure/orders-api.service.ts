@@ -9,13 +9,19 @@ export class OrdersApiService {
   private readonly http = inject(HttpClient);
 
   searchLegacyOrders(request: SearchLegacyOrdersRequest): Observable<SearchLegacyOrdersResponse> {
+    const params: Record<string, string | number> = {
+      fromDate: request.fromDate,
+      toDate: request.toDate,
+      page: request.page,
+      pageSize: request.pageSize
+    };
+
+    if (request.customerQuery?.trim()) {
+      params['customerQuery'] = request.customerQuery.trim();
+    }
+
     return this.http.get<SearchLegacyOrdersResponse>(buildApiUrl('/orders/legacy'), {
-      params: {
-        fromDate: request.fromDate,
-        toDate: request.toDate,
-        page: request.page,
-        pageSize: request.pageSize
-      }
+      params
     });
   }
 

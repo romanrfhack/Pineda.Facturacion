@@ -89,9 +89,26 @@ describe('OrdersOperationsPageComponent', () => {
     expect(api.searchLegacyOrders).toHaveBeenCalledWith({
       fromDate: '2026-03-23',
       toDate: '2026-03-23',
+      customerQuery: '',
       page: 1,
       pageSize: 10
     });
+  });
+
+  it('applies customer filter to the legacy orders search without importing automatically', async () => {
+    const { fixture, api } = await configure();
+
+    fixture.componentInstance['customerQuery'].set('Cliente Uno');
+    await fixture.componentInstance['searchCurrentRange']();
+
+    expect(api.searchLegacyOrders).toHaveBeenLastCalledWith({
+      fromDate: '2026-03-23',
+      toDate: '2026-03-23',
+      customerQuery: 'Cliente Uno',
+      page: 1,
+      pageSize: 10
+    });
+    expect(api.importLegacyOrder).toHaveBeenCalledTimes(0);
   });
 
   it('shows custom range validation and avoids invalid search', async () => {

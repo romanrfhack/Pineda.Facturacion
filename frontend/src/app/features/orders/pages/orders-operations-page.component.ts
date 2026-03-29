@@ -67,6 +67,24 @@ type QuickRange = 'today' | 'yesterday' | 'last7' | 'custom';
               </button>
             </div>
           }
+
+          <label>
+            <span>Cliente</span>
+            <input
+              [ngModel]="customerQuery()"
+              (ngModelChange)="customerQuery.set($event)"
+              name="customerQuery"
+              placeholder="Buscar por cliente"
+            />
+          </label>
+
+          @if (quickRange() !== 'custom') {
+            <div class="actions align-end">
+              <button type="button" class="secondary" (click)="searchCurrentRange()" [disabled]="loadingOrders()">
+                {{ loadingOrders() ? 'Filtrando...' : 'Aplicar filtro' }}
+              </button>
+            </div>
+          }
         </form>
 
         @if (customRangeError(); as rangeError) {
@@ -226,6 +244,7 @@ export class OrdersOperationsPageComponent implements OnInit {
   protected readonly quickRange = signal<QuickRange>('today');
   protected readonly fromDate = signal('');
   protected readonly toDate = signal('');
+  protected readonly customerQuery = signal('');
   protected readonly loadingOrders = signal(false);
   protected readonly loadingImportOrderId = signal<string | null>(null);
   protected readonly loadingBilling = signal(false);
@@ -268,6 +287,10 @@ export class OrdersOperationsPageComponent implements OnInit {
       return;
     }
 
+    await this.searchOrders(1);
+  }
+
+  protected async searchCurrentRange(): Promise<void> {
     await this.searchOrders(1);
   }
 
@@ -379,6 +402,7 @@ export class OrdersOperationsPageComponent implements OnInit {
       const response = await firstValueFrom(this.ordersApi.searchLegacyOrders({
         fromDate: range.fromDate,
         toDate: range.toDate,
+        customerQuery: this.customerQuery(),
         page,
         pageSize: 10
       }));

@@ -41,6 +41,7 @@ public static class OrdersEndpoints
     private static async Task<Results<Ok<SearchLegacyOrdersResponse>, BadRequest<SearchLegacyOrdersResponse>>> SearchLegacyOrdersAsync(
         DateOnly? fromDate,
         DateOnly? toDate,
+        string? customerQuery,
         int? page,
         int? pageSize,
         SearchLegacyOrdersService service,
@@ -80,6 +81,7 @@ public static class OrdersEndpoints
             {
                 FromDateUtc = fromDate.Value.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
                 ToDateUtcExclusive = toDate.Value.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
+                CustomerQuery = customerQuery,
                 Page = normalizedPage,
                 PageSize = normalizedPageSize
             },
