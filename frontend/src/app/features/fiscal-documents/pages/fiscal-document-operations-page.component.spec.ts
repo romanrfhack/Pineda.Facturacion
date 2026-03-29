@@ -577,6 +577,103 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     confirmSpy.mockRestore();
   });
 
+  it('allows reopening cancellation when the document is in CancellationRejected', async () => {
+    const fixture = await configure({
+      getFiscalDocumentById: vi.fn().mockReturnValue(of({
+        id: 40,
+        billingDocumentId: 30,
+        issuerProfileId: 1,
+        fiscalReceiverId: 9,
+        status: 'CancellationRejected',
+        cfdiVersion: '4.0',
+        documentType: 'I',
+        series: 'A',
+        folio: '31787',
+        issuedAtUtc: '2026-03-20T12:00:00Z',
+        currencyCode: 'MXN',
+        exchangeRate: 1,
+        paymentMethodSat: 'PPD',
+        paymentFormSat: '99',
+        paymentCondition: 'CREDITO',
+        isCreditSale: true,
+        creditDays: 7,
+        issuerRfc: 'AAA010101AAA',
+        issuerLegalName: 'Issuer SA',
+        issuerFiscalRegimeCode: '601',
+        issuerPostalCode: '01000',
+        pacEnvironment: 'Sandbox',
+        hasCertificateReference: true,
+        hasPrivateKeyReference: true,
+        hasPrivateKeyPasswordReference: true,
+        receiverRfc: 'BBB010101BBB',
+        receiverLegalName: 'Receiver One',
+        receiverFiscalRegimeCode: '601',
+        receiverCfdiUseCode: 'G03',
+        receiverPostalCode: '02000',
+        receiverCountryCode: 'MX',
+        receiverForeignTaxRegistration: null,
+        subtotal: 100,
+        discountTotal: 0,
+        taxTotal: 0,
+        total: 100,
+        items: []
+      })),
+      getCancellation: vi.fn().mockReturnValue(of({
+        fiscalDocumentId: 40,
+        status: 'Rejected',
+        cancellationReasonCode: '03',
+        replacementUuid: null,
+        providerName: 'FacturaloPlus',
+        providerTrackingId: null,
+        providerCode: '203',
+        providerMessage: 'Solicitud rechazada',
+        errorCode: '203',
+        errorMessage: 'Provider rejected the cancellation request.',
+        supportMessage: 'ProviderCode=203 | ProviderMessage=Solicitud rechazada',
+        rawResponseSummaryJson: '{"httpStatusCode":400}',
+        requestedAtUtc: '2026-03-29T12:00:00Z',
+        cancelledAtUtc: null
+      }))
+    });
+
+    expect(fixture.componentInstance['canCancelCurrentFiscalDocument']()).toBe(true);
+
+    fixture.componentInstance['openCancelDialog']();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['showCancelDialog']()).toBe(true);
+  });
+
+  it('shows PAC diagnostic details after a rejected cancellation attempt', async () => {
+    const cancelFiscalDocument = vi.fn().mockReturnValue(of({
+      outcome: 'ProviderRejected',
+      isSuccess: false,
+      errorMessage: 'Provider rejected the cancellation request.',
+      fiscalDocumentId: 40,
+      fiscalDocumentStatus: 'CancellationRejected',
+      fiscalCancellationId: 90,
+      cancellationStatus: 'Rejected',
+      providerName: 'FacturaloPlus',
+      providerTrackingId: null,
+      providerCode: '203',
+      providerMessage: 'Solicitud rechazada',
+      errorCode: '203',
+      rawResponseSummaryJson: '{"httpStatusCode":400}',
+      supportMessage: 'ProviderCode=203 | ProviderMessage=Solicitud rechazada',
+      cancelledAtUtc: null
+    }));
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const fixture = await configure({ cancelFiscalDocument });
+
+    fixture.componentInstance['openCancelDialog']();
+    fixture.componentInstance['onCancellationReasonChange']('03');
+
+    await fixture.componentInstance['cancel']();
+
+    expect(fixture.componentInstance['lastOperationMessage']()).toContain('Solicitud rechazada');
+    confirmSpy.mockRestore();
+  });
+
   it('prefers the operational SAT message when refreshing status', async () => {
     const refreshStatus = vi.fn().mockReturnValue(of({
       outcome: 'Refreshed',

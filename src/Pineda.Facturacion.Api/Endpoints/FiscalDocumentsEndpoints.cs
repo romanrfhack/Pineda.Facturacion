@@ -419,7 +419,7 @@ public static class FiscalDocumentsEndpoints
             ErrorCode = result.ErrorCode,
             RawResponseSummaryJson = result.RawResponseSummaryJson,
             SupportMessage = result.SupportMessage,
-            CancelledAtUtc = result.CancelledAtUtc
+            CancelledAtUtc = EnsureUtc(result.CancelledAtUtc)
         };
 
         await AuditApiHelper.RecordAsync(
@@ -607,15 +607,62 @@ public static class FiscalDocumentsEndpoints
             CancellationReasonCode = fiscalCancellation.CancellationReasonCode,
             ReplacementUuid = fiscalCancellation.ReplacementUuid,
             ProviderName = fiscalCancellation.ProviderName,
+            ProviderTrackingId = fiscalCancellation.ProviderTrackingId,
             ProviderCode = fiscalCancellation.ProviderCode,
             ProviderMessage = fiscalCancellation.ProviderMessage,
             ErrorCode = fiscalCancellation.ErrorCode,
             ErrorMessage = fiscalCancellation.ErrorMessage,
-            RequestedAtUtc = fiscalCancellation.RequestedAtUtc,
-            CancelledAtUtc = fiscalCancellation.CancelledAtUtc,
-            CreatedAtUtc = fiscalCancellation.CreatedAtUtc,
-            UpdatedAtUtc = fiscalCancellation.UpdatedAtUtc
+            SupportMessage = BuildCancellationSupportMessage(fiscalCancellation),
+            RawResponseSummaryJson = fiscalCancellation.RawResponseSummaryJson,
+            RequestedAtUtc = EnsureUtc(fiscalCancellation.RequestedAtUtc),
+            CancelledAtUtc = EnsureUtc(fiscalCancellation.CancelledAtUtc),
+            CreatedAtUtc = EnsureUtc(fiscalCancellation.CreatedAtUtc),
+            UpdatedAtUtc = EnsureUtc(fiscalCancellation.UpdatedAtUtc)
         };
+    }
+
+    private static string? BuildCancellationSupportMessage(FiscalCancellation fiscalCancellation)
+    {
+        var parts = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(fiscalCancellation.ProviderCode))
+        {
+            parts.Add($"ProviderCode={fiscalCancellation.ProviderCode.Trim()}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(fiscalCancellation.ProviderMessage))
+        {
+            parts.Add($"ProviderMessage={fiscalCancellation.ProviderMessage.Trim()}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(fiscalCancellation.ProviderTrackingId))
+        {
+            parts.Add($"TrackingId={fiscalCancellation.ProviderTrackingId.Trim()}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(fiscalCancellation.ErrorCode))
+        {
+            parts.Add($"ErrorCode={fiscalCancellation.ErrorCode.Trim()}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(fiscalCancellation.ErrorMessage))
+        {
+            parts.Add($"ErrorMessage={fiscalCancellation.ErrorMessage.Trim()}");
+        }
+
+        return parts.Count > 0 ? string.Join(" | ", parts) : null;
+    }
+
+    private static DateTime EnsureUtc(DateTime value)
+    {
+        return value.Kind == DateTimeKind.Utc
+            ? value
+            : DateTime.SpecifyKind(value, DateTimeKind.Utc);
+    }
+
+    private static DateTime? EnsureUtc(DateTime? value)
+    {
+        return value.HasValue ? EnsureUtc(value.Value) : null;
     }
 
     private static FiscalDocumentItemResponse MapItem(FiscalDocumentItem item)
@@ -856,10 +903,13 @@ public static class FiscalDocumentsEndpoints
         public string CancellationReasonCode { get; init; } = string.Empty;
         public string? ReplacementUuid { get; init; }
         public string ProviderName { get; init; } = string.Empty;
+        public string? ProviderTrackingId { get; init; }
         public string? ProviderCode { get; init; }
         public string? ProviderMessage { get; init; }
         public string? ErrorCode { get; init; }
         public string? ErrorMessage { get; init; }
+        public string? SupportMessage { get; init; }
+        public string? RawResponseSummaryJson { get; init; }
         public DateTime RequestedAtUtc { get; init; }
         public DateTime? CancelledAtUtc { get; init; }
         public DateTime CreatedAtUtc { get; init; }

@@ -317,7 +317,7 @@ import { buildFiscalDocumentFileName } from '../application/fiscal-document-file
               <button type="button" (click)="stamp()" [disabled]="loadingOperation() || currentDocument.status === 'Stamped'">Timbrar</button>
             }
             @if (permissionService.canCancelFiscal()) {
-              <button type="button" class="danger" (click)="openCancelDialog()" [disabled]="loadingOperation() || currentDocument.status !== 'Stamped'">Cancelar</button>
+              <button type="button" class="danger" (click)="openCancelDialog()" [disabled]="loadingOperation() || !canCancelCurrentFiscalDocument()">Cancelar</button>
             }
             @if (permissionService.canCancelFiscal()) {
               <button type="button" class="secondary" (click)="refreshStatus()" [disabled]="loadingOperation()">Actualizar estatus</button>
@@ -750,7 +750,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   }
 
   protected openCancelDialog(): void {
-    if (!this.fiscalDocumentId() || this.loadingOperation()) {
+    if (!this.fiscalDocumentId() || this.loadingOperation() || !this.canCancelCurrentFiscalDocument()) {
       return;
     }
 
@@ -1126,7 +1126,12 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
 
     await this.runOperation(async () => {
       const response = await firstValueFrom(this.api.cancelFiscalDocument(fiscalDocumentId, cancellationRequest));
-      this.lastOperationMessage.set(response.errorMessage || `Resultado de la cancelación: ${getDisplayLabel(response.outcome)}`);
+      this.lastOperationMessage.set(
+        response.providerMessage
+          || response.supportMessage
+          || response.errorMessage
+          || `Resultado de la cancelación: ${getDisplayLabel(response.outcome)}`
+      );
       this.showCancelDialog.set(false);
       await this.loadFiscalDocument(fiscalDocumentId);
       await this.loadCancellation(fiscalDocumentId);
@@ -1446,6 +1451,15 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
         ? normalizeOptionalText(this.cancellationReplacementUuid)
         : undefined
     };
+  }
+
+  protected canCancelCurrentFiscalDocument(): boolean {
+    const document = this.fiscalDocument();
+    if (!document) {
+      return false;
+    }
+
+    return document.status === 'Stamped' || document.status === 'CancellationRejected';
   }
 
   protected getCancellationValidationError(): string | null {

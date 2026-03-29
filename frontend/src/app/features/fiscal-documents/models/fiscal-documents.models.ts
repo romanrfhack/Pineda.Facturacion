@@ -270,6 +270,11 @@ export interface CancelFiscalDocumentResponse {
   cancellationStatus?: string | null;
   providerName?: string | null;
   providerTrackingId?: string | null;
+  providerCode?: string | null;
+  providerMessage?: string | null;
+  errorCode?: string | null;
+  rawResponseSummaryJson?: string | null;
+  supportMessage?: string | null;
   cancelledAtUtc?: string | null;
 }
 
@@ -279,10 +284,13 @@ export interface FiscalCancellationResponse {
   cancellationReasonCode: string;
   replacementUuid?: string | null;
   providerName: string;
+  providerTrackingId?: string | null;
   providerCode?: string | null;
   providerMessage?: string | null;
   errorCode?: string | null;
   errorMessage?: string | null;
+  supportMessage?: string | null;
+  rawResponseSummaryJson?: string | null;
   requestedAtUtc: string;
   cancelledAtUtc?: string | null;
 }
