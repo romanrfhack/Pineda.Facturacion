@@ -414,6 +414,11 @@ public static class FiscalDocumentsEndpoints
             CancellationStatus = result.CancellationStatus?.ToString(),
             ProviderName = result.ProviderName,
             ProviderTrackingId = result.ProviderTrackingId,
+            ProviderCode = result.ProviderCode,
+            ProviderMessage = result.ProviderMessage,
+            ErrorCode = result.ErrorCode,
+            RawResponseSummaryJson = result.RawResponseSummaryJson,
+            SupportMessage = result.SupportMessage,
             CancelledAtUtc = result.CancelledAtUtc
         };
 
@@ -424,7 +429,18 @@ public static class FiscalDocumentsEndpoints
             fiscalDocumentId.ToString(),
             result.Outcome.ToString(),
             new { fiscalDocumentId, request.CancellationReasonCode, request.ReplacementUuid },
-            new { result.FiscalCancellationId, result.CancellationStatus, result.FiscalDocumentStatus, result.ProviderName, result.ProviderTrackingId },
+            new
+            {
+                result.FiscalCancellationId,
+                result.CancellationStatus,
+                result.FiscalDocumentStatus,
+                result.ProviderName,
+                result.ProviderTrackingId,
+                result.ProviderCode,
+                result.ProviderMessage,
+                result.ErrorCode,
+                result.SupportMessage
+            },
             result.ErrorMessage,
             cancellationToken);
 
@@ -825,6 +841,11 @@ public static class FiscalDocumentsEndpoints
         public string? CancellationStatus { get; init; }
         public string? ProviderName { get; init; }
         public string? ProviderTrackingId { get; init; }
+        public string? ProviderCode { get; init; }
+        public string? ProviderMessage { get; init; }
+        public string? ErrorCode { get; init; }
+        public string? RawResponseSummaryJson { get; init; }
+        public string? SupportMessage { get; init; }
         public DateTime? CancelledAtUtc { get; init; }
     }
 

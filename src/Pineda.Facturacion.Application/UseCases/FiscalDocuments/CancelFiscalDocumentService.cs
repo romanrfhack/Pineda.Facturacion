@@ -179,6 +179,11 @@ public class CancelFiscalDocumentService
         result.CancellationStatus = fiscalCancellation.Status;
         result.ProviderName = fiscalCancellation.ProviderName;
         result.ProviderTrackingId = fiscalCancellation.ProviderTrackingId;
+        result.ProviderCode = fiscalCancellation.ProviderCode;
+        result.ProviderMessage = fiscalCancellation.ProviderMessage;
+        result.ErrorCode = fiscalCancellation.ErrorCode;
+        result.RawResponseSummaryJson = fiscalCancellation.RawResponseSummaryJson;
+        result.SupportMessage = gatewayResult.SupportMessage;
         result.CancelledAtUtc = fiscalCancellation.CancelledAtUtc;
         return result;
     }

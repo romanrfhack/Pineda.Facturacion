@@ -123,6 +123,28 @@ public class FacturaloPlusCancellationGatewayTests
     }
 
     [Fact]
+    public async Task CancelAsync_Treats_CodigoEstatus201_As_Cancelled()
+    {
+        var gateway = CreateGateway(
+            """
+            {
+              "CodigoEstatus": "201",
+              "Mensaje": "Cancelado",
+              "trackingId": "TRACK-CANCEL-201"
+            }
+            """,
+            HttpStatusCode.OK);
+
+        var result = await gateway.CancelAsync(CreateRequest());
+
+        Assert.Equal(FiscalCancellationGatewayOutcome.Cancelled, result.Outcome);
+        Assert.Equal("201", result.ProviderCode);
+        Assert.Equal("Cancelado", result.ProviderMessage);
+        Assert.Contains("TRACK-CANCEL-201", result.SupportMessage);
+        Assert.Contains("\"requestSummary\":", result.RawResponseSummaryJson);
+    }
+
+    [Fact]
     public async Task CancelAsync_Treats_NonSuccess_Code_As_Rejected()
     {
         var gateway = CreateGateway(

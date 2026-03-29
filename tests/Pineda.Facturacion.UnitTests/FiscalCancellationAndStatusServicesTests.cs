@@ -47,6 +47,8 @@ public class FiscalCancellationAndStatusServicesTests
         Assert.Equal(CancelFiscalDocumentOutcome.Cancelled, result.Outcome);
         Assert.Equal(FiscalDocumentStatus.Cancelled, fiscalDocument.Status);
         Assert.Equal(FiscalCancellationStatus.Cancelled, cancellationRepository.Added!.Status);
+        Assert.Equal("200", result.ProviderCode);
+        Assert.Equal("Cancelled", result.ProviderMessage);
     }
 
     [Fact]
@@ -149,6 +151,9 @@ public class FiscalCancellationAndStatusServicesTests
         Assert.Equal(CancelFiscalDocumentOutcome.ProviderRejected, result.Outcome);
         Assert.Equal(FiscalDocumentStatus.CancellationRejected, fiscalDocument.Status);
         Assert.Equal(FiscalCancellationStatus.Rejected, cancellationRepository.Added!.Status);
+        Assert.Equal("CFDI_409", result.ProviderCode);
+        Assert.Equal("Rejected", result.ProviderMessage);
+        Assert.Equal("CFDI_409", result.ErrorCode);
     }
 
     [Fact]

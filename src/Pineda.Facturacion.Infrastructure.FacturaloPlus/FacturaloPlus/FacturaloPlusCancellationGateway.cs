@@ -106,9 +106,10 @@ public class FacturaloPlusCancellationGateway : IFiscalCancellationGateway
         }
 
         var providerResponse = TryParseProviderResponse(responseContent);
-        var rawResponseSummaryJson = BuildRawResponseSummary(response.StatusCode, providerResponse, responseContent);
+        var rawResponseSummaryJson = BuildRawResponseSummary(response.StatusCode, providerResponse, responseContent, redactedSummary, rawRequestHash);
         var providerCode = providerResponse?.Code ?? ((int)response.StatusCode).ToString(CultureInfo.InvariantCulture);
         var providerMessage = providerResponse?.Message;
+        var supportMessage = BuildSupportMessage(providerCode, providerMessage, providerResponse?.TrackingId, providerResponse?.ErrorCode, providerResponse?.ErrorMessage);
 
         if ((int)response.StatusCode >= 500)
         {
@@ -122,7 +123,8 @@ public class FacturaloPlusCancellationGateway : IFiscalCancellationGateway
                 ProviderMessage = providerMessage,
                 RawResponseSummaryJson = rawResponseSummaryJson,
                 ErrorCode = providerResponse?.ErrorCode ?? "HTTP_" + (int)response.StatusCode,
-                ErrorMessage = providerResponse?.ErrorMessage ?? "Provider unavailable."
+                ErrorMessage = providerResponse?.ErrorMessage ?? "Provider unavailable.",
+                SupportMessage = supportMessage
             };
         }
 
@@ -137,7 +139,8 @@ public class FacturaloPlusCancellationGateway : IFiscalCancellationGateway
                 ProviderCode = providerCode,
                 ProviderMessage = providerMessage,
                 CancelledAtUtc = providerResponse?.CancelledAtUtc ?? DateTime.UtcNow,
-                RawResponseSummaryJson = rawResponseSummaryJson
+                RawResponseSummaryJson = rawResponseSummaryJson,
+                SupportMessage = supportMessage
             };
         }
 
@@ -151,7 +154,8 @@ public class FacturaloPlusCancellationGateway : IFiscalCancellationGateway
             ProviderMessage = providerMessage,
             RawResponseSummaryJson = rawResponseSummaryJson,
             ErrorCode = providerResponse?.ErrorCode,
-            ErrorMessage = providerResponse?.ErrorMessage ?? providerMessage ?? "Provider rejected the cancellation request."
+            ErrorMessage = providerResponse?.ErrorMessage ?? providerMessage ?? "Provider rejected the cancellation request.",
+            SupportMessage = supportMessage
         };
     }
 
@@ -210,11 +214,18 @@ public class FacturaloPlusCancellationGateway : IFiscalCancellationGateway
         };
     }
 
-    private static string BuildRawResponseSummary(HttpStatusCode statusCode, FacturaloPlusCancellationResponse? response, string rawContent)
+    private static string BuildRawResponseSummary(
+        HttpStatusCode statusCode,
+        FacturaloPlusCancellationResponse? response,
+        string rawContent,
+        object requestSummary,
+        string requestHash)
     {
         var summary = new
         {
             HttpStatusCode = (int)statusCode,
+            RequestSummary = requestSummary,
+            RequestHash = requestHash,
             response?.Code,
             response?.Message,
             response?.TrackingId,
@@ -242,7 +253,7 @@ public class FacturaloPlusCancellationGateway : IFiscalCancellationGateway
             var root = json.RootElement;
             return new FacturaloPlusCancellationResponse
             {
-                Code = ReadString(root, "code", "codigo", "statusCode", "estatus", "status"),
+                Code = ReadString(root, "code", "codigo", "CodigoEstatus", "codigoEstatus", "statusCode", "estatus", "status"),
                 Message = ReadString(root, "message", "mensaje", "descripcion", "detail"),
                 TrackingId = ReadString(root, "trackingId", "tracking", "folio", "id"),
                 ErrorCode = ReadString(root, "errorCode", "codigoError"),
@@ -267,7 +278,8 @@ public class FacturaloPlusCancellationGateway : IFiscalCancellationGateway
             ProviderName = _options.ProviderName,
             ProviderOperation = "cancelar2",
             ErrorMessage = errorMessage,
-            RawResponseSummaryJson = JsonSerializer.Serialize(new { error = errorMessage }, JsonOptions)
+            RawResponseSummaryJson = JsonSerializer.Serialize(new { error = errorMessage }, JsonOptions),
+            SupportMessage = errorMessage
         };
     }
 
@@ -280,14 +292,58 @@ public class FacturaloPlusCancellationGateway : IFiscalCancellationGateway
             ProviderOperation = "cancelar2",
             ProviderMessage = errorMessage,
             ErrorMessage = errorMessage,
-            RawResponseSummaryJson = JsonSerializer.Serialize(new { error = errorMessage, requestHash = rawRequestHash }, JsonOptions)
+            RawResponseSummaryJson = JsonSerializer.Serialize(new { error = errorMessage, requestHash = rawRequestHash }, JsonOptions),
+            SupportMessage = errorMessage
         };
     }
 
     private static bool IsSuccessfulCancellationCode(string? providerCode)
     {
-        return string.Equals(providerCode, "201", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(providerCode, "202", StringComparison.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(providerCode))
+        {
+            return false;
+        }
+
+        var normalizedCode = providerCode.Trim();
+        return normalizedCode.StartsWith("201", StringComparison.OrdinalIgnoreCase)
+            || normalizedCode.StartsWith("202", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? BuildSupportMessage(
+        string? providerCode,
+        string? providerMessage,
+        string? trackingId,
+        string? errorCode,
+        string? errorMessage)
+    {
+        var parts = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(providerCode))
+        {
+            parts.Add($"ProviderCode={providerCode.Trim()}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(providerMessage))
+        {
+            parts.Add($"ProviderMessage={providerMessage.Trim()}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(trackingId))
+        {
+            parts.Add($"TrackingId={trackingId.Trim()}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(errorCode))
+        {
+            parts.Add($"ErrorCode={errorCode.Trim()}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(errorMessage))
+        {
+            parts.Add($"ErrorMessage={errorMessage.Trim()}");
+        }
+
+        return parts.Count > 0 ? string.Join(" | ", parts) : null;
     }
 
     private static string NormalizePemOrBase64(string secretValue)

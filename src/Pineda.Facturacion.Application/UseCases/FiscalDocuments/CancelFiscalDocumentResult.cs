@@ -22,5 +22,15 @@ public class CancelFiscalDocumentResult
 
     public string? ProviderTrackingId { get; set; }
 
+    public string? ProviderCode { get; set; }
+
+    public string? ProviderMessage { get; set; }
+
+    public string? ErrorCode { get; set; }
+
+    public string? RawResponseSummaryJson { get; set; }
+
+    public string? SupportMessage { get; set; }
+
     public DateTime? CancelledAtUtc { get; set; }
 }
