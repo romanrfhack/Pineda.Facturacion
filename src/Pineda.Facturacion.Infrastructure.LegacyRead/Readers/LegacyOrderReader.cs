@@ -264,7 +264,7 @@ public class LegacyOrderReader : ILegacyOrderReader
             """;
     }
 
-    private static string BuildCountSql(LegacyOrderReadSchema schema)
+    internal static string BuildCountSql(LegacyOrderReadSchema schema)
     {
         return $"""
             SELECT COUNT(*)
@@ -273,14 +273,14 @@ public class LegacyOrderReader : ILegacyOrderReader
                 ON p.{Q(schema.Orders["noCliente"])} = c.{Q(schema.Customers["noCliente"])}
             WHERE p.{Q(schema.OrderDateColumn)} >= @fromDateUtc
               AND p.{Q(schema.OrderDateColumn)} < @toDateUtcExclusive
-              AND (@customerQuery IS NULL OR {BuildCustomerNameExpression(schema)} LIKE @customerQueryLike)
+              AND (@customerQueryLike IS NULL OR UPPER({BuildCustomerNameExpression(schema)}) LIKE @customerQueryLike)
               AND p.{Q(schema.Orders["noCliente"])} <> 0
               AND p.{Q(schema.Orders["MontoPedido"])} <> 0.00
               AND p.{Q(schema.Orders["refPedido"])} IS NOT NULL;
             """;
     }
 
-    private static string BuildListSql(LegacyOrderReadSchema schema)
+    internal static string BuildListSql(LegacyOrderReadSchema schema)
     {
         return $"""
             SELECT
@@ -299,7 +299,7 @@ public class LegacyOrderReader : ILegacyOrderReader
                 ON p.{Q(schema.Orders["noCliente"])} = c.{Q(schema.Customers["noCliente"])}
             WHERE p.{Q(schema.OrderDateColumn)} >= @fromDateUtc
               AND p.{Q(schema.OrderDateColumn)} < @toDateUtcExclusive
-              AND (@customerQuery IS NULL OR {BuildCustomerNameExpression(schema)} LIKE @customerQueryLike)
+              AND (@customerQueryLike IS NULL OR UPPER({BuildCustomerNameExpression(schema)}) LIKE @customerQueryLike)
               AND p.{Q(schema.Orders["noCliente"])} <> 0
               AND p.{Q(schema.Orders["MontoPedido"])} <> 0.00
               AND p.{Q(schema.Orders["refPedido"])} IS NOT NULL
@@ -329,7 +329,6 @@ public class LegacyOrderReader : ILegacyOrderReader
         await using var command = new MySqlCommand(sql, connection);
         command.Parameters.AddWithValue("@fromDateUtc", search.FromDateUtc);
         command.Parameters.AddWithValue("@toDateUtcExclusive", search.ToDateUtcExclusive);
-        command.Parameters.AddWithValue("@customerQuery", string.IsNullOrWhiteSpace(search.CustomerQuery) ? DBNull.Value : search.CustomerQuery);
         command.Parameters.AddWithValue("@customerQueryLike", BuildLikeValue(search.CustomerQuery));
 
         var result = await command.ExecuteScalarAsync(cancellationToken);
@@ -347,7 +346,6 @@ public class LegacyOrderReader : ILegacyOrderReader
         await using var command = new MySqlCommand(sql, connection);
         command.Parameters.AddWithValue("@fromDateUtc", search.FromDateUtc);
         command.Parameters.AddWithValue("@toDateUtcExclusive", search.ToDateUtcExclusive);
-        command.Parameters.AddWithValue("@customerQuery", string.IsNullOrWhiteSpace(search.CustomerQuery) ? DBNull.Value : search.CustomerQuery);
         command.Parameters.AddWithValue("@customerQueryLike", BuildLikeValue(search.CustomerQuery));
         command.Parameters.AddWithValue("@skip", (search.Page - 1) * search.PageSize);
         command.Parameters.AddWithValue("@take", search.PageSize);
@@ -376,7 +374,7 @@ public class LegacyOrderReader : ILegacyOrderReader
             return DBNull.Value;
         }
 
-        return $"%{customerQuery.Trim()}%";
+        return $"%{customerQuery.Trim().ToUpperInvariant()}%";
     }
 
     private static string GetRequiredString(MySqlDataReader reader, string columnName)

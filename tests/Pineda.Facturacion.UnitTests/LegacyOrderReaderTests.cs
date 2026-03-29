@@ -80,6 +80,26 @@ public class LegacyOrderReaderTests
     }
 
     [Fact]
+    public void BuildListSql_Applies_Customer_Filter_Before_Pagination()
+    {
+        var schema = CreateResolvedSchema(
+            ordersTableName: "Pedidos",
+            customersTableName: "Clientes",
+            orderItemsTableName: "PedidosDet",
+            articlesTableName: "Articulos",
+            articleNamesTableName: "NombresArticulos",
+            orderDateColumnName: "FechaPedido");
+
+        var sql = LegacyOrderReader.BuildListSql(schema);
+
+        Assert.Contains("UPPER(COALESCE(", sql, StringComparison.Ordinal);
+        Assert.Contains("LIKE @customerQueryLike", sql, StringComparison.Ordinal);
+        Assert.Contains("ORDER BY p.`FechaPedido` DESC", sql, StringComparison.Ordinal);
+        Assert.Contains("LIMIT @skip, @take", sql, StringComparison.Ordinal);
+        Assert.True(sql.IndexOf("LIKE @customerQueryLike", StringComparison.Ordinal) < sql.IndexOf("LIMIT @skip, @take", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void LegacySchemaResolver_Column_Error_Includes_Diagnostics()
     {
         var exception = Assert.Throws<InvalidOperationException>(() => LegacySchemaResolver.SelectResolvedColumnName(
