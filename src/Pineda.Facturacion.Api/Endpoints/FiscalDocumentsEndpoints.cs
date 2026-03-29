@@ -497,6 +497,7 @@ public static class FiscalDocumentsEndpoints
             OperationalStatus = result.OperationalStatus,
             OperationalMessage = result.OperationalMessage,
             SupportMessage = result.SupportMessage,
+            RawResponseSummaryJson = result.RawResponseSummaryJson,
             CheckedAtUtc = result.CheckedAtUtc
         };
 
@@ -930,6 +931,7 @@ public static class FiscalDocumentsEndpoints
         public string? OperationalStatus { get; init; }
         public string? OperationalMessage { get; init; }
         public string? SupportMessage { get; init; }
+        public string? RawResponseSummaryJson { get; init; }
         public DateTime? CheckedAtUtc { get; init; }
     }
 

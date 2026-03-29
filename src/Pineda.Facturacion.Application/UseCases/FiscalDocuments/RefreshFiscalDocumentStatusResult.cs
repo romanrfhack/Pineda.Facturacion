@@ -28,5 +28,7 @@ public class RefreshFiscalDocumentStatusResult
 
     public string? SupportMessage { get; set; }
 
+    public string? RawResponseSummaryJson { get; set; }
+
     public DateTime? CheckedAtUtc { get; set; }
 }

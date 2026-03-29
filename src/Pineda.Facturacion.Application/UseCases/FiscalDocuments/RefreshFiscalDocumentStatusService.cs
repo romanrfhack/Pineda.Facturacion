@@ -81,7 +81,23 @@ public class RefreshFiscalDocumentStatusService
 
         if (gatewayResult.Outcome == FiscalStatusQueryGatewayOutcome.ValidationFailed)
         {
-            return ValidationFailure(command.FiscalDocumentId, gatewayResult.ErrorMessage ?? "Status refresh request validation failed.");
+            fiscalStamp.LastStatusCheckAtUtc = gatewayResult.CheckedAtUtc == default ? DateTime.UtcNow : gatewayResult.CheckedAtUtc;
+            fiscalStamp.LastStatusProviderCode = gatewayResult.ProviderCode;
+            fiscalStamp.LastStatusProviderMessage = gatewayResult.ProviderMessage ?? gatewayResult.ErrorMessage;
+            fiscalStamp.LastStatusRawResponseSummaryJson = gatewayResult.RawResponseSummaryJson;
+            fiscalStamp.UpdatedAtUtc = DateTime.UtcNow;
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            return ValidationFailure(
+                command.FiscalDocumentId,
+                gatewayResult.ErrorMessage ?? "Status refresh request validation failed.",
+                fiscalDocument.Status,
+                fiscalStamp.Uuid,
+                gatewayResult.ProviderCode,
+                gatewayResult.ProviderMessage,
+                gatewayResult.SupportMessage,
+                gatewayResult.RawResponseSummaryJson,
+                fiscalStamp.LastStatusCheckAtUtc);
         }
 
         if (gatewayResult.Outcome == FiscalStatusQueryGatewayOutcome.Unavailable)
@@ -101,6 +117,7 @@ public class RefreshFiscalDocumentStatusService
                 OperationalStatus = interpretation.Status.ToString(),
                 OperationalMessage = interpretation.UserMessage,
                 SupportMessage = interpretation.SupportMessage,
+                RawResponseSummaryJson = fiscalStamp.LastStatusRawResponseSummaryJson,
                 CheckedAtUtc = fiscalStamp.LastStatusCheckAtUtc
             };
         }
@@ -136,6 +153,7 @@ public class RefreshFiscalDocumentStatusService
             OperationalStatus = operationalInterpretation.Status.ToString(),
             OperationalMessage = operationalInterpretation.UserMessage,
             SupportMessage = operationalInterpretation.SupportMessage,
+            RawResponseSummaryJson = fiscalStamp.LastStatusRawResponseSummaryJson,
             CheckedAtUtc = fiscalStamp.LastStatusCheckAtUtc
         };
     }
@@ -182,13 +200,29 @@ public class RefreshFiscalDocumentStatusService
         }
     }
 
-    private static RefreshFiscalDocumentStatusResult ValidationFailure(long fiscalDocumentId, string errorMessage)
+    private static RefreshFiscalDocumentStatusResult ValidationFailure(
+        long fiscalDocumentId,
+        string errorMessage,
+        FiscalDocumentStatus? fiscalDocumentStatus = null,
+        string? uuid = null,
+        string? providerCode = null,
+        string? providerMessage = null,
+        string? supportMessage = null,
+        string? rawResponseSummaryJson = null,
+        DateTime? checkedAtUtc = null)
     {
         return new RefreshFiscalDocumentStatusResult
         {
             Outcome = RefreshFiscalDocumentStatusOutcome.ValidationFailed,
             IsSuccess = false,
             FiscalDocumentId = fiscalDocumentId,
+            FiscalDocumentStatus = fiscalDocumentStatus,
+            Uuid = uuid,
+            ProviderCode = providerCode,
+            ProviderMessage = providerMessage,
+            SupportMessage = supportMessage,
+            RawResponseSummaryJson = rawResponseSummaryJson,
+            CheckedAtUtc = checkedAtUtc,
             ErrorMessage = errorMessage
         };
     }

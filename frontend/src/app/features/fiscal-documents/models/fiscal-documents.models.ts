@@ -308,5 +308,6 @@ export interface RefreshFiscalDocumentStatusResponse {
   operationalStatus?: string | null;
   operationalMessage?: string | null;
   supportMessage?: string | null;
+  rawResponseSummaryJson?: string | null;
   checkedAtUtc?: string | null;
 }

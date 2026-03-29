@@ -170,7 +170,7 @@ import {
                     <button type="button" class="danger" (click)="openCancelDialog()" [disabled]="loadingOperation() || !canCancelSelectedDocument()">
                       {{ loadingOperation() && showCancelDialog() ? 'Cancelando...' : 'Cancelar' }}
                     </button>
-                    <button type="button" class="secondary" (click)="refreshStatus()" [disabled]="loadingOperation()">Actualizar estatus</button>
+                    <button type="button" class="secondary" (click)="refreshStatus()" [disabled]="loadingOperation() || !canRefreshSelectedDocument()">Actualizar estatus</button>
                   }
                   <button type="button" class="secondary" (click)="openPdfForSelected(false)">Ver PDF</button>
                   <button type="button" class="secondary" (click)="openPdfForSelected(true)">Descargar PDF</button>
@@ -181,6 +181,9 @@ import {
 
                 @if (lastOperationMessage()) {
                   <p class="helper">{{ lastOperationMessage() }}</p>
+                }
+                @if (!canRefreshSelectedDocument()) {
+                  <p class="helper">Actualizar estatus solo está disponible para CFDI timbrados con UUID.</p>
                 }
               </section>
 
@@ -538,6 +541,10 @@ export class IssuedCfdisPageComponent {
     return canCancelFiscalDocumentStatus(this.selectedDocument()?.status);
   }
 
+  protected canRefreshSelectedDocument(): boolean {
+    return !!this.selectedStamp()?.uuid;
+  }
+
   protected async openPdf(item: IssuedFiscalDocumentListItemResponse, download: boolean): Promise<void> {
     await this.handlePdf(item, download);
   }
@@ -737,6 +744,7 @@ export class IssuedCfdisPageComponent {
       this.lastOperationMessage.set(
         response.operationalMessage
           || response.providerMessage
+          || response.supportMessage
           || response.errorMessage
           || `Último estatus externo: ${getDisplayLabel(response.lastKnownExternalStatus ?? 'Unknown')}`
       );

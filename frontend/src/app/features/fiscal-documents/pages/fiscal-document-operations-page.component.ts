@@ -330,7 +330,7 @@ import {
               <button type="button" class="danger" (click)="openCancelDialog()" [disabled]="loadingOperation() || !canCancelCurrentFiscalDocument()">Cancelar</button>
             }
             @if (permissionService.canCancelFiscal()) {
-              <button type="button" class="secondary" (click)="refreshStatus()" [disabled]="loadingOperation()">Actualizar estatus</button>
+              <button type="button" class="secondary" (click)="refreshStatus()" [disabled]="loadingOperation() || !canRefreshCurrentFiscalDocument()">Actualizar estatus</button>
             }
             @if (currentDocument.status === 'Stamped') {
               <button type="button" class="secondary" (click)="openStampPdf()" [disabled]="loadingPdf() || sendingEmail()">
@@ -348,6 +348,9 @@ import {
 
           @if (lastOperationMessage()) {
             <p class="helper">{{ lastOperationMessage() }}</p>
+          }
+          @if (!canRefreshCurrentFiscalDocument()) {
+            <p class="helper">Actualizar estatus solo está disponible para CFDI timbrados con UUID.</p>
           }
         </section>
       }
@@ -1163,6 +1166,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       this.lastOperationMessage.set(
         response.operationalMessage
           || response.providerMessage
+          || response.supportMessage
           || response.errorMessage
           || `Último estatus externo: ${getDisplayLabel(response.lastKnownExternalStatus ?? 'Unknown')}`
       );
@@ -1479,6 +1483,10 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
 
   protected canCancelCurrentFiscalDocument(): boolean {
     return canCancelFiscalDocumentStatus(this.fiscalDocument()?.status);
+  }
+
+  protected canRefreshCurrentFiscalDocument(): boolean {
+    return !!this.stampEvidence()?.uuid;
   }
 
   protected getCancellationValidationError(): string | null {

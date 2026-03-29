@@ -105,6 +105,8 @@ public class FacturaloPlusStatusQueryGateway : IFiscalStatusQueryGateway
                 ProviderOperation = "consultarEstadoSAT",
                 CheckedAtUtc = DateTime.UtcNow,
                 ErrorMessage = "Provider status query response could not be parsed.",
+                ProviderMessage = "No se identificaron campos SAT en la respuesta del proveedor.",
+                SupportMessage = BuildUnparsedResponseSupportMessage(response.StatusCode, responseContent),
                 RawResponseSummaryJson = rawResponseSummaryJson
             };
         }
@@ -119,6 +121,7 @@ public class FacturaloPlusStatusQueryGateway : IFiscalStatusQueryGateway
             ProviderTrackingId = providerResponse.TrackingId,
             ProviderCode = compactProviderCode,
             ProviderMessage = BuildProviderMessage(providerResponse),
+            SupportMessage = BuildSupportMessage(providerResponse),
             ExternalStatus = providerResponse.Estado,
             Cancelability = providerResponse.EsCancelable,
             CancellationStatus = providerResponse.EstatusCancelacion,
@@ -167,21 +170,14 @@ public class FacturaloPlusStatusQueryGateway : IFiscalStatusQueryGateway
         try
         {
             using var json = JsonDocument.Parse(rawContent);
-            var root = json.RootElement;
-            return new FacturaloPlusStatusQueryResponse
-            {
-                CodigoEstatus = ReadString(root, "CodigoEstatus", "codigoEstatus", "code", "codigo"),
-                EsCancelable = ReadString(root, "EsCancelable", "esCancelable"),
-                Estado = ReadString(root, "Estado", "estado"),
-                EstatusCancelacion = ReadString(root, "EstatusCancelacion", "estatusCancelacion"),
-                TrackingId = ReadString(root, "trackingId", "tracking", "folio", "id"),
-                ErrorCode = ReadString(root, "errorCode", "codigoError"),
-                ErrorMessage = ReadString(root, "errorMessage", "mensajeError", "descripcionError", "message", "mensaje")
-            };
+            var parsed = TryParseProviderResponseElement(json.RootElement);
+            return HasAnyMeaningfulField(parsed)
+                ? parsed
+                : TryParseProviderResponseFromText(rawContent);
         }
         catch (JsonException)
         {
-            return null;
+            return TryParseProviderResponseFromText(rawContent);
         }
     }
 
@@ -247,6 +243,60 @@ public class FacturaloPlusStatusQueryGateway : IFiscalStatusQueryGateway
         return response.ErrorMessage;
     }
 
+    private static string? BuildSupportMessage(FacturaloPlusStatusQueryResponse? response)
+    {
+        if (response is null)
+        {
+            return null;
+        }
+
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(response.CodigoEstatus))
+        {
+            parts.Add($"CodigoEstatus={response.CodigoEstatus}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(response.Estado))
+        {
+            parts.Add($"Estado={response.Estado}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(response.EsCancelable))
+        {
+            parts.Add($"EsCancelable={response.EsCancelable}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(response.EstatusCancelacion))
+        {
+            parts.Add($"EstatusCancelacion={response.EstatusCancelacion}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(response.ErrorCode))
+        {
+            parts.Add($"ErrorCode={response.ErrorCode}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(response.ErrorMessage))
+        {
+            parts.Add($"ErrorMessage={response.ErrorMessage}");
+        }
+
+        return parts.Count > 0 ? string.Join(" | ", parts) : null;
+    }
+
+    private static string BuildUnparsedResponseSupportMessage(HttpStatusCode statusCode, string rawContent)
+    {
+        var preview = string.IsNullOrWhiteSpace(rawContent)
+            ? "empty_response"
+            : rawContent.Trim().ReplaceLineEndings(" ");
+        if (preview.Length > 220)
+        {
+            preview = preview[..220];
+        }
+
+        return $"HTTP={(int)statusCode} | RawPreview={preview}";
+    }
+
     private static string? ExtractCompactCodigoEstatus(string? codigoEstatus)
     {
         if (string.IsNullOrWhiteSpace(codigoEstatus))
@@ -262,15 +312,142 @@ public class FacturaloPlusStatusQueryGateway : IFiscalStatusQueryGateway
 
         var match = System.Text.RegularExpressions.Regex.Match(
             normalized,
-            @"^(N\s+\d{3})",
+            @"^(N)\s*[- ]?\s*(\d{3})",
             System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
 
         if (match.Success)
         {
-            return match.Groups[1].Value.ToUpperInvariant();
+            return $"{match.Groups[1].Value.ToUpperInvariant()}-{match.Groups[2].Value}";
         }
 
         return normalized.Length <= 20 ? normalized : normalized[..20];
+    }
+
+    private static FacturaloPlusStatusQueryResponse? TryParseProviderResponseElement(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.String)
+        {
+            return TryParseProviderResponse(element.GetString() ?? string.Empty);
+        }
+
+        if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in element.EnumerateArray())
+            {
+                var parsedItem = TryParseProviderResponseElement(item);
+                if (HasAnyMeaningfulField(parsedItem))
+                {
+                    return parsedItem;
+                }
+            }
+
+            return null;
+        }
+
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        var directResponse = BuildResponseFromObject(element);
+        if (HasAnyMeaningfulField(directResponse))
+        {
+            return directResponse;
+        }
+
+        foreach (var wrapperName in new[] { "response", "data", "result", "resultado", "payload", "sat", "consulta" })
+        {
+            if (!TryGetPropertyIgnoreCase(element, wrapperName, out var nestedElement))
+            {
+                continue;
+            }
+
+            var parsedNested = TryParseProviderResponseElement(nestedElement);
+            if (HasAnyMeaningfulField(parsedNested))
+            {
+                return parsedNested;
+            }
+        }
+
+        foreach (var property in element.EnumerateObject())
+        {
+            if (property.Value.ValueKind is not (JsonValueKind.Object or JsonValueKind.Array or JsonValueKind.String))
+            {
+                continue;
+            }
+
+            var parsedNested = TryParseProviderResponseElement(property.Value);
+            if (HasAnyMeaningfulField(parsedNested))
+            {
+                return parsedNested;
+            }
+        }
+
+        return directResponse;
+    }
+
+    private static FacturaloPlusStatusQueryResponse BuildResponseFromObject(JsonElement root)
+    {
+        return new FacturaloPlusStatusQueryResponse
+        {
+            CodigoEstatus = ReadString(root, "CodigoEstatus", "codigoEstatus", "CodEstatus", "codEstatus", "code", "codigo"),
+            EsCancelable = ReadString(root, "EsCancelable", "esCancelable"),
+            Estado = ReadString(root, "Estado", "estado"),
+            EstatusCancelacion = ReadString(root, "EstatusCancelacion", "estatusCancelacion", "estatus", "statusCancelacion"),
+            TrackingId = ReadString(root, "trackingId", "tracking", "folio", "id"),
+            ErrorCode = ReadString(root, "errorCode", "codigoError", "codigo", "code"),
+            ErrorMessage = ReadString(root, "errorMessage", "mensajeError", "descripcionError", "message", "mensaje")
+        };
+    }
+
+    private static FacturaloPlusStatusQueryResponse? TryParseProviderResponseFromText(string rawContent)
+    {
+        var response = new FacturaloPlusStatusQueryResponse
+        {
+            CodigoEstatus = ExtractField(rawContent, "CodigoEstatus", "codigoEstatus", "CodEstatus", "codEstatus"),
+            EsCancelable = ExtractField(rawContent, "EsCancelable", "esCancelable"),
+            Estado = ExtractField(rawContent, "Estado", "estado"),
+            EstatusCancelacion = ExtractField(rawContent, "EstatusCancelacion", "estatusCancelacion"),
+            TrackingId = ExtractField(rawContent, "trackingId", "tracking", "folio", "id"),
+            ErrorCode = ExtractField(rawContent, "errorCode", "codigoError"),
+            ErrorMessage = ExtractField(rawContent, "errorMessage", "mensajeError", "descripcionError", "message", "mensaje")
+        };
+
+        return HasAnyMeaningfulField(response) ? response : null;
+    }
+
+    private static bool HasAnyMeaningfulField(FacturaloPlusStatusQueryResponse? response)
+    {
+        return response is not null
+            && (!string.IsNullOrWhiteSpace(response.CodigoEstatus)
+                || !string.IsNullOrWhiteSpace(response.EsCancelable)
+                || !string.IsNullOrWhiteSpace(response.Estado)
+                || !string.IsNullOrWhiteSpace(response.EstatusCancelacion)
+                || !string.IsNullOrWhiteSpace(response.TrackingId)
+                || !string.IsNullOrWhiteSpace(response.ErrorCode)
+                || !string.IsNullOrWhiteSpace(response.ErrorMessage));
+    }
+
+    private static string? ExtractField(string rawContent, params string[] fieldNames)
+    {
+        foreach (var fieldName in fieldNames)
+        {
+            var match = System.Text.RegularExpressions.Regex.Match(
+                rawContent,
+                $@"{System.Text.RegularExpressions.Regex.Escape(fieldName)}\s*[:=]\s*[""']?(?<value>[^""'\r\n,|}}]+)",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+            if (match.Success)
+            {
+                var value = match.Groups["value"].Value.Trim();
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    return value;
+                }
+            }
+        }
+
+        return null;
     }
 
     private static string? ReadString(JsonElement root, params string[] propertyNames)

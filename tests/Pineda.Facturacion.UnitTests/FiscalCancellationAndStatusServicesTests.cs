@@ -362,6 +362,46 @@ public class FiscalCancellationAndStatusServicesTests
     }
 
     [Fact]
+    public async Task RefreshFiscalDocumentStatus_ValidationFailed_Persists_Provider_Diagnostics()
+    {
+        var fiscalDocument = CreateStampedFiscalDocument();
+        var fiscalStamp = CreateFiscalStamp();
+        var service = new RefreshFiscalDocumentStatusService(
+            new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
+            new FakeFiscalStampRepository { ExistingTracked = fiscalStamp },
+            new FakeFiscalStatusQueryGateway
+            {
+                NextResult = new FiscalStatusQueryGatewayResult
+                {
+                    Outcome = FiscalStatusQueryGatewayOutcome.ValidationFailed,
+                    ProviderName = "FacturaloPlus",
+                    ProviderOperation = "consultarEstadoSAT",
+                    ProviderCode = "N-998",
+                    ProviderMessage = "CodigoEstatus=N - 998: No fue posible consultar.",
+                    SupportMessage = "HTTP=200 | RawPreview=<html>unexpected provider response</html>",
+                    RawResponseSummaryJson = "{\"HttpStatusCode\":200,\"RawContentPreview\":\"<html>unexpected provider response</html>\"}",
+                    ErrorMessage = "Provider status query response could not be parsed.",
+                    CheckedAtUtc = new DateTime(2026, 3, 29, 20, 0, 0, DateTimeKind.Utc)
+                }
+            },
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new RefreshFiscalDocumentStatusCommand
+        {
+            FiscalDocumentId = fiscalDocument.Id
+        });
+
+        Assert.Equal(RefreshFiscalDocumentStatusOutcome.ValidationFailed, result.Outcome);
+        Assert.Equal("N-998", result.ProviderCode);
+        Assert.Contains("No fue posible consultar", result.ProviderMessage);
+        Assert.Contains("RawPreview", result.SupportMessage);
+        Assert.Contains("unexpected provider response", result.RawResponseSummaryJson);
+        Assert.Equal("N-998", fiscalStamp.LastStatusProviderCode);
+        Assert.Contains("No fue posible consultar", fiscalStamp.LastStatusProviderMessage);
+        Assert.Contains("unexpected provider response", fiscalStamp.LastStatusRawResponseSummaryJson);
+    }
+
+    [Fact]
     public async Task RefreshFiscalDocumentStatus_CanAlignLocalStatus_WhenProviderConfirmsCancelled()
     {
         var fiscalDocument = CreateStampedFiscalDocument();

@@ -402,6 +402,57 @@ describe('IssuedCfdisPageComponent', () => {
     expect(fixture.componentInstance['selectedCancellation']()?.status).toBe('Requested');
   });
 
+  it('disables refresh-status in the issued detail when the CFDI has no stamped UUID evidence', async () => {
+    const getStamp = vi.fn().mockReturnValue(throwError(() => ({ status: 404 })));
+    const getFiscalDocumentById = vi.fn().mockReturnValue(of({
+      id: 40,
+      billingDocumentId: 30,
+      issuerProfileId: 1,
+      fiscalReceiverId: 9,
+      status: 'Prepared',
+      cfdiVersion: '4.0',
+      documentType: 'I',
+      series: 'A',
+      folio: '31787',
+      issuedAtUtc: '2026-03-24T12:00:00Z',
+      currencyCode: 'MXN',
+      exchangeRate: 1,
+      paymentMethodSat: 'PPD',
+      paymentFormSat: '99',
+      paymentCondition: 'CREDITO',
+      isCreditSale: true,
+      creditDays: 7,
+      issuerRfc: 'AAA010101AAA',
+      issuerLegalName: 'Issuer SA',
+      issuerFiscalRegimeCode: '601',
+      issuerPostalCode: '01000',
+      pacEnvironment: 'Sandbox',
+      hasCertificateReference: true,
+      hasPrivateKeyReference: true,
+      hasPrivateKeyPasswordReference: true,
+      receiverRfc: 'BBB010101BBB',
+      receiverLegalName: 'Receiver One',
+      receiverFiscalRegimeCode: '601',
+      receiverCfdiUseCode: 'G03',
+      receiverPostalCode: '02000',
+      receiverCountryCode: 'MX',
+      receiverForeignTaxRegistration: null,
+      subtotal: 100,
+      discountTotal: 0,
+      taxTotal: 16,
+      total: 116,
+      items: [],
+      specialFields: []
+    }));
+    const fixture = await configure({ getStamp, getFiscalDocumentById });
+
+    await fixture.componentInstance['openDetailModal'](fixture.componentInstance['items']()[0]);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['canRefreshSelectedDocument']()).toBe(false);
+    expect(fixture.nativeElement.textContent).toContain('Actualizar estatus solo está disponible para CFDI timbrados con UUID.');
+  });
+
   it('shows filter validation when the date range is invalid', async () => {
     const fixture = await configure();
 

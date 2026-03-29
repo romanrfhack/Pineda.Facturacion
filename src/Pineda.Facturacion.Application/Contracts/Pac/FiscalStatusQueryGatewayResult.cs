@@ -14,6 +14,8 @@ public class FiscalStatusQueryGatewayResult
 
     public string? ProviderMessage { get; set; }
 
+    public string? SupportMessage { get; set; }
+
     public string? ExternalStatus { get; set; }
 
     public string? Cancelability { get; set; }

@@ -91,6 +91,65 @@ public class FacturaloPlusStatusQueryGatewayTests
     }
 
     [Fact]
+    public async Task QueryStatusAsync_Parses_Nested_Response_Object()
+    {
+        var gateway = CreateGateway(
+            """
+            {
+              "response": {
+                "CodigoEstatus": "S - Comprobante obtenido satisfactoriamente.",
+                "EsCancelable": "Cancelable sin aceptación",
+                "Estado": "Vigente",
+                "EstatusCancelacion": "En proceso"
+              }
+            }
+            """,
+            HttpStatusCode.OK);
+
+        var result = await gateway.QueryStatusAsync(CreateRequest());
+
+        Assert.Equal(FiscalStatusQueryGatewayOutcome.Refreshed, result.Outcome);
+        Assert.Equal("S", result.ProviderCode);
+        Assert.Equal("Vigente", result.ExternalStatus);
+        Assert.Equal("Cancelable sin aceptación", result.Cancelability);
+        Assert.Equal("En proceso", result.CancellationStatus);
+    }
+
+    [Fact]
+    public async Task QueryStatusAsync_Parses_Json_String_Response()
+    {
+        var gateway = CreateGateway(
+            """
+            "{\"CodigoEstatus\":\"N - 998: No fue posible consultar.\",\"Estado\":\"No Encontrado\",\"EstatusCancelacion\":\"Plazo vencido\"}"
+            """,
+            HttpStatusCode.OK);
+
+        var result = await gateway.QueryStatusAsync(CreateRequest());
+
+        Assert.Equal(FiscalStatusQueryGatewayOutcome.Refreshed, result.Outcome);
+        Assert.Equal("N-998", result.ProviderCode);
+        Assert.Contains("CodigoEstatus=N - 998: No fue posible consultar.", result.ProviderMessage);
+        Assert.Equal("No Encontrado", result.ExternalStatus);
+        Assert.Equal("Plazo vencido", result.CancellationStatus);
+    }
+
+    [Fact]
+    public async Task QueryStatusAsync_Parses_Textual_Response_When_Json_Is_Invalid()
+    {
+        var gateway = CreateGateway(
+            "CodigoEstatus: N - 998: No fue posible consultar | Estado: Expresión impresa inválida | EsCancelable: No cancelable",
+            HttpStatusCode.OK);
+
+        var result = await gateway.QueryStatusAsync(CreateRequest());
+
+        Assert.Equal(FiscalStatusQueryGatewayOutcome.Refreshed, result.Outcome);
+        Assert.Equal("N-998", result.ProviderCode);
+        Assert.Equal("Expresión impresa inválida", result.ExternalStatus);
+        Assert.Equal("No cancelable", result.Cancelability);
+        Assert.Contains("CodigoEstatus=N - 998: No fue posible consultar", result.ProviderMessage);
+    }
+
+    [Fact]
     public async Task QueryStatusAsync_Returns_ValidationFailed_When_ApiKey_Cannot_Be_Resolved()
     {
         var handler = new RecordingHandler(new HttpResponseMessage(HttpStatusCode.OK)
@@ -115,6 +174,19 @@ public class FacturaloPlusStatusQueryGatewayTests
 
         Assert.Equal(FiscalStatusQueryGatewayOutcome.ValidationFailed, result.Outcome);
         Assert.Contains("API key", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task QueryStatusAsync_Returns_Diagnostic_Details_When_Response_Cannot_Be_Parsed()
+    {
+        var gateway = CreateGateway("<html><body>unexpected provider response</body></html>", HttpStatusCode.OK);
+
+        var result = await gateway.QueryStatusAsync(CreateRequest());
+
+        Assert.Equal(FiscalStatusQueryGatewayOutcome.ValidationFailed, result.Outcome);
+        Assert.Equal("No se identificaron campos SAT en la respuesta del proveedor.", result.ProviderMessage);
+        Assert.Contains("RawPreview=", result.SupportMessage);
+        Assert.Contains("unexpected provider response", result.RawResponseSummaryJson);
     }
 
     [Fact]
