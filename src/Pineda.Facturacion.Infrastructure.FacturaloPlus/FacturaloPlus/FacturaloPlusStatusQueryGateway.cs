@@ -78,13 +78,16 @@ public class FacturaloPlusStatusQueryGateway : IFiscalStatusQueryGateway
 
         if ((int)response.StatusCode >= 500)
         {
+            var providerCode = ExtractCompactCodigoEstatus(providerResponse?.CodigoEstatus)
+                ?? providerResponse?.ErrorCode
+                ?? ((int)response.StatusCode).ToString(CultureInfo.InvariantCulture);
             return new FiscalStatusQueryGatewayResult
             {
                 Outcome = FiscalStatusQueryGatewayOutcome.Unavailable,
                 ProviderName = _options.ProviderName,
                 ProviderOperation = "consultarEstadoSAT",
                 ProviderTrackingId = providerResponse?.TrackingId,
-                ProviderCode = providerResponse?.CodigoEstatus ?? ((int)response.StatusCode).ToString(CultureInfo.InvariantCulture),
+                ProviderCode = providerCode,
                 ProviderMessage = BuildProviderMessage(providerResponse),
                 CheckedAtUtc = DateTime.UtcNow,
                 RawResponseSummaryJson = rawResponseSummaryJson,
@@ -106,13 +109,15 @@ public class FacturaloPlusStatusQueryGateway : IFiscalStatusQueryGateway
             };
         }
 
+        var compactProviderCode = ExtractCompactCodigoEstatus(providerResponse.CodigoEstatus) ?? providerResponse.CodigoEstatus;
+
         return new FiscalStatusQueryGatewayResult
         {
             Outcome = FiscalStatusQueryGatewayOutcome.Refreshed,
             ProviderName = _options.ProviderName,
             ProviderOperation = "consultarEstadoSAT",
             ProviderTrackingId = providerResponse.TrackingId,
-            ProviderCode = providerResponse.CodigoEstatus,
+            ProviderCode = compactProviderCode,
             ProviderMessage = BuildProviderMessage(providerResponse),
             ExternalStatus = providerResponse.Estado,
             Cancelability = providerResponse.EsCancelable,
@@ -214,6 +219,11 @@ public class FacturaloPlusStatusQueryGateway : IFiscalStatusQueryGateway
         }
 
         var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(response.CodigoEstatus))
+        {
+            parts.Add($"CodigoEstatus={response.CodigoEstatus}");
+        }
+
         if (!string.IsNullOrWhiteSpace(response.Estado))
         {
             parts.Add($"Estado={response.Estado}");
@@ -235,6 +245,32 @@ public class FacturaloPlusStatusQueryGateway : IFiscalStatusQueryGateway
         }
 
         return response.ErrorMessage;
+    }
+
+    private static string? ExtractCompactCodigoEstatus(string? codigoEstatus)
+    {
+        if (string.IsNullOrWhiteSpace(codigoEstatus))
+        {
+            return null;
+        }
+
+        var normalized = codigoEstatus.Trim();
+        if (normalized.StartsWith("S", StringComparison.OrdinalIgnoreCase))
+        {
+            return "S";
+        }
+
+        var match = System.Text.RegularExpressions.Regex.Match(
+            normalized,
+            @"^(N\s+\d{3})",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+        if (match.Success)
+        {
+            return match.Groups[1].Value.ToUpperInvariant();
+        }
+
+        return normalized.Length <= 20 ? normalized : normalized[..20];
     }
 
     private static string? ReadString(JsonElement root, params string[] propertyNames)

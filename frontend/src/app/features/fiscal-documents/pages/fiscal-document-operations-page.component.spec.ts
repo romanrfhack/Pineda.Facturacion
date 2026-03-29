@@ -577,6 +577,55 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     confirmSpy.mockRestore();
   });
 
+  it('reconciles the local cancellation card immediately after a successful cancellation', async () => {
+    const cancelFiscalDocument = vi.fn().mockReturnValue(of({
+      outcome: 'Cancelled',
+      isSuccess: true,
+      fiscalDocumentId: 40,
+      fiscalDocumentStatus: 'Cancelled',
+      fiscalCancellationId: 90,
+      cancellationStatus: 'Cancelled',
+      providerName: 'FacturaloPlus',
+      providerTrackingId: 'TRACK-CANCEL-201',
+      providerCode: '201',
+      providerMessage: 'Solicitud de cancelación de UUID exitosa. - ',
+      errorCode: null,
+      rawResponseSummaryJson: '{"httpStatusCode":200}',
+      supportMessage: 'ProviderCode=201 | ProviderMessage=Solicitud de cancelación de UUID exitosa. - ',
+      cancelledAtUtc: '2026-03-29T18:40:00Z'
+    }));
+    const getCancellation = vi.fn().mockReturnValue(of({
+      fiscalDocumentId: 40,
+      status: 'Rejected',
+      cancellationReasonCode: '03',
+      replacementUuid: null,
+      providerName: 'FacturaloPlus',
+      providerTrackingId: null,
+      providerCode: '404',
+      providerMessage: 'Viejo rechazo',
+      errorCode: '404',
+      errorMessage: 'Old error',
+      supportMessage: 'old',
+      rawResponseSummaryJson: '{"old":true}',
+      requestedAtUtc: '2026-03-29T12:00:00Z',
+      cancelledAtUtc: null
+    }));
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const fixture = await configure({ cancelFiscalDocument, getCancellation });
+
+    fixture.componentInstance['openCancelDialog']();
+    fixture.componentInstance['onCancellationReasonChange']('03');
+
+    await fixture.componentInstance['cancel']();
+
+    expect(fixture.componentInstance['fiscalDocument']()?.status).toBe('Cancelled');
+    expect(fixture.componentInstance['cancellation']()?.status).toBe('Cancelled');
+    expect(fixture.componentInstance['cancellation']()?.providerCode).toBe('201');
+    expect(fixture.componentInstance['lastOperationMessage']()).toContain('Cancelación exitosa');
+    expect(fixture.componentInstance['canCancelCurrentFiscalDocument']()).toBe(false);
+    confirmSpy.mockRestore();
+  });
+
   it('allows reopening cancellation when the document is in CancellationRejected', async () => {
     const fixture = await configure({
       getFiscalDocumentById: vi.fn().mockReturnValue(of({

@@ -1127,14 +1127,18 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     await this.runOperation(async () => {
       const response = await firstValueFrom(this.api.cancelFiscalDocument(fiscalDocumentId, cancellationRequest));
       this.lastOperationMessage.set(
-        response.providerMessage
+        (response.isSuccess ? 'Cancelación exitosa.' : null)
+          || response.providerMessage
           || response.supportMessage
           || response.errorMessage
           || `Resultado de la cancelación: ${getDisplayLabel(response.outcome)}`
       );
       this.showCancelDialog.set(false);
-      await this.loadFiscalDocument(fiscalDocumentId);
-      await this.loadCancellation(fiscalDocumentId);
+      if (!response.isSuccess) {
+        await this.loadFiscalDocument(fiscalDocumentId);
+        await this.loadCancellation(fiscalDocumentId);
+      }
+      this.reconcileCancellationAfterOperation(response, cancellationRequest);
     });
   }
 
@@ -1385,7 +1389,13 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
 
   private async loadCancellation(fiscalDocumentId: number, notifyOnMissing = false): Promise<void> {
     try {
-      this.cancellation.set(await firstValueFrom(this.api.getCancellation(fiscalDocumentId)));
+      const fetchedCancellation = await firstValueFrom(this.api.getCancellation(fiscalDocumentId));
+      const currentCancellation = this.cancellation();
+      if (currentCancellation?.status === 'Cancelled' && fetchedCancellation.status !== 'Cancelled') {
+        return;
+      }
+
+      this.cancellation.set(fetchedCancellation);
     } catch {
       this.cancellation.set(null);
       if (notifyOnMissing) {
@@ -1451,6 +1461,40 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
         ? normalizeOptionalText(this.cancellationReplacementUuid)
         : undefined
     };
+  }
+
+  private reconcileCancellationAfterOperation(
+    response: import('../models/fiscal-documents.models').CancelFiscalDocumentResponse,
+    request: CancelFiscalDocumentRequest): void
+  {
+    const currentDocument = this.fiscalDocument();
+    if (currentDocument && response.fiscalDocumentStatus) {
+      this.fiscalDocument.set({
+        ...currentDocument,
+        status: response.fiscalDocumentStatus
+      });
+    }
+
+    const currentCancellation = this.cancellation();
+    const nextStatus = response.isSuccess
+      ? 'Cancelled'
+      : response.cancellationStatus ?? currentCancellation?.status ?? 'Rejected';
+    this.cancellation.set({
+      fiscalDocumentId: response.fiscalDocumentId,
+      status: nextStatus,
+      cancellationReasonCode: request.cancellationReasonCode,
+      replacementUuid: request.replacementUuid ?? null,
+      providerName: response.providerName ?? currentCancellation?.providerName ?? 'FacturaloPlus',
+      providerTrackingId: response.providerTrackingId ?? currentCancellation?.providerTrackingId ?? null,
+      providerCode: response.providerCode ?? currentCancellation?.providerCode ?? null,
+      providerMessage: response.providerMessage ?? currentCancellation?.providerMessage ?? null,
+      errorCode: response.errorCode ?? currentCancellation?.errorCode ?? null,
+      errorMessage: response.errorMessage ?? currentCancellation?.errorMessage ?? null,
+      supportMessage: response.supportMessage ?? currentCancellation?.supportMessage ?? null,
+      rawResponseSummaryJson: response.rawResponseSummaryJson ?? currentCancellation?.rawResponseSummaryJson ?? null,
+      requestedAtUtc: currentCancellation?.requestedAtUtc ?? new Date().toISOString(),
+      cancelledAtUtc: response.cancelledAtUtc ?? currentCancellation?.cancelledAtUtc ?? null
+    });
   }
 
   protected canCancelCurrentFiscalDocument(): boolean {

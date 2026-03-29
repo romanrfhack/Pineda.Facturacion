@@ -264,8 +264,8 @@ public class FiscalCancellationAndStatusServicesTests
                 Outcome = FiscalStatusQueryGatewayOutcome.Refreshed,
                 ProviderName = "FacturaloPlus",
                 ProviderOperation = "consultarEstadoSAT",
-                ProviderCode = "S - Comprobante obtenido satisfactoriamente.",
-                ProviderMessage = "Estado=Vigente | EsCancelable=Cancelable con aceptación",
+                ProviderCode = "S",
+                ProviderMessage = "CodigoEstatus=S - Comprobante obtenido satisfactoriamente. | Estado=Vigente | EsCancelable=Cancelable con aceptación",
                 ExternalStatus = "Vigente",
                 Cancelability = "Cancelable con aceptación",
                 CheckedAtUtc = new DateTime(2026, 3, 20, 2, 0, 0, DateTimeKind.Utc),
@@ -287,10 +287,10 @@ public class FiscalCancellationAndStatusServicesTests
         Assert.True(result.IsSuccess);
         Assert.Equal(RefreshFiscalDocumentStatusOutcome.Refreshed, result.Outcome);
         Assert.Equal("Vigente", fiscalStamp.LastKnownExternalStatus);
-        Assert.Equal("S - Comprobante obtenido satisfactoriamente.", fiscalStamp.LastStatusProviderCode);
+        Assert.Equal("S", fiscalStamp.LastStatusProviderCode);
         Assert.Equal("Active", result.OperationalStatus);
         Assert.Contains("Documento vigente en SAT", result.OperationalMessage);
-        Assert.Contains("CodigoEstatus=S - Comprobante obtenido satisfactoriamente.", result.SupportMessage);
+        Assert.Contains("CodigoEstatus=S", result.SupportMessage);
     }
 
     [Fact]
@@ -407,7 +407,7 @@ public class FiscalCancellationAndStatusServicesTests
                     Outcome = FiscalStatusQueryGatewayOutcome.Refreshed,
                     ProviderName = "FacturaloPlus",
                     ProviderOperation = "consultarEstadoSAT",
-                    ProviderCode = "S - Comprobante obtenido satisfactoriamente.",
+                    ProviderCode = "S",
                     ExternalStatus = "Vigente",
                     Cancelability = "Cancelable con aceptación",
                     CancellationStatus = "En proceso",
@@ -442,7 +442,7 @@ public class FiscalCancellationAndStatusServicesTests
                     Outcome = FiscalStatusQueryGatewayOutcome.Refreshed,
                     ProviderName = "FacturaloPlus",
                     ProviderOperation = "consultarEstadoSAT",
-                    ProviderCode = "S - Comprobante obtenido satisfactoriamente.",
+                    ProviderCode = "S",
                     ExternalStatus = "Vigente",
                     CancellationStatus = "Solicitud rechazada",
                     CheckedAtUtc = DateTime.UtcNow
@@ -474,7 +474,7 @@ public class FiscalCancellationAndStatusServicesTests
                     Outcome = FiscalStatusQueryGatewayOutcome.Refreshed,
                     ProviderName = "FacturaloPlus",
                     ProviderOperation = "consultarEstadoSAT",
-                    ProviderCode = "S - Comprobante obtenido satisfactoriamente.",
+                    ProviderCode = "S",
                     ExternalStatus = "Vigente",
                     CancellationStatus = "Plazo vencido",
                     CheckedAtUtc = DateTime.UtcNow

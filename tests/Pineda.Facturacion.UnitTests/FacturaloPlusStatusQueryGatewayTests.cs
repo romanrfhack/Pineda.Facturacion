@@ -79,10 +79,11 @@ public class FacturaloPlusStatusQueryGatewayTests
         var result = await gateway.QueryStatusAsync(CreateRequest());
 
         Assert.Equal(FiscalStatusQueryGatewayOutcome.Refreshed, result.Outcome);
-        Assert.Equal("S - Comprobante obtenido satisfactoriamente.", result.ProviderCode);
+        Assert.Equal("S", result.ProviderCode);
         Assert.Equal("Vigente", result.ExternalStatus);
         Assert.Equal("Cancelable con aceptación", result.Cancelability);
         Assert.Equal("En proceso", result.CancellationStatus);
+        Assert.Contains("CodigoEstatus=S - Comprobante obtenido satisfactoriamente.", result.ProviderMessage);
         Assert.Contains("Estado=Vigente", result.ProviderMessage);
         Assert.Contains("EsCancelable=Cancelable con aceptación", result.ProviderMessage);
         Assert.Contains("EstatusCancelacion=En proceso", result.ProviderMessage);
