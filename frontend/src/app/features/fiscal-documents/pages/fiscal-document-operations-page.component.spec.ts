@@ -513,6 +513,93 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     }));
   });
 
+  it('shows SAT cancellation reasons with code plus description in the cancellation dialog', async () => {
+    const fixture = await configure();
+
+    fixture.componentInstance['openCancelDialog']();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('01 - Comprobante emitido con errores con relación');
+    expect(fixture.nativeElement.textContent).toContain('02 - Comprobante emitido con errores sin relación');
+    expect(fixture.nativeElement.textContent).toContain('03 - No se llevó a cabo la operación');
+    expect(fixture.nativeElement.textContent).toContain('04 - Operación nominativa relacionada en una factura global');
+  });
+
+  it('requires replacementUuid only for reason 01 and clears it when switching to another reason', async () => {
+    const fixture = await configure();
+
+    fixture.componentInstance['openCancelDialog']();
+    fixture.componentInstance['onCancellationReasonChange']('01');
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['requiresCancellationReplacementUuid']()).toBe(true);
+    expect(fixture.componentInstance['getCancellationValidationError']()).toContain('UUID de sustitución');
+
+    fixture.componentInstance['onCancellationReplacementUuidChange']('UUID-SUSTITUTO');
+    expect(fixture.componentInstance['getCancellationValidationError']()).toBeNull();
+
+    fixture.componentInstance['onCancellationReasonChange']('02');
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['requiresCancellationReplacementUuid']()).toBe(false);
+    expect(fixture.componentInstance['cancellationReplacementUuid']).toBe('');
+    expect(fixture.componentInstance['getCancellationValidationError']()).toBeNull();
+  });
+
+  it('submits cancellation with SAT reason and replacementUuid only when reason 01 applies', async () => {
+    const cancelFiscalDocument = vi.fn().mockReturnValue(of({
+      outcome: 'Cancelled',
+      isSuccess: true,
+      fiscalDocumentId: 40,
+      fiscalDocumentStatus: 'Cancelled',
+      fiscalCancellationId: 90,
+      cancellationStatus: 'Cancelled',
+      providerName: 'FacturaloPlus',
+      providerTrackingId: 'TRACK-CANCEL-1',
+      cancelledAtUtc: '2026-03-28T12:00:00Z'
+    }));
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const fixture = await configure({ cancelFiscalDocument });
+
+    fixture.componentInstance['openCancelDialog']();
+    fixture.componentInstance['onCancellationReasonChange']('01');
+    fixture.componentInstance['onCancellationReplacementUuidChange']('UUID-SUSTITUTO');
+
+    await fixture.componentInstance['cancel']();
+
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(cancelFiscalDocument).toHaveBeenCalledWith(40, {
+      cancellationReasonCode: '01',
+      replacementUuid: 'UUID-SUSTITUTO'
+    });
+    expect(fixture.componentInstance['showCancelDialog']()).toBe(false);
+
+    confirmSpy.mockRestore();
+  });
+
+  it('prefers the operational SAT message when refreshing status', async () => {
+    const refreshStatus = vi.fn().mockReturnValue(of({
+      outcome: 'Refreshed',
+      isSuccess: true,
+      fiscalDocumentId: 40,
+      fiscalDocumentStatus: 'CancellationRequested',
+      uuid: 'UUID-123',
+      lastKnownExternalStatus: 'Vigente',
+      providerCode: 'S - Comprobante obtenido satisfactoriamente.',
+      providerMessage: 'Estado=Vigente | EstatusCancelacion=En proceso',
+      operationalStatus: 'CancellationPending',
+      operationalMessage: 'La cancelación fue solicitada y sigue en proceso en SAT.',
+      supportMessage: 'CodigoEstatus=S - Comprobante obtenido satisfactoriamente. | Estado=Vigente | EstatusCancelacion=En proceso',
+      checkedAtUtc: '2026-03-29T10:00:00Z'
+    }));
+    const fixture = await configure({ refreshStatus });
+
+    await fixture.componentInstance['refreshStatus']();
+
+    expect(refreshStatus).toHaveBeenCalledWith(40);
+    expect(fixture.componentInstance['lastOperationMessage']()).toContain('sigue en proceso en SAT');
+  });
+
   it('renders dynamic special billing fields for the selected receiver', async () => {
     const fixture = await configure(
       undefined,

@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Net;
-using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Options;
@@ -38,29 +37,25 @@ public class FacturaloPlusStatusQueryGateway : IFiscalStatusQueryGateway
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var apiKey = await ResolveApiKeyAsync(cancellationToken);
-        if (!string.IsNullOrWhiteSpace(_options.ApiKeyReference) && string.IsNullOrWhiteSpace(apiKey))
+        var apiKey = await ResolveRequiredSecretAsync(_options.ApiKeyReference, cancellationToken);
+        if (string.IsNullOrWhiteSpace(apiKey))
         {
             return ValidationFailed("Configured PAC API key reference could not be resolved.");
         }
 
-        var payload = new FacturaloPlusStatusQueryPayload
+        var formPayload = new List<KeyValuePair<string, string>>
         {
-            Uuid = request.Uuid,
-            IssuerRfc = request.IssuerRfc,
-            ReceiverRfc = request.ReceiverRfc,
-            Total = request.Total
+            new("apikey", apiKey),
+            new("uuid", request.Uuid),
+            new("rfcEmisor", request.IssuerRfc),
+            new("rfcReceptor", request.ReceiverRfc),
+            new("total", request.Total.ToString("0.######", CultureInfo.InvariantCulture))
         };
 
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _options.StatusQueryPath)
         {
-            Content = JsonContent.Create(payload, options: JsonOptions)
+            Content = new FormUrlEncodedContent(formPayload)
         };
-
-        if (!string.IsNullOrWhiteSpace(apiKey) && !string.IsNullOrWhiteSpace(_options.ApiKeyHeaderName))
-        {
-            httpRequest.Headers.TryAddWithoutValidation(_options.ApiKeyHeaderName, apiKey);
-        }
 
         HttpResponseMessage response;
         string responseContent;
@@ -78,24 +73,8 @@ public class FacturaloPlusStatusQueryGateway : IFiscalStatusQueryGateway
             return Unavailable("Provider transport failure.");
         }
 
-        var providerResponse = TryDeserialize(responseContent);
+        var providerResponse = TryParseProviderResponse(responseContent);
         var rawResponseSummaryJson = BuildRawResponseSummary(response.StatusCode, providerResponse, responseContent);
-
-        if (response.IsSuccessStatusCode && providerResponse is not null)
-        {
-            return new FiscalStatusQueryGatewayResult
-            {
-                Outcome = FiscalStatusQueryGatewayOutcome.Refreshed,
-                ProviderName = _options.ProviderName,
-                ProviderOperation = "status-query",
-                ProviderTrackingId = providerResponse.TrackingId,
-                ProviderCode = providerResponse.Code,
-                ProviderMessage = providerResponse.Message,
-                ExternalStatus = providerResponse.ExternalStatus,
-                CheckedAtUtc = providerResponse.CheckedAtUtc ?? DateTime.UtcNow,
-                RawResponseSummaryJson = rawResponseSummaryJson
-            };
-        }
 
         if ((int)response.StatusCode >= 500)
         {
@@ -103,9 +82,10 @@ public class FacturaloPlusStatusQueryGateway : IFiscalStatusQueryGateway
             {
                 Outcome = FiscalStatusQueryGatewayOutcome.Unavailable,
                 ProviderName = _options.ProviderName,
-                ProviderOperation = "status-query",
-                ProviderCode = providerResponse?.Code ?? ((int)response.StatusCode).ToString(CultureInfo.InvariantCulture),
-                ProviderMessage = providerResponse?.Message,
+                ProviderOperation = "consultarEstadoSAT",
+                ProviderTrackingId = providerResponse?.TrackingId,
+                ProviderCode = providerResponse?.CodigoEstatus ?? ((int)response.StatusCode).ToString(CultureInfo.InvariantCulture),
+                ProviderMessage = BuildProviderMessage(providerResponse),
                 CheckedAtUtc = DateTime.UtcNow,
                 RawResponseSummaryJson = rawResponseSummaryJson,
                 ErrorCode = providerResponse?.ErrorCode ?? "HTTP_" + (int)response.StatusCode,
@@ -113,27 +93,43 @@ public class FacturaloPlusStatusQueryGateway : IFiscalStatusQueryGateway
             };
         }
 
+        if (providerResponse is null)
+        {
+            return new FiscalStatusQueryGatewayResult
+            {
+                Outcome = FiscalStatusQueryGatewayOutcome.ValidationFailed,
+                ProviderName = _options.ProviderName,
+                ProviderOperation = "consultarEstadoSAT",
+                CheckedAtUtc = DateTime.UtcNow,
+                ErrorMessage = "Provider status query response could not be parsed.",
+                RawResponseSummaryJson = rawResponseSummaryJson
+            };
+        }
+
         return new FiscalStatusQueryGatewayResult
         {
             Outcome = FiscalStatusQueryGatewayOutcome.Refreshed,
             ProviderName = _options.ProviderName,
-            ProviderOperation = "status-query",
-            ProviderCode = providerResponse?.Code ?? ((int)response.StatusCode).ToString(CultureInfo.InvariantCulture),
-            ProviderMessage = providerResponse?.Message,
-            ExternalStatus = providerResponse?.ExternalStatus,
-            CheckedAtUtc = providerResponse?.CheckedAtUtc ?? DateTime.UtcNow,
+            ProviderOperation = "consultarEstadoSAT",
+            ProviderTrackingId = providerResponse.TrackingId,
+            ProviderCode = providerResponse.CodigoEstatus,
+            ProviderMessage = BuildProviderMessage(providerResponse),
+            ExternalStatus = providerResponse.Estado,
+            Cancelability = providerResponse.EsCancelable,
+            CancellationStatus = providerResponse.EstatusCancelacion,
+            CheckedAtUtc = DateTime.UtcNow,
             RawResponseSummaryJson = rawResponseSummaryJson
         };
     }
 
-    private async Task<string?> ResolveApiKeyAsync(CancellationToken cancellationToken)
+    private async Task<string?> ResolveRequiredSecretAsync(string? referenceKey, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(_options.ApiKeyReference))
+        if (string.IsNullOrWhiteSpace(referenceKey))
         {
             return null;
         }
 
-        return await _secretReferenceResolver.ResolveAsync(_options.ApiKeyReference, cancellationToken);
+        return await _secretReferenceResolver.ResolveAsync(referenceKey, cancellationToken);
     }
 
     private static string BuildRawResponseSummary(HttpStatusCode statusCode, FacturaloPlusStatusQueryResponse? response, string rawContent)
@@ -141,11 +137,11 @@ public class FacturaloPlusStatusQueryGateway : IFiscalStatusQueryGateway
         var summary = new
         {
             HttpStatusCode = (int)statusCode,
+            response?.CodigoEstatus,
+            response?.EsCancelable,
+            response?.Estado,
+            response?.EstatusCancelacion,
             response?.TrackingId,
-            response?.Code,
-            response?.Message,
-            response?.ExternalStatus,
-            response?.CheckedAtUtc,
             response?.ErrorCode,
             response?.ErrorMessage,
             RawContentPreview = string.IsNullOrWhiteSpace(rawContent)
@@ -156,7 +152,7 @@ public class FacturaloPlusStatusQueryGateway : IFiscalStatusQueryGateway
         return JsonSerializer.Serialize(summary, JsonOptions);
     }
 
-    private static FacturaloPlusStatusQueryResponse? TryDeserialize(string rawContent)
+    private static FacturaloPlusStatusQueryResponse? TryParseProviderResponse(string rawContent)
     {
         if (string.IsNullOrWhiteSpace(rawContent))
         {
@@ -165,7 +161,18 @@ public class FacturaloPlusStatusQueryGateway : IFiscalStatusQueryGateway
 
         try
         {
-            return JsonSerializer.Deserialize<FacturaloPlusStatusQueryResponse>(rawContent, JsonOptions);
+            using var json = JsonDocument.Parse(rawContent);
+            var root = json.RootElement;
+            return new FacturaloPlusStatusQueryResponse
+            {
+                CodigoEstatus = ReadString(root, "CodigoEstatus", "codigoEstatus", "code", "codigo"),
+                EsCancelable = ReadString(root, "EsCancelable", "esCancelable"),
+                Estado = ReadString(root, "Estado", "estado"),
+                EstatusCancelacion = ReadString(root, "EstatusCancelacion", "estatusCancelacion"),
+                TrackingId = ReadString(root, "trackingId", "tracking", "folio", "id"),
+                ErrorCode = ReadString(root, "errorCode", "codigoError"),
+                ErrorMessage = ReadString(root, "errorMessage", "mensajeError", "descripcionError", "message", "mensaje")
+            };
         }
         catch (JsonException)
         {
@@ -179,7 +186,7 @@ public class FacturaloPlusStatusQueryGateway : IFiscalStatusQueryGateway
         {
             Outcome = FiscalStatusQueryGatewayOutcome.ValidationFailed,
             ProviderName = _options.ProviderName,
-            ProviderOperation = "status-query",
+            ProviderOperation = "consultarEstadoSAT",
             CheckedAtUtc = DateTime.UtcNow,
             ErrorMessage = errorMessage,
             RawResponseSummaryJson = JsonSerializer.Serialize(new { error = errorMessage }, JsonOptions)
@@ -192,28 +199,88 @@ public class FacturaloPlusStatusQueryGateway : IFiscalStatusQueryGateway
         {
             Outcome = FiscalStatusQueryGatewayOutcome.Unavailable,
             ProviderName = _options.ProviderName,
-            ProviderOperation = "status-query",
+            ProviderOperation = "consultarEstadoSAT",
             CheckedAtUtc = DateTime.UtcNow,
             ErrorMessage = errorMessage,
             RawResponseSummaryJson = JsonSerializer.Serialize(new { error = errorMessage }, JsonOptions)
         };
     }
 
-    private sealed class FacturaloPlusStatusQueryPayload
+    private static string? BuildProviderMessage(FacturaloPlusStatusQueryResponse? response)
     {
-        public string Uuid { get; init; } = string.Empty;
-        public string IssuerRfc { get; init; } = string.Empty;
-        public string ReceiverRfc { get; init; } = string.Empty;
-        public decimal Total { get; init; }
+        if (response is null)
+        {
+            return null;
+        }
+
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(response.Estado))
+        {
+            parts.Add($"Estado={response.Estado}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(response.EsCancelable))
+        {
+            parts.Add($"EsCancelable={response.EsCancelable}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(response.EstatusCancelacion))
+        {
+            parts.Add($"EstatusCancelacion={response.EstatusCancelacion}");
+        }
+
+        if (parts.Count > 0)
+        {
+            return string.Join(" | ", parts);
+        }
+
+        return response.ErrorMessage;
+    }
+
+    private static string? ReadString(JsonElement root, params string[] propertyNames)
+    {
+        foreach (var propertyName in propertyNames)
+        {
+            if (!TryGetPropertyIgnoreCase(root, propertyName, out var value))
+            {
+                continue;
+            }
+
+            return value.ValueKind switch
+            {
+                JsonValueKind.String => value.GetString(),
+                JsonValueKind.Number => value.GetRawText(),
+                JsonValueKind.True => bool.TrueString,
+                JsonValueKind.False => bool.FalseString,
+                _ => value.GetRawText()
+            };
+        }
+
+        return null;
+    }
+
+    private static bool TryGetPropertyIgnoreCase(JsonElement element, string propertyName, out JsonElement value)
+    {
+        foreach (var property in element.EnumerateObject())
+        {
+            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+            {
+                value = property.Value;
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
     }
 
     private sealed class FacturaloPlusStatusQueryResponse
     {
+        public string? CodigoEstatus { get; init; }
+        public string? EsCancelable { get; init; }
+        public string? Estado { get; init; }
+        public string? EstatusCancelacion { get; init; }
         public string? TrackingId { get; init; }
-        public string? Code { get; init; }
-        public string? Message { get; init; }
-        public string? ExternalStatus { get; init; }
-        public DateTime? CheckedAtUtc { get; init; }
         public string? ErrorCode { get; init; }
         public string? ErrorMessage { get; init; }
     }

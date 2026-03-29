@@ -16,6 +16,10 @@ public class FiscalStatusQueryGatewayResult
 
     public string? ExternalStatus { get; set; }
 
+    public string? Cancelability { get; set; }
+
+    public string? CancellationStatus { get; set; }
+
     public DateTime CheckedAtUtc { get; set; }
 
     public string? RawResponseSummaryJson { get; set; }

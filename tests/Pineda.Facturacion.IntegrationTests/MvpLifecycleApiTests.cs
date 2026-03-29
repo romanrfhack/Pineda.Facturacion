@@ -354,7 +354,7 @@ public class MvpLifecycleApiTests
         {
             Outcome = FiscalStatusQueryGatewayOutcome.Refreshed,
             ProviderName = "FacturaloPlus",
-            ProviderOperation = "status-query",
+            ProviderOperation = "consultarEstadoSAT",
             ExternalStatus = "CANCELLED",
             CheckedAtUtc = DateTime.UtcNow
         };
@@ -409,7 +409,7 @@ public class MvpLifecycleApiTests
         {
             Outcome = FiscalStatusQueryGatewayOutcome.Unavailable,
             ProviderName = "FacturaloPlus",
-            ProviderOperation = "status-query",
+            ProviderOperation = "consultarEstadoSAT",
             ErrorMessage = "Timeout",
             CheckedAtUtc = DateTime.UtcNow
         };
@@ -720,8 +720,8 @@ internal sealed class MvpApiFactory : WebApplicationFactory<Program>, IAsyncDisp
                 ["FacturaloPlus:BaseUrl"] = "https://facturaloplus-placeholder.local/",
                 ["FacturaloPlus:StampPath"] = "/cfdi/stamp",
                 ["FacturaloPlus:PaymentComplementStampPath"] = "/cfdi/payment-complement/stamp",
-                ["FacturaloPlus:CancelPath"] = "/cfdi/cancel",
-                ["FacturaloPlus:StatusQueryPath"] = "/cfdi/status",
+                ["FacturaloPlus:CancelPath"] = "cancelar2",
+                ["FacturaloPlus:StatusQueryPath"] = "consultarEstadoSAT",
                 ["FacturaloPlus:PaymentComplementCancelPath"] = "/cfdi/payment-complement/cancel",
                 ["FacturaloPlus:PaymentComplementStatusQueryPath"] = "/cfdi/payment-complement/status",
                 ["FacturaloPlus:ProviderName"] = "FacturaloPlus",
@@ -1087,7 +1087,7 @@ internal sealed class FakeFiscalCancellationGateway : IFiscalCancellationGateway
     {
         Outcome = FiscalCancellationGatewayOutcome.Cancelled,
         ProviderName = "FacturaloPlus",
-        ProviderOperation = "cancel",
+        ProviderOperation = "cancelar2",
         CancelledAtUtc = DateTime.UtcNow
     };
 
@@ -1101,7 +1101,7 @@ internal sealed class FakeFiscalStatusQueryGateway : IFiscalStatusQueryGateway
     {
         Outcome = FiscalStatusQueryGatewayOutcome.Refreshed,
         ProviderName = "FacturaloPlus",
-        ProviderOperation = "status-query",
+        ProviderOperation = "consultarEstadoSAT",
         ExternalStatus = "VIGENTE",
         CheckedAtUtc = DateTime.UtcNow
     };

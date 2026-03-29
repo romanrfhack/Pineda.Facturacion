@@ -103,26 +103,21 @@ public class CancelFiscalDocumentService
             };
         }
 
-        var request = new FiscalCancellationRequest
+        if (!TryBuildCancellationRequest(fiscalDocument, fiscalStamp, reasonCode, replacementUuid, out var request, out var validationError))
         {
-            FiscalDocumentId = fiscalDocument.Id,
-            Uuid = fiscalStamp.Uuid!,
-            IssuerRfc = FiscalMasterDataNormalization.NormalizeRequiredCode(fiscalDocument.IssuerRfc),
-            ReceiverRfc = FiscalMasterDataNormalization.NormalizeRequiredCode(fiscalDocument.ReceiverRfc),
-            Total = fiscalDocument.Total,
-            CancellationReasonCode = reasonCode,
-            ReplacementUuid = replacementUuid
-        };
+            return ValidationFailure(command.FiscalDocumentId, validationError!);
+        }
 
         var requestedAtUtc = DateTime.UtcNow;
         fiscalDocument.Status = FiscalDocumentStatus.CancellationRequested;
         fiscalDocument.UpdatedAtUtc = requestedAtUtc;
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
+        var cancellationRequest = request!;
         FiscalCancellationGatewayResult gatewayResult;
         try
         {
-            gatewayResult = await _fiscalCancellationGateway.CancelAsync(request, cancellationToken);
+            gatewayResult = await _fiscalCancellationGateway.CancelAsync(cancellationRequest, cancellationToken);
         }
         catch
         {
@@ -130,7 +125,7 @@ public class CancelFiscalDocumentService
             {
                 Outcome = FiscalCancellationGatewayOutcome.Unavailable,
                 ProviderName = "FacturaloPlus",
-                ProviderOperation = "cancel",
+                ProviderOperation = "cancelar2",
                 ErrorMessage = "Provider transport failure.",
                 RawResponseSummaryJson = "{\"error\":\"provider_transport_failure\"}"
             };
@@ -186,6 +181,52 @@ public class CancelFiscalDocumentService
         result.ProviderTrackingId = fiscalCancellation.ProviderTrackingId;
         result.CancelledAtUtc = fiscalCancellation.CancelledAtUtc;
         return result;
+    }
+
+    private static bool TryBuildCancellationRequest(
+        FiscalDocument fiscalDocument,
+        FiscalStamp fiscalStamp,
+        string reasonCode,
+        string? replacementUuid,
+        out FiscalCancellationRequest? request,
+        out string? validationError)
+    {
+        request = null;
+        validationError = null;
+
+        if (string.IsNullOrWhiteSpace(fiscalDocument.CertificateReference))
+        {
+            validationError = "Fiscal document certificate reference is required for cancellation.";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(fiscalDocument.PrivateKeyReference))
+        {
+            validationError = "Fiscal document private key reference is required for cancellation.";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(fiscalDocument.PrivateKeyPasswordReference))
+        {
+            validationError = "Fiscal document private key password reference is required for cancellation.";
+            return false;
+        }
+
+        request = new FiscalCancellationRequest
+        {
+            FiscalDocumentId = fiscalDocument.Id,
+            CertificateReference = FiscalMasterDataNormalization.NormalizeRequiredText(fiscalDocument.CertificateReference),
+            PrivateKeyReference = FiscalMasterDataNormalization.NormalizeRequiredText(fiscalDocument.PrivateKeyReference),
+            PrivateKeyPasswordReference = FiscalMasterDataNormalization.NormalizeRequiredText(fiscalDocument.PrivateKeyPasswordReference),
+            Uuid = FiscalMasterDataNormalization.NormalizeRequiredText(fiscalStamp.Uuid!),
+            IssuerRfc = FiscalMasterDataNormalization.NormalizeRequiredCode(fiscalDocument.IssuerRfc),
+            ReceiverRfc = FiscalMasterDataNormalization.NormalizeRequiredCode(fiscalDocument.ReceiverRfc),
+            Total = fiscalDocument.Total,
+            CancellationReasonCode = reasonCode,
+            ReplacementUuid = replacementUuid
+        };
+
+        return true;
     }
 
     private static void ApplyGatewayResult(

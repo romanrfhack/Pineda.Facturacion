@@ -22,7 +22,7 @@ public class FiscalCancellationAndStatusServicesTests
             {
                 Outcome = FiscalCancellationGatewayOutcome.Cancelled,
                 ProviderName = "FacturaloPlus",
-                ProviderOperation = "cancel",
+                ProviderOperation = "cancelar2",
                 ProviderTrackingId = "CANCEL-1",
                 ProviderCode = "200",
                 ProviderMessage = "Cancelled",
@@ -124,7 +124,7 @@ public class FiscalCancellationAndStatusServicesTests
             {
                 Outcome = FiscalCancellationGatewayOutcome.Rejected,
                 ProviderName = "FacturaloPlus",
-                ProviderOperation = "cancel",
+                ProviderOperation = "cancelar2",
                 ProviderTrackingId = "CANCEL-2",
                 ProviderCode = "CFDI_409",
                 ProviderMessage = "Rejected",
@@ -162,7 +162,7 @@ public class FiscalCancellationAndStatusServicesTests
             {
                 Outcome = FiscalCancellationGatewayOutcome.Unavailable,
                 ProviderName = "FacturaloPlus",
-                ProviderOperation = "cancel",
+                ProviderOperation = "cancelar2",
                 ErrorMessage = "Timeout"
             }
         };
@@ -194,7 +194,7 @@ public class FiscalCancellationAndStatusServicesTests
             {
                 Outcome = FiscalCancellationGatewayOutcome.Cancelled,
                 ProviderName = "FacturaloPlus",
-                ProviderOperation = "cancel",
+                ProviderOperation = "cancelar2",
                 CancelledAtUtc = DateTime.UtcNow
             }
         };
@@ -215,10 +215,36 @@ public class FiscalCancellationAndStatusServicesTests
 
         Assert.NotNull(gateway.LastRequest);
         Assert.Equal("UUID-1", gateway.LastRequest!.Uuid);
+        Assert.Equal("CSD_CERTIFICATE_REFERENCE", gateway.LastRequest.CertificateReference);
+        Assert.Equal("CSD_PRIVATE_KEY_REFERENCE", gateway.LastRequest.PrivateKeyReference);
+        Assert.Equal("CSD_PRIVATE_KEY_PASSWORD_REFERENCE", gateway.LastRequest.PrivateKeyPasswordReference);
         Assert.Equal("AAA010101AAA", gateway.LastRequest.IssuerRfc);
         Assert.Equal("BBB010101BBB", gateway.LastRequest.ReceiverRfc);
         Assert.Equal("01", gateway.LastRequest.CancellationReasonCode);
         Assert.Equal("REPL-UUID", gateway.LastRequest.ReplacementUuid);
+    }
+
+    [Fact]
+    public async Task CancelFiscalDocument_MissingCertificateReference_FailsValidation()
+    {
+        var fiscalDocument = CreateStampedFiscalDocument();
+        fiscalDocument.CertificateReference = string.Empty;
+
+        var service = new CancelFiscalDocumentService(
+            new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
+            new FakeFiscalStampRepository { ExistingTracked = CreateFiscalStamp() },
+            new FakeFiscalCancellationRepository(),
+            new FakeFiscalCancellationGateway(),
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new CancelFiscalDocumentCommand
+        {
+            FiscalDocumentId = fiscalDocument.Id,
+            CancellationReasonCode = "02"
+        });
+
+        Assert.Equal(CancelFiscalDocumentOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("certificate reference", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -232,10 +258,11 @@ public class FiscalCancellationAndStatusServicesTests
             {
                 Outcome = FiscalStatusQueryGatewayOutcome.Refreshed,
                 ProviderName = "FacturaloPlus",
-                ProviderOperation = "status-query",
-                ProviderCode = "200",
-                ProviderMessage = "Active",
-                ExternalStatus = "VIGENTE",
+                ProviderOperation = "consultarEstadoSAT",
+                ProviderCode = "S - Comprobante obtenido satisfactoriamente.",
+                ProviderMessage = "Estado=Vigente | EsCancelable=Cancelable con aceptación",
+                ExternalStatus = "Vigente",
+                Cancelability = "Cancelable con aceptación",
                 CheckedAtUtc = new DateTime(2026, 3, 20, 2, 0, 0, DateTimeKind.Utc),
                 RawResponseSummaryJson = "{\"status\":\"VIGENTE\"}"
             }
@@ -254,8 +281,11 @@ public class FiscalCancellationAndStatusServicesTests
 
         Assert.True(result.IsSuccess);
         Assert.Equal(RefreshFiscalDocumentStatusOutcome.Refreshed, result.Outcome);
-        Assert.Equal("VIGENTE", fiscalStamp.LastKnownExternalStatus);
-        Assert.Equal("200", fiscalStamp.LastStatusProviderCode);
+        Assert.Equal("Vigente", fiscalStamp.LastKnownExternalStatus);
+        Assert.Equal("S - Comprobante obtenido satisfactoriamente.", fiscalStamp.LastStatusProviderCode);
+        Assert.Equal("Active", result.OperationalStatus);
+        Assert.Contains("Documento vigente en SAT", result.OperationalMessage);
+        Assert.Contains("CodigoEstatus=S - Comprobante obtenido satisfactoriamente.", result.SupportMessage);
     }
 
     [Fact]
@@ -308,7 +338,7 @@ public class FiscalCancellationAndStatusServicesTests
                 {
                     Outcome = FiscalStatusQueryGatewayOutcome.Unavailable,
                     ProviderName = "FacturaloPlus",
-                    ProviderOperation = "status-query",
+                    ProviderOperation = "consultarEstadoSAT",
                     ErrorMessage = "Timeout",
                     CheckedAtUtc = DateTime.UtcNow
                 }
@@ -322,6 +352,8 @@ public class FiscalCancellationAndStatusServicesTests
 
         Assert.Equal(RefreshFiscalDocumentStatusOutcome.ProviderUnavailable, result.Outcome);
         Assert.Equal(FiscalDocumentStatus.Stamped, fiscalDocument.Status);
+        Assert.Equal("QueryError", result.OperationalStatus);
+        Assert.Contains("Timeout", result.OperationalMessage);
     }
 
     [Fact]
@@ -338,7 +370,7 @@ public class FiscalCancellationAndStatusServicesTests
                 {
                     Outcome = FiscalStatusQueryGatewayOutcome.Refreshed,
                     ProviderName = "FacturaloPlus",
-                    ProviderOperation = "status-query",
+                    ProviderOperation = "consultarEstadoSAT",
                     ExternalStatus = "CANCELLED",
                     CheckedAtUtc = DateTime.UtcNow
                 }
@@ -352,6 +384,158 @@ public class FiscalCancellationAndStatusServicesTests
 
         Assert.Equal(RefreshFiscalDocumentStatusOutcome.Refreshed, result.Outcome);
         Assert.Equal(FiscalDocumentStatus.Cancelled, fiscalDocument.Status);
+        Assert.Equal("Cancelled", result.OperationalStatus);
+    }
+
+    [Fact]
+    public async Task RefreshFiscalDocumentStatus_Interprets_CancellationPending_AndAligns_LocalStatus()
+    {
+        var fiscalDocument = CreateStampedFiscalDocument();
+        var fiscalStamp = CreateFiscalStamp();
+        var service = new RefreshFiscalDocumentStatusService(
+            new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
+            new FakeFiscalStampRepository { ExistingTracked = fiscalStamp },
+            new FakeFiscalStatusQueryGateway
+            {
+                NextResult = new FiscalStatusQueryGatewayResult
+                {
+                    Outcome = FiscalStatusQueryGatewayOutcome.Refreshed,
+                    ProviderName = "FacturaloPlus",
+                    ProviderOperation = "consultarEstadoSAT",
+                    ProviderCode = "S - Comprobante obtenido satisfactoriamente.",
+                    ExternalStatus = "Vigente",
+                    Cancelability = "Cancelable con aceptación",
+                    CancellationStatus = "En proceso",
+                    CheckedAtUtc = DateTime.UtcNow
+                }
+            },
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new RefreshFiscalDocumentStatusCommand
+        {
+            FiscalDocumentId = fiscalDocument.Id
+        });
+
+        Assert.Equal(RefreshFiscalDocumentStatusOutcome.Refreshed, result.Outcome);
+        Assert.Equal(FiscalDocumentStatus.CancellationRequested, fiscalDocument.Status);
+        Assert.Equal("CancellationPending", result.OperationalStatus);
+        Assert.Contains("en proceso", result.OperationalMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task RefreshFiscalDocumentStatus_Interprets_CancellationRejected_AndAligns_LocalStatus()
+    {
+        var fiscalDocument = CreateStampedFiscalDocument();
+        var fiscalStamp = CreateFiscalStamp();
+        var service = new RefreshFiscalDocumentStatusService(
+            new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
+            new FakeFiscalStampRepository { ExistingTracked = fiscalStamp },
+            new FakeFiscalStatusQueryGateway
+            {
+                NextResult = new FiscalStatusQueryGatewayResult
+                {
+                    Outcome = FiscalStatusQueryGatewayOutcome.Refreshed,
+                    ProviderName = "FacturaloPlus",
+                    ProviderOperation = "consultarEstadoSAT",
+                    ProviderCode = "S - Comprobante obtenido satisfactoriamente.",
+                    ExternalStatus = "Vigente",
+                    CancellationStatus = "Solicitud rechazada",
+                    CheckedAtUtc = DateTime.UtcNow
+                }
+            },
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new RefreshFiscalDocumentStatusCommand
+        {
+            FiscalDocumentId = fiscalDocument.Id
+        });
+
+        Assert.Equal(RefreshFiscalDocumentStatusOutcome.Refreshed, result.Outcome);
+        Assert.Equal(FiscalDocumentStatus.CancellationRejected, fiscalDocument.Status);
+        Assert.Equal("CancellationRejected", result.OperationalStatus);
+        Assert.Contains("rechazada", result.OperationalMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task RefreshFiscalDocumentStatus_Interprets_CancellationExpired()
+    {
+        var service = new RefreshFiscalDocumentStatusService(
+            new FakeFiscalDocumentRepository { ExistingTracked = CreateStampedFiscalDocument() },
+            new FakeFiscalStampRepository { ExistingTracked = CreateFiscalStamp() },
+            new FakeFiscalStatusQueryGateway
+            {
+                NextResult = new FiscalStatusQueryGatewayResult
+                {
+                    Outcome = FiscalStatusQueryGatewayOutcome.Refreshed,
+                    ProviderName = "FacturaloPlus",
+                    ProviderOperation = "consultarEstadoSAT",
+                    ProviderCode = "S - Comprobante obtenido satisfactoriamente.",
+                    ExternalStatus = "Vigente",
+                    CancellationStatus = "Plazo vencido",
+                    CheckedAtUtc = DateTime.UtcNow
+                }
+            },
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new RefreshFiscalDocumentStatusCommand
+        {
+            FiscalDocumentId = 50
+        });
+
+        Assert.Equal("CancellationExpired", result.OperationalStatus);
+        Assert.Contains("venció", result.OperationalMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task RefreshFiscalDocumentStatus_Interprets_NotFound()
+    {
+        var service = new RefreshFiscalDocumentStatusService(
+            new FakeFiscalDocumentRepository { ExistingTracked = CreateStampedFiscalDocument() },
+            new FakeFiscalStampRepository { ExistingTracked = CreateFiscalStamp() },
+            new FakeFiscalStatusQueryGateway
+            {
+                NextResult = new FiscalStatusQueryGatewayResult
+                {
+                    Outcome = FiscalStatusQueryGatewayOutcome.Refreshed,
+                    ProviderName = "FacturaloPlus",
+                    ProviderOperation = "consultarEstadoSAT",
+                    ProviderCode = "N 602 - Comprobante no encontrado",
+                    ExternalStatus = "No Encontrado",
+                    CheckedAtUtc = DateTime.UtcNow
+                }
+            },
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new RefreshFiscalDocumentStatusCommand
+        {
+            FiscalDocumentId = 50
+        });
+
+        Assert.Equal("NotFound", result.OperationalStatus);
+        Assert.Contains("no encontró", result.OperationalMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task RefreshFiscalDocumentStatus_RequestBuilder_UsesPersistedStampEvidenceOnly()
+    {
+        var gateway = new FakeFiscalStatusQueryGateway();
+        var service = new RefreshFiscalDocumentStatusService(
+            new FakeFiscalDocumentRepository { ExistingTracked = CreateStampedFiscalDocument() },
+            new FakeFiscalStampRepository { ExistingTracked = CreateFiscalStamp() },
+            gateway,
+            new FakeUnitOfWork());
+
+        await service.ExecuteAsync(new RefreshFiscalDocumentStatusCommand
+        {
+            FiscalDocumentId = 50
+        });
+
+        Assert.NotNull(gateway.LastRequest);
+        Assert.Equal(50, gateway.LastRequest!.FiscalDocumentId);
+        Assert.Equal("UUID-1", gateway.LastRequest.Uuid);
+        Assert.Equal("AAA010101AAA", gateway.LastRequest.IssuerRfc);
+        Assert.Equal("BBB010101BBB", gateway.LastRequest.ReceiverRfc);
+        Assert.Equal(116m, gateway.LastRequest.Total);
     }
 
     [Fact]
@@ -391,6 +575,9 @@ public class FiscalCancellationAndStatusServicesTests
             IssuerRfc = "AAA010101AAA",
             ReceiverRfc = "BBB010101BBB",
             Total = 116m,
+            CertificateReference = "CSD_CERTIFICATE_REFERENCE",
+            PrivateKeyReference = "CSD_PRIVATE_KEY_REFERENCE",
+            PrivateKeyPasswordReference = "CSD_PRIVATE_KEY_PASSWORD_REFERENCE",
             UpdatedAtUtc = DateTime.UtcNow
         };
     }
@@ -472,7 +659,7 @@ public class FiscalCancellationAndStatusServicesTests
         {
             Outcome = FiscalCancellationGatewayOutcome.Cancelled,
             ProviderName = "FacturaloPlus",
-            ProviderOperation = "cancel",
+            ProviderOperation = "cancelar2",
             CancelledAtUtc = DateTime.UtcNow
         };
 
@@ -485,17 +672,20 @@ public class FiscalCancellationAndStatusServicesTests
 
     private sealed class FakeFiscalStatusQueryGateway : IFiscalStatusQueryGateway
     {
+        public FiscalStatusQueryRequest? LastRequest { get; private set; }
+
         public FiscalStatusQueryGatewayResult NextResult { get; init; } = new()
         {
             Outcome = FiscalStatusQueryGatewayOutcome.Refreshed,
             ProviderName = "FacturaloPlus",
-            ProviderOperation = "status-query",
+            ProviderOperation = "consultarEstadoSAT",
             ExternalStatus = "VIGENTE",
             CheckedAtUtc = DateTime.UtcNow
         };
 
         public Task<FiscalStatusQueryGatewayResult> QueryStatusAsync(FiscalStatusQueryRequest request, CancellationToken cancellationToken = default)
         {
+            LastRequest = request;
             return Task.FromResult(NextResult);
         }
     }

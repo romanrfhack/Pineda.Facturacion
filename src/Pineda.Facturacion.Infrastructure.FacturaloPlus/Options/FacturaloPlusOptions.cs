@@ -14,9 +14,9 @@ public class FacturaloPlusOptions
 
     public string PaymentComplementStatusQueryPath { get; set; } = "/cfdi/payment-complement/status";
 
-    public string CancelPath { get; set; } = "/cfdi/cancel";
+    public string CancelPath { get; set; } = "cancelar2";
 
-    public string StatusQueryPath { get; set; } = "/cfdi/status";
+    public string StatusQueryPath { get; set; } = "consultarEstadoSAT";
 
     public string ProviderName { get; set; } = "FacturaloPlus";
 

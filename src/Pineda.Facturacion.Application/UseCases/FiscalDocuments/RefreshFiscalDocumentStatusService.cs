@@ -72,7 +72,7 @@ public class RefreshFiscalDocumentStatusService
             {
                 Outcome = FiscalStatusQueryGatewayOutcome.Unavailable,
                 ProviderName = "FacturaloPlus",
-                ProviderOperation = "status-query",
+                ProviderOperation = "consultarEstadoSAT",
                 CheckedAtUtc = DateTime.UtcNow,
                 ErrorMessage = "Provider transport failure.",
                 RawResponseSummaryJson = "{\"error\":\"provider_transport_failure\"}"
@@ -86,6 +86,7 @@ public class RefreshFiscalDocumentStatusService
 
         if (gatewayResult.Outcome == FiscalStatusQueryGatewayOutcome.Unavailable)
         {
+            var interpretation = FiscalStatusOperationalInterpreter.BuildUnavailable(gatewayResult.ErrorMessage);
             return new RefreshFiscalDocumentStatusResult
             {
                 Outcome = RefreshFiscalDocumentStatusOutcome.ProviderUnavailable,
@@ -97,9 +98,18 @@ public class RefreshFiscalDocumentStatusService
                 LastKnownExternalStatus = fiscalStamp.LastKnownExternalStatus,
                 ProviderCode = fiscalStamp.LastStatusProviderCode,
                 ProviderMessage = fiscalStamp.LastStatusProviderMessage,
+                OperationalStatus = interpretation.Status.ToString(),
+                OperationalMessage = interpretation.UserMessage,
+                SupportMessage = interpretation.SupportMessage,
                 CheckedAtUtc = fiscalStamp.LastStatusCheckAtUtc
             };
         }
+
+        var operationalInterpretation = FiscalStatusOperationalInterpreter.Interpret(
+            gatewayResult.ProviderCode,
+            gatewayResult.ExternalStatus,
+            gatewayResult.Cancelability,
+            gatewayResult.CancellationStatus);
 
         fiscalStamp.LastStatusCheckAtUtc = gatewayResult.CheckedAtUtc;
         fiscalStamp.LastKnownExternalStatus = gatewayResult.ExternalStatus;
@@ -108,7 +118,7 @@ public class RefreshFiscalDocumentStatusService
         fiscalStamp.LastStatusRawResponseSummaryJson = gatewayResult.RawResponseSummaryJson;
         fiscalStamp.UpdatedAtUtc = DateTime.UtcNow;
 
-        AlignFiscalDocumentStatus(fiscalDocument, gatewayResult.ExternalStatus);
+        AlignFiscalDocumentStatus(fiscalDocument, gatewayResult.ExternalStatus, gatewayResult.CancellationStatus);
         fiscalDocument.UpdatedAtUtc = DateTime.UtcNow;
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -123,17 +133,42 @@ public class RefreshFiscalDocumentStatusService
             LastKnownExternalStatus = fiscalStamp.LastKnownExternalStatus,
             ProviderCode = fiscalStamp.LastStatusProviderCode,
             ProviderMessage = fiscalStamp.LastStatusProviderMessage,
+            OperationalStatus = operationalInterpretation.Status.ToString(),
+            OperationalMessage = operationalInterpretation.UserMessage,
+            SupportMessage = operationalInterpretation.SupportMessage,
             CheckedAtUtc = fiscalStamp.LastStatusCheckAtUtc
         };
     }
 
-    private static void AlignFiscalDocumentStatus(Domain.Entities.FiscalDocument fiscalDocument, string? externalStatus)
+    private static void AlignFiscalDocumentStatus(
+        Domain.Entities.FiscalDocument fiscalDocument,
+        string? externalStatus,
+        string? cancellationStatus)
     {
         var normalizedStatus = FiscalMasterDataNormalization.NormalizeOptionalText(externalStatus)?.ToUpperInvariant();
+        var normalizedCancellationStatus = FiscalMasterDataNormalization.NormalizeOptionalText(cancellationStatus)?.ToUpperInvariant();
 
         if (normalizedStatus is "CANCELLED" or "CANCELED")
         {
             fiscalDocument.Status = FiscalDocumentStatus.Cancelled;
+            return;
+        }
+
+        if (normalizedStatus == "CANCELADO")
+        {
+            fiscalDocument.Status = FiscalDocumentStatus.Cancelled;
+            return;
+        }
+
+        if (normalizedCancellationStatus == "EN PROCESO")
+        {
+            fiscalDocument.Status = FiscalDocumentStatus.CancellationRequested;
+            return;
+        }
+
+        if (normalizedCancellationStatus == "SOLICITUD RECHAZADA")
+        {
+            fiscalDocument.Status = FiscalDocumentStatus.CancellationRejected;
             return;
         }
 

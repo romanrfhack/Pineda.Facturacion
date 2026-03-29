@@ -22,5 +22,11 @@ public class RefreshFiscalDocumentStatusResult
 
     public string? ProviderMessage { get; set; }
 
+    public string? OperationalStatus { get; set; }
+
+    public string? OperationalMessage { get; set; }
+
+    public string? SupportMessage { get; set; }
+
     public DateTime? CheckedAtUtc { get; set; }
 }

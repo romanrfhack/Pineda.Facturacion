@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Net;
-using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -40,33 +39,55 @@ public class FacturaloPlusCancellationGateway : IFiscalCancellationGateway
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var apiKey = await ResolveApiKeyAsync(cancellationToken);
-        if (!string.IsNullOrWhiteSpace(_options.ApiKeyReference) && string.IsNullOrWhiteSpace(apiKey))
+        var apiKey = await ResolveRequiredSecretAsync(_options.ApiKeyReference, cancellationToken);
+        if (string.IsNullOrWhiteSpace(apiKey))
         {
             return ValidationFailed("Configured PAC API key reference could not be resolved.");
         }
 
+        var privateKeyValue = await ResolveRequiredSecretAsync(request.PrivateKeyReference, cancellationToken);
+        if (string.IsNullOrWhiteSpace(privateKeyValue))
+        {
+            return ValidationFailed("Fiscal document private key reference could not be resolved.");
+        }
+
+        var certificateValue = await ResolveRequiredSecretAsync(request.CertificateReference, cancellationToken);
+        if (string.IsNullOrWhiteSpace(certificateValue))
+        {
+            return ValidationFailed("Fiscal document certificate reference could not be resolved.");
+        }
+
+        var privateKeyPassword = await ResolveRequiredSecretAsync(request.PrivateKeyPasswordReference, cancellationToken);
+        if (string.IsNullOrWhiteSpace(privateKeyPassword))
+        {
+            return ValidationFailed("Fiscal document private key password reference could not be resolved.");
+        }
+
+        string privateKeyBase64;
+        string certificateBase64;
+        try
+        {
+            privateKeyBase64 = NormalizePemOrBase64(privateKeyValue);
+            certificateBase64 = NormalizePemOrBase64(certificateValue);
+        }
+        catch (CryptographicException ex)
+        {
+            return ValidationFailed(ex.Message);
+        }
+
         var redactedSummary = BuildRedactedRequestSummary(request);
         var rawRequestHash = ComputeSha256(JsonSerializer.Serialize(redactedSummary, JsonOptions));
-        var payload = new FacturaloPlusCancellationPayload
-        {
-            Uuid = request.Uuid,
-            IssuerRfc = request.IssuerRfc,
-            ReceiverRfc = request.ReceiverRfc,
-            Total = request.Total,
-            CancellationReasonCode = request.CancellationReasonCode,
-            ReplacementUuid = request.ReplacementUuid
-        };
+        var formPayload = BuildFormPayload(
+            apiKey,
+            privateKeyBase64,
+            certificateBase64,
+            privateKeyPassword,
+            request);
 
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _options.CancelPath)
         {
-            Content = JsonContent.Create(payload, options: JsonOptions)
+            Content = new FormUrlEncodedContent(formPayload)
         };
-
-        if (!string.IsNullOrWhiteSpace(apiKey) && !string.IsNullOrWhiteSpace(_options.ApiKeyHeaderName))
-        {
-            httpRequest.Headers.TryAddWithoutValidation(_options.ApiKeyHeaderName, apiKey);
-        }
 
         HttpResponseMessage response;
         string responseContent;
@@ -84,23 +105,10 @@ public class FacturaloPlusCancellationGateway : IFiscalCancellationGateway
             return Unavailable("Provider transport failure.", rawRequestHash);
         }
 
-        var providerResponse = TryDeserialize(responseContent);
+        var providerResponse = TryParseProviderResponse(responseContent);
         var rawResponseSummaryJson = BuildRawResponseSummary(response.StatusCode, providerResponse, responseContent);
-
-        if (response.IsSuccessStatusCode && providerResponse?.Success == true)
-        {
-            return new FiscalCancellationGatewayResult
-            {
-                Outcome = FiscalCancellationGatewayOutcome.Cancelled,
-                ProviderName = _options.ProviderName,
-                ProviderOperation = "cancel",
-                ProviderTrackingId = providerResponse.TrackingId,
-                ProviderCode = providerResponse.Code,
-                ProviderMessage = providerResponse.Message,
-                CancelledAtUtc = providerResponse.CancelledAtUtc ?? DateTime.UtcNow,
-                RawResponseSummaryJson = rawResponseSummaryJson
-            };
-        }
+        var providerCode = providerResponse?.Code ?? ((int)response.StatusCode).ToString(CultureInfo.InvariantCulture);
+        var providerMessage = providerResponse?.Message;
 
         if ((int)response.StatusCode >= 500)
         {
@@ -108,13 +116,28 @@ public class FacturaloPlusCancellationGateway : IFiscalCancellationGateway
             {
                 Outcome = FiscalCancellationGatewayOutcome.Unavailable,
                 ProviderName = _options.ProviderName,
-                ProviderOperation = "cancel",
+                ProviderOperation = "cancelar2",
                 ProviderTrackingId = providerResponse?.TrackingId,
-                ProviderCode = providerResponse?.Code ?? ((int)response.StatusCode).ToString(CultureInfo.InvariantCulture),
-                ProviderMessage = providerResponse?.Message,
+                ProviderCode = providerCode,
+                ProviderMessage = providerMessage,
                 RawResponseSummaryJson = rawResponseSummaryJson,
                 ErrorCode = providerResponse?.ErrorCode ?? "HTTP_" + (int)response.StatusCode,
                 ErrorMessage = providerResponse?.ErrorMessage ?? "Provider unavailable."
+            };
+        }
+
+        if (response.IsSuccessStatusCode && IsSuccessfulCancellationCode(providerCode))
+        {
+            return new FiscalCancellationGatewayResult
+            {
+                Outcome = FiscalCancellationGatewayOutcome.Cancelled,
+                ProviderName = _options.ProviderName,
+                ProviderOperation = "cancelar2",
+                ProviderTrackingId = providerResponse?.TrackingId,
+                ProviderCode = providerCode,
+                ProviderMessage = providerMessage,
+                CancelledAtUtc = providerResponse?.CancelledAtUtc ?? DateTime.UtcNow,
+                RawResponseSummaryJson = rawResponseSummaryJson
             };
         }
 
@@ -122,24 +145,52 @@ public class FacturaloPlusCancellationGateway : IFiscalCancellationGateway
         {
             Outcome = FiscalCancellationGatewayOutcome.Rejected,
             ProviderName = _options.ProviderName,
-            ProviderOperation = "cancel",
+            ProviderOperation = "cancelar2",
             ProviderTrackingId = providerResponse?.TrackingId,
-            ProviderCode = providerResponse?.Code ?? ((int)response.StatusCode).ToString(CultureInfo.InvariantCulture),
-            ProviderMessage = providerResponse?.Message,
+            ProviderCode = providerCode,
+            ProviderMessage = providerMessage,
             RawResponseSummaryJson = rawResponseSummaryJson,
             ErrorCode = providerResponse?.ErrorCode,
-            ErrorMessage = providerResponse?.ErrorMessage ?? providerResponse?.Message ?? "Provider rejected the cancellation request."
+            ErrorMessage = providerResponse?.ErrorMessage ?? providerMessage ?? "Provider rejected the cancellation request."
         };
     }
 
-    private async Task<string?> ResolveApiKeyAsync(CancellationToken cancellationToken)
+    private async Task<string?> ResolveRequiredSecretAsync(string? referenceKey, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(_options.ApiKeyReference))
+        if (string.IsNullOrWhiteSpace(referenceKey))
         {
             return null;
         }
 
-        return await _secretReferenceResolver.ResolveAsync(_options.ApiKeyReference, cancellationToken);
+        return await _secretReferenceResolver.ResolveAsync(referenceKey, cancellationToken);
+    }
+
+    private static List<KeyValuePair<string, string>> BuildFormPayload(
+        string apiKey,
+        string privateKeyBase64,
+        string certificateBase64,
+        string privateKeyPassword,
+        FiscalCancellationRequest request)
+    {
+        var formPayload = new List<KeyValuePair<string, string>>
+        {
+            new("apikey", apiKey),
+            new("keyCSD", privateKeyBase64),
+            new("cerCSD", certificateBase64),
+            new("passCSD", privateKeyPassword),
+            new("uuid", request.Uuid),
+            new("rfcEmisor", request.IssuerRfc),
+            new("rfcReceptor", request.ReceiverRfc),
+            new("total", request.Total.ToString("0.######", CultureInfo.InvariantCulture)),
+            new("motivo", request.CancellationReasonCode)
+        };
+
+        if (!string.IsNullOrWhiteSpace(request.ReplacementUuid))
+        {
+            formPayload.Add(new KeyValuePair<string, string>("folioSustitucion", request.ReplacementUuid));
+        }
+
+        return formPayload;
     }
 
     private static object BuildRedactedRequestSummary(FiscalCancellationRequest request)
@@ -152,7 +203,10 @@ public class FacturaloPlusCancellationGateway : IFiscalCancellationGateway
             request.ReceiverRfc,
             request.Total,
             request.CancellationReasonCode,
-            HasReplacementUuid = !string.IsNullOrWhiteSpace(request.ReplacementUuid)
+            HasReplacementUuid = !string.IsNullOrWhiteSpace(request.ReplacementUuid),
+            HasCertificateReference = !string.IsNullOrWhiteSpace(request.CertificateReference),
+            HasPrivateKeyReference = !string.IsNullOrWhiteSpace(request.PrivateKeyReference),
+            HasPrivateKeyPasswordReference = !string.IsNullOrWhiteSpace(request.PrivateKeyPasswordReference)
         };
     }
 
@@ -161,10 +215,9 @@ public class FacturaloPlusCancellationGateway : IFiscalCancellationGateway
         var summary = new
         {
             HttpStatusCode = (int)statusCode,
-            response?.Success,
-            response?.TrackingId,
             response?.Code,
             response?.Message,
+            response?.TrackingId,
             response?.CancelledAtUtc,
             response?.ErrorCode,
             response?.ErrorMessage,
@@ -176,7 +229,7 @@ public class FacturaloPlusCancellationGateway : IFiscalCancellationGateway
         return JsonSerializer.Serialize(summary, JsonOptions);
     }
 
-    private static FacturaloPlusCancellationResponse? TryDeserialize(string rawContent)
+    private static FacturaloPlusCancellationResponse? TryParseProviderResponse(string rawContent)
     {
         if (string.IsNullOrWhiteSpace(rawContent))
         {
@@ -185,11 +238,24 @@ public class FacturaloPlusCancellationGateway : IFiscalCancellationGateway
 
         try
         {
-            return JsonSerializer.Deserialize<FacturaloPlusCancellationResponse>(rawContent, JsonOptions);
+            using var json = JsonDocument.Parse(rawContent);
+            var root = json.RootElement;
+            return new FacturaloPlusCancellationResponse
+            {
+                Code = ReadString(root, "code", "codigo", "statusCode", "estatus", "status"),
+                Message = ReadString(root, "message", "mensaje", "descripcion", "detail"),
+                TrackingId = ReadString(root, "trackingId", "tracking", "folio", "id"),
+                ErrorCode = ReadString(root, "errorCode", "codigoError"),
+                ErrorMessage = ReadString(root, "errorMessage", "mensajeError", "descripcionError"),
+                CancelledAtUtc = ReadDateTime(root, "cancelledAtUtc", "fechaCancelacion", "cancelledAt")
+            };
         }
         catch (JsonException)
         {
-            return null;
+            return new FacturaloPlusCancellationResponse
+            {
+                Message = rawContent.Length <= 500 ? rawContent : rawContent[..500]
+            };
         }
     }
 
@@ -199,7 +265,7 @@ public class FacturaloPlusCancellationGateway : IFiscalCancellationGateway
         {
             Outcome = FiscalCancellationGatewayOutcome.ValidationFailed,
             ProviderName = _options.ProviderName,
-            ProviderOperation = "cancel",
+            ProviderOperation = "cancelar2",
             ErrorMessage = errorMessage,
             RawResponseSummaryJson = JsonSerializer.Serialize(new { error = errorMessage }, JsonOptions)
         };
@@ -211,11 +277,88 @@ public class FacturaloPlusCancellationGateway : IFiscalCancellationGateway
         {
             Outcome = FiscalCancellationGatewayOutcome.Unavailable,
             ProviderName = _options.ProviderName,
-            ProviderOperation = "cancel",
+            ProviderOperation = "cancelar2",
             ProviderMessage = errorMessage,
             ErrorMessage = errorMessage,
             RawResponseSummaryJson = JsonSerializer.Serialize(new { error = errorMessage, requestHash = rawRequestHash }, JsonOptions)
         };
+    }
+
+    private static bool IsSuccessfulCancellationCode(string? providerCode)
+    {
+        return string.Equals(providerCode, "201", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(providerCode, "202", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizePemOrBase64(string secretValue)
+    {
+        var normalized = secretValue.Trim().Replace("\r", string.Empty, StringComparison.Ordinal);
+        if (!normalized.Contains("-----BEGIN ", StringComparison.Ordinal))
+        {
+            return RemoveWhitespace(normalized);
+        }
+
+        var lines = normalized
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.Trim())
+            .Where(line => !line.StartsWith("-----BEGIN ", StringComparison.Ordinal) && !line.StartsWith("-----END ", StringComparison.Ordinal));
+        var base64Payload = string.Concat(lines);
+        if (string.IsNullOrWhiteSpace(base64Payload))
+        {
+            throw new CryptographicException("Fiscal document CSD secret could not be converted to base64 payload.");
+        }
+
+        return RemoveWhitespace(base64Payload);
+    }
+
+    private static string RemoveWhitespace(string value)
+    {
+        return new string(value.Where(ch => !char.IsWhiteSpace(ch)).ToArray());
+    }
+
+    private static string? ReadString(JsonElement root, params string[] propertyNames)
+    {
+        foreach (var propertyName in propertyNames)
+        {
+            if (!TryGetPropertyIgnoreCase(root, propertyName, out var value))
+            {
+                continue;
+            }
+
+            return value.ValueKind switch
+            {
+                JsonValueKind.String => value.GetString(),
+                JsonValueKind.Number => value.GetRawText(),
+                JsonValueKind.True => bool.TrueString,
+                JsonValueKind.False => bool.FalseString,
+                _ => value.GetRawText()
+            };
+        }
+
+        return null;
+    }
+
+    private static DateTime? ReadDateTime(JsonElement root, params string[] propertyNames)
+    {
+        var value = ReadString(root, propertyNames);
+        return DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out var parsed)
+            ? parsed
+            : null;
+    }
+
+    private static bool TryGetPropertyIgnoreCase(JsonElement element, string propertyName, out JsonElement value)
+    {
+        foreach (var property in element.EnumerateObject())
+        {
+            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+            {
+                value = property.Value;
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
     }
 
     private static string ComputeSha256(string value)
@@ -224,22 +367,11 @@ public class FacturaloPlusCancellationGateway : IFiscalCancellationGateway
         return Convert.ToHexString(SHA256.HashData(bytes));
     }
 
-    private sealed class FacturaloPlusCancellationPayload
-    {
-        public string Uuid { get; init; } = string.Empty;
-        public string IssuerRfc { get; init; } = string.Empty;
-        public string ReceiverRfc { get; init; } = string.Empty;
-        public decimal Total { get; init; }
-        public string CancellationReasonCode { get; init; } = string.Empty;
-        public string? ReplacementUuid { get; init; }
-    }
-
     private sealed class FacturaloPlusCancellationResponse
     {
-        public bool Success { get; init; }
-        public string? TrackingId { get; init; }
         public string? Code { get; init; }
         public string? Message { get; init; }
+        public string? TrackingId { get; init; }
         public DateTime? CancelledAtUtc { get; init; }
         public string? ErrorCode { get; init; }
         public string? ErrorMessage { get; init; }

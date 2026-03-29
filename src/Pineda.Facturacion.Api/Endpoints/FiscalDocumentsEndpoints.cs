@@ -478,6 +478,9 @@ public static class FiscalDocumentsEndpoints
             LastKnownExternalStatus = result.LastKnownExternalStatus,
             ProviderCode = result.ProviderCode,
             ProviderMessage = result.ProviderMessage,
+            OperationalStatus = result.OperationalStatus,
+            OperationalMessage = result.OperationalMessage,
+            SupportMessage = result.SupportMessage,
             CheckedAtUtc = result.CheckedAtUtc
         };
 
@@ -853,6 +856,9 @@ public static class FiscalDocumentsEndpoints
         public string? LastKnownExternalStatus { get; init; }
         public string? ProviderCode { get; init; }
         public string? ProviderMessage { get; init; }
+        public string? OperationalStatus { get; init; }
+        public string? OperationalMessage { get; init; }
+        public string? SupportMessage { get; init; }
         public DateTime? CheckedAtUtc { get; init; }
     }
 

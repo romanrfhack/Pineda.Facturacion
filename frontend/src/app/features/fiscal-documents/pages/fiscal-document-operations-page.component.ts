@@ -5,6 +5,7 @@ import { firstValueFrom } from 'rxjs';
 import { FiscalDocumentsApiService } from '../infrastructure/fiscal-documents-api.service';
 import {
   BillingDocumentLookupResponse,
+  CancelFiscalDocumentRequest,
   FiscalCancellationResponse,
   FiscalDocumentResponse,
   FiscalDocumentEmailDraftResponse,
@@ -316,7 +317,7 @@ import { buildFiscalDocumentFileName } from '../application/fiscal-document-file
               <button type="button" (click)="stamp()" [disabled]="loadingOperation() || currentDocument.status === 'Stamped'">Timbrar</button>
             }
             @if (permissionService.canCancelFiscal()) {
-              <button type="button" class="danger" (click)="cancel()" [disabled]="loadingOperation() || currentDocument.status !== 'Stamped'">Cancelar</button>
+              <button type="button" class="danger" (click)="openCancelDialog()" [disabled]="loadingOperation() || currentDocument.status !== 'Stamped'">Cancelar</button>
             }
             @if (permissionService.canCancelFiscal()) {
               <button type="button" class="secondary" (click)="refreshStatus()" [disabled]="loadingOperation()">Actualizar estatus</button>
@@ -408,6 +409,66 @@ import { buildFiscalDocumentFileName } from '../application/fiscal-document-file
               <button type="button" class="secondary" (click)="closeEmailComposer()" [disabled]="sendingEmail()">Cancelar</button>
             </div>
           </form>
+        </section>
+      }
+
+      @if (showCancelDialog()) {
+        <section class="modal-backdrop" (click)="closeCancelDialog()">
+          <section class="modal-card" (click)="$event.stopPropagation()">
+            <header class="modal-header">
+              <div>
+                <p class="selected-title">Cancelación SAT</p>
+                <h3>Cancelar CFDI</h3>
+              </div>
+              <button type="button" class="secondary" (click)="closeCancelDialog()" [disabled]="loadingOperation()">Cerrar</button>
+            </header>
+
+            <p class="helper">Selecciona el motivo SAT de cancelación. Si eliges 01, debes capturar el UUID del comprobante sustituto.</p>
+
+            <form class="form-grid" (ngSubmit)="cancel()">
+              <label class="receiver-selector">
+                <span>Motivo de cancelación SAT</span>
+                <select
+                  [ngModel]="cancellationReasonCode"
+                  (ngModelChange)="onCancellationReasonChange($event)"
+                  name="cancellationReasonCode"
+                  required>
+                  <option value="">Selecciona motivo de cancelación</option>
+                  @for (option of cancellationReasonOptions; track option.code) {
+                    <option [value]="option.code">{{ option.code }} - {{ option.description }}</option>
+                  }
+                </select>
+                @if (selectedCancellationReasonHelp()) {
+                  <small class="helper">{{ selectedCancellationReasonHelp() }}</small>
+                }
+              </label>
+
+              @if (requiresCancellationReplacementUuid()) {
+                <label class="receiver-selector">
+                  <span>UUID de sustitución</span>
+                  <input
+                    [ngModel]="cancellationReplacementUuid"
+                    (ngModelChange)="onCancellationReplacementUuidChange($event)"
+                    name="cancellationReplacementUuid"
+                    placeholder="UUID del CFDI que sustituye al comprobante cancelado"
+                    required
+                  />
+                  <small class="helper">Obligatorio para el motivo 01.</small>
+                </label>
+              }
+
+              @if (getCancellationValidationError(); as cancellationValidationError) {
+                <p class="error receiver-selector">{{ cancellationValidationError }}</p>
+              }
+
+              <div class="context-actions receiver-selector">
+                <button type="submit" class="danger" [disabled]="loadingOperation() || !!getCancellationValidationError()">
+                  {{ loadingOperation() ? 'Cancelando...' : 'Confirmar cancelación' }}
+                </button>
+                <button type="button" class="secondary" (click)="closeCancelDialog()" [disabled]="loadingOperation()">Volver</button>
+              </div>
+            </form>
+          </section>
         </section>
       }
 
@@ -510,6 +571,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   private readonly fiscalReceiversApi = inject(FiscalReceiversApiService);
   protected readonly permissionService = inject(PermissionService);
   protected readonly getDisplayLabel = getDisplayLabel;
+  protected readonly cancellationReasonOptions = cancellationReasonOptions;
 
   protected readonly billingDocumentId = signal<number | null>(parseNumber(this.route.snapshot.queryParamMap.get('billingDocumentId')));
   protected readonly fiscalDocumentId = signal<number | null>(parseNumber(this.route.snapshot.paramMap.get('id')));
@@ -528,6 +590,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected readonly stampEvidence = signal<FiscalStampResponse | null>(null);
   protected readonly cancellation = signal<FiscalCancellationResponse | null>(null);
   protected readonly lastOperationMessage = signal<string | null>(null);
+  protected readonly showCancelDialog = signal(false);
   protected readonly showStampDetail = signal(false);
   protected readonly showStampXmlPanel = signal(false);
   protected readonly loadingStampXml = signal(false);
@@ -561,6 +624,8 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected paymentMethodSat = '';
   protected paymentFormSat = '';
   protected paymentCondition = '';
+  protected cancellationReasonCode = '';
+  protected cancellationReplacementUuid = '';
   protected isCreditSale = true;
   protected creditDays: number | null = 7;
   protected emailRecipientsInput = '';
@@ -682,6 +747,44 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     if (this.isCreditSale) {
       this.applySuggestedPaymentCondition();
     }
+  }
+
+  protected openCancelDialog(): void {
+    if (!this.fiscalDocumentId() || this.loadingOperation()) {
+      return;
+    }
+
+    this.showCancelDialog.set(true);
+    this.cancellationReasonCode = this.cancellation()?.cancellationReasonCode ?? '';
+    this.cancellationReplacementUuid = this.cancellation()?.replacementUuid ?? '';
+  }
+
+  protected closeCancelDialog(): void {
+    if (this.loadingOperation()) {
+      return;
+    }
+
+    this.showCancelDialog.set(false);
+  }
+
+  protected onCancellationReasonChange(value: string): void {
+    this.cancellationReasonCode = normalizeSatCode(value);
+    if (!this.requiresCancellationReplacementUuid()) {
+      this.cancellationReplacementUuid = '';
+    }
+  }
+
+  protected onCancellationReplacementUuidChange(value: string): void {
+    this.cancellationReplacementUuid = value;
+  }
+
+  protected requiresCancellationReplacementUuid(): boolean {
+    return normalizeSatCode(this.cancellationReasonCode) === '01';
+  }
+
+  protected selectedCancellationReasonHelp(): string | null {
+    const reasonCode = normalizeSatCode(this.cancellationReasonCode);
+    return cancellationReasonOptions.find((option) => option.code === reasonCode)?.helpText ?? null;
   }
 
   protected async selectReceiver(receiver: FiscalReceiverSearchResponse): Promise<void> {
@@ -1002,13 +1105,29 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
 
   protected async cancel(): Promise<void> {
     const fiscalDocumentId = this.fiscalDocumentId();
-    if (!fiscalDocumentId || !window.confirm('¿Cancelar este documento fiscal timbrado? Esta acción es operativamente sensible.')) {
+    const cancellationValidationError = this.getCancellationValidationError();
+    if (!fiscalDocumentId) {
+      return;
+    }
+
+    if (cancellationValidationError) {
+      this.feedbackService.show('error', cancellationValidationError);
+      return;
+    }
+
+    const cancellationRequest = this.buildCancellationRequest();
+    if (!cancellationRequest) {
+      return;
+    }
+
+    if (!window.confirm(buildCancellationConfirmationMessage(cancellationRequest))) {
       return;
     }
 
     await this.runOperation(async () => {
-      const response = await firstValueFrom(this.api.cancelFiscalDocument(fiscalDocumentId, { cancellationReasonCode: '02' }));
+      const response = await firstValueFrom(this.api.cancelFiscalDocument(fiscalDocumentId, cancellationRequest));
       this.lastOperationMessage.set(response.errorMessage || `Resultado de la cancelación: ${getDisplayLabel(response.outcome)}`);
+      this.showCancelDialog.set(false);
       await this.loadFiscalDocument(fiscalDocumentId);
       await this.loadCancellation(fiscalDocumentId);
     });
@@ -1023,7 +1142,10 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     await this.runOperation(async () => {
       const response = await firstValueFrom(this.api.refreshStatus(fiscalDocumentId));
       this.lastOperationMessage.set(
-        response.providerMessage || response.errorMessage || `Último estatus externo: ${getDisplayLabel(response.lastKnownExternalStatus ?? 'Unknown')}`
+        response.operationalMessage
+          || response.providerMessage
+          || response.errorMessage
+          || `Último estatus externo: ${getDisplayLabel(response.lastKnownExternalStatus ?? 'Unknown')}`
       );
       await this.loadFiscalDocument(fiscalDocumentId);
       await this.loadStamp(fiscalDocumentId);
@@ -1312,6 +1434,33 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     }
   }
 
+  private buildCancellationRequest(): CancelFiscalDocumentRequest | null {
+    const reasonCode = normalizeSatCode(this.cancellationReasonCode);
+    if (!reasonCode) {
+      return null;
+    }
+
+    return {
+      cancellationReasonCode: reasonCode,
+      replacementUuid: reasonCode === '01'
+        ? normalizeOptionalText(this.cancellationReplacementUuid)
+        : undefined
+    };
+  }
+
+  protected getCancellationValidationError(): string | null {
+    const reasonCode = normalizeSatCode(this.cancellationReasonCode);
+    if (!reasonCode || !cancellationReasonOptions.some((option) => option.code === reasonCode)) {
+      return 'Selecciona un motivo de cancelación SAT válido.';
+    }
+
+    if (reasonCode === '01' && !normalizeOptionalText(this.cancellationReplacementUuid)) {
+      return "El motivo 01 requiere capturar el UUID de sustitución.";
+    }
+
+    return null;
+  }
+
   private getPaymentPreparationValidationError(): string | null {
     const paymentMethod = this.normalizedPaymentMethodSat();
     if (!paymentMethod || !this.paymentMethodCatalog().some((option) => option.code === paymentMethod)) {
@@ -1415,6 +1564,11 @@ function normalizeSatCode(value: string | null | undefined): string {
   return value?.trim().toUpperCase() ?? '';
 }
 
+function normalizeOptionalText(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? '';
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 function normalizeCreditDays(value: number | string | null): number | null {
   if (typeof value === 'number') {
     return Number.isFinite(value) && value > 0 ? Math.trunc(value) : null;
@@ -1433,6 +1587,38 @@ function buildCreditPaymentCondition(creditDays: number | null): string {
     ? `Crédito a ${creditDays} días`
     : 'Crédito';
 }
+
+function buildCancellationConfirmationMessage(request: CancelFiscalDocumentRequest): string {
+  const reason = cancellationReasonOptions.find((option) => option.code === request.cancellationReasonCode);
+  if (request.cancellationReasonCode === '01' && request.replacementUuid) {
+    return `¿Confirmas la cancelación SAT con motivo ${request.cancellationReasonCode} - ${reason?.description ?? 'Motivo SAT'} y UUID de sustitución ${request.replacementUuid}?`;
+  }
+
+  return `¿Confirmas la cancelación SAT con motivo ${request.cancellationReasonCode} - ${reason?.description ?? 'Motivo SAT'}?`;
+}
+
+const cancellationReasonOptions = [
+  {
+    code: '01',
+    description: 'Comprobante emitido con errores con relación',
+    helpText: 'Usa este motivo cuando el CFDI será sustituido por otro comprobante relacionado.'
+  },
+  {
+    code: '02',
+    description: 'Comprobante emitido con errores sin relación',
+    helpText: 'Usa este motivo cuando el CFDI tiene errores y no será sustituido por un nuevo comprobante relacionado.'
+  },
+  {
+    code: '03',
+    description: 'No se llevó a cabo la operación',
+    helpText: 'Usa este motivo cuando la operación comercial finalmente no ocurrió.'
+  },
+  {
+    code: '04',
+    description: 'Operación nominativa relacionada en una factura global',
+    helpText: 'Usa este motivo cuando la operación ya quedó incluida en una factura global nominativa.'
+  }
+] as const;
 
 interface ReceiverSpecialFieldDraft {
   fieldCode: string;

@@ -297,5 +297,8 @@ export interface RefreshFiscalDocumentStatusResponse {
   lastKnownExternalStatus?: string | null;
   providerCode?: string | null;
   providerMessage?: string | null;
+  operationalStatus?: string | null;
+  operationalMessage?: string | null;
+  supportMessage?: string | null;
   checkedAtUtc?: string | null;
 }
