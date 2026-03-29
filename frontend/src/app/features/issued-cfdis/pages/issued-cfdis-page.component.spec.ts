@@ -3,6 +3,7 @@ import { of, throwError } from 'rxjs';
 import { IssuedCfdisPageComponent } from './issued-cfdis-page.component';
 import { FiscalDocumentsApiService } from '../../fiscal-documents/infrastructure/fiscal-documents-api.service';
 import { FeedbackService } from '../../../core/ui/feedback.service';
+import { PermissionService } from '../../../core/auth/permission.service';
 
 describe('IssuedCfdisPageComponent', () => {
   function createApi(overrides?: Partial<Record<keyof FiscalDocumentsApiService, unknown>>) {
@@ -139,7 +140,8 @@ describe('IssuedCfdisPageComponent', () => {
       imports: [IssuedCfdisPageComponent],
       providers: [
         { provide: FiscalDocumentsApiService, useValue: createApi(apiOverrides) },
-        { provide: FeedbackService, useValue: { show: vi.fn() } }
+        { provide: FeedbackService, useValue: { show: vi.fn() } },
+        { provide: PermissionService, useValue: { canCancelFiscal: () => true } }
       ]
     }).compileComponents();
 
@@ -283,6 +285,121 @@ describe('IssuedCfdisPageComponent', () => {
     expect(sendByEmail).toHaveBeenCalledWith(40, expect.objectContaining({
       recipients: ['cliente@example.com']
     }));
+  });
+
+  it('cancels an issued CFDI from the detail modal using the shared SAT flow', async () => {
+    const cancelFiscalDocument = vi.fn().mockReturnValue(of({
+      outcome: 'Cancelled',
+      isSuccess: true,
+      fiscalDocumentId: 40,
+      fiscalDocumentStatus: 'Cancelled',
+      fiscalCancellationId: 90,
+      cancellationStatus: 'Cancelled',
+      providerName: 'FacturaloPlus',
+      providerTrackingId: 'TRACK-CANCEL-201',
+      providerCode: '201',
+      providerMessage: 'Solicitud de cancelación de UUID exitosa. - ',
+      cancelledAtUtc: '2026-03-29T18:40:00Z'
+    }));
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const fixture = await configure({ cancelFiscalDocument });
+
+    await fixture.componentInstance['openDetailModal'](fixture.componentInstance['items']()[0]);
+    fixture.componentInstance['openCancelDialog']();
+    fixture.componentInstance['onCancellationReasonChange']('03');
+
+    await fixture.componentInstance['cancel']();
+
+    expect(cancelFiscalDocument).toHaveBeenCalledWith(40, { cancellationReasonCode: '03', replacementUuid: undefined });
+    expect(fixture.componentInstance['selectedDocument']()?.status).toBe('Cancelled');
+    expect(fixture.componentInstance['selectedCancellation']()?.status).toBe('Cancelled');
+    expect(fixture.componentInstance['selectedCancellation']()?.providerCode).toBe('201');
+    expect(fixture.componentInstance['canCancelSelectedDocument']()).toBe(false);
+    expect(fixture.componentInstance['lastOperationMessage']()).toContain('Cancelación exitosa');
+
+    confirmSpy.mockRestore();
+  });
+
+  it('refreshes SAT status from the issued CFDI detail modal', async () => {
+    const refreshStatus = vi.fn().mockReturnValue(of({
+      outcome: 'Refreshed',
+      isSuccess: true,
+      fiscalDocumentId: 40,
+      fiscalDocumentStatus: 'CancellationRequested',
+      uuid: 'UUID-123',
+      lastKnownExternalStatus: 'Vigente',
+      providerCode: 'S',
+      providerMessage: 'CodigoEstatus=S - Comprobante obtenido satisfactoriamente. | Estado=Vigente | EstatusCancelacion=En proceso',
+      operationalStatus: 'CancellationPending',
+      operationalMessage: 'La cancelación fue solicitada y sigue en proceso en SAT.',
+      supportMessage: 'CodigoEstatus=S - Comprobante obtenido satisfactoriamente. | Estado=Vigente | EsCancelable=Cancelable con aceptación | EstatusCancelacion=En proceso',
+      checkedAtUtc: '2026-03-29T10:00:00Z'
+    }));
+    const getFiscalDocumentById = vi.fn().mockReturnValue(of({
+      id: 40,
+      billingDocumentId: 30,
+      issuerProfileId: 1,
+      fiscalReceiverId: 9,
+      status: 'CancellationRequested',
+      cfdiVersion: '4.0',
+      documentType: 'I',
+      series: 'A',
+      folio: '31787',
+      issuedAtUtc: '2026-03-24T12:00:00Z',
+      currencyCode: 'MXN',
+      exchangeRate: 1,
+      paymentMethodSat: 'PPD',
+      paymentFormSat: '99',
+      paymentCondition: 'CREDITO',
+      isCreditSale: true,
+      creditDays: 7,
+      issuerRfc: 'AAA010101AAA',
+      issuerLegalName: 'Issuer SA',
+      issuerFiscalRegimeCode: '601',
+      issuerPostalCode: '01000',
+      pacEnvironment: 'Sandbox',
+      hasCertificateReference: true,
+      hasPrivateKeyReference: true,
+      hasPrivateKeyPasswordReference: true,
+      receiverRfc: 'BBB010101BBB',
+      receiverLegalName: 'Receiver One',
+      receiverFiscalRegimeCode: '601',
+      receiverCfdiUseCode: 'G03',
+      receiverPostalCode: '02000',
+      receiverCountryCode: 'MX',
+      receiverForeignTaxRegistration: null,
+      subtotal: 100,
+      discountTotal: 0,
+      taxTotal: 16,
+      total: 116,
+      items: [],
+      specialFields: []
+    }));
+    const getCancellation = vi.fn().mockReturnValue(of({
+      fiscalDocumentId: 40,
+      status: 'Requested',
+      cancellationReasonCode: '03',
+      replacementUuid: null,
+      providerName: 'FacturaloPlus',
+      providerTrackingId: 'TRACK-CANCEL-201',
+      providerCode: 'S',
+      providerMessage: 'CodigoEstatus=S - Comprobante obtenido satisfactoriamente. | Estado=Vigente | EstatusCancelacion=En proceso',
+      errorCode: null,
+      errorMessage: null,
+      supportMessage: 'CodigoEstatus=S - Comprobante obtenido satisfactoriamente. | Estado=Vigente | EstatusCancelacion=En proceso',
+      rawResponseSummaryJson: '{"Estado":"Vigente","EstatusCancelacion":"En proceso"}',
+      requestedAtUtc: '2026-03-29T12:00:00Z',
+      cancelledAtUtc: null
+    }));
+    const fixture = await configure({ refreshStatus, getFiscalDocumentById, getCancellation });
+
+    await fixture.componentInstance['openDetailModal'](fixture.componentInstance['items']()[0]);
+    await fixture.componentInstance['refreshStatus']();
+
+    expect(refreshStatus).toHaveBeenCalledWith(40);
+    expect(fixture.componentInstance['lastOperationMessage']()).toContain('sigue en proceso en SAT');
+    expect(fixture.componentInstance['selectedDocument']()?.status).toBe('CancellationRequested');
+    expect(fixture.componentInstance['selectedCancellation']()?.status).toBe('Requested');
   });
 
   it('shows filter validation when the date range is invalid', async () => {

@@ -4,8 +4,11 @@ import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { extractApiErrorMessage } from '../../../core/http/api-error-message';
 import { FeedbackService } from '../../../core/ui/feedback.service';
+import { PermissionService } from '../../../core/auth/permission.service';
 import { FiscalDocumentsApiService } from '../../fiscal-documents/infrastructure/fiscal-documents-api.service';
 import {
+  CancelFiscalDocumentRequest,
+  CancelFiscalDocumentResponse,
   FiscalCancellationResponse,
   FiscalDocumentEmailDraftResponse,
   FiscalDocumentResponse,
@@ -21,6 +24,16 @@ import { FiscalCancellationCardComponent } from '../../fiscal-documents/componen
 import { XmlViewerPanelComponent } from '../../../shared/components/xml-viewer-panel.component';
 import { getDisplayLabel } from '../../../shared/ui/display-labels';
 import { buildFiscalDocumentFileName } from '../../fiscal-documents/application/fiscal-document-file-name';
+import {
+  buildCancellationConfirmationMessage,
+  buildCancellationRequest,
+  canCancelFiscalDocumentStatus,
+  cancellationReasonOptions,
+  getCancellationValidationError,
+  normalizeSatCode,
+  reconcileCancellationAfterOperation,
+  shouldKeepCurrentCancelledCancellation
+} from '../../fiscal-documents/application/fiscal-cancellation-ui';
 
 @Component({
   selector: 'app-issued-cfdis-page',
@@ -153,12 +166,22 @@ import { buildFiscalDocumentFileName } from '../../fiscal-documents/application/
             @if (selectedDocument(); as currentDocument) {
               <section class="card nested-card">
                 <div class="button-row">
+                  @if (permissionService.canCancelFiscal()) {
+                    <button type="button" class="danger" (click)="openCancelDialog()" [disabled]="loadingOperation() || !canCancelSelectedDocument()">
+                      {{ loadingOperation() && showCancelDialog() ? 'Cancelando...' : 'Cancelar' }}
+                    </button>
+                    <button type="button" class="secondary" (click)="refreshStatus()" [disabled]="loadingOperation()">Actualizar estatus</button>
+                  }
                   <button type="button" class="secondary" (click)="openPdfForSelected(false)">Ver PDF</button>
                   <button type="button" class="secondary" (click)="openPdfForSelected(true)">Descargar PDF</button>
                   <button type="button" class="secondary" (click)="openXmlForSelected()">Ver XML</button>
                   <button type="button" class="secondary" (click)="downloadXmlForSelected()">Descargar XML</button>
                   <button type="button" class="secondary" (click)="openEmailComposerForSelected()">Reenviar por correo</button>
                 </div>
+
+                @if (lastOperationMessage()) {
+                  <p class="helper">{{ lastOperationMessage() }}</p>
+                }
               </section>
 
               <app-fiscal-document-card [document]="currentDocument" />
@@ -178,6 +201,66 @@ import { buildFiscalDocumentFileName } from '../../fiscal-documents/application/
             @if (selectedCancellation(); as cancellation) {
               <app-fiscal-cancellation-card [cancellation]="cancellation" />
             }
+          </section>
+        </section>
+      }
+
+      @if (showCancelDialog()) {
+        <section class="modal-backdrop" (click)="closeCancelDialog()">
+          <section class="modal-card" (click)="$event.stopPropagation()">
+            <header class="modal-header">
+              <div>
+                <p class="eyebrow">CFDI emitidos</p>
+                <h3>Cancelar CFDI</h3>
+              </div>
+              <button type="button" class="secondary" (click)="closeCancelDialog()" [disabled]="loadingOperation()">Cerrar</button>
+            </header>
+
+            <p class="helper">Selecciona el motivo SAT de cancelación. Si eliges 01, debes capturar el UUID del comprobante sustituto.</p>
+
+            <form class="filters" (ngSubmit)="cancel()">
+              <label class="wide">
+                <span>Motivo de cancelación SAT</span>
+                <select
+                  [ngModel]="cancellationReasonCode"
+                  (ngModelChange)="onCancellationReasonChange($event)"
+                  name="cancellationReasonCode"
+                  required>
+                  <option value="">Selecciona motivo de cancelación</option>
+                  @for (option of cancellationReasonOptions; track option.code) {
+                    <option [value]="option.code">{{ option.code }} - {{ option.description }}</option>
+                  }
+                </select>
+                @if (selectedCancellationReasonHelp()) {
+                  <small class="helper">{{ selectedCancellationReasonHelp() }}</small>
+                }
+              </label>
+
+              @if (requiresCancellationReplacementUuid()) {
+                <label class="wide">
+                  <span>UUID de sustitución</span>
+                  <input
+                    [ngModel]="cancellationReplacementUuid"
+                    (ngModelChange)="onCancellationReplacementUuidChange($event)"
+                    name="cancellationReplacementUuid"
+                    placeholder="UUID del CFDI que sustituye al comprobante cancelado"
+                    required
+                  />
+                  <small class="helper">Obligatorio para el motivo 01.</small>
+                </label>
+              }
+
+              @if (getCancellationValidationError(); as cancellationValidationError) {
+                <p class="error wide">{{ cancellationValidationError }}</p>
+              }
+
+              <div class="actions wide">
+                <button type="submit" class="danger" [disabled]="loadingOperation() || !!getCancellationValidationError()">
+                  {{ loadingOperation() ? 'Cancelando...' : 'Confirmar cancelación' }}
+                </button>
+                <button type="button" class="secondary" (click)="closeCancelDialog()" [disabled]="loadingOperation()">Volver</button>
+              </div>
+            </form>
           </section>
         </section>
       }
@@ -248,6 +331,7 @@ import { buildFiscalDocumentFileName } from '../../fiscal-documents/application/
     .error { margin:0; color:#7a2020; }
     button { border:none; border-radius:0.8rem; padding:0.75rem 1rem; background:#182533; color:#fff; cursor:pointer; }
     button.secondary { background:#d8c49b; color:#182533; }
+    button.danger { background:#7a2020; color:#fff; }
     button.small { padding:0.45rem 0.7rem; font-size:0.88rem; }
     button:disabled { opacity:0.6; cursor:not-allowed; }
     .page-size { min-width:120px; }
@@ -266,7 +350,9 @@ import { buildFiscalDocumentFileName } from '../../fiscal-documents/application/
 export class IssuedCfdisPageComponent {
   private readonly api = inject(FiscalDocumentsApiService);
   private readonly feedbackService = inject(FeedbackService);
+  protected readonly permissionService = inject(PermissionService);
   protected readonly getDisplayLabel = getDisplayLabel;
+  protected readonly cancellationReasonOptions = cancellationReasonOptions;
 
   protected fromDate = '';
   protected toDate = '';
@@ -290,7 +376,9 @@ export class IssuedCfdisPageComponent {
   protected readonly selectedStamp = signal<FiscalStampResponse | null>(null);
   protected readonly selectedCancellation = signal<FiscalCancellationResponse | null>(null);
   protected readonly loading = signal(false);
+  protected readonly loadingOperation = signal(false);
   protected readonly errorMessage = signal<string | null>(null);
+  protected readonly lastOperationMessage = signal<string | null>(null);
   protected readonly filtersError = signal<string | null>(null);
   protected readonly showStampXmlPanel = signal(false);
   protected readonly loadingStampXml = signal(false);
@@ -302,12 +390,15 @@ export class IssuedCfdisPageComponent {
   protected readonly emailDraftError = signal<string | null>(null);
   protected readonly emailRecipientsError = signal<string | null>(null);
   protected readonly showStampDetail = signal(false);
+  protected readonly showCancelDialog = signal(false);
   protected readonly actionKey = signal<string | null>(null);
   protected readonly showDetailModal = signal(false);
   private emailFiscalDocumentId: number | null = null;
   protected emailRecipientsInput = '';
   protected emailSubject = '';
   protected emailBody = '';
+  protected cancellationReasonCode = '';
+  protected cancellationReplacementUuid = '';
 
   constructor() {
     void this.loadSpecialFieldOptions();
@@ -361,6 +452,7 @@ export class IssuedCfdisPageComponent {
   protected async selectItem(item: IssuedFiscalDocumentListItemResponse): Promise<void> {
     this.selectedItem.set(item);
     this.showStampDetail.set(false);
+    this.lastOperationMessage.set(null);
     try {
       this.selectedDocument.set(await firstValueFrom(this.api.getFiscalDocumentById(item.fiscalDocumentId)));
       this.selectedStamp.set(await firstValueFrom(this.api.getStamp(item.fiscalDocumentId)));
@@ -389,6 +481,7 @@ export class IssuedCfdisPageComponent {
   protected closeDetailModal(): void {
     this.showDetailModal.set(false);
     this.showStampDetail.set(false);
+    this.showCancelDialog.set(false);
   }
 
   protected toggleStampDetail(): void {
@@ -397,6 +490,52 @@ export class IssuedCfdisPageComponent {
 
   protected actionBusy(fiscalDocumentId: number, action: string): boolean {
     return this.actionKey() === `${action}:${fiscalDocumentId}`;
+  }
+
+  protected openCancelDialog(): void {
+    if (this.loadingOperation() || !this.canCancelSelectedDocument()) {
+      return;
+    }
+
+    this.showCancelDialog.set(true);
+    this.cancellationReasonCode = this.selectedCancellation()?.cancellationReasonCode ?? '';
+    this.cancellationReplacementUuid = this.selectedCancellation()?.replacementUuid ?? '';
+  }
+
+  protected closeCancelDialog(): void {
+    if (this.loadingOperation()) {
+      return;
+    }
+
+    this.showCancelDialog.set(false);
+  }
+
+  protected onCancellationReasonChange(value: string): void {
+    this.cancellationReasonCode = normalizeSatCode(value);
+    if (!this.requiresCancellationReplacementUuid()) {
+      this.cancellationReplacementUuid = '';
+    }
+  }
+
+  protected onCancellationReplacementUuidChange(value: string): void {
+    this.cancellationReplacementUuid = value;
+  }
+
+  protected requiresCancellationReplacementUuid(): boolean {
+    return normalizeSatCode(this.cancellationReasonCode) === '01';
+  }
+
+  protected selectedCancellationReasonHelp(): string | null {
+    const reasonCode = normalizeSatCode(this.cancellationReasonCode);
+    return cancellationReasonOptions.find((option) => option.code === reasonCode)?.helpText ?? null;
+  }
+
+  protected getCancellationValidationError(): string | null {
+    return getCancellationValidationError(this.cancellationReasonCode, this.cancellationReplacementUuid);
+  }
+
+  protected canCancelSelectedDocument(): boolean {
+    return canCancelFiscalDocumentStatus(this.selectedDocument()?.status);
   }
 
   protected async openPdf(item: IssuedFiscalDocumentListItemResponse, download: boolean): Promise<void> {
@@ -549,6 +688,62 @@ export class IssuedCfdisPageComponent {
     }
   }
 
+  protected async cancel(): Promise<void> {
+    const currentDocument = this.selectedDocument();
+    const cancellationValidationError = this.getCancellationValidationError();
+    if (!currentDocument) {
+      return;
+    }
+
+    if (cancellationValidationError) {
+      this.feedbackService.show('error', cancellationValidationError);
+      return;
+    }
+
+    const cancellationRequest = buildCancellationRequest(this.cancellationReasonCode, this.cancellationReplacementUuid);
+    if (!cancellationRequest) {
+      return;
+    }
+
+    if (!window.confirm(buildCancellationConfirmationMessage(cancellationRequest))) {
+      return;
+    }
+
+    await this.runOperation(async () => {
+      const response = await firstValueFrom(this.api.cancelFiscalDocument(currentDocument.id, cancellationRequest));
+      this.lastOperationMessage.set(
+        (response.isSuccess ? 'Cancelación exitosa.' : null)
+          || response.providerMessage
+          || response.supportMessage
+          || response.errorMessage
+          || `Resultado de la cancelación: ${getDisplayLabel(response.outcome)}`
+      );
+      this.showCancelDialog.set(false);
+      if (!response.isSuccess) {
+        await this.reloadSelectedContext(currentDocument.id);
+      }
+      this.reconcileCancellationAfterOperation(response, cancellationRequest);
+    });
+  }
+
+  protected async refreshStatus(): Promise<void> {
+    const currentDocument = this.selectedDocument();
+    if (!currentDocument) {
+      return;
+    }
+
+    await this.runOperation(async () => {
+      const response = await firstValueFrom(this.api.refreshStatus(currentDocument.id));
+      this.lastOperationMessage.set(
+        response.operationalMessage
+          || response.providerMessage
+          || response.errorMessage
+          || `Último estatus externo: ${getDisplayLabel(response.lastKnownExternalStatus ?? 'Unknown')}`
+      );
+      await this.reloadSelectedContext(currentDocument.id);
+    });
+  }
+
   protected formatUtc(value: string): string {
     return new Date(value).toLocaleString();
   }
@@ -622,6 +817,73 @@ export class IssuedCfdisPageComponent {
     this.emailSubject = draft.suggestedSubject ?? '';
     this.emailBody = draft.suggestedBody ?? '';
     this.emailRecipientsError.set(null);
+  }
+
+  private async reloadSelectedContext(fiscalDocumentId: number): Promise<void> {
+    this.selectedDocument.set(await firstValueFrom(this.api.getFiscalDocumentById(fiscalDocumentId)));
+    this.updateSelectedStatuses(this.selectedDocument()?.status ?? null);
+
+    try {
+      this.selectedStamp.set(await firstValueFrom(this.api.getStamp(fiscalDocumentId)));
+    } catch {
+      this.selectedStamp.set(null);
+    }
+
+    try {
+      const fetchedCancellation = await firstValueFrom(this.api.getCancellation(fiscalDocumentId));
+      if (!shouldKeepCurrentCancelledCancellation(this.selectedCancellation(), fetchedCancellation)) {
+        this.selectedCancellation.set(fetchedCancellation);
+      }
+    } catch {
+      this.selectedCancellation.set(null);
+    }
+  }
+
+  private reconcileCancellationAfterOperation(response: CancelFiscalDocumentResponse, request: CancelFiscalDocumentRequest): void {
+    const reconciliation = reconcileCancellationAfterOperation(
+      this.selectedDocument(),
+      this.selectedCancellation(),
+      response,
+      request
+    );
+    this.selectedDocument.set(reconciliation.nextDocument);
+    this.selectedCancellation.set(reconciliation.nextCancellation);
+    this.updateSelectedStatuses(reconciliation.nextDocument?.status ?? response.fiscalDocumentStatus ?? null);
+  }
+
+  private updateSelectedStatuses(nextStatus: string | null): void {
+    if (!nextStatus) {
+      return;
+    }
+
+    const currentSelectedItem = this.selectedItem();
+    const selectedFiscalDocumentId = currentSelectedItem?.fiscalDocumentId ?? this.selectedDocument()?.id ?? null;
+    if (currentSelectedItem) {
+      this.selectedItem.set({
+        ...currentSelectedItem,
+        status: nextStatus
+      });
+    }
+
+    if (!selectedFiscalDocumentId) {
+      return;
+    }
+
+    this.items.update((items) => items.map((item) =>
+      item.fiscalDocumentId === selectedFiscalDocumentId
+        ? { ...item, status: nextStatus }
+        : item));
+  }
+
+  private async runOperation(operation: () => Promise<void>): Promise<void> {
+    this.loadingOperation.set(true);
+    try {
+      await operation();
+    } catch (error) {
+      this.feedbackService.show('error', extractApiErrorMessage(error));
+    } finally {
+      this.loadingOperation.set(false);
+    }
   }
 
   private async handlePdf(item: IssuedFiscalDocumentListItemResponse, download: boolean): Promise<void> {

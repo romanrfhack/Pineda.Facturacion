@@ -30,6 +30,16 @@ import { FiscalReceiverFormComponent } from '../../catalogs/components/fiscal-re
 import { FiscalReceiver, FiscalReceiverSatCatalogOption, UpsertFiscalReceiverRequest, UpsertProductFiscalProfileRequest } from '../../catalogs/models/catalogs.models';
 import { extractMissingProductFiscalProfileContext, MissingProductFiscalProfileContext } from '../application/missing-product-fiscal-profile';
 import { buildFiscalDocumentFileName } from '../application/fiscal-document-file-name';
+import {
+  buildCancellationConfirmationMessage,
+  buildCancellationRequest,
+  canCancelFiscalDocumentStatus,
+  cancellationReasonOptions,
+  getCancellationValidationError,
+  normalizeSatCode,
+  reconcileCancellationAfterOperation,
+  shouldKeepCurrentCancelledCancellation
+} from '../application/fiscal-cancellation-ui';
 
 @Component({
   selector: 'app-fiscal-document-operations-page',
@@ -1391,7 +1401,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     try {
       const fetchedCancellation = await firstValueFrom(this.api.getCancellation(fiscalDocumentId));
       const currentCancellation = this.cancellation();
-      if (currentCancellation?.status === 'Cancelled' && fetchedCancellation.status !== 'Cancelled') {
+      if (shouldKeepCurrentCancelledCancellation(currentCancellation, fetchedCancellation)) {
         return;
       }
 
@@ -1450,73 +1460,29 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   }
 
   private buildCancellationRequest(): CancelFiscalDocumentRequest | null {
-    const reasonCode = normalizeSatCode(this.cancellationReasonCode);
-    if (!reasonCode) {
-      return null;
-    }
-
-    return {
-      cancellationReasonCode: reasonCode,
-      replacementUuid: reasonCode === '01'
-        ? normalizeOptionalText(this.cancellationReplacementUuid)
-        : undefined
-    };
+    return buildCancellationRequest(this.cancellationReasonCode, this.cancellationReplacementUuid);
   }
 
   private reconcileCancellationAfterOperation(
     response: import('../models/fiscal-documents.models').CancelFiscalDocumentResponse,
     request: CancelFiscalDocumentRequest): void
   {
-    const currentDocument = this.fiscalDocument();
-    if (currentDocument && response.fiscalDocumentStatus) {
-      this.fiscalDocument.set({
-        ...currentDocument,
-        status: response.fiscalDocumentStatus
-      });
-    }
-
-    const currentCancellation = this.cancellation();
-    const nextStatus = response.isSuccess
-      ? 'Cancelled'
-      : response.cancellationStatus ?? currentCancellation?.status ?? 'Rejected';
-    this.cancellation.set({
-      fiscalDocumentId: response.fiscalDocumentId,
-      status: nextStatus,
-      cancellationReasonCode: request.cancellationReasonCode,
-      replacementUuid: request.replacementUuid ?? null,
-      providerName: response.providerName ?? currentCancellation?.providerName ?? 'FacturaloPlus',
-      providerTrackingId: response.providerTrackingId ?? currentCancellation?.providerTrackingId ?? null,
-      providerCode: response.providerCode ?? currentCancellation?.providerCode ?? null,
-      providerMessage: response.providerMessage ?? currentCancellation?.providerMessage ?? null,
-      errorCode: response.errorCode ?? currentCancellation?.errorCode ?? null,
-      errorMessage: response.errorMessage ?? currentCancellation?.errorMessage ?? null,
-      supportMessage: response.supportMessage ?? currentCancellation?.supportMessage ?? null,
-      rawResponseSummaryJson: response.rawResponseSummaryJson ?? currentCancellation?.rawResponseSummaryJson ?? null,
-      requestedAtUtc: currentCancellation?.requestedAtUtc ?? new Date().toISOString(),
-      cancelledAtUtc: response.cancelledAtUtc ?? currentCancellation?.cancelledAtUtc ?? null
-    });
+    const reconciliation = reconcileCancellationAfterOperation(
+      this.fiscalDocument(),
+      this.cancellation(),
+      response,
+      request
+    );
+    this.fiscalDocument.set(reconciliation.nextDocument);
+    this.cancellation.set(reconciliation.nextCancellation);
   }
 
   protected canCancelCurrentFiscalDocument(): boolean {
-    const document = this.fiscalDocument();
-    if (!document) {
-      return false;
-    }
-
-    return document.status === 'Stamped' || document.status === 'CancellationRejected';
+    return canCancelFiscalDocumentStatus(this.fiscalDocument()?.status);
   }
 
   protected getCancellationValidationError(): string | null {
-    const reasonCode = normalizeSatCode(this.cancellationReasonCode);
-    if (!reasonCode || !cancellationReasonOptions.some((option) => option.code === reasonCode)) {
-      return 'Selecciona un motivo de cancelación SAT válido.';
-    }
-
-    if (reasonCode === '01' && !normalizeOptionalText(this.cancellationReplacementUuid)) {
-      return "El motivo 01 requiere capturar el UUID de sustitución.";
-    }
-
-    return null;
+    return getCancellationValidationError(this.cancellationReasonCode, this.cancellationReplacementUuid);
   }
 
   private getPaymentPreparationValidationError(): string | null {
@@ -1618,15 +1584,6 @@ function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
-function normalizeSatCode(value: string | null | undefined): string {
-  return value?.trim().toUpperCase() ?? '';
-}
-
-function normalizeOptionalText(value: string | null | undefined): string | null {
-  const trimmed = value?.trim() ?? '';
-  return trimmed.length > 0 ? trimmed : null;
-}
-
 function normalizeCreditDays(value: number | string | null): number | null {
   if (typeof value === 'number') {
     return Number.isFinite(value) && value > 0 ? Math.trunc(value) : null;
@@ -1645,38 +1602,6 @@ function buildCreditPaymentCondition(creditDays: number | null): string {
     ? `Crédito a ${creditDays} días`
     : 'Crédito';
 }
-
-function buildCancellationConfirmationMessage(request: CancelFiscalDocumentRequest): string {
-  const reason = cancellationReasonOptions.find((option) => option.code === request.cancellationReasonCode);
-  if (request.cancellationReasonCode === '01' && request.replacementUuid) {
-    return `¿Confirmas la cancelación SAT con motivo ${request.cancellationReasonCode} - ${reason?.description ?? 'Motivo SAT'} y UUID de sustitución ${request.replacementUuid}?`;
-  }
-
-  return `¿Confirmas la cancelación SAT con motivo ${request.cancellationReasonCode} - ${reason?.description ?? 'Motivo SAT'}?`;
-}
-
-const cancellationReasonOptions = [
-  {
-    code: '01',
-    description: 'Comprobante emitido con errores con relación',
-    helpText: 'Usa este motivo cuando el CFDI será sustituido por otro comprobante relacionado.'
-  },
-  {
-    code: '02',
-    description: 'Comprobante emitido con errores sin relación',
-    helpText: 'Usa este motivo cuando el CFDI tiene errores y no será sustituido por un nuevo comprobante relacionado.'
-  },
-  {
-    code: '03',
-    description: 'No se llevó a cabo la operación',
-    helpText: 'Usa este motivo cuando la operación comercial finalmente no ocurrió.'
-  },
-  {
-    code: '04',
-    description: 'Operación nominativa relacionada en una factura global',
-    helpText: 'Usa este motivo cuando la operación ya quedó incluida en una factura global nominativa.'
-  }
-] as const;
 
 interface ReceiverSpecialFieldDraft {
   fieldCode: string;
