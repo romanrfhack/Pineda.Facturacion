@@ -12,10 +12,6 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropIndex(
-                name: "IX_billing_document_item_billing_document_id",
-                table: "billing_document_item");
-
             migrationBuilder.AddColumn<long>(
                 name: "sales_order_id",
                 table: "billing_document_item",
@@ -128,6 +124,10 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
                 table: "billing_document_item",
                 column: "sales_order_item_id");
 
+            migrationBuilder.DropIndex(
+                name: "IX_billing_document_item_billing_document_id",
+                table: "billing_document_item");
+
             migrationBuilder.CreateIndex(
                 name: "IX_billing_document_item_removal_billing_document_id_sales_orde~",
                 table: "billing_document_item_removal",
@@ -185,6 +185,11 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
             migrationBuilder.DropTable(
                 name: "billing_document_item_removal");
 
+            migrationBuilder.CreateIndex(
+                name: "IX_billing_document_item_billing_document_id",
+                table: "billing_document_item",
+                column: "billing_document_id");
+
             migrationBuilder.DropIndex(
                 name: "IX_billing_document_item_billing_document_id_sales_order_item_id",
                 table: "billing_document_item");
@@ -212,11 +217,6 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
             migrationBuilder.DropColumn(
                 name: "source_sales_order_line_number",
                 table: "billing_document_item");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_billing_document_item_billing_document_id",
-                table: "billing_document_item",
-                column: "billing_document_id");
         }
     }
 }
