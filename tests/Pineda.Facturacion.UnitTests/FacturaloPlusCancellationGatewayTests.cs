@@ -196,6 +196,116 @@ public class FacturaloPlusCancellationGatewayTests
         Assert.Contains("certificate reference", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task ListPendingAuthorizationsAsync_Builds_FormUrlEncoded_Request()
+    {
+        var handler = new RecordingHandler(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""
+                {
+                  "solicitudes": [
+                    {
+                      "uuid": "UUID-PENDING-1",
+                      "rfcEmisor": "AAA010101AAA",
+                      "rfcReceptor": "BBB010101BBB",
+                      "mensaje": "Pendiente"
+                    }
+                  ]
+                }
+                """, Encoding.UTF8, "application/json")
+        });
+
+        var client = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://dev.facturaloplus.com/api/rest/servicio/")
+        };
+        var secretResolver = new RecordingSecretResolver(new Dictionary<string, string?>
+        {
+            ["FACTURALOPLUS_API_KEY_REFERENCE"] = "APIKEY-TEST",
+            ["CERT_REF"] = "-----BEGIN CERTIFICATE-----\nCERT\n-----END CERTIFICATE-----",
+            ["KEY_REF"] = "-----BEGIN PRIVATE KEY-----\nKEY\n-----END PRIVATE KEY-----"
+        });
+
+        var gateway = new FacturaloPlusCancellationGateway(
+            client,
+            Options.Create(new FacturaloPlusOptions
+            {
+                BaseUrl = "https://dev.facturaloplus.com/api/rest/servicio/",
+                PendingCancellationAuthorizationsPath = "consultarAutorizacionesPendientes",
+                ApiKeyReference = "FACTURALOPLUS_API_KEY_REFERENCE"
+            }),
+            secretResolver);
+
+        var result = await gateway.ListPendingAuthorizationsAsync(new FiscalCancellationAuthorizationPendingQueryRequest
+        {
+            CertificateReference = "CERT_REF",
+            PrivateKeyReference = "KEY_REF"
+        });
+
+        Assert.Equal(FiscalCancellationAuthorizationPendingQueryGatewayOutcome.Retrieved, result.Outcome);
+        Assert.Single(result.Items);
+        Assert.Equal("UUID-PENDING-1", result.Items[0].Uuid);
+        Assert.NotNull(handler.LastRequest);
+        Assert.EndsWith("/consultarAutorizacionesPendientes", handler.LastRequest!.RequestUri!.ToString(), StringComparison.Ordinal);
+
+        var form = ParseFormBody(handler.LastBody!);
+        Assert.Equal("APIKEY-TEST", form["apikey"]);
+        Assert.Contains("BEGIN PRIVATE KEY", form["keyPEM"]);
+        Assert.Contains("BEGIN CERTIFICATE", form["cerPEM"]);
+    }
+
+    [Fact]
+    public async Task RespondAuthorizationAsync_Builds_FormUrlEncoded_Request()
+    {
+        var handler = new RecordingHandler(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""
+                {
+                  "CodigoEstatus": "200",
+                  "Mensaje": "Solicitud atendida"
+                }
+                """, Encoding.UTF8, "application/json")
+        });
+
+        var client = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://dev.facturaloplus.com/api/rest/servicio/")
+        };
+        var secretResolver = new RecordingSecretResolver(new Dictionary<string, string?>
+        {
+            ["FACTURALOPLUS_API_KEY_REFERENCE"] = "APIKEY-TEST",
+            ["CERT_REF"] = "-----BEGIN CERTIFICATE-----\nCERT\n-----END CERTIFICATE-----",
+            ["KEY_REF"] = "-----BEGIN PRIVATE KEY-----\nKEY\n-----END PRIVATE KEY-----"
+        });
+
+        var gateway = new FacturaloPlusCancellationGateway(
+            client,
+            Options.Create(new FacturaloPlusOptions
+            {
+                BaseUrl = "https://dev.facturaloplus.com/api/rest/servicio/",
+                CancellationAuthorizationDecisionPath = "autorizarCancelacion",
+                ApiKeyReference = "FACTURALOPLUS_API_KEY_REFERENCE"
+            }),
+            secretResolver);
+
+        var result = await gateway.RespondAuthorizationAsync(new FiscalCancellationAuthorizationDecisionRequest
+        {
+            CertificateReference = "CERT_REF",
+            PrivateKeyReference = "KEY_REF",
+            Uuid = "UUID-PENDING-1",
+            Response = "Aceptar"
+        });
+
+        Assert.Equal(FiscalCancellationAuthorizationDecisionGatewayOutcome.Responded, result.Outcome);
+        Assert.NotNull(handler.LastRequest);
+        Assert.EndsWith("/autorizarCancelacion", handler.LastRequest!.RequestUri!.ToString(), StringComparison.Ordinal);
+
+        var form = ParseFormBody(handler.LastBody!);
+        Assert.Equal("APIKEY-TEST", form["apikey"]);
+        Assert.Equal("UUID-PENDING-1", form["uuid"]);
+        Assert.Equal("Aceptar", form["respuesta"]);
+    }
+
     private static FacturaloPlusCancellationGateway CreateGateway(string responseJson, HttpStatusCode statusCode)
     {
         var handler = new RecordingHandler(new HttpResponseMessage(statusCode)

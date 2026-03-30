@@ -8,5 +8,9 @@ public interface IFiscalStampRepository
 
     Task<FiscalStamp?> GetTrackedByFiscalDocumentIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default);
 
+    Task<FiscalStamp?> GetByUuidAsync(string uuid, CancellationToken cancellationToken = default);
+
+    Task<FiscalStamp?> GetTrackedByUuidAsync(string uuid, CancellationToken cancellationToken = default);
+
     Task AddAsync(FiscalStamp fiscalStamp, CancellationToken cancellationToken = default);
 }

@@ -26,6 +26,19 @@ public class FiscalCancellationRepository : IFiscalCancellationRepository
             .FirstOrDefaultAsync(x => x.FiscalDocumentId == fiscalDocumentId, cancellationToken);
     }
 
+    public Task<FiscalCancellation?> GetByFiscalStampIdAsync(long fiscalStampId, CancellationToken cancellationToken = default)
+    {
+        return _dbContext.FiscalCancellations
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.FiscalStampId == fiscalStampId, cancellationToken);
+    }
+
+    public Task<FiscalCancellation?> GetTrackedByFiscalStampIdAsync(long fiscalStampId, CancellationToken cancellationToken = default)
+    {
+        return _dbContext.FiscalCancellations
+            .FirstOrDefaultAsync(x => x.FiscalStampId == fiscalStampId, cancellationToken);
+    }
+
     public async Task AddAsync(FiscalCancellation fiscalCancellation, CancellationToken cancellationToken = default)
     {
         await _dbContext.FiscalCancellations.AddAsync(fiscalCancellation, cancellationToken);

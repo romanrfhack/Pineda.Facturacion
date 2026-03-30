@@ -370,6 +370,12 @@ public class FiscalStampingServicesTests
         public Task<FiscalStamp?> GetTrackedByFiscalDocumentIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default)
             => Task.FromResult(ExistingTracked?.FiscalDocumentId == fiscalDocumentId ? ExistingTracked : null);
 
+        public Task<FiscalStamp?> GetByUuidAsync(string uuid, CancellationToken cancellationToken = default)
+            => Task.FromResult(string.Equals(ExistingTracked?.Uuid, uuid, StringComparison.OrdinalIgnoreCase) ? ExistingTracked : Added);
+
+        public Task<FiscalStamp?> GetTrackedByUuidAsync(string uuid, CancellationToken cancellationToken = default)
+            => Task.FromResult(string.Equals(ExistingTracked?.Uuid, uuid, StringComparison.OrdinalIgnoreCase) ? ExistingTracked : null);
+
         public Task AddAsync(FiscalStamp fiscalStamp, CancellationToken cancellationToken = default)
         {
             fiscalStamp.Id = 700;

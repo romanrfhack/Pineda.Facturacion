@@ -422,8 +422,76 @@ export interface FiscalCancellationResponse {
   errorMessage?: string | null;
   supportMessage?: string | null;
   rawResponseSummaryJson?: string | null;
+  authorizationStatus?: string | null;
+  authorizationProviderOperation?: string | null;
+  authorizationProviderTrackingId?: string | null;
+  authorizationProviderCode?: string | null;
+  authorizationProviderMessage?: string | null;
+  authorizationErrorCode?: string | null;
+  authorizationErrorMessage?: string | null;
+  authorizationSupportMessage?: string | null;
+  authorizationRawResponseSummaryJson?: string | null;
+  authorizationRespondedAtUtc?: string | null;
+  authorizationRespondedByUsername?: string | null;
+  authorizationRespondedByDisplayName?: string | null;
   requestedAtUtc: string;
   cancelledAtUtc?: string | null;
+}
+
+export interface PendingCancellationAuthorizationItemResponse {
+  uuid: string;
+  issuerRfc?: string | null;
+  receiverRfc?: string | null;
+  providerCode?: string | null;
+  providerMessage?: string | null;
+  requestedAtUtc?: string | null;
+  fiscalDocumentId?: number | null;
+  fiscalDocumentStatus?: string | null;
+  fiscalCancellationId?: number | null;
+  cancellationStatus?: string | null;
+  authorizationStatus?: string | null;
+  localOperationalStatus?: string | null;
+  localOperationalMessage?: string | null;
+  rawItemSummaryJson?: string | null;
+}
+
+export interface PendingCancellationAuthorizationsResponse {
+  outcome: string;
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  providerName?: string | null;
+  providerCode?: string | null;
+  providerMessage?: string | null;
+  supportMessage?: string | null;
+  rawResponseSummaryJson?: string | null;
+  items: PendingCancellationAuthorizationItemResponse[];
+}
+
+export interface RespondCancellationAuthorizationRequest {
+  uuid: string;
+  response: string;
+}
+
+export interface RespondCancellationAuthorizationResponse {
+  outcome: string;
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  requestedResponse: string;
+  appliedResponse?: string | null;
+  uuid?: string | null;
+  fiscalDocumentId?: number | null;
+  fiscalDocumentStatus?: string | null;
+  fiscalCancellationId?: number | null;
+  cancellationStatus?: string | null;
+  authorizationStatus?: string | null;
+  providerName?: string | null;
+  providerTrackingId?: string | null;
+  providerCode?: string | null;
+  providerMessage?: string | null;
+  errorCode?: string | null;
+  supportMessage?: string | null;
+  rawResponseSummaryJson?: string | null;
+  respondedAtUtc?: string | null;
 }
 
 export interface RefreshFiscalDocumentStatusResponse {

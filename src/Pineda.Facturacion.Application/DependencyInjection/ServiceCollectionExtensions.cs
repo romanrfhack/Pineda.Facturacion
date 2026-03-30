@@ -56,6 +56,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<GetFiscalCancellationByFiscalDocumentIdService>();
         services.AddScoped<CancelFiscalDocumentService>();
         services.AddScoped<RefreshFiscalDocumentStatusService>();
+        services.AddScoped<ListPendingFiscalCancellationAuthorizationsService>();
+        services.AddScoped<RespondFiscalCancellationAuthorizationService>();
         services.AddScoped<CreateIssuerProfileService>();
         services.AddScoped<UpdateIssuerProfileService>();
         services.AddScoped<GetActiveIssuerProfileService>();

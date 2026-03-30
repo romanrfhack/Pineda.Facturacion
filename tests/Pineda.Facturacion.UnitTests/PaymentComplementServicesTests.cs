@@ -705,6 +705,12 @@ public class PaymentComplementServicesTests
         public Task<FiscalStamp?> GetTrackedByFiscalDocumentIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default)
             => GetByFiscalDocumentIdAsync(fiscalDocumentId, cancellationToken);
 
+        public Task<FiscalStamp?> GetByUuidAsync(string uuid, CancellationToken cancellationToken = default)
+            => Task.FromResult<FiscalStamp?>(null);
+
+        public Task<FiscalStamp?> GetTrackedByUuidAsync(string uuid, CancellationToken cancellationToken = default)
+            => Task.FromResult<FiscalStamp?>(null);
+
         public Task AddAsync(FiscalStamp fiscalStamp, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 

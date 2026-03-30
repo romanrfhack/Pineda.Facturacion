@@ -18,6 +18,10 @@ public class FacturaloPlusOptions
 
     public string StatusQueryPath { get; set; } = "consultarEstadoSAT";
 
+    public string PendingCancellationAuthorizationsPath { get; set; } = "consultarAutorizacionesPendientes";
+
+    public string CancellationAuthorizationDecisionPath { get; set; } = "autorizarCancelacion";
+
     public string ProviderName { get; set; } = "FacturaloPlus";
 
     public string PayloadMode { get; set; } = "JsonSnapshot";

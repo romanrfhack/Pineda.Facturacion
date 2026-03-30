@@ -1,6 +1,8 @@
 using Pineda.Facturacion.Application.Abstractions.Pac;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
+using Pineda.Facturacion.Application.Abstractions.Security;
 using Pineda.Facturacion.Application.Contracts.Pac;
+using Pineda.Facturacion.Application.Security;
 using Pineda.Facturacion.Application.UseCases.FiscalDocuments;
 using Pineda.Facturacion.Api.Endpoints;
 using Pineda.Facturacion.Domain.Entities;
@@ -611,6 +613,154 @@ public class FiscalCancellationAndStatusServicesTests
         Assert.DoesNotContain("RawRequestBody", cancellationEntityFields);
     }
 
+    [Fact]
+    public async Task ListPendingFiscalCancellationAuthorizations_Correlates_LocalDocument_ByUuid()
+    {
+        var service = new ListPendingFiscalCancellationAuthorizationsService(
+            new FakeIssuerProfileRepository { Existing = CreateActiveIssuerProfile() },
+            new FakeFiscalStampRepository { ExistingTracked = CreateFiscalStamp() },
+            new FakeFiscalDocumentRepository { ExistingTracked = CreateStampedFiscalDocument() },
+            new FakeFiscalCancellationRepository
+            {
+                ExistingTracked = new FiscalCancellation
+                {
+                    Id = 90,
+                    FiscalDocumentId = 50,
+                    FiscalStampId = 70,
+                    Status = FiscalCancellationStatus.Requested,
+                    ProviderName = "FacturaloPlus",
+                    ProviderOperation = "cancelar2",
+                    CancellationReasonCode = "03"
+                }
+            },
+            new FakeFiscalCancellationGateway
+            {
+                NextPendingResult = new FiscalCancellationAuthorizationPendingQueryGatewayResult
+                {
+                    Outcome = FiscalCancellationAuthorizationPendingQueryGatewayOutcome.Retrieved,
+                    ProviderName = "FacturaloPlus",
+                    ProviderOperation = "consultarAutorizacionesPendientes",
+                    Items =
+                    [
+                        new FiscalCancellationAuthorizationPendingItem
+                        {
+                            Uuid = "UUID-1",
+                            IssuerRfc = "AAA010101AAA",
+                            ReceiverRfc = "BBB010101BBB"
+                        }
+                    ]
+                }
+            });
+
+        var result = await service.ExecuteAsync();
+
+        Assert.True(result.IsSuccess);
+        Assert.Single(result.Items);
+        Assert.Equal(50, result.Items[0].FiscalDocumentId);
+        Assert.Equal("Stamped", result.Items[0].FiscalDocumentStatus);
+        Assert.Equal("Pending", result.Items[0].AuthorizationStatus);
+    }
+
+    [Fact]
+    public async Task RespondFiscalCancellationAuthorization_Accept_Keeps_CancellationRequested_And_Persists_Authorization()
+    {
+        var fiscalDocument = CreateStampedFiscalDocument();
+        fiscalDocument.Status = FiscalDocumentStatus.CancellationRequested;
+        var fiscalCancellation = new FiscalCancellation
+        {
+            Id = 90,
+            FiscalDocumentId = fiscalDocument.Id,
+            FiscalStampId = 70,
+            Status = FiscalCancellationStatus.Requested,
+            CancellationReasonCode = "03",
+            ProviderName = "FacturaloPlus",
+            ProviderOperation = "cancelar2",
+            RequestedAtUtc = DateTime.UtcNow,
+            CreatedAtUtc = DateTime.UtcNow,
+            UpdatedAtUtc = DateTime.UtcNow
+        };
+
+        var service = new RespondFiscalCancellationAuthorizationService(
+            new FakeIssuerProfileRepository { Existing = CreateActiveIssuerProfile() },
+            new FakeFiscalStampRepository { ExistingTracked = CreateFiscalStamp() },
+            new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
+            new FakeFiscalCancellationRepository { ExistingTracked = fiscalCancellation },
+            new FakeFiscalCancellationGateway
+            {
+                NextAuthorizationDecisionResult = new FiscalCancellationAuthorizationDecisionGatewayResult
+                {
+                    Outcome = FiscalCancellationAuthorizationDecisionGatewayOutcome.Responded,
+                    ProviderName = "FacturaloPlus",
+                    ProviderOperation = "autorizarCancelacion",
+                    ProviderCode = "200",
+                    ProviderMessage = "Aceptado"
+                }
+            },
+            new FakeCurrentUserAccessor(),
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new RespondFiscalCancellationAuthorizationCommand
+        {
+            Uuid = "UUID-1",
+            Response = "Accept"
+        });
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("Accepted", result.AuthorizationStatus);
+        Assert.Equal(FiscalDocumentStatus.CancellationRequested, fiscalDocument.Status);
+        Assert.Equal(FiscalCancellationAuthorizationStatus.Accepted, fiscalCancellation.AuthorizationStatus);
+    }
+
+    [Fact]
+    public async Task RespondFiscalCancellationAuthorization_Reject_Marks_Document_As_CancellationRejected()
+    {
+        var fiscalDocument = CreateStampedFiscalDocument();
+        fiscalDocument.Status = FiscalDocumentStatus.CancellationRequested;
+        var fiscalCancellation = new FiscalCancellation
+        {
+            Id = 90,
+            FiscalDocumentId = fiscalDocument.Id,
+            FiscalStampId = 70,
+            Status = FiscalCancellationStatus.Requested,
+            CancellationReasonCode = "03",
+            ProviderName = "FacturaloPlus",
+            ProviderOperation = "cancelar2",
+            RequestedAtUtc = DateTime.UtcNow,
+            CreatedAtUtc = DateTime.UtcNow,
+            UpdatedAtUtc = DateTime.UtcNow
+        };
+
+        var service = new RespondFiscalCancellationAuthorizationService(
+            new FakeIssuerProfileRepository { Existing = CreateActiveIssuerProfile() },
+            new FakeFiscalStampRepository { ExistingTracked = CreateFiscalStamp() },
+            new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
+            new FakeFiscalCancellationRepository { ExistingTracked = fiscalCancellation },
+            new FakeFiscalCancellationGateway
+            {
+                NextAuthorizationDecisionResult = new FiscalCancellationAuthorizationDecisionGatewayResult
+                {
+                    Outcome = FiscalCancellationAuthorizationDecisionGatewayOutcome.Responded,
+                    ProviderName = "FacturaloPlus",
+                    ProviderOperation = "autorizarCancelacion",
+                    ProviderCode = "200",
+                    ProviderMessage = "Rechazado"
+                }
+            },
+            new FakeCurrentUserAccessor(),
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new RespondFiscalCancellationAuthorizationCommand
+        {
+            Uuid = "UUID-1",
+            Response = "Reject"
+        });
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(FiscalDocumentStatus.CancellationRejected, fiscalDocument.Status);
+        Assert.Equal(FiscalCancellationStatus.Rejected, fiscalCancellation.Status);
+        Assert.Equal(FiscalCancellationAuthorizationStatus.Rejected, fiscalCancellation.AuthorizationStatus);
+    }
+
     private static FiscalDocument CreateStampedFiscalDocument()
     {
         return new FiscalDocument
@@ -639,6 +789,24 @@ public class FiscalCancellationAndStatusServicesTests
             Uuid = "UUID-1",
             CreatedAtUtc = DateTime.UtcNow,
             UpdatedAtUtc = DateTime.UtcNow
+        };
+    }
+
+    private static IssuerProfile CreateActiveIssuerProfile()
+    {
+        return new IssuerProfile
+        {
+            Id = 10,
+            LegalName = "Pineda SA de CV",
+            Rfc = "AAA010101AAA",
+            FiscalRegimeCode = "601",
+            PostalCode = "01000",
+            CfdiVersion = "4.0",
+            CertificateReference = "ISSUER_CERTIFICATE_REFERENCE",
+            PrivateKeyReference = "ISSUER_PRIVATE_KEY_REFERENCE",
+            PrivateKeyPasswordReference = "ISSUER_PRIVATE_KEY_PASSWORD_REFERENCE",
+            PacEnvironment = "Sandbox",
+            IsActive = true
         };
     }
 
@@ -674,6 +842,12 @@ public class FiscalCancellationAndStatusServicesTests
         public Task<FiscalStamp?> GetTrackedByFiscalDocumentIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default)
             => Task.FromResult(ExistingTracked?.FiscalDocumentId == fiscalDocumentId ? ExistingTracked : null);
 
+        public Task<FiscalStamp?> GetByUuidAsync(string uuid, CancellationToken cancellationToken = default)
+            => Task.FromResult(string.Equals(ExistingTracked?.Uuid, uuid, StringComparison.OrdinalIgnoreCase) ? ExistingTracked : null);
+
+        public Task<FiscalStamp?> GetTrackedByUuidAsync(string uuid, CancellationToken cancellationToken = default)
+            => Task.FromResult(string.Equals(ExistingTracked?.Uuid, uuid, StringComparison.OrdinalIgnoreCase) ? ExistingTracked : null);
+
         public Task AddAsync(FiscalStamp fiscalStamp, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
@@ -688,6 +862,12 @@ public class FiscalCancellationAndStatusServicesTests
         public Task<FiscalCancellation?> GetTrackedByFiscalDocumentIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default)
             => Task.FromResult(ExistingTracked?.FiscalDocumentId == fiscalDocumentId ? ExistingTracked : null);
 
+        public Task<FiscalCancellation?> GetByFiscalStampIdAsync(long fiscalStampId, CancellationToken cancellationToken = default)
+            => Task.FromResult(ExistingTracked?.FiscalStampId == fiscalStampId ? ExistingTracked : Added);
+
+        public Task<FiscalCancellation?> GetTrackedByFiscalStampIdAsync(long fiscalStampId, CancellationToken cancellationToken = default)
+            => Task.FromResult(ExistingTracked?.FiscalStampId == fiscalStampId ? ExistingTracked : null);
+
         public Task AddAsync(FiscalCancellation fiscalCancellation, CancellationToken cancellationToken = default)
         {
             fiscalCancellation.Id = 90;
@@ -699,6 +879,8 @@ public class FiscalCancellationAndStatusServicesTests
     private sealed class FakeFiscalCancellationGateway : IFiscalCancellationGateway
     {
         public FiscalCancellationRequest? LastRequest { get; private set; }
+        public FiscalCancellationAuthorizationPendingQueryRequest? LastPendingRequest { get; private set; }
+        public FiscalCancellationAuthorizationDecisionRequest? LastAuthorizationDecisionRequest { get; private set; }
 
         public FiscalCancellationGatewayResult NextResult { get; init; } = new()
         {
@@ -708,10 +890,40 @@ public class FiscalCancellationAndStatusServicesTests
             CancelledAtUtc = DateTime.UtcNow
         };
 
+        public FiscalCancellationAuthorizationPendingQueryGatewayResult NextPendingResult { get; init; } = new()
+        {
+            Outcome = FiscalCancellationAuthorizationPendingQueryGatewayOutcome.Retrieved,
+            ProviderName = "FacturaloPlus",
+            ProviderOperation = "consultarAutorizacionesPendientes"
+        };
+
+        public FiscalCancellationAuthorizationDecisionGatewayResult NextAuthorizationDecisionResult { get; init; } = new()
+        {
+            Outcome = FiscalCancellationAuthorizationDecisionGatewayOutcome.Responded,
+            ProviderName = "FacturaloPlus",
+            ProviderOperation = "autorizarCancelacion"
+        };
+
         public Task<FiscalCancellationGatewayResult> CancelAsync(FiscalCancellationRequest request, CancellationToken cancellationToken = default)
         {
             LastRequest = request;
             return Task.FromResult(NextResult);
+        }
+
+        public Task<FiscalCancellationAuthorizationPendingQueryGatewayResult> ListPendingAuthorizationsAsync(
+            FiscalCancellationAuthorizationPendingQueryRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            LastPendingRequest = request;
+            return Task.FromResult(NextPendingResult);
+        }
+
+        public Task<FiscalCancellationAuthorizationDecisionGatewayResult> RespondAuthorizationAsync(
+            FiscalCancellationAuthorizationDecisionRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            LastAuthorizationDecisionRequest = request;
+            return Task.FromResult(NextAuthorizationDecisionResult);
         }
     }
 
@@ -738,5 +950,36 @@ public class FiscalCancellationAndStatusServicesTests
     private sealed class FakeUnitOfWork : IUnitOfWork
     {
         public Task SaveChangesAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class FakeIssuerProfileRepository : IIssuerProfileRepository
+    {
+        public IssuerProfile? Existing { get; init; }
+
+        public Task<IssuerProfile?> GetActiveAsync(CancellationToken cancellationToken = default) => Task.FromResult(Existing);
+
+        public Task<IssuerProfile?> GetTrackedActiveAsync(CancellationToken cancellationToken = default) => Task.FromResult(Existing);
+
+        public Task<IssuerProfile?> GetByIdAsync(long issuerProfileId, CancellationToken cancellationToken = default)
+            => Task.FromResult(Existing?.Id == issuerProfileId ? Existing : null);
+
+        public Task<bool> TryAdvanceNextFiscalFolioAsync(long issuerProfileId, int expectedNextFiscalFolio, int newNextFiscalFolio, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+
+        public Task AddAsync(IssuerProfile issuerProfile, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task UpdateAsync(IssuerProfile issuerProfile, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class FakeCurrentUserAccessor : ICurrentUserAccessor
+    {
+        public CurrentUserContext GetCurrentUser()
+        {
+            return new CurrentUserContext
+            {
+                Username = "tester",
+                DisplayName = "Test User"
+            };
+        }
     }
 }

@@ -183,6 +183,23 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         sentAtUtc: '2026-03-24T12:10:00Z'
       })),
       getCancellation: vi.fn().mockReturnValue(throwError(() => ({ status: 404 }))),
+      listPendingCancellationAuthorizations: vi.fn().mockReturnValue(of({
+        outcome: 'Retrieved',
+        isSuccess: true,
+        items: []
+      })),
+      respondCancellationAuthorization: vi.fn().mockReturnValue(of({
+        outcome: 'Responded',
+        isSuccess: true,
+        requestedResponse: 'Accept',
+        appliedResponse: 'Accept',
+        uuid: 'UUID-123',
+        fiscalDocumentId: 40,
+        fiscalDocumentStatus: 'CancellationRequested',
+        fiscalCancellationId: 90,
+        cancellationStatus: 'Requested',
+        authorizationStatus: 'Accepted'
+      })),
       stampFiscalDocument: vi.fn(),
       cancelFiscalDocument: vi.fn(),
       refreshStatus: vi.fn(),
@@ -1995,5 +2012,52 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('UUID-PENDING-1');
     expect(fixture.nativeElement.textContent).toContain('Documento destino #31');
     expect(fixture.nativeElement.textContent).toContain('Movimientos manuales');
+  });
+
+  it('lists pending cancellation authorizations and allows responding from the page', async () => {
+    const listPendingCancellationAuthorizations = vi.fn().mockReturnValue(of({
+      outcome: 'Retrieved',
+      isSuccess: true,
+      items: [
+        {
+          uuid: 'UUID-PENDING-1',
+          issuerRfc: 'AAA010101AAA',
+          receiverRfc: 'BBB010101BBB',
+          fiscalDocumentId: 40,
+          fiscalDocumentStatus: 'CancellationRequested',
+          authorizationStatus: 'Pending'
+        }
+      ]
+    }));
+    const respondCancellationAuthorization = vi.fn().mockReturnValue(of({
+      outcome: 'Responded',
+      isSuccess: true,
+      requestedResponse: 'Accept',
+      appliedResponse: 'Accept',
+      uuid: 'UUID-PENDING-1',
+      fiscalDocumentId: 40,
+      fiscalDocumentStatus: 'CancellationRequested',
+      fiscalCancellationId: 90,
+      cancellationStatus: 'Requested',
+      authorizationStatus: 'Accepted',
+      providerMessage: 'Aceptado'
+    }));
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    const fixture = await configure({
+      listPendingCancellationAuthorizations,
+      respondCancellationAuthorization
+    });
+
+    await fixture.componentInstance['loadPendingCancellationAuthorizations']();
+    await fixture.componentInstance['respondCancellationAuthorization'](
+      fixture.componentInstance['pendingCancellationAuthorizations']()[0],
+      'Accept');
+
+    expect(listPendingCancellationAuthorizations).toHaveBeenCalled();
+    expect(respondCancellationAuthorization).toHaveBeenCalledWith({
+      uuid: 'UUID-PENDING-1',
+      response: 'Accept'
+    });
   });
 });

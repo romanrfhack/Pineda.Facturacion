@@ -36,6 +36,26 @@ import { getDisplayLabel } from '../../../shared/ui/display-labels';
           }
         </div>
       }
+      @if (cancellation().authorizationStatus && cancellation().authorizationStatus !== 'None') {
+        <section class="message-block authorization-block">
+          <p class="message support"><strong>Autorización:</strong> {{ authorizationSummary() }}</p>
+          @if (cancellation().authorizationProviderMessage) {
+            <p class="message"><strong>Mensaje autorización:</strong> {{ cancellation().authorizationProviderMessage }}</p>
+          }
+          @if (cancellation().authorizationErrorMessage) {
+            <p class="message"><strong>Error autorización:</strong> {{ cancellation().authorizationErrorMessage }}</p>
+          }
+          @if (cancellation().authorizationSupportMessage) {
+            <p class="message support"><strong>Soporte autorización:</strong> {{ cancellation().authorizationSupportMessage }}</p>
+          }
+          @if (cancellation().authorizationRawResponseSummaryJson) {
+            <details class="raw-details">
+              <summary>Resumen técnico autorización</summary>
+              <pre>{{ cancellation().authorizationRawResponseSummaryJson }}</pre>
+            </details>
+          }
+        </section>
+      }
       @if (cancellation().rawResponseSummaryJson) {
         <details class="raw-details">
           <summary>Resumen técnico PAC</summary>
@@ -102,5 +122,16 @@ export class FiscalCancellationCardComponent {
       default:
         return 'Pendiente';
     }
+  });
+  protected readonly authorizationSummary = computed(() => {
+    const cancellation = this.cancellation();
+    const pieces = [getDisplayLabel(cancellation.authorizationStatus ?? 'None')];
+    if (cancellation.authorizationRespondedAtUtc) {
+      pieces.push(new DatePipe('es-MX').transform(cancellation.authorizationRespondedAtUtc, 'medium') ?? cancellation.authorizationRespondedAtUtc);
+    }
+    if (cancellation.authorizationRespondedByDisplayName) {
+      pieces.push(cancellation.authorizationRespondedByDisplayName);
+    }
+    return pieces.filter(Boolean).join(' · ');
   });
 }

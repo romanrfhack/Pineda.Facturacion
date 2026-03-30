@@ -20,8 +20,11 @@ import {
   PrepareFiscalDocumentRequest,
   PrepareFiscalDocumentResponse,
   PendingBillingItemResponse,
+  PendingCancellationAuthorizationsResponse,
   RemoveBillingDocumentItemRequest,
   RemoveBillingDocumentItemResponse,
+  RespondCancellationAuthorizationRequest,
+  RespondCancellationAuthorizationResponse,
   RefreshFiscalDocumentStatusResponse,
   SendFiscalDocumentEmailRequest,
   SendFiscalDocumentEmailResponse,
@@ -143,6 +146,16 @@ export class FiscalDocumentsApiService {
 
   getCancellation(fiscalDocumentId: number): Observable<FiscalCancellationResponse> {
     return this.http.get<FiscalCancellationResponse>(buildApiUrl(`/fiscal-documents/${fiscalDocumentId}/cancellation`));
+  }
+
+  listPendingCancellationAuthorizations(): Observable<PendingCancellationAuthorizationsResponse> {
+    return this.http.get<PendingCancellationAuthorizationsResponse>(buildApiUrl('/fiscal-documents/cancellation-authorizations/pending'));
+  }
+
+  respondCancellationAuthorization(request: RespondCancellationAuthorizationRequest): Observable<RespondCancellationAuthorizationResponse> {
+    return this.http.post<RespondCancellationAuthorizationResponse>(
+      buildApiUrl('/fiscal-documents/cancellation-authorizations/respond'),
+      request);
   }
 
   refreshStatus(fiscalDocumentId: number): Observable<RefreshFiscalDocumentStatusResponse> {

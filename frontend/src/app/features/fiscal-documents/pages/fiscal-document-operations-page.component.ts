@@ -17,6 +17,7 @@ import {
   FiscalStampResponse,
   IssuerProfileResponse,
   PendingBillingItemResponse,
+  PendingCancellationAuthorizationItemResponse,
   PrepareFiscalDocumentRequest
 } from '../models/fiscal-documents.models';
 import { FeedbackService } from '../../../core/ui/feedback.service';
@@ -602,6 +603,61 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
         </section>
       }
 
+      @if (permissionService.canCancelFiscal()) {
+        <section class="card">
+          <div class="associated-orders-header">
+            <div>
+              <p class="selected-title">Cancelaciones con aceptación</p>
+              <h3>Solicitudes pendientes de autorización</h3>
+              <span class="helper">Consulta los CFDI con solicitud pendiente y responde manualmente autorizar o rechazar sin salir del flujo fiscal.</span>
+            </div>
+            <button type="button" class="secondary" (click)="loadPendingCancellationAuthorizations()" [disabled]="loadingPendingCancellationAuthorizations() || loadingOperation()">
+              {{ loadingPendingCancellationAuthorizations() ? 'Actualizando...' : 'Actualizar pendientes' }}
+            </button>
+          </div>
+
+          @if (pendingCancellationAuthorizationsError()) {
+            <p class="error">{{ pendingCancellationAuthorizationsError() }}</p>
+          } @else if (loadingPendingCancellationAuthorizations()) {
+            <p class="helper">Consultando autorizaciones pendientes...</p>
+          } @else if (!pendingCancellationAuthorizations().length) {
+            <p class="helper">No hay solicitudes pendientes de autorización en este momento.</p>
+          } @else {
+            <div class="associated-orders-list">
+              @for (item of pendingCancellationAuthorizations(); track item.uuid) {
+                <article class="associated-order-card">
+                  <div>
+                    <strong>{{ item.uuid }}</strong>
+                    <span>{{ item.issuerRfc || 'RFC emisor N/D' }} → {{ item.receiverRfc || 'RFC receptor N/D' }}</span>
+                    <small>
+                      @if (item.fiscalDocumentId) {
+                        Documento local #{{ item.fiscalDocumentId }} · {{ getDisplayLabel(item.fiscalDocumentStatus || 'Unknown') }}
+                      } @else {
+                        Sin correlación local
+                      }
+                    </small>
+                    @if (item.localOperationalMessage) {
+                      <small>{{ item.localOperationalMessage }}</small>
+                    }
+                    @if (item.providerMessage) {
+                      <small>Mensaje PAC: {{ item.providerMessage }}</small>
+                    }
+                  </div>
+                  <div class="context-actions">
+                    <button type="button" (click)="respondCancellationAuthorization(item, 'Accept')" [disabled]="loadingOperation()">
+                      Autorizar
+                    </button>
+                    <button type="button" class="secondary danger" (click)="respondCancellationAuthorization(item, 'Reject')" [disabled]="loadingOperation()">
+                      Rechazar
+                    </button>
+                  </div>
+                </article>
+              }
+            </div>
+          }
+        </section>
+      }
+
       @if (stampEvidence(); as currentStamp) {
         <app-fiscal-stamp-evidence-card
           [stamp]="currentStamp"
@@ -975,6 +1031,9 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected readonly loadingPendingBillingItems = signal(false);
   protected readonly pendingBillingItems = signal<PendingBillingItemResponse[]>([]);
   protected readonly pendingBillingItemsError = signal<string | null>(null);
+  protected readonly loadingPendingCancellationAuthorizations = signal(false);
+  protected readonly pendingCancellationAuthorizations = signal<PendingCancellationAuthorizationItemResponse[]>([]);
+  protected readonly pendingCancellationAuthorizationsError = signal<string | null>(null);
   protected readonly selectedPendingBillingRemovalIds = signal<number[]>([]);
   protected readonly specialFieldDrafts = signal<ReceiverSpecialFieldDraft[]>([]);
   protected readonly paymentMethodCatalog = signal<FiscalReceiverSatCatalogOption[]>([]);
@@ -1043,6 +1102,9 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   constructor() {
     void this.loadIssuer();
     void this.loadSatCatalogs();
+    if (this.permissionService.canCancelFiscal()) {
+      void this.loadPendingCancellationAuthorizations();
+    }
     if (this.fiscalDocumentId()) {
       void this.loadFiscalDocument(this.fiscalDocumentId()!);
     } else if (this.billingDocumentId()) {
@@ -1734,6 +1796,61 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       await this.loadFiscalDocument(fiscalDocumentId);
       await this.loadStamp(fiscalDocumentId);
       await this.loadCancellation(fiscalDocumentId, false);
+      await this.loadPendingCancellationAuthorizations(false);
+    });
+  }
+
+  protected async loadPendingCancellationAuthorizations(notifyOnError = true): Promise<void> {
+    this.loadingPendingCancellationAuthorizations.set(true);
+    this.pendingCancellationAuthorizationsError.set(null);
+
+    try {
+      const response = await firstValueFrom(this.api.listPendingCancellationAuthorizations());
+      this.pendingCancellationAuthorizations.set(response.items ?? []);
+    } catch (error) {
+      this.pendingCancellationAuthorizations.set([]);
+      const message = extractApiErrorMessage(error, 'No fue posible consultar las autorizaciones pendientes de cancelación.');
+      this.pendingCancellationAuthorizationsError.set(message);
+      if (notifyOnError) {
+        this.feedbackService.show('error', message);
+      }
+    } finally {
+      this.loadingPendingCancellationAuthorizations.set(false);
+    }
+  }
+
+  protected async respondCancellationAuthorization(
+    item: PendingCancellationAuthorizationItemResponse,
+    response: 'Accept' | 'Reject'): Promise<void>
+  {
+    const responseLabel = response === 'Accept' ? 'autorizar' : 'rechazar';
+    if (!window.confirm(`¿Confirmas ${responseLabel} la solicitud pendiente de cancelación del UUID ${item.uuid}?`)) {
+      return;
+    }
+
+    await this.runOperation(async () => {
+      const result = await firstValueFrom(this.api.respondCancellationAuthorization({
+        uuid: item.uuid,
+        response
+      }));
+
+      this.lastOperationMessage.set(
+        result.providerMessage
+          || result.supportMessage
+          || result.errorMessage
+          || `Respuesta de autorización registrada para ${item.uuid}.`
+      );
+
+      await this.loadPendingCancellationAuthorizations(false);
+      if (result.fiscalDocumentId && result.fiscalDocumentId === this.fiscalDocumentId()) {
+        await this.loadFiscalDocument(result.fiscalDocumentId);
+      }
+
+      if (result.isSuccess) {
+        this.feedbackService.show('success', response === 'Accept'
+          ? 'La autorización de cancelación fue registrada correctamente.'
+          : 'El rechazo de cancelación fue registrado correctamente.');
+      }
     });
   }
 

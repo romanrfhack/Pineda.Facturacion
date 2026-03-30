@@ -1422,8 +1422,33 @@ internal sealed class FakeFiscalCancellationGateway : IFiscalCancellationGateway
         CancelledAtUtc = DateTime.UtcNow
     };
 
+    public Func<FiscalCancellationAuthorizationPendingQueryRequest, FiscalCancellationAuthorizationPendingQueryGatewayResult> PendingResponseFactory { get; set; } = _ => new FiscalCancellationAuthorizationPendingQueryGatewayResult
+    {
+        Outcome = FiscalCancellationAuthorizationPendingQueryGatewayOutcome.Retrieved,
+        ProviderName = "FacturaloPlus",
+        ProviderOperation = "consultarAutorizacionesPendientes",
+        Items = []
+    };
+
+    public Func<FiscalCancellationAuthorizationDecisionRequest, FiscalCancellationAuthorizationDecisionGatewayResult> AuthorizationDecisionResponseFactory { get; set; } = _ => new FiscalCancellationAuthorizationDecisionGatewayResult
+    {
+        Outcome = FiscalCancellationAuthorizationDecisionGatewayOutcome.Responded,
+        ProviderName = "FacturaloPlus",
+        ProviderOperation = "autorizarCancelacion"
+    };
+
     public Task<FiscalCancellationGatewayResult> CancelAsync(FiscalCancellationRequest request, CancellationToken cancellationToken = default)
         => Task.FromResult(ResponseFactory(request));
+
+    public Task<FiscalCancellationAuthorizationPendingQueryGatewayResult> ListPendingAuthorizationsAsync(
+        FiscalCancellationAuthorizationPendingQueryRequest request,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult(PendingResponseFactory(request));
+
+    public Task<FiscalCancellationAuthorizationDecisionGatewayResult> RespondAuthorizationAsync(
+        FiscalCancellationAuthorizationDecisionRequest request,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult(AuthorizationDecisionResponseFactory(request));
 }
 
 internal sealed class FakeFiscalStatusQueryGateway : IFiscalStatusQueryGateway

@@ -159,6 +159,232 @@ public class FacturaloPlusCancellationGateway : IFiscalCancellationGateway
         };
     }
 
+    public async Task<FiscalCancellationAuthorizationPendingQueryGatewayResult> ListPendingAuthorizationsAsync(
+        FiscalCancellationAuthorizationPendingQueryRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var apiKey = await ResolveRequiredSecretAsync(_options.ApiKeyReference, cancellationToken);
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            return PendingValidationFailed("Configured PAC API key reference could not be resolved.");
+        }
+
+        var privateKeyValue = await ResolveRequiredSecretAsync(request.PrivateKeyReference, cancellationToken);
+        if (string.IsNullOrWhiteSpace(privateKeyValue))
+        {
+            return PendingValidationFailed("Active issuer private key reference could not be resolved.");
+        }
+
+        var certificateValue = await ResolveRequiredSecretAsync(request.CertificateReference, cancellationToken);
+        if (string.IsNullOrWhiteSpace(certificateValue))
+        {
+            return PendingValidationFailed("Active issuer certificate reference could not be resolved.");
+        }
+
+        var requestSummary = new
+        {
+            HasCertificateReference = !string.IsNullOrWhiteSpace(request.CertificateReference),
+            HasPrivateKeyReference = !string.IsNullOrWhiteSpace(request.PrivateKeyReference)
+        };
+        var requestHash = ComputeSha256(JsonSerializer.Serialize(requestSummary, JsonOptions));
+        var formPayload = new List<KeyValuePair<string, string>>
+        {
+            new("apikey", apiKey),
+            new("keyPEM", privateKeyValue.Trim()),
+            new("cerPEM", certificateValue.Trim())
+        };
+
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _options.PendingCancellationAuthorizationsPath)
+        {
+            Content = new FormUrlEncodedContent(formPayload)
+        };
+
+        HttpResponseMessage response;
+        string responseContent;
+        try
+        {
+            response = await _httpClient.SendAsync(httpRequest, cancellationToken);
+            responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return PendingUnavailable("Provider timeout.", requestHash);
+        }
+        catch (HttpRequestException)
+        {
+            return PendingUnavailable("Provider transport failure.", requestHash);
+        }
+
+        var parsed = TryParsePendingAuthorizationsResponse(responseContent);
+        var rawResponseSummaryJson = BuildPendingRawResponseSummary(response.StatusCode, parsed, responseContent, requestSummary, requestHash);
+        var providerCode = parsed?.ProviderCode ?? ((int)response.StatusCode).ToString(CultureInfo.InvariantCulture);
+        var providerMessage = parsed?.ProviderMessage;
+        var supportMessage = BuildSupportMessage(providerCode, providerMessage, null, parsed?.ErrorCode, parsed?.ErrorMessage);
+
+        if ((int)response.StatusCode >= 500)
+        {
+            return new FiscalCancellationAuthorizationPendingQueryGatewayResult
+            {
+                Outcome = FiscalCancellationAuthorizationPendingQueryGatewayOutcome.Unavailable,
+                ProviderName = _options.ProviderName,
+                ProviderOperation = "consultarAutorizacionesPendientes",
+                ProviderCode = providerCode,
+                ProviderMessage = providerMessage,
+                ErrorCode = parsed?.ErrorCode ?? "HTTP_" + (int)response.StatusCode,
+                ErrorMessage = parsed?.ErrorMessage ?? "Provider unavailable.",
+                SupportMessage = supportMessage,
+                RawResponseSummaryJson = rawResponseSummaryJson
+            };
+        }
+
+        if (!response.IsSuccessStatusCode && parsed?.Items.Count == 0)
+        {
+            return new FiscalCancellationAuthorizationPendingQueryGatewayResult
+            {
+                Outcome = FiscalCancellationAuthorizationPendingQueryGatewayOutcome.ValidationFailed,
+                ProviderName = _options.ProviderName,
+                ProviderOperation = "consultarAutorizacionesPendientes",
+                ProviderCode = providerCode,
+                ProviderMessage = providerMessage,
+                ErrorCode = parsed?.ErrorCode,
+                ErrorMessage = parsed?.ErrorMessage ?? providerMessage ?? "Provider rejected the pending authorization query.",
+                SupportMessage = supportMessage,
+                RawResponseSummaryJson = rawResponseSummaryJson
+            };
+        }
+
+        return new FiscalCancellationAuthorizationPendingQueryGatewayResult
+        {
+            Outcome = FiscalCancellationAuthorizationPendingQueryGatewayOutcome.Retrieved,
+            ProviderName = _options.ProviderName,
+            ProviderOperation = "consultarAutorizacionesPendientes",
+            ProviderCode = providerCode,
+            ProviderMessage = providerMessage,
+            SupportMessage = supportMessage,
+            RawResponseSummaryJson = rawResponseSummaryJson,
+            Items = parsed?.Items ?? []
+        };
+    }
+
+    public async Task<FiscalCancellationAuthorizationDecisionGatewayResult> RespondAuthorizationAsync(
+        FiscalCancellationAuthorizationDecisionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var apiKey = await ResolveRequiredSecretAsync(_options.ApiKeyReference, cancellationToken);
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            return AuthorizationValidationFailed("Configured PAC API key reference could not be resolved.");
+        }
+
+        var privateKeyValue = await ResolveRequiredSecretAsync(request.PrivateKeyReference, cancellationToken);
+        if (string.IsNullOrWhiteSpace(privateKeyValue))
+        {
+            return AuthorizationValidationFailed("Active issuer private key reference could not be resolved.");
+        }
+
+        var certificateValue = await ResolveRequiredSecretAsync(request.CertificateReference, cancellationToken);
+        if (string.IsNullOrWhiteSpace(certificateValue))
+        {
+            return AuthorizationValidationFailed("Active issuer certificate reference could not be resolved.");
+        }
+
+        var requestSummary = new
+        {
+            request.Uuid,
+            request.Response,
+            HasCertificateReference = !string.IsNullOrWhiteSpace(request.CertificateReference),
+            HasPrivateKeyReference = !string.IsNullOrWhiteSpace(request.PrivateKeyReference)
+        };
+        var requestHash = ComputeSha256(JsonSerializer.Serialize(requestSummary, JsonOptions));
+        var formPayload = new List<KeyValuePair<string, string>>
+        {
+            new("apikey", apiKey),
+            new("keyPEM", privateKeyValue.Trim()),
+            new("cerPEM", certificateValue.Trim()),
+            new("uuid", request.Uuid),
+            new("respuesta", request.Response)
+        };
+
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _options.CancellationAuthorizationDecisionPath)
+        {
+            Content = new FormUrlEncodedContent(formPayload)
+        };
+
+        HttpResponseMessage response;
+        string responseContent;
+        try
+        {
+            response = await _httpClient.SendAsync(httpRequest, cancellationToken);
+            responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return AuthorizationUnavailable("Provider timeout.", requestHash);
+        }
+        catch (HttpRequestException)
+        {
+            return AuthorizationUnavailable("Provider transport failure.", requestHash);
+        }
+
+        var providerResponse = TryParseProviderResponse(responseContent);
+        var rawResponseSummaryJson = BuildAuthorizationRawResponseSummary(response.StatusCode, providerResponse, responseContent, requestSummary, requestHash);
+        var providerCode = providerResponse?.Code ?? ((int)response.StatusCode).ToString(CultureInfo.InvariantCulture);
+        var providerMessage = providerResponse?.Message;
+        var supportMessage = BuildSupportMessage(providerCode, providerMessage, providerResponse?.TrackingId, providerResponse?.ErrorCode, providerResponse?.ErrorMessage);
+
+        if ((int)response.StatusCode >= 500)
+        {
+            return new FiscalCancellationAuthorizationDecisionGatewayResult
+            {
+                Outcome = FiscalCancellationAuthorizationDecisionGatewayOutcome.Unavailable,
+                ProviderName = _options.ProviderName,
+                ProviderOperation = "autorizarCancelacion",
+                ProviderTrackingId = providerResponse?.TrackingId,
+                ProviderCode = providerCode,
+                ProviderMessage = providerMessage,
+                ErrorCode = providerResponse?.ErrorCode ?? "HTTP_" + (int)response.StatusCode,
+                ErrorMessage = providerResponse?.ErrorMessage ?? "Provider unavailable.",
+                SupportMessage = supportMessage,
+                RawResponseSummaryJson = rawResponseSummaryJson
+            };
+        }
+
+        if (response.IsSuccessStatusCode && IsSuccessfulAuthorizationResponse(providerCode, providerMessage))
+        {
+            return new FiscalCancellationAuthorizationDecisionGatewayResult
+            {
+                Outcome = FiscalCancellationAuthorizationDecisionGatewayOutcome.Responded,
+                ProviderName = _options.ProviderName,
+                ProviderOperation = "autorizarCancelacion",
+                ProviderTrackingId = providerResponse?.TrackingId,
+                ProviderCode = providerCode,
+                ProviderMessage = providerMessage,
+                SupportMessage = supportMessage,
+                RawResponseSummaryJson = rawResponseSummaryJson
+            };
+        }
+
+        return new FiscalCancellationAuthorizationDecisionGatewayResult
+        {
+            Outcome = response.IsSuccessStatusCode
+                ? FiscalCancellationAuthorizationDecisionGatewayOutcome.ProviderRejected
+                : FiscalCancellationAuthorizationDecisionGatewayOutcome.ValidationFailed,
+            ProviderName = _options.ProviderName,
+            ProviderOperation = "autorizarCancelacion",
+            ProviderTrackingId = providerResponse?.TrackingId,
+            ProviderCode = providerCode,
+            ProviderMessage = providerMessage,
+            ErrorCode = providerResponse?.ErrorCode,
+            ErrorMessage = providerResponse?.ErrorMessage ?? providerMessage ?? "Provider rejected the authorization response.",
+            SupportMessage = supportMessage,
+            RawResponseSummaryJson = rawResponseSummaryJson
+        };
+    }
+
     private async Task<string?> ResolveRequiredSecretAsync(string? referenceKey, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(referenceKey))
@@ -270,6 +496,42 @@ public class FacturaloPlusCancellationGateway : IFiscalCancellationGateway
         }
     }
 
+    private static FacturaloPlusPendingAuthorizationsResponse? TryParsePendingAuthorizationsResponse(string rawContent)
+    {
+        if (string.IsNullOrWhiteSpace(rawContent))
+        {
+            return new FacturaloPlusPendingAuthorizationsResponse();
+        }
+
+        try
+        {
+            using var json = JsonDocument.Parse(rawContent);
+            var root = json.RootElement;
+            var providerCode = ReadString(root, "code", "codigo", "CodigoEstatus", "codigoEstatus", "statusCode", "estatus", "status");
+            var providerMessage = ReadString(root, "message", "mensaje", "descripcion", "detail");
+            var errorCode = ReadString(root, "errorCode", "codigoError");
+            var errorMessage = ReadString(root, "errorMessage", "mensajeError", "descripcionError");
+            var items = ExtractPendingItems(root);
+
+            return new FacturaloPlusPendingAuthorizationsResponse
+            {
+                ProviderCode = providerCode,
+                ProviderMessage = providerMessage,
+                ErrorCode = errorCode,
+                ErrorMessage = errorMessage,
+                Items = items
+            };
+        }
+        catch (JsonException)
+        {
+            return new FacturaloPlusPendingAuthorizationsResponse
+            {
+                ProviderMessage = rawContent.Length <= 500 ? rawContent : rawContent[..500],
+                Items = ExtractPendingItemsFromText(rawContent)
+            };
+        }
+    }
+
     private FiscalCancellationGatewayResult ValidationFailed(string errorMessage)
     {
         return new FiscalCancellationGatewayResult
@@ -277,6 +539,19 @@ public class FacturaloPlusCancellationGateway : IFiscalCancellationGateway
             Outcome = FiscalCancellationGatewayOutcome.ValidationFailed,
             ProviderName = _options.ProviderName,
             ProviderOperation = "cancelar2",
+            ErrorMessage = errorMessage,
+            RawResponseSummaryJson = JsonSerializer.Serialize(new { error = errorMessage }, JsonOptions),
+            SupportMessage = errorMessage
+        };
+    }
+
+    private FiscalCancellationAuthorizationPendingQueryGatewayResult PendingValidationFailed(string errorMessage)
+    {
+        return new FiscalCancellationAuthorizationPendingQueryGatewayResult
+        {
+            Outcome = FiscalCancellationAuthorizationPendingQueryGatewayOutcome.ValidationFailed,
+            ProviderName = _options.ProviderName,
+            ProviderOperation = "consultarAutorizacionesPendientes",
             ErrorMessage = errorMessage,
             RawResponseSummaryJson = JsonSerializer.Serialize(new { error = errorMessage }, JsonOptions),
             SupportMessage = errorMessage
@@ -297,6 +572,47 @@ public class FacturaloPlusCancellationGateway : IFiscalCancellationGateway
         };
     }
 
+    private FiscalCancellationAuthorizationPendingQueryGatewayResult PendingUnavailable(string errorMessage, string rawRequestHash)
+    {
+        return new FiscalCancellationAuthorizationPendingQueryGatewayResult
+        {
+            Outcome = FiscalCancellationAuthorizationPendingQueryGatewayOutcome.Unavailable,
+            ProviderName = _options.ProviderName,
+            ProviderOperation = "consultarAutorizacionesPendientes",
+            ProviderMessage = errorMessage,
+            ErrorMessage = errorMessage,
+            RawResponseSummaryJson = JsonSerializer.Serialize(new { error = errorMessage, requestHash = rawRequestHash }, JsonOptions),
+            SupportMessage = errorMessage
+        };
+    }
+
+    private FiscalCancellationAuthorizationDecisionGatewayResult AuthorizationValidationFailed(string errorMessage)
+    {
+        return new FiscalCancellationAuthorizationDecisionGatewayResult
+        {
+            Outcome = FiscalCancellationAuthorizationDecisionGatewayOutcome.ValidationFailed,
+            ProviderName = _options.ProviderName,
+            ProviderOperation = "autorizarCancelacion",
+            ErrorMessage = errorMessage,
+            RawResponseSummaryJson = JsonSerializer.Serialize(new { error = errorMessage }, JsonOptions),
+            SupportMessage = errorMessage
+        };
+    }
+
+    private FiscalCancellationAuthorizationDecisionGatewayResult AuthorizationUnavailable(string errorMessage, string rawRequestHash)
+    {
+        return new FiscalCancellationAuthorizationDecisionGatewayResult
+        {
+            Outcome = FiscalCancellationAuthorizationDecisionGatewayOutcome.Unavailable,
+            ProviderName = _options.ProviderName,
+            ProviderOperation = "autorizarCancelacion",
+            ProviderMessage = errorMessage,
+            ErrorMessage = errorMessage,
+            RawResponseSummaryJson = JsonSerializer.Serialize(new { error = errorMessage, requestHash = rawRequestHash }, JsonOptions),
+            SupportMessage = errorMessage
+        };
+    }
+
     private static bool IsSuccessfulCancellationCode(string? providerCode)
     {
         if (string.IsNullOrWhiteSpace(providerCode))
@@ -307,6 +623,24 @@ public class FacturaloPlusCancellationGateway : IFiscalCancellationGateway
         var normalizedCode = providerCode.Trim();
         return normalizedCode.StartsWith("201", StringComparison.OrdinalIgnoreCase)
             || normalizedCode.StartsWith("202", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsSuccessfulAuthorizationResponse(string? providerCode, string? providerMessage)
+    {
+        if (!string.IsNullOrWhiteSpace(providerCode)
+            && (providerCode.StartsWith("200", StringComparison.OrdinalIgnoreCase)
+                || providerCode.StartsWith("201", StringComparison.OrdinalIgnoreCase)
+                || providerCode.StartsWith("202", StringComparison.OrdinalIgnoreCase)
+                || providerCode.StartsWith("S", StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        var normalizedMessage = providerMessage?.Trim().ToUpperInvariant();
+        return normalizedMessage is not null
+            && (normalizedMessage.Contains("ACEPT", StringComparison.Ordinal)
+                || normalizedMessage.Contains("AUTORIZ", StringComparison.Ordinal)
+                || normalizedMessage.Contains("RECHAZ", StringComparison.Ordinal));
     }
 
     private static string? BuildSupportMessage(
@@ -394,6 +728,26 @@ public class FacturaloPlusCancellationGateway : IFiscalCancellationGateway
         return null;
     }
 
+    private static string? ReadNestedString(JsonElement root, params string[] propertyNames)
+    {
+        var direct = ReadString(root, propertyNames);
+        if (!string.IsNullOrWhiteSpace(direct))
+        {
+            return direct;
+        }
+
+        foreach (var child in EnumerateNestedObjects(root))
+        {
+            var nested = ReadString(child, propertyNames);
+            if (!string.IsNullOrWhiteSpace(nested))
+            {
+                return nested;
+            }
+        }
+
+        return null;
+    }
+
     private static DateTime? ReadDateTime(JsonElement root, params string[] propertyNames)
     {
         var value = ReadString(root, propertyNames);
@@ -417,6 +771,222 @@ public class FacturaloPlusCancellationGateway : IFiscalCancellationGateway
         return false;
     }
 
+    private static List<FiscalCancellationAuthorizationPendingItem> ExtractPendingItems(JsonElement root)
+    {
+        foreach (var candidate in EnumerateCandidateCollections(root))
+        {
+            var items = candidate
+                .Select(BuildPendingItem)
+                .Where(item => !string.IsNullOrWhiteSpace(item?.Uuid))
+                .Cast<FiscalCancellationAuthorizationPendingItem>()
+                .ToList();
+
+            if (items.Count > 0)
+            {
+                return items;
+            }
+        }
+
+        if (root.ValueKind == JsonValueKind.Object)
+        {
+            var singleItem = BuildPendingItem(root);
+            if (!string.IsNullOrWhiteSpace(singleItem?.Uuid))
+            {
+                return [singleItem];
+            }
+        }
+
+        return [];
+    }
+
+    private static List<FiscalCancellationAuthorizationPendingItem> ExtractPendingItemsFromText(string rawContent)
+    {
+        var items = new List<FiscalCancellationAuthorizationPendingItem>();
+        var uuidMatches = System.Text.RegularExpressions.Regex.Matches(
+            rawContent,
+            "(?i)([0-9A-F]{8}-[0-9A-F]{4}-[1-5][0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12})");
+
+        foreach (System.Text.RegularExpressions.Match match in uuidMatches)
+        {
+            if (!match.Success)
+            {
+                continue;
+            }
+
+            items.Add(new FiscalCancellationAuthorizationPendingItem
+            {
+                Uuid = match.Value,
+                RawItemSummaryJson = JsonSerializer.Serialize(new { rawContentPreview = rawContent.Length <= 500 ? rawContent : rawContent[..500] }, JsonOptions)
+            });
+        }
+
+        return items
+            .GroupBy(x => x.Uuid, StringComparer.OrdinalIgnoreCase)
+            .Select(x => x.First())
+            .ToList();
+    }
+
+    private static IEnumerable<JsonElement[]> EnumerateCandidateCollections(JsonElement root)
+    {
+        if (root.ValueKind == JsonValueKind.Array)
+        {
+            yield return root.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.Object).ToArray();
+        }
+
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            yield break;
+        }
+
+        foreach (var property in root.EnumerateObject())
+        {
+            if (property.Value.ValueKind == JsonValueKind.Array)
+            {
+                yield return property.Value.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.Object).ToArray();
+            }
+
+            if (property.Value.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var nested in EnumerateCandidateCollections(property.Value))
+                {
+                    yield return nested;
+                }
+            }
+
+            if (property.Value.ValueKind == JsonValueKind.String
+                && TryParseEmbeddedJson(property.Value.GetString(), out var embedded))
+            {
+                foreach (var nested in EnumerateCandidateCollections(embedded))
+                {
+                    yield return nested;
+                }
+            }
+        }
+    }
+
+    private static IEnumerable<JsonElement> EnumerateNestedObjects(JsonElement root)
+    {
+        if (root.ValueKind == JsonValueKind.Object)
+        {
+            yield return root;
+            foreach (var property in root.EnumerateObject())
+            {
+                foreach (var nested in EnumerateNestedObjects(property.Value))
+                {
+                    yield return nested;
+                }
+            }
+        }
+        else if (root.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var child in root.EnumerateArray())
+            {
+                foreach (var nested in EnumerateNestedObjects(child))
+                {
+                    yield return nested;
+                }
+            }
+        }
+        else if (root.ValueKind == JsonValueKind.String && TryParseEmbeddedJson(root.GetString(), out var embedded))
+        {
+            foreach (var nested in EnumerateNestedObjects(embedded))
+            {
+                yield return nested;
+            }
+        }
+    }
+
+    private static bool TryParseEmbeddedJson(string? rawValue, out JsonElement root)
+    {
+        if (string.IsNullOrWhiteSpace(rawValue))
+        {
+            root = default;
+            return false;
+        }
+
+        try
+        {
+            using var json = JsonDocument.Parse(rawValue);
+            root = json.RootElement.Clone();
+            return true;
+        }
+        catch (JsonException)
+        {
+            root = default;
+            return false;
+        }
+    }
+
+    private static FiscalCancellationAuthorizationPendingItem? BuildPendingItem(JsonElement element)
+    {
+        var uuid = ReadNestedString(element, "uuid", "UUID", "folioFiscal", "folio_fiscal");
+        if (string.IsNullOrWhiteSpace(uuid))
+        {
+            return null;
+        }
+
+        return new FiscalCancellationAuthorizationPendingItem
+        {
+            Uuid = uuid.Trim(),
+            IssuerRfc = ReadNestedString(element, "rfcEmisor", "issuerRfc", "emisorRfc"),
+            ReceiverRfc = ReadNestedString(element, "rfcReceptor", "receiverRfc", "receptorRfc"),
+            ProviderCode = ReadNestedString(element, "code", "codigo", "CodigoEstatus", "codigoEstatus", "statusCode", "estatus", "status"),
+            ProviderMessage = ReadNestedString(element, "message", "mensaje", "descripcion", "detail"),
+            RequestedAtUtc = ReadDateTime(element, "requestedAtUtc", "fechaSolicitud", "requestedAt", "fecha"),
+            RawItemSummaryJson = JsonSerializer.Serialize(element, JsonOptions)
+        };
+    }
+
+    private static string BuildPendingRawResponseSummary(
+        HttpStatusCode statusCode,
+        FacturaloPlusPendingAuthorizationsResponse? response,
+        string rawContent,
+        object requestSummary,
+        string requestHash)
+    {
+        var summary = new
+        {
+            HttpStatusCode = (int)statusCode,
+            RequestSummary = requestSummary,
+            RequestHash = requestHash,
+            response?.ProviderCode,
+            response?.ProviderMessage,
+            response?.ErrorCode,
+            response?.ErrorMessage,
+            ItemCount = response?.Items.Count ?? 0,
+            RawContentPreview = string.IsNullOrWhiteSpace(rawContent)
+                ? null
+                : rawContent.Length <= 500 ? rawContent : rawContent[..500]
+        };
+
+        return JsonSerializer.Serialize(summary, JsonOptions);
+    }
+
+    private static string BuildAuthorizationRawResponseSummary(
+        HttpStatusCode statusCode,
+        FacturaloPlusCancellationResponse? response,
+        string rawContent,
+        object requestSummary,
+        string requestHash)
+    {
+        var summary = new
+        {
+            HttpStatusCode = (int)statusCode,
+            RequestSummary = requestSummary,
+            RequestHash = requestHash,
+            response?.Code,
+            response?.Message,
+            response?.TrackingId,
+            response?.ErrorCode,
+            response?.ErrorMessage,
+            RawContentPreview = string.IsNullOrWhiteSpace(rawContent)
+                ? null
+                : rawContent.Length <= 500 ? rawContent : rawContent[..500]
+        };
+
+        return JsonSerializer.Serialize(summary, JsonOptions);
+    }
+
     private static string ComputeSha256(string value)
     {
         var bytes = Encoding.UTF8.GetBytes(value);
@@ -431,5 +1001,14 @@ public class FacturaloPlusCancellationGateway : IFiscalCancellationGateway
         public DateTime? CancelledAtUtc { get; init; }
         public string? ErrorCode { get; init; }
         public string? ErrorMessage { get; init; }
+    }
+
+    private sealed class FacturaloPlusPendingAuthorizationsResponse
+    {
+        public string? ProviderCode { get; init; }
+        public string? ProviderMessage { get; init; }
+        public string? ErrorCode { get; init; }
+        public string? ErrorMessage { get; init; }
+        public IReadOnlyList<FiscalCancellationAuthorizationPendingItem> Items { get; init; } = [];
     }
 }

@@ -36,6 +36,28 @@ public class FiscalCancellation
 
     public string? ErrorMessage { get; set; }
 
+    public FiscalCancellationAuthorizationStatus AuthorizationStatus { get; set; }
+
+    public string? AuthorizationProviderOperation { get; set; }
+
+    public string? AuthorizationProviderTrackingId { get; set; }
+
+    public string? AuthorizationProviderCode { get; set; }
+
+    public string? AuthorizationProviderMessage { get; set; }
+
+    public string? AuthorizationErrorCode { get; set; }
+
+    public string? AuthorizationErrorMessage { get; set; }
+
+    public string? AuthorizationRawResponseSummaryJson { get; set; }
+
+    public DateTime? AuthorizationRespondedAtUtc { get; set; }
+
+    public string? AuthorizationRespondedByUsername { get; set; }
+
+    public string? AuthorizationRespondedByDisplayName { get; set; }
+
     public DateTime CreatedAtUtc { get; set; }
 
     public DateTime UpdatedAtUtc { get; set; }

@@ -96,6 +96,68 @@ public class FiscalCancellationConfiguration : IEntityTypeConfiguration<FiscalCa
             .HasColumnType("varchar(1000)")
             .IsRequired(false);
 
+        builder.Property(x => x.AuthorizationStatus)
+            .HasColumnName("authorization_status")
+            .HasConversion<int>()
+            .IsRequired();
+
+        builder.Property(x => x.AuthorizationProviderOperation)
+            .HasColumnName("authorization_provider_operation")
+            .HasMaxLength(50)
+            .HasColumnType("varchar(50)")
+            .IsRequired(false);
+
+        builder.Property(x => x.AuthorizationProviderTrackingId)
+            .HasColumnName("authorization_provider_tracking_id")
+            .HasMaxLength(100)
+            .HasColumnType("varchar(100)")
+            .IsRequired(false);
+
+        builder.Property(x => x.AuthorizationProviderCode)
+            .HasColumnName("authorization_provider_code")
+            .HasMaxLength(100)
+            .HasColumnType("varchar(100)")
+            .IsRequired(false);
+
+        builder.Property(x => x.AuthorizationProviderMessage)
+            .HasColumnName("authorization_provider_message")
+            .HasMaxLength(1000)
+            .HasColumnType("varchar(1000)")
+            .IsRequired(false);
+
+        builder.Property(x => x.AuthorizationErrorCode)
+            .HasColumnName("authorization_error_code")
+            .HasMaxLength(100)
+            .HasColumnType("varchar(100)")
+            .IsRequired(false);
+
+        builder.Property(x => x.AuthorizationErrorMessage)
+            .HasColumnName("authorization_error_message")
+            .HasMaxLength(1000)
+            .HasColumnType("varchar(1000)")
+            .IsRequired(false);
+
+        builder.Property(x => x.AuthorizationRawResponseSummaryJson)
+            .HasColumnName("authorization_raw_response_summary_json")
+            .HasColumnType("longtext")
+            .IsRequired(false);
+
+        builder.Property(x => x.AuthorizationRespondedAtUtc)
+            .HasColumnName("authorization_responded_at_utc")
+            .IsRequired(false);
+
+        builder.Property(x => x.AuthorizationRespondedByUsername)
+            .HasColumnName("authorization_responded_by_username")
+            .HasMaxLength(200)
+            .HasColumnType("varchar(200)")
+            .IsRequired(false);
+
+        builder.Property(x => x.AuthorizationRespondedByDisplayName)
+            .HasColumnName("authorization_responded_by_display_name")
+            .HasMaxLength(200)
+            .HasColumnType("varchar(200)")
+            .IsRequired(false);
+
         builder.Property(x => x.CreatedAtUtc)
             .HasColumnName("created_at_utc")
             .IsRequired();

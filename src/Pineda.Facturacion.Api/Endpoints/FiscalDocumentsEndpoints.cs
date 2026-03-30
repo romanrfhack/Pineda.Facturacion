@@ -95,6 +95,24 @@ public static class FiscalDocumentsEndpoints
             .Produces<FiscalCancellationResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status404NotFound);
 
+        group.MapGet("/cancellation-authorizations/pending", ListPendingCancellationAuthorizationsAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
+            .WithName("ListPendingCancellationAuthorizations")
+            .WithSummary("List pending CFDI cancellation authorizations that require receiver acceptance")
+            .Produces<PendingCancellationAuthorizationsResponse>(StatusCodes.Status200OK)
+            .Produces<PendingCancellationAuthorizationsResponse>(StatusCodes.Status400BadRequest)
+            .Produces<PendingCancellationAuthorizationsResponse>(StatusCodes.Status503ServiceUnavailable);
+
+        group.MapPost("/cancellation-authorizations/respond", RespondCancellationAuthorizationAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
+            .WithName("RespondCancellationAuthorization")
+            .WithSummary("Authorize or reject a pending CFDI cancellation request")
+            .Produces<RespondCancellationAuthorizationResponse>(StatusCodes.Status200OK)
+            .Produces<RespondCancellationAuthorizationResponse>(StatusCodes.Status400BadRequest)
+            .Produces<RespondCancellationAuthorizationResponse>(StatusCodes.Status404NotFound)
+            .Produces<RespondCancellationAuthorizationResponse>(StatusCodes.Status409Conflict)
+            .Produces<RespondCancellationAuthorizationResponse>(StatusCodes.Status503ServiceUnavailable);
+
         group.MapPost("/{fiscalDocumentId:long}/refresh-status", RefreshFiscalDocumentStatusAsync)
             .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
             .WithName("RefreshFiscalDocumentStatus")
@@ -470,6 +488,110 @@ public static class FiscalDocumentsEndpoints
         return TypedResults.Ok(MapFiscalCancellation(result.FiscalCancellation));
     }
 
+    private static async Task<Results<Ok<PendingCancellationAuthorizationsResponse>, BadRequest<PendingCancellationAuthorizationsResponse>, JsonHttpResult<PendingCancellationAuthorizationsResponse>>> ListPendingCancellationAuthorizationsAsync(
+        ListPendingFiscalCancellationAuthorizationsService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(cancellationToken);
+        var response = new PendingCancellationAuthorizationsResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            ProviderName = result.ProviderName,
+            ProviderCode = result.ProviderCode,
+            ProviderMessage = result.ProviderMessage,
+            SupportMessage = result.SupportMessage,
+            RawResponseSummaryJson = result.RawResponseSummaryJson,
+            Items = result.Items.Select(MapPendingAuthorizationItem).ToList()
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "FiscalDocument.ListPendingCancellationAuthorizations",
+            "FiscalDocument",
+            null,
+            result.Outcome.ToString(),
+            new { },
+            new { providerName = result.ProviderName, providerCode = result.ProviderCode, itemCount = result.Items.Count },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            ListPendingFiscalCancellationAuthorizationsOutcome.Retrieved => TypedResults.Ok(response),
+            ListPendingFiscalCancellationAuthorizationsOutcome.ProviderUnavailable => TypedResults.Json(response, statusCode: StatusCodes.Status503ServiceUnavailable),
+            _ => TypedResults.BadRequest(response)
+        };
+    }
+
+    private static async Task<Results<Ok<RespondCancellationAuthorizationResponse>, BadRequest<RespondCancellationAuthorizationResponse>, NotFound<RespondCancellationAuthorizationResponse>, Conflict<RespondCancellationAuthorizationResponse>, JsonHttpResult<RespondCancellationAuthorizationResponse>>> RespondCancellationAuthorizationAsync(
+        RespondCancellationAuthorizationRequest request,
+        RespondFiscalCancellationAuthorizationService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(
+            new RespondFiscalCancellationAuthorizationCommand
+            {
+                Uuid = request.Uuid,
+                Response = request.Response
+            },
+            cancellationToken);
+
+        var response = new RespondCancellationAuthorizationResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            RequestedResponse = result.RequestedResponse,
+            AppliedResponse = result.AppliedResponse,
+            Uuid = result.Uuid,
+            FiscalDocumentId = result.FiscalDocumentId,
+            FiscalDocumentStatus = result.FiscalDocumentStatus,
+            FiscalCancellationId = result.FiscalCancellationId,
+            CancellationStatus = result.CancellationStatus,
+            AuthorizationStatus = result.AuthorizationStatus,
+            ProviderName = result.ProviderName,
+            ProviderTrackingId = result.ProviderTrackingId,
+            ProviderCode = result.ProviderCode,
+            ProviderMessage = result.ProviderMessage,
+            ErrorCode = result.ErrorCode,
+            SupportMessage = result.SupportMessage,
+            RawResponseSummaryJson = result.RawResponseSummaryJson,
+            RespondedAtUtc = EnsureUtc(result.RespondedAtUtc)
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "FiscalDocument.RespondCancellationAuthorization",
+            "FiscalDocument",
+            result.FiscalDocumentId?.ToString(),
+            result.Outcome.ToString(),
+            new { request.Uuid, request.Response },
+            new
+            {
+                result.FiscalCancellationId,
+                result.FiscalDocumentStatus,
+                result.CancellationStatus,
+                result.AuthorizationStatus,
+                result.ProviderCode,
+                result.ProviderMessage
+            },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            RespondFiscalCancellationAuthorizationOutcome.Responded => TypedResults.Ok(response),
+            RespondFiscalCancellationAuthorizationOutcome.NotFound => TypedResults.NotFound(response),
+            RespondFiscalCancellationAuthorizationOutcome.ProviderRejected => TypedResults.Conflict(response),
+            RespondFiscalCancellationAuthorizationOutcome.ProviderUnavailable => TypedResults.Json(response, statusCode: StatusCodes.Status503ServiceUnavailable),
+            _ => TypedResults.BadRequest(response)
+        };
+    }
+
     private static async Task<Results<Ok<RefreshFiscalDocumentStatusResponse>, BadRequest<RefreshFiscalDocumentStatusResponse>, NotFound<RefreshFiscalDocumentStatusResponse>, JsonHttpResult<RefreshFiscalDocumentStatusResponse>>> RefreshFiscalDocumentStatusAsync(
         long fiscalDocumentId,
         RefreshFiscalDocumentStatusService service,
@@ -615,6 +737,18 @@ public static class FiscalDocumentsEndpoints
             ErrorMessage = fiscalCancellation.ErrorMessage,
             SupportMessage = BuildCancellationSupportMessage(fiscalCancellation),
             RawResponseSummaryJson = fiscalCancellation.RawResponseSummaryJson,
+            AuthorizationStatus = fiscalCancellation.AuthorizationStatus.ToString(),
+            AuthorizationProviderOperation = fiscalCancellation.AuthorizationProviderOperation,
+            AuthorizationProviderTrackingId = fiscalCancellation.AuthorizationProviderTrackingId,
+            AuthorizationProviderCode = fiscalCancellation.AuthorizationProviderCode,
+            AuthorizationProviderMessage = fiscalCancellation.AuthorizationProviderMessage,
+            AuthorizationErrorCode = fiscalCancellation.AuthorizationErrorCode,
+            AuthorizationErrorMessage = fiscalCancellation.AuthorizationErrorMessage,
+            AuthorizationSupportMessage = BuildCancellationAuthorizationSupportMessage(fiscalCancellation),
+            AuthorizationRawResponseSummaryJson = fiscalCancellation.AuthorizationRawResponseSummaryJson,
+            AuthorizationRespondedAtUtc = EnsureUtc(fiscalCancellation.AuthorizationRespondedAtUtc),
+            AuthorizationRespondedByUsername = fiscalCancellation.AuthorizationRespondedByUsername,
+            AuthorizationRespondedByDisplayName = fiscalCancellation.AuthorizationRespondedByDisplayName,
             RequestedAtUtc = EnsureUtc(fiscalCancellation.RequestedAtUtc),
             CancelledAtUtc = EnsureUtc(fiscalCancellation.CancelledAtUtc),
             CreatedAtUtc = EnsureUtc(fiscalCancellation.CreatedAtUtc),
@@ -652,6 +786,64 @@ public static class FiscalDocumentsEndpoints
         }
 
         return parts.Count > 0 ? string.Join(" | ", parts) : null;
+    }
+
+    private static string? BuildCancellationAuthorizationSupportMessage(FiscalCancellation fiscalCancellation)
+    {
+        var parts = new List<string>();
+
+        if (fiscalCancellation.AuthorizationStatus != Domain.Enums.FiscalCancellationAuthorizationStatus.None)
+        {
+            parts.Add($"AuthorizationStatus={fiscalCancellation.AuthorizationStatus}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(fiscalCancellation.AuthorizationProviderCode))
+        {
+            parts.Add($"ProviderCode={fiscalCancellation.AuthorizationProviderCode.Trim()}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(fiscalCancellation.AuthorizationProviderMessage))
+        {
+            parts.Add($"ProviderMessage={fiscalCancellation.AuthorizationProviderMessage.Trim()}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(fiscalCancellation.AuthorizationProviderTrackingId))
+        {
+            parts.Add($"TrackingId={fiscalCancellation.AuthorizationProviderTrackingId.Trim()}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(fiscalCancellation.AuthorizationErrorCode))
+        {
+            parts.Add($"ErrorCode={fiscalCancellation.AuthorizationErrorCode.Trim()}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(fiscalCancellation.AuthorizationErrorMessage))
+        {
+            parts.Add($"ErrorMessage={fiscalCancellation.AuthorizationErrorMessage.Trim()}");
+        }
+
+        return parts.Count > 0 ? string.Join(" | ", parts) : null;
+    }
+
+    private static PendingCancellationAuthorizationItemResponse MapPendingAuthorizationItem(PendingFiscalCancellationAuthorizationItem item)
+    {
+        return new PendingCancellationAuthorizationItemResponse
+        {
+            Uuid = item.Uuid,
+            IssuerRfc = item.IssuerRfc,
+            ReceiverRfc = item.ReceiverRfc,
+            ProviderCode = item.ProviderCode,
+            ProviderMessage = item.ProviderMessage,
+            RequestedAtUtc = EnsureUtc(item.RequestedAtUtc),
+            FiscalDocumentId = item.FiscalDocumentId,
+            FiscalDocumentStatus = item.FiscalDocumentStatus,
+            FiscalCancellationId = item.FiscalCancellationId,
+            CancellationStatus = item.CancellationStatus,
+            AuthorizationStatus = item.AuthorizationStatus,
+            LocalOperationalStatus = item.LocalOperationalStatus,
+            LocalOperationalMessage = item.LocalOperationalMessage,
+            RawItemSummaryJson = item.RawItemSummaryJson
+        };
     }
 
     private static DateTime EnsureUtc(DateTime value)
@@ -911,10 +1103,82 @@ public static class FiscalDocumentsEndpoints
         public string? ErrorMessage { get; init; }
         public string? SupportMessage { get; init; }
         public string? RawResponseSummaryJson { get; init; }
+        public string? AuthorizationStatus { get; init; }
+        public string? AuthorizationProviderOperation { get; init; }
+        public string? AuthorizationProviderTrackingId { get; init; }
+        public string? AuthorizationProviderCode { get; init; }
+        public string? AuthorizationProviderMessage { get; init; }
+        public string? AuthorizationErrorCode { get; init; }
+        public string? AuthorizationErrorMessage { get; init; }
+        public string? AuthorizationSupportMessage { get; init; }
+        public string? AuthorizationRawResponseSummaryJson { get; init; }
+        public DateTime? AuthorizationRespondedAtUtc { get; init; }
+        public string? AuthorizationRespondedByUsername { get; init; }
+        public string? AuthorizationRespondedByDisplayName { get; init; }
         public DateTime RequestedAtUtc { get; init; }
         public DateTime? CancelledAtUtc { get; init; }
         public DateTime CreatedAtUtc { get; init; }
         public DateTime UpdatedAtUtc { get; init; }
+    }
+
+    public sealed class PendingCancellationAuthorizationsResponse
+    {
+        public string Outcome { get; init; } = string.Empty;
+        public bool IsSuccess { get; init; }
+        public string? ErrorMessage { get; init; }
+        public string? ProviderName { get; init; }
+        public string? ProviderCode { get; init; }
+        public string? ProviderMessage { get; init; }
+        public string? SupportMessage { get; init; }
+        public string? RawResponseSummaryJson { get; init; }
+        public IReadOnlyList<PendingCancellationAuthorizationItemResponse> Items { get; init; } = [];
+    }
+
+    public sealed class PendingCancellationAuthorizationItemResponse
+    {
+        public string Uuid { get; init; } = string.Empty;
+        public string? IssuerRfc { get; init; }
+        public string? ReceiverRfc { get; init; }
+        public string? ProviderCode { get; init; }
+        public string? ProviderMessage { get; init; }
+        public DateTime? RequestedAtUtc { get; init; }
+        public long? FiscalDocumentId { get; init; }
+        public string? FiscalDocumentStatus { get; init; }
+        public long? FiscalCancellationId { get; init; }
+        public string? CancellationStatus { get; init; }
+        public string? AuthorizationStatus { get; init; }
+        public string? LocalOperationalStatus { get; init; }
+        public string? LocalOperationalMessage { get; init; }
+        public string? RawItemSummaryJson { get; init; }
+    }
+
+    public sealed class RespondCancellationAuthorizationRequest
+    {
+        public string Uuid { get; init; } = string.Empty;
+        public string Response { get; init; } = string.Empty;
+    }
+
+    public sealed class RespondCancellationAuthorizationResponse
+    {
+        public string Outcome { get; init; } = string.Empty;
+        public bool IsSuccess { get; init; }
+        public string? ErrorMessage { get; init; }
+        public string RequestedResponse { get; init; } = string.Empty;
+        public string? AppliedResponse { get; init; }
+        public string? Uuid { get; init; }
+        public long? FiscalDocumentId { get; init; }
+        public string? FiscalDocumentStatus { get; init; }
+        public long? FiscalCancellationId { get; init; }
+        public string? CancellationStatus { get; init; }
+        public string? AuthorizationStatus { get; init; }
+        public string? ProviderName { get; init; }
+        public string? ProviderTrackingId { get; init; }
+        public string? ProviderCode { get; init; }
+        public string? ProviderMessage { get; init; }
+        public string? ErrorCode { get; init; }
+        public string? SupportMessage { get; init; }
+        public string? RawResponseSummaryJson { get; init; }
+        public DateTime? RespondedAtUtc { get; init; }
     }
 
     public sealed class RefreshFiscalDocumentStatusResponse

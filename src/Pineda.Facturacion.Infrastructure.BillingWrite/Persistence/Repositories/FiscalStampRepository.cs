@@ -26,6 +26,19 @@ public class FiscalStampRepository : IFiscalStampRepository
             .FirstOrDefaultAsync(x => x.FiscalDocumentId == fiscalDocumentId, cancellationToken);
     }
 
+    public Task<FiscalStamp?> GetByUuidAsync(string uuid, CancellationToken cancellationToken = default)
+    {
+        return _dbContext.FiscalStamps
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Uuid == uuid, cancellationToken);
+    }
+
+    public Task<FiscalStamp?> GetTrackedByUuidAsync(string uuid, CancellationToken cancellationToken = default)
+    {
+        return _dbContext.FiscalStamps
+            .FirstOrDefaultAsync(x => x.Uuid == uuid, cancellationToken);
+    }
+
     public async Task AddAsync(FiscalStamp fiscalStamp, CancellationToken cancellationToken = default)
     {
         await _dbContext.FiscalStamps.AddAsync(fiscalStamp, cancellationToken);
