@@ -21,9 +21,16 @@ public sealed class BillingDocumentLookupRepository : IBillingDocumentLookupRepo
             {
                 BillingDocumentId = billingDocument.Id,
                 SalesOrderId = billingDocument.SalesOrderId,
-                LegacyOrderId = _dbContext.SalesOrders
-                    .Where(salesOrder => salesOrder.Id == billingDocument.SalesOrderId)
-                    .Select(salesOrder => salesOrder.LegacyOrderNumber)
+                LegacyOrderId =
+                    (from salesOrder in _dbContext.SalesOrders
+                     join legacyImportRecord in _dbContext.LegacyImportRecords
+                         on salesOrder.LegacyImportRecordId equals legacyImportRecord.Id
+                     where salesOrder.Id == billingDocument.SalesOrderId
+                     select string.IsNullOrEmpty(legacyImportRecord.SourceDocumentId)
+                         ? salesOrder.LegacyOrderNumber
+                         : string.IsNullOrEmpty(salesOrder.LegacyOrderNumber)
+                             ? legacyImportRecord.SourceDocumentId
+                             : legacyImportRecord.SourceDocumentId + "-" + salesOrder.LegacyOrderNumber)
                     .FirstOrDefault() ?? string.Empty,
                 Status = billingDocument.Status.ToString(),
                 DocumentType = billingDocument.DocumentType,
@@ -84,6 +91,8 @@ public sealed class BillingDocumentLookupRepository : IBillingDocumentLookupRepo
             from billingDocument in _dbContext.BillingDocuments.AsNoTracking()
             join salesOrder in _dbContext.SalesOrders.AsNoTracking()
                 on billingDocument.SalesOrderId equals salesOrder.Id
+            join legacyImportRecord in _dbContext.LegacyImportRecords.AsNoTracking()
+                on salesOrder.LegacyImportRecordId equals legacyImportRecord.Id
             join fiscalDocument in _dbContext.FiscalDocuments.AsNoTracking()
                 on billingDocument.Id equals fiscalDocument.BillingDocumentId into fiscalDocuments
             from fiscalDocument in fiscalDocuments.DefaultIfEmpty()
@@ -91,7 +100,11 @@ public sealed class BillingDocumentLookupRepository : IBillingDocumentLookupRepo
             {
                 BillingDocumentId = billingDocument.Id,
                 SalesOrderId = billingDocument.SalesOrderId,
-                LegacyOrderId = salesOrder.LegacyOrderNumber,
+                LegacyOrderId = string.IsNullOrEmpty(legacyImportRecord.SourceDocumentId)
+                    ? salesOrder.LegacyOrderNumber
+                    : string.IsNullOrEmpty(salesOrder.LegacyOrderNumber)
+                        ? legacyImportRecord.SourceDocumentId
+                        : legacyImportRecord.SourceDocumentId + "-" + salesOrder.LegacyOrderNumber,
                 Status = billingDocument.Status.ToString(),
                 DocumentType = billingDocument.DocumentType,
                 CurrencyCode = billingDocument.CurrencyCode,

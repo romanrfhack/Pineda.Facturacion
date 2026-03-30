@@ -241,7 +241,7 @@ public class MvpLifecycleApiTests
         Assert.Equal(HttpStatusCode.OK, lookupResponse.StatusCode);
         var lookupBody = await lookupResponse.Content.ReadFromJsonAsync<BillingDocumentsEndpoints.BillingDocumentLookupResponse>();
         Assert.NotNull(lookupBody);
-        Assert.Equal("ORD-LEG-1002A", lookupBody!.LegacyOrderId);
+        Assert.Equal("LEG-1002A-ORD-LEG-1002A", lookupBody!.LegacyOrderId);
         Assert.Null(lookupBody.FiscalDocumentId);
 
         var searchResponse = await client.GetAsync("/api/billing-documents/search?q=LEG-1002A");
