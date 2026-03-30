@@ -37,12 +37,21 @@ export interface BillingDocumentLookupResponse {
   fiscalDocumentId?: number | null;
   fiscalDocumentStatus?: string | null;
   items?: BillingDocumentLookupItemResponse[];
+  associatedOrders?: BillingDocumentAssociatedOrderResponse[];
 }
 
 export interface BillingDocumentLookupItemResponse {
   lineNumber: number;
   productInternalCode?: string | null;
   description: string;
+}
+
+export interface BillingDocumentAssociatedOrderResponse {
+  salesOrderId: number;
+  legacyOrderId: string;
+  customerName: string;
+  total: number;
+  isPrimary: boolean;
 }
 
 export interface IssuedFiscalDocumentListItemResponse {
@@ -119,6 +128,19 @@ export interface PrepareFiscalDocumentResponse {
   billingDocumentId: number;
   fiscalDocumentId?: number | null;
   status?: string | null;
+}
+
+export interface UpdateBillingDocumentOrderAssociationResponse {
+  outcome: string;
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  billingDocumentId: number;
+  billingDocumentStatus?: string | null;
+  salesOrderId: number;
+  fiscalDocumentId?: number | null;
+  fiscalDocumentStatus?: string | null;
+  associatedOrderCount: number;
+  total: number;
 }
 
 export interface FiscalDocumentItemResponse {

@@ -13,6 +13,7 @@ public class CreateBillingDocumentServiceTests
         var service = CreateService(
             new FakeSalesOrderSnapshotRepository(),
             new FakeBillingDocumentRepository(),
+            new FakeLegacyImportRecordRepository(),
             new FakeUnitOfWork());
 
         var result = await service.ExecuteAsync(new CreateBillingDocumentCommand
@@ -41,6 +42,7 @@ public class CreateBillingDocumentServiceTests
                     Status = BillingDocumentStatus.Draft
                 }
             },
+            new FakeLegacyImportRecordRepository(),
             new FakeUnitOfWork());
 
         var result = await service.ExecuteAsync(new CreateBillingDocumentCommand
@@ -63,6 +65,7 @@ public class CreateBillingDocumentServiceTests
         var service = CreateService(
             new FakeSalesOrderSnapshotRepository { Existing = salesOrder },
             billingDocumentRepository,
+            new FakeLegacyImportRecordRepository { Existing = new LegacyImportRecord { Id = salesOrder.LegacyImportRecordId } },
             unitOfWork);
 
         var result = await service.ExecuteAsync(new CreateBillingDocumentCommand
@@ -89,7 +92,7 @@ public class CreateBillingDocumentServiceTests
         Assert.Equal(5m, added.DiscountTotal);
         Assert.Equal(15.2m, added.TaxTotal);
         Assert.Equal(110.2m, added.Total);
-        Assert.Equal(1, unitOfWork.SaveChangesCallCount);
+        Assert.Equal(2, unitOfWork.SaveChangesCallCount);
 
         var item = Assert.Single(added.Items);
         Assert.Equal(1, item.LineNumber);
@@ -112,6 +115,7 @@ public class CreateBillingDocumentServiceTests
         var service = CreateService(
             new FakeSalesOrderSnapshotRepository { Existing = salesOrder },
             billingDocumentRepository,
+            new FakeLegacyImportRecordRepository { Existing = new LegacyImportRecord { Id = salesOrder.LegacyImportRecordId } },
             new FakeUnitOfWork());
 
         await service.ExecuteAsync(new CreateBillingDocumentCommand
@@ -135,6 +139,7 @@ public class CreateBillingDocumentServiceTests
         var service = CreateService(
             new FakeSalesOrderSnapshotRepository { Existing = salesOrder },
             billingDocumentRepository,
+            new FakeLegacyImportRecordRepository(),
             unitOfWork);
 
         var result = await service.ExecuteAsync(new CreateBillingDocumentCommand
@@ -153,11 +158,13 @@ public class CreateBillingDocumentServiceTests
     private static CreateBillingDocumentService CreateService(
         ISalesOrderSnapshotRepository salesOrderSnapshotRepository,
         IBillingDocumentRepository billingDocumentRepository,
+        ILegacyImportRecordRepository legacyImportRecordRepository,
         IUnitOfWork unitOfWork)
     {
         return new CreateBillingDocumentService(
             salesOrderSnapshotRepository,
             billingDocumentRepository,
+            legacyImportRecordRepository,
             unitOfWork);
     }
 
@@ -166,6 +173,7 @@ public class CreateBillingDocumentServiceTests
         return new SalesOrder
         {
             Id = 55,
+            LegacyImportRecordId = 12,
             PaymentCondition = "CONTADO",
             CurrencyCode = "MXN",
             Subtotal = 100,
@@ -227,6 +235,24 @@ public class CreateBillingDocumentServiceTests
             Added = billingDocument;
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class FakeLegacyImportRecordRepository : ILegacyImportRecordRepository
+    {
+        public LegacyImportRecord? Existing { get; init; }
+
+        public Task<LegacyImportRecord?> GetByIdAsync(long legacyImportRecordId, CancellationToken cancellationToken = default)
+            => Task.FromResult(Existing?.Id == legacyImportRecordId ? Existing : null);
+
+        public Task<LegacyImportRecord?> GetBySourceDocumentAsync(string sourceSystem, string sourceTable, string sourceDocumentId, CancellationToken cancellationToken = default)
+            => Task.FromResult<LegacyImportRecord?>(null);
+
+        public Task<IReadOnlyList<LegacyImportRecord>> ListByBillingDocumentIdAsync(long billingDocumentId, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<LegacyImportRecord>>([]);
+
+        public Task AddAsync(LegacyImportRecord legacyImportRecord, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task UpdateAsync(LegacyImportRecord legacyImportRecord, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     private sealed class FakeUnitOfWork : IUnitOfWork

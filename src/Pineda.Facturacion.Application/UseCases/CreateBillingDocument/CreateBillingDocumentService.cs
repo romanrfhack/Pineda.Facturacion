@@ -10,16 +10,19 @@ public class CreateBillingDocumentService
     private const string DefaultTaxObjectCode = "02";
 
     private readonly IBillingDocumentRepository _billingDocumentRepository;
+    private readonly ILegacyImportRecordRepository _legacyImportRecordRepository;
     private readonly ISalesOrderSnapshotRepository _salesOrderSnapshotRepository;
     private readonly IUnitOfWork _unitOfWork;
 
     public CreateBillingDocumentService(
         ISalesOrderSnapshotRepository salesOrderSnapshotRepository,
         IBillingDocumentRepository billingDocumentRepository,
+        ILegacyImportRecordRepository legacyImportRecordRepository,
         IUnitOfWork unitOfWork)
     {
         _salesOrderSnapshotRepository = salesOrderSnapshotRepository;
         _billingDocumentRepository = billingDocumentRepository;
+        _legacyImportRecordRepository = legacyImportRecordRepository;
         _unitOfWork = unitOfWork;
     }
 
@@ -79,6 +82,14 @@ public class CreateBillingDocumentService
 
         await _billingDocumentRepository.AddAsync(billingDocument, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        var legacyImportRecord = await _legacyImportRecordRepository.GetByIdAsync(salesOrder.LegacyImportRecordId, cancellationToken);
+        if (legacyImportRecord is not null)
+        {
+            legacyImportRecord.BillingDocumentId = billingDocument.Id;
+            await _legacyImportRecordRepository.UpdateAsync(legacyImportRecord, cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
 
         return new CreateBillingDocumentResult
         {

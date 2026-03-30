@@ -269,6 +269,70 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
+    public async Task BillingDocument_Can_Associate_And_Remove_Multiple_LegacyOrders_Before_Stamping()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        var seed = await factory.SeedStandardFiscalMasterDataAsync();
+
+        factory.LegacyOrderReader.Orders["LEG-4001"] = CreateLegacyOrder("LEG-4001", "SKU-1", 100m);
+        factory.LegacyOrderReader.Orders["LEG-4002"] = CreateLegacyOrder("LEG-4002", "SKU-1", 50m);
+
+        var importOrder1 = await (await client.PostAsync("/api/orders/LEG-4001/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+        var importOrder2 = await (await client.PostAsync("/api/orders/LEG-4002/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+
+        var billingBody = await (await client.PostAsJsonAsync($"/api/sales-orders/{importOrder1!.SalesOrderId}/billing-documents", new SalesOrdersEndpoints.CreateBillingDocumentRequest
+        {
+            DocumentType = "I"
+        })).Content.ReadFromJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>();
+
+        var prepareBody = await (await client.PostAsJsonAsync($"/api/billing-documents/{billingBody!.BillingDocumentId}/fiscal-documents", new BillingDocumentsEndpoints.PrepareFiscalDocumentRequest
+        {
+            FiscalReceiverId = seed.ReceiverId,
+            IssuerProfileId = seed.IssuerId,
+            PaymentMethodSat = "PPD",
+            PaymentFormSat = "99",
+            PaymentCondition = "CREDITO",
+            IsCreditSale = true,
+            CreditDays = 7
+        })).Content.ReadFromJsonAsync<BillingDocumentsEndpoints.PrepareFiscalDocumentResponse>();
+
+        var addResponse = await client.PostAsync($"/api/billing-documents/{billingBody.BillingDocumentId}/sales-orders/{importOrder2!.SalesOrderId}", null);
+        Assert.Equal(HttpStatusCode.OK, addResponse.StatusCode);
+
+        var lookupAfterAdd = await (await client.GetAsync($"/api/billing-documents/{billingBody.BillingDocumentId}"))
+            .Content.ReadFromJsonAsync<BillingDocumentsEndpoints.BillingDocumentLookupResponse>();
+        Assert.NotNull(lookupAfterAdd);
+        Assert.Equal(2, lookupAfterAdd!.AssociatedOrders.Count);
+        Assert.Equal(174m, lookupAfterAdd.Total);
+        Assert.Contains(lookupAfterAdd.AssociatedOrders, x => x.SalesOrderId == importOrder2.SalesOrderId);
+
+        var fiscalAfterAdd = await (await client.GetAsync($"/api/fiscal-documents/{prepareBody!.FiscalDocumentId}"))
+            .Content.ReadFromJsonAsync<FiscalDocumentsEndpoints.FiscalDocumentResponse>();
+        Assert.NotNull(fiscalAfterAdd);
+        Assert.Equal(174m, fiscalAfterAdd!.Total);
+        Assert.Equal(2, fiscalAfterAdd.Items.Count);
+        Assert.Equal("ReadyForStamping", fiscalAfterAdd.Status);
+
+        var removeResponse = await client.DeleteAsync($"/api/billing-documents/{billingBody.BillingDocumentId}/sales-orders/{importOrder2.SalesOrderId}");
+        Assert.Equal(HttpStatusCode.OK, removeResponse.StatusCode);
+
+        var lookupAfterRemove = await (await client.GetAsync($"/api/billing-documents/{billingBody.BillingDocumentId}"))
+            .Content.ReadFromJsonAsync<BillingDocumentsEndpoints.BillingDocumentLookupResponse>();
+        Assert.NotNull(lookupAfterRemove);
+        Assert.Single(lookupAfterRemove!.AssociatedOrders);
+        Assert.Equal(116m, lookupAfterRemove.Total);
+
+        var fiscalAfterRemove = await (await client.GetAsync($"/api/fiscal-documents/{prepareBody.FiscalDocumentId}"))
+            .Content.ReadFromJsonAsync<FiscalDocumentsEndpoints.FiscalDocumentResponse>();
+        Assert.NotNull(fiscalAfterRemove);
+        Assert.Equal(116m, fiscalAfterRemove!.Total);
+        Assert.Single(fiscalAfterRemove.Items);
+    }
+
+    [Fact]
     public async Task FiscalImportPreviewEndpoints_DoNotRequireAntiforgeryMiddleware_ForAuthenticatedMultipartRequests()
     {
         await using var factory = new MvpApiFactory();

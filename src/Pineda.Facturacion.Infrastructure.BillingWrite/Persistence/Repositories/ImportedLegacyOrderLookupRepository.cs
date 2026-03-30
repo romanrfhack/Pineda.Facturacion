@@ -54,7 +54,7 @@ public sealed class ImportedLegacyOrderLookupRepository : IImportedLegacyOrderLo
         var billingDocuments = (await _dbContext.BillingDocuments
             .AsNoTracking()
             .ToListAsync(cancellationToken))
-            .Where(x => salesOrderIds.Contains(x.SalesOrderId))
+            .Where(x => salesOrderIds.Contains(x.SalesOrderId) || matchedImportRecords.Any(importRecord => importRecord.BillingDocumentId == x.Id))
             .ToArray();
 
         var billingDocumentIds = billingDocuments.Select(x => x.Id).ToArray();
@@ -68,9 +68,11 @@ public sealed class ImportedLegacyOrderLookupRepository : IImportedLegacyOrderLo
             .Select(importRecord =>
             {
                 var salesOrder = salesOrders.FirstOrDefault(x => x.LegacyImportRecordId == importRecord.Id);
-                var billingDocument = salesOrder is null
-                    ? null
-                    : billingDocuments.FirstOrDefault(x => x.SalesOrderId == salesOrder.Id);
+                var billingDocument = importRecord.BillingDocumentId.HasValue
+                    ? billingDocuments.FirstOrDefault(x => x.Id == importRecord.BillingDocumentId.Value)
+                    : salesOrder is null
+                        ? null
+                        : billingDocuments.FirstOrDefault(x => x.SalesOrderId == salesOrder.Id);
                 var fiscalDocument = billingDocument is null
                     ? null
                     : fiscalDocuments.FirstOrDefault(x => x.BillingDocumentId == billingDocument.Id);

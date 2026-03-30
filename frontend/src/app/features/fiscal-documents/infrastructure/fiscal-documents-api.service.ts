@@ -20,6 +20,7 @@ import {
   RefreshFiscalDocumentStatusResponse,
   SendFiscalDocumentEmailRequest,
   SendFiscalDocumentEmailResponse,
+  UpdateBillingDocumentOrderAssociationResponse,
   StampFiscalDocumentRequest,
   StampFiscalDocumentResponse
 } from '../models/fiscal-documents.models';
@@ -70,6 +71,17 @@ export class FiscalDocumentsApiService {
 
   prepareFiscalDocument(billingDocumentId: number, request: PrepareFiscalDocumentRequest): Observable<PrepareFiscalDocumentResponse> {
     return this.http.post<PrepareFiscalDocumentResponse>(buildApiUrl(`/billing-documents/${billingDocumentId}/fiscal-documents`), request);
+  }
+
+  addSalesOrderToBillingDocument(billingDocumentId: number, salesOrderId: number): Observable<UpdateBillingDocumentOrderAssociationResponse> {
+    return this.http.post<UpdateBillingDocumentOrderAssociationResponse>(
+      buildApiUrl(`/billing-documents/${billingDocumentId}/sales-orders/${salesOrderId}`),
+      {});
+  }
+
+  removeSalesOrderFromBillingDocument(billingDocumentId: number, salesOrderId: number): Observable<UpdateBillingDocumentOrderAssociationResponse> {
+    return this.http.delete<UpdateBillingDocumentOrderAssociationResponse>(
+      buildApiUrl(`/billing-documents/${billingDocumentId}/sales-orders/${salesOrderId}`));
   }
 
   getFiscalDocumentById(fiscalDocumentId: number): Observable<FiscalDocumentResponse> {

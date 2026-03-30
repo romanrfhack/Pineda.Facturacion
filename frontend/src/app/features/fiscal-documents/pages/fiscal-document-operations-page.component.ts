@@ -28,6 +28,7 @@ import { ProductFiscalProfilesApiService } from '../../catalogs/infrastructure/p
 import { FiscalReceiversApiService } from '../../catalogs/infrastructure/fiscal-receivers-api.service';
 import { FiscalReceiverFormComponent } from '../../catalogs/components/fiscal-receiver-form.component';
 import { FiscalReceiver, FiscalReceiverSatCatalogOption, UpsertFiscalReceiverRequest, UpsertProductFiscalProfileRequest } from '../../catalogs/models/catalogs.models';
+import { OrdersApiService } from '../../orders/infrastructure/orders-api.service';
 import { extractMissingProductFiscalProfileContext, MissingProductFiscalProfileContext } from '../application/missing-product-fiscal-profile';
 import { buildFiscalDocumentFileName } from '../application/fiscal-document-file-name';
 import {
@@ -106,6 +107,59 @@ import {
               }
               <button type="button" class="secondary" (click)="clearBillingDocumentSelection()">Cambiar documento</button>
             </div>
+          </section>
+
+          <section class="associated-orders">
+            <div class="associated-orders-header">
+              <div>
+                <p class="selected-title">Órdenes legacy asociadas</p>
+                <strong>{{ associatedOrders().length }} orden(es) en el documento fiscal</strong>
+                <span class="helper">Puedes agregar o quitar órdenes completas antes del timbrado. El total se recalcula automáticamente.</span>
+              </div>
+            </div>
+
+            <div class="associated-orders-list">
+              @for (order of associatedOrders(); track order.salesOrderId) {
+                <article class="associated-order-card">
+                  <div>
+                    <strong>{{ order.legacyOrderId }}</strong>
+                    <span>Orden interna {{ order.salesOrderId }} · {{ order.customerName }}</span>
+                    <small>{{ currentBillingDocument.currencyCode }} {{ order.total }}</small>
+                  </div>
+                  <div class="context-actions">
+                    @if (order.isPrimary) {
+                      <span class="helper">Principal</span>
+                    }
+                    <button
+                      type="button"
+                      class="secondary"
+                      (click)="removeAssociatedOrder(order.salesOrderId)"
+                      [disabled]="!canEditCurrentBillingComposition() || loadingBillingDocumentComposition() || associatedOrders().length <= 1">
+                      {{ loadingBillingDocumentComposition() ? 'Actualizando...' : 'Quitar orden' }}
+                    </button>
+                  </div>
+                </article>
+              }
+            </div>
+
+            @if (canEditCurrentBillingComposition()) {
+              <form class="search-row associated-order-form" (ngSubmit)="addLegacyOrderToBillingDocument()">
+                <label class="search-label">
+                  <span>Agregar otra orden legacy</span>
+                  <input
+                    [(ngModel)]="additionalLegacyOrderId"
+                    name="additionalLegacyOrderId"
+                    placeholder="Captura el id legado (noPedido) de la orden a asociar"
+                  />
+                </label>
+                <button type="submit" class="secondary" [disabled]="loadingBillingDocumentComposition() || !additionalLegacyOrderId.trim()">
+                  {{ loadingBillingDocumentComposition() ? 'Agregando...' : 'Agregar orden' }}
+                </button>
+              </form>
+              <p class="helper">Sugerencia: agrega preferentemente órdenes del mismo cliente. La acción reutiliza la importación idempotente existente y solo adjunta la orden completa al documento.</p>
+            } @else {
+              <p class="helper">La composición del documento queda bloqueada cuando el CFDI ya no es editable antes del timbrado.</p>
+            }
           </section>
         }
       </section>
@@ -533,6 +587,13 @@ import {
     .billing-context { display:flex; justify-content:space-between; gap:1rem; align-items:center; margin-top:1rem; border:1px solid #d8d1c2; border-radius:0.9rem; background:#fffaf0; padding:0.85rem 1rem; }
     .billing-context div { display:grid; gap:0.2rem; }
     .billing-context span { color:#5f6b76; }
+    .associated-orders { display:grid; gap:0.75rem; margin-top:1rem; }
+    .associated-orders-header { display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; }
+    .associated-orders-list { display:grid; gap:0.5rem; }
+    .associated-order-card { display:flex; justify-content:space-between; gap:1rem; align-items:center; border:1px solid #ece5d7; border-radius:0.8rem; background:#fff; padding:0.75rem 0.9rem; }
+    .associated-order-card div { display:grid; gap:0.15rem; }
+    .associated-order-card small { color:#5f6b76; }
+    .associated-order-form { align-items:end; }
     .context-actions { display:flex; flex-wrap:wrap; gap:0.75rem; justify-content:flex-end; }
     .receiver-selector { grid-column:1 / -1; display:grid; gap:0.75rem; }
     .suggestions { border:1px solid #d8d1c2; border-radius:0.9rem; background:#fcfbf8; padding:0.5rem; }
@@ -567,6 +628,7 @@ import {
     @media (max-width: 720px) {
       .search-row { flex-direction:column; align-items:stretch; }
       .billing-context { flex-direction:column; align-items:stretch; }
+      .associated-order-card { flex-direction:column; align-items:stretch; }
       .selected-receiver { flex-direction:column; align-items:stretch; }
       .recovery-summary { flex-direction:column; align-items:stretch; }
       .empty-receiver-state { flex-direction:column; align-items:flex-start; }
@@ -582,6 +644,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   private readonly feedbackService = inject(FeedbackService);
   private readonly productFiscalProfilesApi = inject(ProductFiscalProfilesApiService);
   private readonly fiscalReceiversApi = inject(FiscalReceiversApiService);
+  private readonly ordersApi = inject(OrdersApiService);
   protected readonly permissionService = inject(PermissionService);
   protected readonly getDisplayLabel = getDisplayLabel;
   protected readonly cancellationReasonOptions = cancellationReasonOptions;
@@ -626,6 +689,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected readonly savingReceiver = signal(false);
   protected readonly receiverCreateError = signal<string | null>(null);
   protected readonly receiverCreateDraft = signal<UpsertFiscalReceiverRequest | null>(null);
+  protected readonly loadingBillingDocumentComposition = signal(false);
   protected readonly specialFieldDrafts = signal<ReceiverSpecialFieldDraft[]>([]);
   protected readonly paymentMethodCatalog = signal<FiscalReceiverSatCatalogOption[]>([]);
   protected readonly paymentFormCatalog = signal<FiscalReceiverSatCatalogOption[]>([]);
@@ -644,6 +708,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected emailRecipientsInput = '';
   protected emailSubject = '';
   protected emailBody = '';
+  protected additionalLegacyOrderId = '';
   private paymentConditionEditedByUser = false;
 
   protected readonly activeIssuerLabel = computed(() => {
@@ -655,6 +720,24 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     && this.receiverQuery().trim().length >= 2
     && (this.searchingReceivers() || this.receiverResults().length > 0 || !!this.receiverSearchError() || this.receiverSearchTouched())
   );
+  protected readonly associatedOrders = computed(() => {
+    const context = this.billingDocumentContext();
+    if (!context) {
+      return [];
+    }
+
+    if (context.associatedOrders?.length) {
+      return context.associatedOrders;
+    }
+
+    return [{
+      salesOrderId: context.salesOrderId,
+      legacyOrderId: context.legacyOrderId,
+      customerName: '',
+      total: context.total,
+      isPrimary: true
+    }];
+  });
   protected readonly activeReceiverSpecialFields = computed(() => this.specialFieldDrafts().filter((field) => field.isActive));
   protected readonly isCreditSaleCheckboxDisabled = computed(
     () => this.normalizedPaymentMethodSat() !== 'PPD'
@@ -902,6 +985,68 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     this.cancellation.set(null);
     this.fiscalDocumentId.set(null);
     await this.router.navigate(['/app/fiscal-documents'], { queryParams: {} });
+  }
+
+  protected canEditCurrentBillingComposition(): boolean {
+    const fiscalDocument = this.fiscalDocument();
+    if (!fiscalDocument) {
+      return true;
+    }
+
+    return fiscalDocument.status === 'Draft'
+      || fiscalDocument.status === 'ReadyForStamping'
+      || fiscalDocument.status === 'StampingRejected';
+  }
+
+  protected async addLegacyOrderToBillingDocument(): Promise<void> {
+    const billingDocumentId = this.billingDocumentId();
+    const legacyOrderId = this.additionalLegacyOrderId.trim();
+
+    if (!billingDocumentId || !legacyOrderId || this.loadingBillingDocumentComposition() || !this.canEditCurrentBillingComposition()) {
+      return;
+    }
+
+    this.loadingBillingDocumentComposition.set(true);
+    try {
+      const importResult = await firstValueFrom(this.ordersApi.importLegacyOrder(legacyOrderId));
+      if (!importResult.salesOrderId) {
+        this.feedbackService.show('error', importResult.errorMessage || 'No fue posible importar la orden legacy a asociar.');
+        return;
+      }
+
+      const response = await firstValueFrom(this.api.addSalesOrderToBillingDocument(billingDocumentId, importResult.salesOrderId));
+      this.additionalLegacyOrderId = '';
+      this.lastOperationMessage.set(response.errorMessage || 'Orden legacy agregada al documento fiscal.');
+      await this.reloadCompositionContext();
+      this.feedbackService.show('success', 'Orden legacy agregada correctamente.');
+    } catch (error) {
+      this.feedbackService.show('error', extractApiErrorMessage(error, 'No fue posible agregar la orden legacy al documento fiscal.'));
+    } finally {
+      this.loadingBillingDocumentComposition.set(false);
+    }
+  }
+
+  protected async removeAssociatedOrder(salesOrderId: number): Promise<void> {
+    const billingDocumentId = this.billingDocumentId();
+    if (!billingDocumentId || this.loadingBillingDocumentComposition() || !this.canEditCurrentBillingComposition()) {
+      return;
+    }
+
+    if (!window.confirm('Esta acción quitará la orden completa del documento fiscal antes del timbrado.')) {
+      return;
+    }
+
+    this.loadingBillingDocumentComposition.set(true);
+    try {
+      const response = await firstValueFrom(this.api.removeSalesOrderFromBillingDocument(billingDocumentId, salesOrderId));
+      this.lastOperationMessage.set(response.errorMessage || 'Orden legacy quitada del documento fiscal.');
+      await this.reloadCompositionContext();
+      this.feedbackService.show('success', 'Orden legacy quitada correctamente.');
+    } catch (error) {
+      this.feedbackService.show('error', extractApiErrorMessage(error, 'No fue posible quitar la orden legacy del documento fiscal.'));
+    } finally {
+      this.loadingBillingDocumentComposition.set(false);
+    }
   }
 
   private async searchReceivers(query: string): Promise<void> {
@@ -1350,6 +1495,20 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     } catch (error) {
       this.billingDocumentContext.set(null);
       this.billingDocumentSearchError.set(extractApiErrorMessage(error, 'No fue posible cargar el documento de facturación.'));
+    }
+  }
+
+  private async reloadCompositionContext(): Promise<void> {
+    const fiscalDocumentId = this.fiscalDocumentId();
+    const billingDocumentId = this.billingDocumentId();
+
+    if (fiscalDocumentId) {
+      await this.loadFiscalDocument(fiscalDocumentId);
+      return;
+    }
+
+    if (billingDocumentId) {
+      await this.loadBillingDocumentContext(billingDocumentId);
     }
   }
 

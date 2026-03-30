@@ -28,6 +28,22 @@ public static class BillingDocumentsEndpoints
             .WithSummary("Search billing documents by billing id, sales order id, or legacy order id")
             .Produces<IReadOnlyList<BillingDocumentLookupResponse>>(StatusCodes.Status200OK);
 
+        group.MapPost("/{billingDocumentId:long}/sales-orders/{salesOrderId:long}", AddSalesOrderToBillingDocumentAsync)
+            .WithName("AddSalesOrderToBillingDocument")
+            .WithSummary("Associate another imported sales order to a draft billing document before stamping")
+            .Produces<UpdateBillingDocumentOrderAssociationResponse>(StatusCodes.Status200OK)
+            .Produces<UpdateBillingDocumentOrderAssociationResponse>(StatusCodes.Status400BadRequest)
+            .Produces<UpdateBillingDocumentOrderAssociationResponse>(StatusCodes.Status404NotFound)
+            .Produces<UpdateBillingDocumentOrderAssociationResponse>(StatusCodes.Status409Conflict);
+
+        group.MapDelete("/{billingDocumentId:long}/sales-orders/{salesOrderId:long}", RemoveSalesOrderFromBillingDocumentAsync)
+            .WithName("RemoveSalesOrderFromBillingDocument")
+            .WithSummary("Remove an associated imported sales order from a billing document before stamping")
+            .Produces<UpdateBillingDocumentOrderAssociationResponse>(StatusCodes.Status200OK)
+            .Produces<UpdateBillingDocumentOrderAssociationResponse>(StatusCodes.Status400BadRequest)
+            .Produces<UpdateBillingDocumentOrderAssociationResponse>(StatusCodes.Status404NotFound)
+            .Produces<UpdateBillingDocumentOrderAssociationResponse>(StatusCodes.Status409Conflict);
+
         group.MapPost("/{billingDocumentId:long}/fiscal-documents", PrepareFiscalDocumentAsync)
             .WithName("PrepareFiscalDocument")
             .WithSummary("Prepare a fiscal snapshot from a billing document")
@@ -57,6 +73,68 @@ public static class BillingDocumentsEndpoints
     {
         var results = await service.ExecuteAsync(q, 5, cancellationToken);
         return TypedResults.Ok(results.Select(MapBillingDocumentLookup).ToArray());
+    }
+
+    private static async Task<Results<Ok<UpdateBillingDocumentOrderAssociationResponse>, NotFound<UpdateBillingDocumentOrderAssociationResponse>, Conflict<UpdateBillingDocumentOrderAssociationResponse>, BadRequest<UpdateBillingDocumentOrderAssociationResponse>>> AddSalesOrderToBillingDocumentAsync(
+        long billingDocumentId,
+        long salesOrderId,
+        UpdateBillingDocumentOrderAssociationService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.AddAsync(billingDocumentId, salesOrderId, cancellationToken);
+        var response = MapOrderAssociationResponse(result);
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "BillingDocument.AddSalesOrder",
+            "BillingDocument",
+            billingDocumentId.ToString(),
+            result.Outcome.ToString(),
+            new { billingDocumentId, salesOrderId },
+            new { result.FiscalDocumentId, result.FiscalDocumentStatus, result.AssociatedOrderCount, result.Total },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            UpdateBillingDocumentOrderAssociationOutcome.Updated => TypedResults.Ok(response),
+            UpdateBillingDocumentOrderAssociationOutcome.NotFound => TypedResults.NotFound(response),
+            UpdateBillingDocumentOrderAssociationOutcome.Conflict => TypedResults.Conflict(response),
+            UpdateBillingDocumentOrderAssociationOutcome.ValidationFailed => TypedResults.BadRequest(response),
+            _ => TypedResults.BadRequest(response)
+        };
+    }
+
+    private static async Task<Results<Ok<UpdateBillingDocumentOrderAssociationResponse>, NotFound<UpdateBillingDocumentOrderAssociationResponse>, Conflict<UpdateBillingDocumentOrderAssociationResponse>, BadRequest<UpdateBillingDocumentOrderAssociationResponse>>> RemoveSalesOrderFromBillingDocumentAsync(
+        long billingDocumentId,
+        long salesOrderId,
+        UpdateBillingDocumentOrderAssociationService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.RemoveAsync(billingDocumentId, salesOrderId, cancellationToken);
+        var response = MapOrderAssociationResponse(result);
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "BillingDocument.RemoveSalesOrder",
+            "BillingDocument",
+            billingDocumentId.ToString(),
+            result.Outcome.ToString(),
+            new { billingDocumentId, salesOrderId },
+            new { result.FiscalDocumentId, result.FiscalDocumentStatus, result.AssociatedOrderCount, result.Total },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            UpdateBillingDocumentOrderAssociationOutcome.Updated => TypedResults.Ok(response),
+            UpdateBillingDocumentOrderAssociationOutcome.NotFound => TypedResults.NotFound(response),
+            UpdateBillingDocumentOrderAssociationOutcome.Conflict => TypedResults.Conflict(response),
+            UpdateBillingDocumentOrderAssociationOutcome.ValidationFailed => TypedResults.BadRequest(response),
+            _ => TypedResults.BadRequest(response)
+        };
     }
 
     private static async Task<Results<Ok<PrepareFiscalDocumentResponse>, NotFound<PrepareFiscalDocumentResponse>, Conflict<PrepareFiscalDocumentResponse>, BadRequest<PrepareFiscalDocumentResponse>>> PrepareFiscalDocumentAsync(
@@ -171,6 +249,7 @@ public static class BillingDocumentsEndpoints
         public long? FiscalDocumentId { get; init; }
         public string? FiscalDocumentStatus { get; init; }
         public IReadOnlyList<BillingDocumentLookupItemResponse> Items { get; init; } = [];
+        public IReadOnlyList<BillingDocumentAssociatedOrderResponse> AssociatedOrders { get; init; } = [];
     }
 
     public sealed class BillingDocumentLookupItemResponse
@@ -178,6 +257,29 @@ public static class BillingDocumentsEndpoints
         public int LineNumber { get; init; }
         public string? ProductInternalCode { get; init; }
         public string Description { get; init; } = string.Empty;
+    }
+
+    public sealed class BillingDocumentAssociatedOrderResponse
+    {
+        public long SalesOrderId { get; init; }
+        public string LegacyOrderId { get; init; } = string.Empty;
+        public string CustomerName { get; init; } = string.Empty;
+        public decimal Total { get; init; }
+        public bool IsPrimary { get; init; }
+    }
+
+    public sealed class UpdateBillingDocumentOrderAssociationResponse
+    {
+        public string Outcome { get; init; } = string.Empty;
+        public bool IsSuccess { get; init; }
+        public string? ErrorMessage { get; init; }
+        public long BillingDocumentId { get; init; }
+        public string? BillingDocumentStatus { get; init; }
+        public long SalesOrderId { get; init; }
+        public long? FiscalDocumentId { get; init; }
+        public string? FiscalDocumentStatus { get; init; }
+        public int AssociatedOrderCount { get; init; }
+        public decimal Total { get; init; }
     }
 
     private static BillingDocumentLookupResponse MapBillingDocumentLookup(Application.Abstractions.Persistence.BillingDocumentLookupModel billingDocument)
@@ -201,7 +303,34 @@ public static class BillingDocumentsEndpoints
                     ProductInternalCode = item.ProductInternalCode,
                     Description = item.Description
                 })
+                .ToArray(),
+            AssociatedOrders = billingDocument.AssociatedOrders
+                .Select(order => new BillingDocumentAssociatedOrderResponse
+                {
+                    SalesOrderId = order.SalesOrderId,
+                    LegacyOrderId = order.LegacyOrderId,
+                    CustomerName = order.CustomerName,
+                    Total = order.Total,
+                    IsPrimary = order.IsPrimary
+                })
                 .ToArray()
+        };
+    }
+
+    private static UpdateBillingDocumentOrderAssociationResponse MapOrderAssociationResponse(UpdateBillingDocumentOrderAssociationResult result)
+    {
+        return new UpdateBillingDocumentOrderAssociationResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            BillingDocumentId = result.BillingDocumentId,
+            BillingDocumentStatus = result.BillingDocumentStatus?.ToString(),
+            SalesOrderId = result.SalesOrderId,
+            FiscalDocumentId = result.FiscalDocumentId,
+            FiscalDocumentStatus = result.FiscalDocumentStatus?.ToString(),
+            AssociatedOrderCount = result.AssociatedOrderCount,
+            Total = result.Total
         };
     }
 }

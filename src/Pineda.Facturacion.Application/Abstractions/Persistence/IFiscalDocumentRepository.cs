@@ -11,6 +11,11 @@ public interface IFiscalDocumentRepository
 
     Task<FiscalDocument?> GetByBillingDocumentIdAsync(long billingDocumentId, CancellationToken cancellationToken = default);
 
+    Task<FiscalDocument?> GetTrackedByBillingDocumentIdAsync(long billingDocumentId, CancellationToken cancellationToken = default)
+    {
+        return GetByBillingDocumentIdAsync(billingDocumentId, cancellationToken);
+    }
+
     Task<bool> ExistsByIssuerSeriesAndFolioAsync(
         string issuerRfc,
         string series,

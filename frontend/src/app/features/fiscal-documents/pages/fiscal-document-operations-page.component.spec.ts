@@ -7,6 +7,7 @@ import { FeedbackService } from '../../../core/ui/feedback.service';
 import { PermissionService } from '../../../core/auth/permission.service';
 import { ProductFiscalProfilesApiService } from '../../catalogs/infrastructure/product-fiscal-profiles-api.service';
 import { FiscalReceiversApiService } from '../../catalogs/infrastructure/fiscal-receivers-api.service';
+import { OrdersApiService } from '../../orders/infrastructure/orders-api.service';
 
 describe('FiscalDocumentOperationsPageComponent', () => {
   function createApi(overrides?: Partial<Record<keyof FiscalDocumentsApiService, unknown>>) {
@@ -36,6 +37,15 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         createdAtUtc: '2026-03-20T12:00:00Z',
         fiscalDocumentId: null,
         fiscalDocumentStatus: null,
+        associatedOrders: [
+          {
+            salesOrderId: 20,
+            legacyOrderId: 'LEG-1001-ORD-LEG-1001',
+            customerName: 'Receiver One',
+            total: 100,
+            isPrimary: true
+          }
+        ],
         items: [
           {
             lineNumber: 1,
@@ -46,6 +56,28 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       })),
       searchBillingDocuments: vi.fn().mockReturnValue(of([])),
       prepareFiscalDocument: vi.fn(),
+      addSalesOrderToBillingDocument: vi.fn().mockReturnValue(of({
+        outcome: 'Updated',
+        isSuccess: true,
+        billingDocumentId: 30,
+        billingDocumentStatus: 'Draft',
+        salesOrderId: 20,
+        fiscalDocumentId: 40,
+        fiscalDocumentStatus: 'ReadyForStamping',
+        associatedOrderCount: 2,
+        total: 200
+      })),
+      removeSalesOrderFromBillingDocument: vi.fn().mockReturnValue(of({
+        outcome: 'Updated',
+        isSuccess: true,
+        billingDocumentId: 30,
+        billingDocumentStatus: 'Draft',
+        salesOrderId: 20,
+        fiscalDocumentId: 40,
+        fiscalDocumentStatus: 'ReadyForStamping',
+        associatedOrderCount: 1,
+        total: 100
+      })),
       getFiscalDocumentById: vi.fn().mockReturnValue(of({
         id: 40,
         billingDocumentId: 30,
@@ -132,7 +164,8 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     apiOverrides?: Partial<Record<keyof FiscalDocumentsApiService, unknown>>,
     routeOptions?: { id?: string | null; billingDocumentId?: string | null },
     productApiOverrides?: Partial<Record<keyof ProductFiscalProfilesApiService, unknown>>,
-    receiverApiOverrides?: Partial<Record<keyof FiscalReceiversApiService, unknown>>
+    receiverApiOverrides?: Partial<Record<keyof FiscalReceiversApiService, unknown>>,
+    ordersApiOverrides?: Partial<Record<keyof OrdersApiService, unknown>>
   ) {
     const routeId = routeOptions && 'id' in routeOptions ? routeOptions.id : '40';
 
@@ -155,6 +188,23 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         {
           provide: FeedbackService,
           useValue: { show: vi.fn() }
+        },
+        {
+          provide: OrdersApiService,
+          useValue: {
+            importLegacyOrder: vi.fn().mockReturnValue(of({
+              outcome: 'Imported',
+              isSuccess: true,
+              isIdempotent: false,
+              sourceSystem: 'legacy',
+              sourceTable: 'pedidos',
+              legacyOrderId: 'LEG-2002',
+              sourceHash: 'hash',
+              salesOrderId: 21,
+              importStatus: 'Imported'
+            })),
+            ...ordersApiOverrides
+          }
         },
         {
           provide: ProductFiscalProfilesApiService,
@@ -1455,5 +1505,158 @@ describe('FiscalDocumentOperationsPageComponent', () => {
 
     expect(fixture.componentInstance['missingProductFiscalProfile']()?.description).toBe('GP-149');
     expect(fixture.componentInstance['missingProductFiscalProfile']()?.draft.description).toBe('GP-149');
+  });
+
+  it('adds another legacy order to the current billing document before stamping', async () => {
+    const importLegacyOrder = vi.fn().mockReturnValue(of({
+      outcome: 'Imported',
+      isSuccess: true,
+      isIdempotent: false,
+      sourceSystem: 'legacy',
+      sourceTable: 'pedidos',
+      legacyOrderId: 'LEG-2002',
+      sourceHash: 'hash',
+      salesOrderId: 21,
+      importStatus: 'Imported'
+    }));
+    const addSalesOrderToBillingDocument = vi.fn().mockReturnValue(of({
+      outcome: 'Updated',
+      isSuccess: true,
+      billingDocumentId: 30,
+      billingDocumentStatus: 'Draft',
+      salesOrderId: 21,
+      fiscalDocumentId: 40,
+      fiscalDocumentStatus: 'ReadyForStamping',
+      associatedOrderCount: 2,
+      total: 200
+    }));
+    const fixture = await configure({
+      addSalesOrderToBillingDocument,
+      getFiscalDocumentById: vi.fn().mockReturnValue(of({
+        id: 40,
+        billingDocumentId: 30,
+        issuerProfileId: 1,
+        fiscalReceiverId: 9,
+        status: 'ReadyForStamping',
+        cfdiVersion: '4.0',
+        documentType: 'I',
+        series: 'A',
+        folio: '31787',
+        issuedAtUtc: '2026-03-20T12:00:00Z',
+        currencyCode: 'MXN',
+        exchangeRate: 1,
+        paymentMethodSat: 'PPD',
+        paymentFormSat: '99',
+        paymentCondition: 'CREDITO',
+        isCreditSale: true,
+        creditDays: 7,
+        issuerRfc: 'AAA010101AAA',
+        issuerLegalName: 'Issuer SA',
+        issuerFiscalRegimeCode: '601',
+        issuerPostalCode: '01000',
+        pacEnvironment: 'Sandbox',
+        hasCertificateReference: true,
+        hasPrivateKeyReference: true,
+        hasPrivateKeyPasswordReference: true,
+        receiverRfc: 'BBB010101BBB',
+        receiverLegalName: 'Receiver One',
+        receiverFiscalRegimeCode: '601',
+        receiverCfdiUseCode: 'G03',
+        receiverPostalCode: '02000',
+        receiverCountryCode: 'MX',
+        receiverForeignTaxRegistration: null,
+        subtotal: 100,
+        discountTotal: 0,
+        taxTotal: 16,
+        total: 116,
+        items: []
+      }))
+    }, undefined, undefined, undefined, { importLegacyOrder });
+
+    fixture.componentInstance['additionalLegacyOrderId'] = 'LEG-2002';
+    await fixture.componentInstance['addLegacyOrderToBillingDocument']();
+
+    expect(importLegacyOrder).toHaveBeenCalledWith('LEG-2002');
+    expect(addSalesOrderToBillingDocument).toHaveBeenCalledWith(30, 21);
+  });
+
+  it('removes an associated order from the current billing document before stamping', async () => {
+    const removeSalesOrderFromBillingDocument = vi.fn().mockReturnValue(of({
+      outcome: 'Updated',
+      isSuccess: true,
+      billingDocumentId: 30,
+      billingDocumentStatus: 'Draft',
+      salesOrderId: 21,
+      fiscalDocumentId: 40,
+      fiscalDocumentStatus: 'ReadyForStamping',
+      associatedOrderCount: 1,
+      total: 116
+    }));
+    const getBillingDocumentById = vi.fn().mockReturnValue(of({
+      billingDocumentId: 30,
+      salesOrderId: 20,
+      legacyOrderId: 'LEG-1001-ORD-LEG-1001',
+      status: 'Draft',
+      documentType: 'I',
+      currencyCode: 'MXN',
+      total: 174,
+      createdAtUtc: '2026-03-20T12:00:00Z',
+      fiscalDocumentId: 40,
+      fiscalDocumentStatus: 'ReadyForStamping',
+      associatedOrders: [
+        { salesOrderId: 20, legacyOrderId: 'LEG-1001-ORD-LEG-1001', customerName: 'Receiver One', total: 116, isPrimary: true },
+        { salesOrderId: 21, legacyOrderId: 'LEG-2002-ORD-LEG-2002', customerName: 'Receiver One', total: 58, isPrimary: false }
+      ],
+      items: []
+    }));
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const fixture = await configure({
+      removeSalesOrderFromBillingDocument,
+      getBillingDocumentById,
+      getFiscalDocumentById: vi.fn().mockReturnValue(of({
+        id: 40,
+        billingDocumentId: 30,
+        issuerProfileId: 1,
+        fiscalReceiverId: 9,
+        status: 'ReadyForStamping',
+        cfdiVersion: '4.0',
+        documentType: 'I',
+        series: 'A',
+        folio: '31787',
+        issuedAtUtc: '2026-03-20T12:00:00Z',
+        currencyCode: 'MXN',
+        exchangeRate: 1,
+        paymentMethodSat: 'PPD',
+        paymentFormSat: '99',
+        paymentCondition: 'CREDITO',
+        isCreditSale: true,
+        creditDays: 7,
+        issuerRfc: 'AAA010101AAA',
+        issuerLegalName: 'Issuer SA',
+        issuerFiscalRegimeCode: '601',
+        issuerPostalCode: '01000',
+        pacEnvironment: 'Sandbox',
+        hasCertificateReference: true,
+        hasPrivateKeyReference: true,
+        hasPrivateKeyPasswordReference: true,
+        receiverRfc: 'BBB010101BBB',
+        receiverLegalName: 'Receiver One',
+        receiverFiscalRegimeCode: '601',
+        receiverCfdiUseCode: 'G03',
+        receiverPostalCode: '02000',
+        receiverCountryCode: 'MX',
+        receiverForeignTaxRegistration: null,
+        subtotal: 150,
+        discountTotal: 0,
+        taxTotal: 24,
+        total: 174,
+        items: []
+      }))
+    });
+
+    await fixture.componentInstance['removeAssociatedOrder'](21);
+
+    expect(removeSalesOrderFromBillingDocument).toHaveBeenCalledWith(30, 21);
+    confirmSpy.mockRestore();
   });
 });

@@ -28,6 +28,19 @@ public class SalesOrderRepository : ISalesOrderRepository, ISalesOrderSnapshotRe
             .FirstOrDefaultAsync(x => x.Id == salesOrderId, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<SalesOrder>> GetByBillingDocumentIdWithItemsAsync(long billingDocumentId, CancellationToken cancellationToken = default)
+    {
+        return await (
+            from salesOrder in _dbContext.SalesOrders.AsNoTracking()
+            join legacyImportRecord in _dbContext.LegacyImportRecords.AsNoTracking()
+                on salesOrder.LegacyImportRecordId equals legacyImportRecord.Id
+            where legacyImportRecord.BillingDocumentId == billingDocumentId
+            select salesOrder)
+            .Include(x => x.Items)
+            .OrderBy(x => x.Id)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task AddAsync(SalesOrder salesOrder, CancellationToken cancellationToken = default)
     {
         await _dbContext.SalesOrders.AddAsync(salesOrder, cancellationToken);

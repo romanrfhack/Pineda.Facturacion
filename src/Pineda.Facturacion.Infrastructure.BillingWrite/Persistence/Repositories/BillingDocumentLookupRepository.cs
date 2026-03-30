@@ -53,6 +53,26 @@ public sealed class BillingDocumentLookupRepository : IBillingDocumentLookupRepo
                         ProductInternalCode = item.ProductInternalCode,
                         Description = item.Description
                     })
+                    .ToList(),
+                AssociatedOrders =
+                    (from salesOrder in _dbContext.SalesOrders
+                     join legacyImportRecord in _dbContext.LegacyImportRecords
+                         on salesOrder.LegacyImportRecordId equals legacyImportRecord.Id
+                     where legacyImportRecord.BillingDocumentId == billingDocument.Id
+                         || salesOrder.Id == billingDocument.SalesOrderId
+                     orderby salesOrder.Id == billingDocument.SalesOrderId ? 0 : 1, salesOrder.Id
+                     select new BillingDocumentAssociatedOrderLookupModel
+                     {
+                         SalesOrderId = salesOrder.Id,
+                         LegacyOrderId = string.IsNullOrEmpty(legacyImportRecord.SourceDocumentId)
+                             ? salesOrder.LegacyOrderNumber
+                             : string.IsNullOrEmpty(salesOrder.LegacyOrderNumber)
+                                 ? legacyImportRecord.SourceDocumentId
+                                 : legacyImportRecord.SourceDocumentId + "-" + salesOrder.LegacyOrderNumber,
+                         CustomerName = salesOrder.CustomerName,
+                         Total = salesOrder.Total,
+                         IsPrimary = salesOrder.Id == billingDocument.SalesOrderId
+                     })
                     .ToList()
             })
             .FirstOrDefaultAsync(cancellationToken);
@@ -111,7 +131,27 @@ public sealed class BillingDocumentLookupRepository : IBillingDocumentLookupRepo
                 Total = billingDocument.Total,
                 CreatedAtUtc = billingDocument.CreatedAtUtc,
                 FiscalDocumentId = fiscalDocument != null ? fiscalDocument.Id : null,
-                FiscalDocumentStatus = fiscalDocument != null ? fiscalDocument.Status.ToString() : null
+                FiscalDocumentStatus = fiscalDocument != null ? fiscalDocument.Status.ToString() : null,
+                AssociatedOrders =
+                    (from linkedSalesOrder in _dbContext.SalesOrders.AsNoTracking()
+                     join linkedImportRecord in _dbContext.LegacyImportRecords.AsNoTracking()
+                         on linkedSalesOrder.LegacyImportRecordId equals linkedImportRecord.Id
+                     where linkedImportRecord.BillingDocumentId == billingDocument.Id
+                         || linkedSalesOrder.Id == billingDocument.SalesOrderId
+                     orderby linkedSalesOrder.Id == billingDocument.SalesOrderId ? 0 : 1, linkedSalesOrder.Id
+                     select new BillingDocumentAssociatedOrderLookupModel
+                     {
+                         SalesOrderId = linkedSalesOrder.Id,
+                         LegacyOrderId = string.IsNullOrEmpty(linkedImportRecord.SourceDocumentId)
+                             ? linkedSalesOrder.LegacyOrderNumber
+                             : string.IsNullOrEmpty(linkedSalesOrder.LegacyOrderNumber)
+                                 ? linkedImportRecord.SourceDocumentId
+                                 : linkedImportRecord.SourceDocumentId + "-" + linkedSalesOrder.LegacyOrderNumber,
+                         CustomerName = linkedSalesOrder.CustomerName,
+                         Total = linkedSalesOrder.Total,
+                         IsPrimary = linkedSalesOrder.Id == billingDocument.SalesOrderId
+                     })
+                    .ToList()
             };
     }
 }

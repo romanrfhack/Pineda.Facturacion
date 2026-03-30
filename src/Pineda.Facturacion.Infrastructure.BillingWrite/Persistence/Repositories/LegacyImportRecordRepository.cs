@@ -13,6 +13,12 @@ public class LegacyImportRecordRepository : ILegacyImportRecordRepository
         _dbContext = dbContext;
     }
 
+    public Task<LegacyImportRecord?> GetByIdAsync(long legacyImportRecordId, CancellationToken cancellationToken = default)
+    {
+        return _dbContext.LegacyImportRecords
+            .FirstOrDefaultAsync(x => x.Id == legacyImportRecordId, cancellationToken);
+    }
+
     public Task<LegacyImportRecord?> GetBySourceDocumentAsync(
         string sourceSystem,
         string sourceTable,
@@ -25,6 +31,13 @@ public class LegacyImportRecordRepository : ILegacyImportRecordRepository
                     && x.SourceTable == sourceTable
                     && x.SourceDocumentId == sourceDocumentId,
                 cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<LegacyImportRecord>> ListByBillingDocumentIdAsync(long billingDocumentId, CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.LegacyImportRecords
+            .Where(x => x.BillingDocumentId == billingDocumentId)
+            .ToListAsync(cancellationToken);
     }
 
     public async Task AddAsync(LegacyImportRecord legacyImportRecord, CancellationToken cancellationToken = default)
