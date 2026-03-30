@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http.HttpResults;
 using Pineda.Facturacion.Api.Security;
+using Pineda.Facturacion.Domain.Enums;
 using Pineda.Facturacion.Application.Abstractions.Security;
 using Pineda.Facturacion.Application.UseCases.BillingDocuments;
 using Pineda.Facturacion.Application.UseCases.FiscalDocuments;
@@ -43,6 +44,14 @@ public static class BillingDocumentsEndpoints
             .Produces<UpdateBillingDocumentOrderAssociationResponse>(StatusCodes.Status400BadRequest)
             .Produces<UpdateBillingDocumentOrderAssociationResponse>(StatusCodes.Status404NotFound)
             .Produces<UpdateBillingDocumentOrderAssociationResponse>(StatusCodes.Status409Conflict);
+
+        group.MapPost("/{billingDocumentId:long}/items/{billingDocumentItemId:long}/remove", RemoveBillingDocumentItemAsync)
+            .WithName("RemoveBillingDocumentItem")
+            .WithSummary("Remove a complete billing line from the current billing document before stamping")
+            .Produces<RemoveBillingDocumentItemResponse>(StatusCodes.Status200OK)
+            .Produces<RemoveBillingDocumentItemResponse>(StatusCodes.Status400BadRequest)
+            .Produces<RemoveBillingDocumentItemResponse>(StatusCodes.Status404NotFound)
+            .Produces<RemoveBillingDocumentItemResponse>(StatusCodes.Status409Conflict);
 
         group.MapPost("/{billingDocumentId:long}/fiscal-documents", PrepareFiscalDocumentAsync)
             .WithName("PrepareFiscalDocument")
@@ -206,6 +215,97 @@ public static class BillingDocumentsEndpoints
         };
     }
 
+    private static async Task<Results<Ok<RemoveBillingDocumentItemResponse>, NotFound<RemoveBillingDocumentItemResponse>, Conflict<RemoveBillingDocumentItemResponse>, BadRequest<RemoveBillingDocumentItemResponse>>> RemoveBillingDocumentItemAsync(
+        long billingDocumentId,
+        long billingDocumentItemId,
+        RemoveBillingDocumentItemRequest request,
+        RemoveBillingDocumentItemService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        if (!Enum.TryParse<BillingDocumentItemRemovalReason>(request.RemovalReason, true, out var removalReason))
+        {
+            return TypedResults.BadRequest(new RemoveBillingDocumentItemResponse
+            {
+                Outcome = RemoveBillingDocumentItemOutcome.ValidationFailed.ToString(),
+                IsSuccess = false,
+                BillingDocumentId = billingDocumentId,
+                BillingDocumentItemId = billingDocumentItemId,
+                ErrorMessage = $"Removal reason '{request.RemovalReason}' is not valid."
+            });
+        }
+
+        if (!Enum.TryParse<BillingDocumentItemRemovalDisposition>(request.RemovalDisposition, true, out var removalDisposition))
+        {
+            return TypedResults.BadRequest(new RemoveBillingDocumentItemResponse
+            {
+                Outcome = RemoveBillingDocumentItemOutcome.ValidationFailed.ToString(),
+                IsSuccess = false,
+                BillingDocumentId = billingDocumentId,
+                BillingDocumentItemId = billingDocumentItemId,
+                ErrorMessage = $"Removal disposition '{request.RemovalDisposition}' is not valid."
+            });
+        }
+
+        var result = await service.ExecuteAsync(new RemoveBillingDocumentItemCommand
+        {
+            BillingDocumentId = billingDocumentId,
+            BillingDocumentItemId = billingDocumentItemId,
+            RemovalReason = removalReason,
+            Observations = request.Observations,
+            RemovalDisposition = removalDisposition
+        }, cancellationToken);
+
+        var response = new RemoveBillingDocumentItemResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            BillingDocumentId = result.BillingDocumentId,
+            BillingDocumentStatus = result.BillingDocumentStatus?.ToString(),
+            BillingDocumentItemId = result.BillingDocumentItemId,
+            FiscalDocumentId = result.FiscalDocumentId,
+            FiscalDocumentStatus = result.FiscalDocumentStatus?.ToString(),
+            RemovalId = result.RemovalId,
+            IncludedItemCount = result.IncludedItemCount,
+            Total = result.Total
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "BillingDocument.RemoveItem",
+            "BillingDocument",
+            billingDocumentId.ToString(),
+            result.Outcome.ToString(),
+            new
+            {
+                billingDocumentId,
+                billingDocumentItemId,
+                request.RemovalReason,
+                request.Observations,
+                request.RemovalDisposition
+            },
+            new
+            {
+                result.RemovalId,
+                result.FiscalDocumentId,
+                result.FiscalDocumentStatus,
+                result.IncludedItemCount,
+                result.Total
+            },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            RemoveBillingDocumentItemOutcome.Removed => TypedResults.Ok(response),
+            RemoveBillingDocumentItemOutcome.NotFound => TypedResults.NotFound(response),
+            RemoveBillingDocumentItemOutcome.Conflict => TypedResults.Conflict(response),
+            RemoveBillingDocumentItemOutcome.ValidationFailed => TypedResults.BadRequest(response),
+            _ => TypedResults.BadRequest(response)
+        };
+    }
+
     public sealed class PrepareFiscalDocumentRequest
     {
         public long FiscalReceiverId { get; init; }
@@ -254,9 +354,16 @@ public static class BillingDocumentsEndpoints
 
     public sealed class BillingDocumentLookupItemResponse
     {
+        public long BillingDocumentItemId { get; init; }
+        public long SalesOrderId { get; init; }
+        public long SalesOrderItemId { get; init; }
+        public int SourceSalesOrderLineNumber { get; init; }
+        public string SourceLegacyOrderId { get; init; } = string.Empty;
         public int LineNumber { get; init; }
         public string? ProductInternalCode { get; init; }
         public string Description { get; init; } = string.Empty;
+        public decimal Quantity { get; init; }
+        public decimal Total { get; init; }
     }
 
     public sealed class BillingDocumentAssociatedOrderResponse
@@ -282,6 +389,28 @@ public static class BillingDocumentsEndpoints
         public decimal Total { get; init; }
     }
 
+    public sealed class RemoveBillingDocumentItemRequest
+    {
+        public string RemovalReason { get; init; } = string.Empty;
+        public string? Observations { get; init; }
+        public string RemovalDisposition { get; init; } = string.Empty;
+    }
+
+    public sealed class RemoveBillingDocumentItemResponse
+    {
+        public string Outcome { get; init; } = string.Empty;
+        public bool IsSuccess { get; init; }
+        public string? ErrorMessage { get; init; }
+        public long BillingDocumentId { get; init; }
+        public string? BillingDocumentStatus { get; init; }
+        public long BillingDocumentItemId { get; init; }
+        public long? FiscalDocumentId { get; init; }
+        public string? FiscalDocumentStatus { get; init; }
+        public long? RemovalId { get; init; }
+        public int IncludedItemCount { get; init; }
+        public decimal Total { get; init; }
+    }
+
     private static BillingDocumentLookupResponse MapBillingDocumentLookup(Application.Abstractions.Persistence.BillingDocumentLookupModel billingDocument)
     {
         return new BillingDocumentLookupResponse
@@ -299,9 +428,16 @@ public static class BillingDocumentsEndpoints
             Items = billingDocument.Items
                 .Select(item => new BillingDocumentLookupItemResponse
                 {
+                    BillingDocumentItemId = item.BillingDocumentItemId,
+                    SalesOrderId = item.SalesOrderId,
+                    SalesOrderItemId = item.SalesOrderItemId,
+                    SourceSalesOrderLineNumber = item.SourceSalesOrderLineNumber,
+                    SourceLegacyOrderId = item.SourceLegacyOrderId,
                     LineNumber = item.LineNumber,
                     ProductInternalCode = item.ProductInternalCode,
-                    Description = item.Description
+                    Description = item.Description,
+                    Quantity = item.Quantity,
+                    Total = item.Total
                 })
                 .ToArray(),
             AssociatedOrders = billingDocument.AssociatedOrders

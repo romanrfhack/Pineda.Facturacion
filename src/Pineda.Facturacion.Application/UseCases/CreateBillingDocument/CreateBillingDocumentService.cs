@@ -68,12 +68,15 @@ public class CreateBillingDocumentService
             };
         }
 
+        var legacyImportRecord = await _legacyImportRecordRepository.GetByIdAsync(salesOrder.LegacyImportRecordId, cancellationToken);
+        var sourceLegacyOrderId = BuildLegacyOrderReference(salesOrder, legacyImportRecord);
+
         BillingDocument billingDocument;
 
         try
         {
             var now = DateTime.UtcNow;
-            billingDocument = MapBillingDocument(salesOrder, command.DocumentType, now);
+            billingDocument = MapBillingDocument(salesOrder, sourceLegacyOrderId, command.DocumentType, now);
         }
         catch (InvalidOperationException exception)
         {
@@ -83,7 +86,6 @@ public class CreateBillingDocumentService
         await _billingDocumentRepository.AddAsync(billingDocument, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        var legacyImportRecord = await _legacyImportRecordRepository.GetByIdAsync(salesOrder.LegacyImportRecordId, cancellationToken);
         if (legacyImportRecord is not null)
         {
             legacyImportRecord.BillingDocumentId = billingDocument.Id;
@@ -115,7 +117,7 @@ public class CreateBillingDocumentService
         };
     }
 
-    private static BillingDocument MapBillingDocument(SalesOrder salesOrder, string documentType, DateTime now)
+    private static BillingDocument MapBillingDocument(SalesOrder salesOrder, string sourceLegacyOrderId, string documentType, DateTime now)
     {
         var normalizedCurrencyCode = FiscalMasterDataNormalization.NormalizeRequiredCode(salesOrder.CurrencyCode);
 
@@ -137,6 +139,10 @@ public class CreateBillingDocumentService
             UpdatedAtUtc = now,
             Items = salesOrder.Items.Select(item => new BillingDocumentItem
             {
+                SalesOrderId = salesOrder.Id,
+                SalesOrderItemId = item.Id,
+                SourceSalesOrderLineNumber = item.LineNumber,
+                SourceLegacyOrderId = sourceLegacyOrderId,
                 LineNumber = item.LineNumber,
                 Sku = item.Sku,
                 ProductInternalCode = string.IsNullOrWhiteSpace(item.Sku)
@@ -157,5 +163,17 @@ public class CreateBillingDocumentService
 
         StandardVat16Calculator.ApplyStandardVat(billingDocument);
         return billingDocument;
+    }
+
+    private static string BuildLegacyOrderReference(SalesOrder salesOrder, LegacyImportRecord? legacyImportRecord)
+    {
+        if (string.IsNullOrWhiteSpace(legacyImportRecord?.SourceDocumentId))
+        {
+            return salesOrder.LegacyOrderNumber;
+        }
+
+        return string.IsNullOrWhiteSpace(salesOrder.LegacyOrderNumber)
+            ? legacyImportRecord.SourceDocumentId
+            : $"{legacyImportRecord.SourceDocumentId}-{salesOrder.LegacyOrderNumber}";
     }
 }

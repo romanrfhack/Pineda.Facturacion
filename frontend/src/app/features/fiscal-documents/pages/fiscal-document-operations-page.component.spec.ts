@@ -48,9 +48,16 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         ],
         items: [
           {
+            billingDocumentItemId: 501,
+            salesOrderId: 20,
+            salesOrderItemId: 601,
+            sourceSalesOrderLineNumber: 1,
+            sourceLegacyOrderId: 'LEG-1001-ORD-LEG-1001',
             lineNumber: 1,
             productInternalCode: 'MTE-4259',
-            description: 'FILTRO DE ACEITE'
+            description: 'FILTRO DE ACEITE',
+            quantity: 1,
+            total: 100
           }
         ]
       })),
@@ -76,6 +83,18 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         fiscalDocumentId: 40,
         fiscalDocumentStatus: 'ReadyForStamping',
         associatedOrderCount: 1,
+        total: 100
+      })),
+      removeBillingDocumentItem: vi.fn().mockReturnValue(of({
+        outcome: 'Removed',
+        isSuccess: true,
+        billingDocumentId: 30,
+        billingDocumentStatus: 'Draft',
+        billingDocumentItemId: 501,
+        fiscalDocumentId: 40,
+        fiscalDocumentStatus: 'ReadyForStamping',
+        removalId: 88,
+        includedItemCount: 1,
         total: 100
       })),
       getFiscalDocumentById: vi.fn().mockReturnValue(of({
@@ -1658,5 +1677,86 @@ describe('FiscalDocumentOperationsPageComponent', () => {
 
     expect(removeSalesOrderFromBillingDocument).toHaveBeenCalledWith(30, 21);
     confirmSpy.mockRestore();
+  });
+
+  it('removes a complete billing line with reason and disposition before stamping', async () => {
+    const removeBillingDocumentItem = vi.fn().mockReturnValue(of({
+      outcome: 'Removed',
+      isSuccess: true,
+      billingDocumentId: 30,
+      billingDocumentStatus: 'Draft',
+      billingDocumentItemId: 501,
+      fiscalDocumentId: 40,
+      fiscalDocumentStatus: 'ReadyForStamping',
+      removalId: 91,
+      includedItemCount: 1,
+      total: 58
+    }));
+    const fixture = await configure({
+      removeBillingDocumentItem,
+      getFiscalDocumentById: vi.fn().mockReturnValue(of({
+        id: 40,
+        billingDocumentId: 30,
+        issuerProfileId: 1,
+        fiscalReceiverId: 9,
+        status: 'ReadyForStamping',
+        cfdiVersion: '4.0',
+        documentType: 'I',
+        series: 'A',
+        folio: '31787',
+        issuedAtUtc: '2026-03-20T12:00:00Z',
+        currencyCode: 'MXN',
+        exchangeRate: 1,
+        paymentMethodSat: 'PPD',
+        paymentFormSat: '99',
+        paymentCondition: 'CREDITO',
+        isCreditSale: true,
+        creditDays: 7,
+        issuerRfc: 'AAA010101AAA',
+        issuerLegalName: 'Issuer SA',
+        issuerFiscalRegimeCode: '601',
+        issuerPostalCode: '01000',
+        pacEnvironment: 'Sandbox',
+        hasCertificateReference: true,
+        hasPrivateKeyReference: true,
+        hasPrivateKeyPasswordReference: true,
+        receiverRfc: 'BBB010101BBB',
+        receiverLegalName: 'Receiver One',
+        receiverFiscalRegimeCode: '601',
+        receiverCfdiUseCode: 'G03',
+        receiverPostalCode: '02000',
+        receiverCountryCode: 'MX',
+        receiverForeignTaxRegistration: null,
+        subtotal: 100,
+        discountTotal: 0,
+        taxTotal: 16,
+        total: 116,
+        items: []
+      }))
+    });
+
+    fixture.componentInstance['openRemoveBillingItemDialog']({
+      billingDocumentItemId: 501,
+      salesOrderId: 20,
+      salesOrderItemId: 601,
+      sourceSalesOrderLineNumber: 1,
+      sourceLegacyOrderId: 'LEG-1001-ORD-LEG-1001',
+      lineNumber: 1,
+      productInternalCode: 'MTE-4259',
+      description: 'FILTRO DE ACEITE',
+      quantity: 1,
+      total: 116
+    });
+    fixture.componentInstance['onBillingItemRemovalReasonChange']('WrongDocument');
+    fixture.componentInstance['onBillingItemRemovalDispositionChange']('PendingBilling');
+    fixture.componentInstance['onBillingItemRemovalObservationsChange']('Se facturará aparte');
+
+    await fixture.componentInstance['confirmRemoveBillingItem']();
+
+    expect(removeBillingDocumentItem).toHaveBeenCalledWith(30, 501, {
+      removalReason: 'WrongDocument',
+      observations: 'Se facturará aparte',
+      removalDisposition: 'PendingBilling'
+    });
   });
 });

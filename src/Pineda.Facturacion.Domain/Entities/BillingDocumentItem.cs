@@ -6,6 +6,14 @@ public class BillingDocumentItem
 
     public long BillingDocumentId { get; set; }
 
+    public long SalesOrderId { get; set; }
+
+    public long SalesOrderItemId { get; set; }
+
+    public int SourceSalesOrderLineNumber { get; set; }
+
+    public string SourceLegacyOrderId { get; set; } = string.Empty;
+
     public int LineNumber { get; set; }
 
     public string? Sku { get; set; }

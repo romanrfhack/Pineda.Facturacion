@@ -39,6 +39,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAppUserRoleRepository, AppUserRoleRepository>();
         services.AddScoped<IAuditEventRepository, AuditEventRepository>();
         services.AddScoped<IBillingDocumentRepository, BillingDocumentRepository>();
+        services.AddScoped<IBillingDocumentItemRemovalRepository, BillingDocumentItemRemovalRepository>();
         services.AddScoped<IBillingDocumentLookupRepository, BillingDocumentLookupRepository>();
         services.AddScoped<IImportedLegacyOrderLookupRepository, ImportedLegacyOrderLookupRepository>();
         services.AddScoped<IFiscalDocumentRepository, FiscalDocumentRepository>();

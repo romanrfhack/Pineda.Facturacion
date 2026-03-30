@@ -333,6 +333,117 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
+    public async Task BillingDocument_Can_Remove_A_Complete_Line_With_Traceability_Before_Stamping()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        var seed = await factory.SeedStandardFiscalMasterDataAsync();
+
+        var legacyOrder = CreateLegacyOrder("LEG-5001", "SKU-1", 100m);
+        legacyOrder.Subtotal = 150m;
+        legacyOrder.Total = 150m;
+        legacyOrder.Items.Add(new LegacyOrderItemReadModel
+        {
+            LineNumber = 2,
+            LegacyArticleId = "SKU-1",
+            Sku = "SKU-1",
+            Description = "Product SKU-1 Extra",
+            UnitCode = "H87",
+            UnitName = "Pieza",
+            Quantity = 1m,
+            UnitPrice = 50m,
+            DiscountAmount = 0m,
+            TaxRate = 0m,
+            TaxAmount = 0m,
+            LineTotal = 50m
+        });
+        factory.LegacyOrderReader.Orders["LEG-5001"] = legacyOrder;
+
+        var importBody = await (await client.PostAsync("/api/orders/LEG-5001/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+        var billingBody = await (await client.PostAsJsonAsync($"/api/sales-orders/{importBody!.SalesOrderId}/billing-documents", new SalesOrdersEndpoints.CreateBillingDocumentRequest
+        {
+            DocumentType = "I"
+        })).Content.ReadFromJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>();
+        var fiscalBody = await (await client.PostAsJsonAsync($"/api/billing-documents/{billingBody!.BillingDocumentId}/fiscal-documents", new BillingDocumentsEndpoints.PrepareFiscalDocumentRequest
+        {
+            FiscalReceiverId = seed.ReceiverId,
+            IssuerProfileId = seed.IssuerId,
+            PaymentMethodSat = "PPD",
+            PaymentFormSat = "99",
+            PaymentCondition = "CREDITO",
+            IsCreditSale = true,
+            CreditDays = 7
+        })).Content.ReadFromJsonAsync<BillingDocumentsEndpoints.PrepareFiscalDocumentResponse>();
+
+        var lookupBeforeRemoval = await (await client.GetAsync($"/api/billing-documents/{billingBody.BillingDocumentId}"))
+            .Content.ReadFromJsonAsync<BillingDocumentsEndpoints.BillingDocumentLookupResponse>();
+        Assert.NotNull(lookupBeforeRemoval);
+        Assert.Equal(2, lookupBeforeRemoval!.Items.Count);
+        var itemToRemove = lookupBeforeRemoval.Items.Single(x => x.SourceSalesOrderLineNumber == 2);
+
+        var removeResponse = await client.PostAsJsonAsync(
+            $"/api/billing-documents/{billingBody.BillingDocumentId}/items/{itemToRemove.BillingDocumentItemId}/remove",
+            new BillingDocumentsEndpoints.RemoveBillingDocumentItemRequest
+            {
+                RemovalReason = "WrongDocument",
+                Observations = "Se facturará en otro documento.",
+                RemovalDisposition = "PendingBilling"
+            });
+        Assert.Equal(HttpStatusCode.OK, removeResponse.StatusCode);
+
+        var lookupAfterRemoval = await (await client.GetAsync($"/api/billing-documents/{billingBody.BillingDocumentId}"))
+            .Content.ReadFromJsonAsync<BillingDocumentsEndpoints.BillingDocumentLookupResponse>();
+        Assert.NotNull(lookupAfterRemoval);
+        Assert.Single(lookupAfterRemoval!.Items);
+        Assert.Equal("Product SKU-1", lookupAfterRemoval.Items[0].Description);
+        Assert.Equal(116m, lookupAfterRemoval.Total);
+
+        var fiscalAfterRemoval = await (await client.GetAsync($"/api/fiscal-documents/{fiscalBody!.FiscalDocumentId}"))
+            .Content.ReadFromJsonAsync<FiscalDocumentsEndpoints.FiscalDocumentResponse>();
+        Assert.NotNull(fiscalAfterRemoval);
+        Assert.Single(fiscalAfterRemoval!.Items);
+        Assert.Equal(116m, fiscalAfterRemoval.Total);
+        Assert.Equal("ReadyForStamping", fiscalAfterRemoval.Status);
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+        var persistedRemoval = await dbContext.BillingDocumentItemRemovals.SingleAsync();
+        Assert.Equal(billingBody.BillingDocumentId, persistedRemoval.BillingDocumentId);
+        Assert.Equal(fiscalBody.FiscalDocumentId, persistedRemoval.FiscalDocumentId);
+        Assert.Equal("LEG-5001-ORD-LEG-5001", persistedRemoval.SourceLegacyOrderId);
+        Assert.Equal("Product SKU-1 Extra", persistedRemoval.Description);
+        Assert.Equal(BillingDocumentItemRemovalReason.WrongDocument, persistedRemoval.RemovalReason);
+        Assert.Equal(BillingDocumentItemRemovalDisposition.PendingBilling, persistedRemoval.RemovalDisposition);
+        Assert.True(persistedRemoval.RemovedFromCurrentDocument);
+    }
+
+    [Fact]
+    public async Task BillingDocument_RemoveItem_Is_Blocked_After_Stamping()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-5002");
+        var fiscalDocumentResponse = await client.GetAsync($"/api/fiscal-documents/{fiscalDocumentId}");
+        var fiscalDocument = await fiscalDocumentResponse.Content.ReadFromJsonAsync<FiscalDocumentsEndpoints.FiscalDocumentResponse>();
+
+        var lookup = await (await client.GetAsync($"/api/billing-documents/{fiscalDocument!.BillingDocumentId}"))
+            .Content.ReadFromJsonAsync<BillingDocumentsEndpoints.BillingDocumentLookupResponse>();
+        Assert.NotNull(lookup);
+
+        var removeResponse = await client.PostAsJsonAsync(
+            $"/api/billing-documents/{lookup!.BillingDocumentId}/items/{lookup.Items[0].BillingDocumentItemId}/remove",
+            new BillingDocumentsEndpoints.RemoveBillingDocumentItemRequest
+            {
+                RemovalReason = "WrongDocument",
+                RemovalDisposition = "PendingBilling"
+            });
+
+        Assert.Equal(HttpStatusCode.Conflict, removeResponse.StatusCode);
+    }
+
+    [Fact]
     public async Task FiscalImportPreviewEndpoints_DoNotRequireAntiforgeryMiddleware_ForAuthenticatedMultipartRequests()
     {
         await using var factory = new MvpApiFactory();

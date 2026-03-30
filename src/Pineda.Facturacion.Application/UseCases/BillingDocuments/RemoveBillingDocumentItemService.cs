@@ -1,176 +1,138 @@
 using Pineda.Facturacion.Application.Abstractions.Persistence;
+using Pineda.Facturacion.Application.Abstractions.Security;
 using Pineda.Facturacion.Application.Common;
 using Pineda.Facturacion.Domain.Entities;
 using Pineda.Facturacion.Domain.Enums;
 
 namespace Pineda.Facturacion.Application.UseCases.BillingDocuments;
 
-public sealed class UpdateBillingDocumentOrderAssociationService
+public sealed class RemoveBillingDocumentItemService
 {
     private readonly IBillingDocumentRepository _billingDocumentRepository;
-    private readonly IFiscalDocumentRepository _fiscalDocumentRepository;
     private readonly IBillingDocumentItemRemovalRepository _billingDocumentItemRemovalRepository;
+    private readonly IFiscalDocumentRepository _fiscalDocumentRepository;
     private readonly ILegacyImportRecordRepository _legacyImportRecordRepository;
     private readonly IProductFiscalProfileRepository _productFiscalProfileRepository;
     private readonly ISalesOrderSnapshotRepository _salesOrderSnapshotRepository;
+    private readonly ICurrentUserAccessor _currentUserAccessor;
     private readonly IUnitOfWork _unitOfWork;
 
-    public UpdateBillingDocumentOrderAssociationService(
+    public RemoveBillingDocumentItemService(
         IBillingDocumentRepository billingDocumentRepository,
-        IFiscalDocumentRepository fiscalDocumentRepository,
         IBillingDocumentItemRemovalRepository billingDocumentItemRemovalRepository,
+        IFiscalDocumentRepository fiscalDocumentRepository,
         ILegacyImportRecordRepository legacyImportRecordRepository,
         IProductFiscalProfileRepository productFiscalProfileRepository,
         ISalesOrderSnapshotRepository salesOrderSnapshotRepository,
+        ICurrentUserAccessor currentUserAccessor,
         IUnitOfWork unitOfWork)
     {
         _billingDocumentRepository = billingDocumentRepository;
-        _fiscalDocumentRepository = fiscalDocumentRepository;
         _billingDocumentItemRemovalRepository = billingDocumentItemRemovalRepository;
+        _fiscalDocumentRepository = fiscalDocumentRepository;
         _legacyImportRecordRepository = legacyImportRecordRepository;
         _productFiscalProfileRepository = productFiscalProfileRepository;
         _salesOrderSnapshotRepository = salesOrderSnapshotRepository;
+        _currentUserAccessor = currentUserAccessor;
         _unitOfWork = unitOfWork;
     }
 
-    public Task<UpdateBillingDocumentOrderAssociationResult> AddAsync(
-        long billingDocumentId,
-        long salesOrderId,
+    public async Task<RemoveBillingDocumentItemResult> ExecuteAsync(
+        RemoveBillingDocumentItemCommand command,
         CancellationToken cancellationToken = default)
     {
-        return ExecuteAsync(billingDocumentId, salesOrderId, remove: false, cancellationToken);
-    }
-
-    public Task<UpdateBillingDocumentOrderAssociationResult> RemoveAsync(
-        long billingDocumentId,
-        long salesOrderId,
-        CancellationToken cancellationToken = default)
-    {
-        return ExecuteAsync(billingDocumentId, salesOrderId, remove: true, cancellationToken);
-    }
-
-    private async Task<UpdateBillingDocumentOrderAssociationResult> ExecuteAsync(
-        long billingDocumentId,
-        long salesOrderId,
-        bool remove,
-        CancellationToken cancellationToken)
-    {
-        if (billingDocumentId <= 0)
+        if (command.BillingDocumentId <= 0)
         {
-            return ValidationFailure(billingDocumentId, salesOrderId, "Billing document id is required.");
+            return ValidationFailure(command.BillingDocumentId, command.BillingDocumentItemId, "Billing document id is required.");
         }
 
-        if (salesOrderId <= 0)
+        if (command.BillingDocumentItemId <= 0)
         {
-            return ValidationFailure(billingDocumentId, salesOrderId, "Sales order id is required.");
+            return ValidationFailure(command.BillingDocumentId, command.BillingDocumentItemId, "Billing document item id is required.");
         }
 
-        var billingDocument = await _billingDocumentRepository.GetTrackedByIdAsync(billingDocumentId, cancellationToken);
+        var billingDocument = await _billingDocumentRepository.GetTrackedByIdAsync(command.BillingDocumentId, cancellationToken);
         if (billingDocument is null)
         {
-            return NotFound(billingDocumentId, salesOrderId, $"Billing document '{billingDocumentId}' was not found.");
+            return NotFound(command.BillingDocumentId, command.BillingDocumentItemId, $"Billing document '{command.BillingDocumentId}' was not found.");
         }
 
-        var primarySalesOrder = await _salesOrderSnapshotRepository.GetByIdWithItemsAsync(billingDocument.SalesOrderId, cancellationToken);
-        if (primarySalesOrder is null)
+        var billingDocumentItem = billingDocument.Items.FirstOrDefault(x => x.Id == command.BillingDocumentItemId);
+        if (billingDocumentItem is null)
         {
-            return ValidationFailure(billingDocumentId, salesOrderId, $"Primary sales order '{billingDocument.SalesOrderId}' was not found.");
+            return NotFound(command.BillingDocumentId, command.BillingDocumentItemId, $"Billing document item '{command.BillingDocumentItemId}' was not found.");
         }
 
-        var targetSalesOrder = await _salesOrderSnapshotRepository.GetByIdWithItemsAsync(salesOrderId, cancellationToken);
-        if (targetSalesOrder is null)
-        {
-            return NotFound(billingDocumentId, salesOrderId, $"Sales order '{salesOrderId}' was not found.");
-        }
-
-        var targetImportRecord = await _legacyImportRecordRepository.GetByIdAsync(targetSalesOrder.LegacyImportRecordId, cancellationToken);
-        if (targetImportRecord is null)
-        {
-            return ValidationFailure(billingDocumentId, salesOrderId, $"Legacy import record '{targetSalesOrder.LegacyImportRecordId}' was not found.");
-        }
-
-        var currentSalesOrders = await EnsurePrimaryAssociationAndLoadSalesOrdersAsync(billingDocument, primarySalesOrder, cancellationToken);
-        var fiscalDocument = await _fiscalDocumentRepository.GetTrackedByBillingDocumentIdAsync(billingDocumentId, cancellationToken);
-
+        var fiscalDocument = await _fiscalDocumentRepository.GetTrackedByBillingDocumentIdAsync(command.BillingDocumentId, cancellationToken);
         if (!CanEditFiscalComposition(fiscalDocument))
         {
             return Conflict(
                 billingDocument,
                 fiscalDocument,
-                salesOrderId,
+                command.BillingDocumentItemId,
                 "The billing document composition is locked because the fiscal document is no longer editable before stamping.");
         }
 
-        IReadOnlyList<SalesOrder> nextSalesOrders;
-
-        if (remove)
+        var removals = await _billingDocumentItemRemovalRepository.ListByBillingDocumentIdAsync(command.BillingDocumentId, cancellationToken);
+        if (removals.Any(x => x.SalesOrderItemId == billingDocumentItem.SalesOrderItemId))
         {
-            var existingAssociation = currentSalesOrders.FirstOrDefault(x => x.Id == salesOrderId);
-            if (existingAssociation is null)
-            {
-                return ValidationFailure(billingDocumentId, salesOrderId, $"Sales order '{salesOrderId}' is not associated with billing document '{billingDocumentId}'.");
-            }
-
-            if (currentSalesOrders.Count <= 1)
-            {
-                return ValidationFailure(billingDocumentId, salesOrderId, "At least one legacy order must remain associated with the billing document.");
-            }
-
-            nextSalesOrders = currentSalesOrders
-                .Where(x => x.Id != salesOrderId)
-                .OrderBy(x => x.Id == billingDocument.SalesOrderId ? 0 : 1)
-                .ThenBy(x => x.Id)
-                .ToArray();
-
-            if (targetImportRecord.BillingDocumentId == billingDocumentId)
-            {
-                targetImportRecord.BillingDocumentId = null;
-                await _legacyImportRecordRepository.UpdateAsync(targetImportRecord, cancellationToken);
-            }
-        }
-        else
-        {
-            if (!string.Equals(
-                    FiscalMasterDataNormalization.NormalizeRequiredCode(targetSalesOrder.CurrencyCode),
-                    FiscalMasterDataNormalization.NormalizeRequiredCode(billingDocument.CurrencyCode),
-                    StringComparison.Ordinal))
-            {
-                return ValidationFailure(
-                    billingDocumentId,
-                    salesOrderId,
-                    $"Sales order '{salesOrderId}' currency '{targetSalesOrder.CurrencyCode}' does not match billing document currency '{billingDocument.CurrencyCode}'.");
-            }
-
-            if (targetImportRecord.BillingDocumentId.HasValue && targetImportRecord.BillingDocumentId.Value != billingDocumentId)
-            {
-                return Conflict(
-                    billingDocument,
-                    fiscalDocument,
-                    salesOrderId,
-                    $"Sales order '{salesOrderId}' is already associated with billing document '{targetImportRecord.BillingDocumentId.Value}'.");
-            }
-
-            if (currentSalesOrders.All(x => x.Id != salesOrderId))
-            {
-                targetImportRecord.BillingDocumentId = billingDocumentId;
-                await _legacyImportRecordRepository.UpdateAsync(targetImportRecord, cancellationToken);
-                nextSalesOrders = currentSalesOrders
-                    .Concat([targetSalesOrder])
-                    .OrderBy(x => x.Id == billingDocument.SalesOrderId ? 0 : 1)
-                    .ThenBy(x => x.Id)
-                    .ToArray();
-            }
-            else
-            {
-                nextSalesOrders = currentSalesOrders;
-            }
+            return ValidationFailure(
+                command.BillingDocumentId,
+                command.BillingDocumentItemId,
+                $"Billing document item '{command.BillingDocumentItemId}' was already removed from the current document.");
         }
 
-        var removals = await _billingDocumentItemRemovalRepository.ListByBillingDocumentIdAsync(billingDocumentId, cancellationToken);
-        var removedSalesOrderItemIds = removals.Select(x => x.SalesOrderItemId).ToHashSet();
-        var legacyOrderReferences = await BuildLegacyOrderReferenceMapAsync(nextSalesOrders, cancellationToken);
+        var associatedSalesOrders = await EnsurePrimaryAssociationAndLoadSalesOrdersAsync(billingDocument, cancellationToken);
+        var legacyOrderReferences = await BuildLegacyOrderReferenceMapAsync(associatedSalesOrders, cancellationToken);
 
-        var nextBillingItems = BillingDocumentOrderCompositionBuilder.BuildBillingItems(nextSalesOrders, removedSalesOrderItemIds, legacyOrderReferences);
+        var now = DateTime.UtcNow;
+        var currentUser = _currentUserAccessor.GetCurrentUser();
+        var removal = new BillingDocumentItemRemoval
+        {
+            BillingDocumentId = billingDocument.Id,
+            FiscalDocumentId = fiscalDocument?.Id,
+            SalesOrderId = billingDocumentItem.SalesOrderId,
+            SalesOrderItemId = billingDocumentItem.SalesOrderItemId,
+            BillingDocumentItemId = billingDocumentItem.Id,
+            SourceLegacyOrderId = string.IsNullOrWhiteSpace(billingDocumentItem.SourceLegacyOrderId)
+                ? legacyOrderReferences.GetValueOrDefault(billingDocumentItem.SalesOrderId, string.Empty)
+                : billingDocumentItem.SourceLegacyOrderId,
+            SourceSalesOrderLineNumber = billingDocumentItem.SourceSalesOrderLineNumber,
+            ProductInternalCode = billingDocumentItem.ProductInternalCode,
+            Description = billingDocumentItem.Description,
+            QuantityRemoved = billingDocumentItem.Quantity,
+            RemovalReason = command.RemovalReason,
+            Observations = string.IsNullOrWhiteSpace(command.Observations) ? null : command.Observations.Trim(),
+            RemovalDisposition = command.RemovalDisposition,
+            RemovedByUsername = currentUser.Username,
+            RemovedByDisplayName = currentUser.DisplayName,
+            RemovedAtUtc = now,
+            BillingDocumentStatusAtRemoval = billingDocument.Status.ToString(),
+            FiscalDocumentStatusAtRemoval = fiscalDocument?.Status.ToString(),
+            RemovedFromCurrentDocument = true,
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now
+        };
+
+        await _billingDocumentItemRemovalRepository.AddAsync(removal, cancellationToken);
+
+        var nextRemovedSalesOrderItemIds = removals.Select(x => x.SalesOrderItemId)
+            .Concat([billingDocumentItem.SalesOrderItemId])
+            .ToHashSet();
+
+        var nextBillingItems = BillingDocumentOrderCompositionBuilder.BuildBillingItems(
+            associatedSalesOrders,
+            nextRemovedSalesOrderItemIds,
+            legacyOrderReferences);
+
+        if (nextBillingItems.Count == 0)
+        {
+            return ValidationFailure(
+                command.BillingDocumentId,
+                command.BillingDocumentItemId,
+                "At least one billing line must remain in the billing document.");
+        }
+
         List<FiscalDocumentItem>? nextFiscalItems = null;
         if (fiscalDocument is not null)
         {
@@ -180,11 +142,11 @@ public sealed class UpdateBillingDocumentOrderAssociationService
             }
             catch (InvalidOperationException exception)
             {
-                return ValidationFailure(billingDocumentId, salesOrderId, exception.Message);
+                return ValidationFailure(command.BillingDocumentId, command.BillingDocumentItemId, exception.Message);
             }
         }
 
-        ApplyBillingDocumentComposition(billingDocument, nextSalesOrders, nextBillingItems);
+        ApplyBillingDocumentComposition(billingDocument, associatedSalesOrders, nextBillingItems);
 
         if (fiscalDocument is not null && nextFiscalItems is not null)
         {
@@ -193,25 +155,31 @@ public sealed class UpdateBillingDocumentOrderAssociationService
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return new UpdateBillingDocumentOrderAssociationResult
+        return new RemoveBillingDocumentItemResult
         {
-            Outcome = UpdateBillingDocumentOrderAssociationOutcome.Updated,
+            Outcome = RemoveBillingDocumentItemOutcome.Removed,
             IsSuccess = true,
             BillingDocumentId = billingDocument.Id,
             BillingDocumentStatus = billingDocument.Status,
+            BillingDocumentItemId = command.BillingDocumentItemId,
             FiscalDocumentId = fiscalDocument?.Id,
             FiscalDocumentStatus = fiscalDocument?.Status,
-            SalesOrderId = salesOrderId,
-            AssociatedOrderCount = nextSalesOrders.Count,
+            RemovalId = removal.Id,
+            IncludedItemCount = billingDocument.Items.Count,
             Total = billingDocument.Total
         };
     }
 
     private async Task<IReadOnlyList<SalesOrder>> EnsurePrimaryAssociationAndLoadSalesOrdersAsync(
         BillingDocument billingDocument,
-        SalesOrder primarySalesOrder,
         CancellationToken cancellationToken)
     {
+        var primarySalesOrder = await _salesOrderSnapshotRepository.GetByIdWithItemsAsync(billingDocument.SalesOrderId, cancellationToken);
+        if (primarySalesOrder is null)
+        {
+            throw new InvalidOperationException($"Primary sales order '{billingDocument.SalesOrderId}' was not found.");
+        }
+
         var primaryImportRecord = await _legacyImportRecordRepository.GetByIdAsync(primarySalesOrder.LegacyImportRecordId, cancellationToken);
         if (primaryImportRecord is not null && !primaryImportRecord.BillingDocumentId.HasValue)
         {
@@ -240,14 +208,6 @@ public sealed class UpdateBillingDocumentOrderAssociationService
             .ToArray();
     }
 
-    private static bool CanEditFiscalComposition(FiscalDocument? fiscalDocument)
-    {
-        return fiscalDocument is null
-            || fiscalDocument.Status is FiscalDocumentStatus.Draft
-            or FiscalDocumentStatus.ReadyForStamping
-            or FiscalDocumentStatus.StampingRejected;
-    }
-
     private async Task<Dictionary<long, string>> BuildLegacyOrderReferenceMapAsync(
         IReadOnlyList<SalesOrder> salesOrders,
         CancellationToken cancellationToken)
@@ -265,18 +225,6 @@ public sealed class UpdateBillingDocumentOrderAssociationService
         }
 
         return result;
-    }
-
-    private static void ApplyBillingDocumentComposition(
-        BillingDocument billingDocument,
-        IReadOnlyList<SalesOrder> salesOrders,
-        IReadOnlyList<BillingDocumentItem> items)
-    {
-        billingDocument.SalesOrderId = salesOrders[0].Id;
-        billingDocument.Items.Clear();
-        billingDocument.Items.AddRange(items);
-        StandardVat16Calculator.ApplyStandardVat(billingDocument);
-        billingDocument.UpdatedAtUtc = DateTime.UtcNow;
     }
 
     private async Task<List<FiscalDocumentItem>> BuildFiscalItemsAsync(
@@ -328,6 +276,26 @@ public sealed class UpdateBillingDocumentOrderAssociationService
         return fiscalItems;
     }
 
+    private static bool CanEditFiscalComposition(FiscalDocument? fiscalDocument)
+    {
+        return fiscalDocument is null
+            || fiscalDocument.Status is FiscalDocumentStatus.Draft
+            or FiscalDocumentStatus.ReadyForStamping
+            or FiscalDocumentStatus.StampingRejected;
+    }
+
+    private static void ApplyBillingDocumentComposition(
+        BillingDocument billingDocument,
+        IReadOnlyList<SalesOrder> salesOrders,
+        IReadOnlyList<BillingDocumentItem> items)
+    {
+        billingDocument.SalesOrderId = salesOrders[0].Id;
+        billingDocument.Items.Clear();
+        billingDocument.Items.AddRange(items);
+        StandardVat16Calculator.ApplyStandardVat(billingDocument);
+        billingDocument.UpdatedAtUtc = DateTime.UtcNow;
+    }
+
     private static void ApplyFiscalDocumentComposition(
         FiscalDocument fiscalDocument,
         BillingDocument billingDocument,
@@ -343,45 +311,46 @@ public sealed class UpdateBillingDocumentOrderAssociationService
         fiscalDocument.Status = FiscalDocumentStatus.ReadyForStamping;
     }
 
-    private static UpdateBillingDocumentOrderAssociationResult ValidationFailure(long billingDocumentId, long salesOrderId, string errorMessage)
+    private static RemoveBillingDocumentItemResult ValidationFailure(long billingDocumentId, long billingDocumentItemId, string errorMessage)
     {
-        return new UpdateBillingDocumentOrderAssociationResult
+        return new RemoveBillingDocumentItemResult
         {
-            Outcome = UpdateBillingDocumentOrderAssociationOutcome.ValidationFailed,
+            Outcome = RemoveBillingDocumentItemOutcome.ValidationFailed,
             IsSuccess = false,
             BillingDocumentId = billingDocumentId,
-            SalesOrderId = salesOrderId,
+            BillingDocumentItemId = billingDocumentItemId,
             ErrorMessage = errorMessage
         };
     }
 
-    private static UpdateBillingDocumentOrderAssociationResult NotFound(long billingDocumentId, long salesOrderId, string errorMessage)
+    private static RemoveBillingDocumentItemResult NotFound(long billingDocumentId, long billingDocumentItemId, string errorMessage)
     {
-        return new UpdateBillingDocumentOrderAssociationResult
+        return new RemoveBillingDocumentItemResult
         {
-            Outcome = UpdateBillingDocumentOrderAssociationOutcome.NotFound,
+            Outcome = RemoveBillingDocumentItemOutcome.NotFound,
             IsSuccess = false,
             BillingDocumentId = billingDocumentId,
-            SalesOrderId = salesOrderId,
+            BillingDocumentItemId = billingDocumentItemId,
             ErrorMessage = errorMessage
         };
     }
 
-    private static UpdateBillingDocumentOrderAssociationResult Conflict(
+    private static RemoveBillingDocumentItemResult Conflict(
         BillingDocument billingDocument,
         FiscalDocument? fiscalDocument,
-        long salesOrderId,
+        long billingDocumentItemId,
         string errorMessage)
     {
-        return new UpdateBillingDocumentOrderAssociationResult
+        return new RemoveBillingDocumentItemResult
         {
-            Outcome = UpdateBillingDocumentOrderAssociationOutcome.Conflict,
+            Outcome = RemoveBillingDocumentItemOutcome.Conflict,
             IsSuccess = false,
             BillingDocumentId = billingDocument.Id,
             BillingDocumentStatus = billingDocument.Status,
+            BillingDocumentItemId = billingDocumentItemId,
             FiscalDocumentId = fiscalDocument?.Id,
             FiscalDocumentStatus = fiscalDocument?.Status,
-            SalesOrderId = salesOrderId,
+            IncludedItemCount = billingDocument.Items.Count,
             Total = billingDocument.Total,
             ErrorMessage = errorMessage
         };

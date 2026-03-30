@@ -41,9 +41,16 @@ export interface BillingDocumentLookupResponse {
 }
 
 export interface BillingDocumentLookupItemResponse {
+  billingDocumentItemId: number;
+  salesOrderId: number;
+  salesOrderItemId: number;
+  sourceSalesOrderLineNumber: number;
+  sourceLegacyOrderId: string;
   lineNumber: number;
   productInternalCode?: string | null;
   description: string;
+  quantity: number;
+  total: number;
 }
 
 export interface BillingDocumentAssociatedOrderResponse {
@@ -140,6 +147,26 @@ export interface UpdateBillingDocumentOrderAssociationResponse {
   fiscalDocumentId?: number | null;
   fiscalDocumentStatus?: string | null;
   associatedOrderCount: number;
+  total: number;
+}
+
+export interface RemoveBillingDocumentItemRequest {
+  removalReason: string;
+  observations?: string | null;
+  removalDisposition: string;
+}
+
+export interface RemoveBillingDocumentItemResponse {
+  outcome: string;
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  billingDocumentId: number;
+  billingDocumentStatus?: string | null;
+  billingDocumentItemId: number;
+  fiscalDocumentId?: number | null;
+  fiscalDocumentStatus?: string | null;
+  removalId?: number | null;
+  includedItemCount: number;
   total: number;
 }
 

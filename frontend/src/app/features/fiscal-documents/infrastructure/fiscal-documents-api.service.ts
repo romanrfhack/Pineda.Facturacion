@@ -17,6 +17,8 @@ import {
   IssuedFiscalDocumentSpecialFieldOptionResponse,
   PrepareFiscalDocumentRequest,
   PrepareFiscalDocumentResponse,
+  RemoveBillingDocumentItemRequest,
+  RemoveBillingDocumentItemResponse,
   RefreshFiscalDocumentStatusResponse,
   SendFiscalDocumentEmailRequest,
   SendFiscalDocumentEmailResponse,
@@ -82,6 +84,12 @@ export class FiscalDocumentsApiService {
   removeSalesOrderFromBillingDocument(billingDocumentId: number, salesOrderId: number): Observable<UpdateBillingDocumentOrderAssociationResponse> {
     return this.http.delete<UpdateBillingDocumentOrderAssociationResponse>(
       buildApiUrl(`/billing-documents/${billingDocumentId}/sales-orders/${salesOrderId}`));
+  }
+
+  removeBillingDocumentItem(billingDocumentId: number, billingDocumentItemId: number, request: RemoveBillingDocumentItemRequest): Observable<RemoveBillingDocumentItemResponse> {
+    return this.http.post<RemoveBillingDocumentItemResponse>(
+      buildApiUrl(`/billing-documents/${billingDocumentId}/items/${billingDocumentItemId}/remove`),
+      request);
   }
 
   getFiscalDocumentById(fiscalDocumentId: number): Observable<FiscalDocumentResponse> {

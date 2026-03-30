@@ -20,6 +20,24 @@ public class BillingDocumentItemConfiguration : IEntityTypeConfiguration<Billing
             .HasColumnName("billing_document_id")
             .IsRequired();
 
+        builder.Property(x => x.SalesOrderId)
+            .HasColumnName("sales_order_id")
+            .IsRequired();
+
+        builder.Property(x => x.SalesOrderItemId)
+            .HasColumnName("sales_order_item_id")
+            .IsRequired();
+
+        builder.Property(x => x.SourceSalesOrderLineNumber)
+            .HasColumnName("source_sales_order_line_number")
+            .IsRequired();
+
+        builder.Property(x => x.SourceLegacyOrderId)
+            .HasColumnName("source_legacy_order_id")
+            .HasMaxLength(100)
+            .HasColumnType("varchar(100)")
+            .IsRequired();
+
         builder.Property(x => x.LineNumber)
             .HasColumnName("line_number")
             .IsRequired();
@@ -89,5 +107,18 @@ public class BillingDocumentItemConfiguration : IEntityTypeConfiguration<Billing
             .HasMaxLength(10)
             .HasColumnType("varchar(10)")
             .IsRequired();
+
+        builder.HasIndex(x => new { x.BillingDocumentId, x.SalesOrderItemId })
+            .IsUnique();
+
+        builder.HasOne<SalesOrder>()
+            .WithMany()
+            .HasForeignKey(x => x.SalesOrderId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne<SalesOrderItem>()
+            .WithMany()
+            .HasForeignKey(x => x.SalesOrderItemId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

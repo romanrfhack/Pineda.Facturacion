@@ -49,9 +49,16 @@ public sealed class BillingDocumentLookupRepository : IBillingDocumentLookupRepo
                     .OrderBy(item => item.LineNumber)
                     .Select(item => new BillingDocumentLookupItemModel
                     {
+                        BillingDocumentItemId = item.Id,
+                        SalesOrderId = item.SalesOrderId,
+                        SalesOrderItemId = item.SalesOrderItemId,
+                        SourceSalesOrderLineNumber = item.SourceSalesOrderLineNumber,
+                        SourceLegacyOrderId = item.SourceLegacyOrderId,
                         LineNumber = item.LineNumber,
                         ProductInternalCode = item.ProductInternalCode,
-                        Description = item.Description
+                        Description = item.Description,
+                        Quantity = item.Quantity,
+                        Total = item.LineTotal + item.TaxAmount
                     })
                     .ToList(),
                 AssociatedOrders =
