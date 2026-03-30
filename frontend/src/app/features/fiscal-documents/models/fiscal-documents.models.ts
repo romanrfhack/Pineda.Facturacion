@@ -38,6 +38,7 @@ export interface BillingDocumentLookupResponse {
   fiscalDocumentStatus?: string | null;
   items?: BillingDocumentLookupItemResponse[];
   associatedOrders?: BillingDocumentAssociatedOrderResponse[];
+  removedItems?: BillingDocumentRemovedItemTraceResponse[];
 }
 
 export interface BillingDocumentLookupItemResponse {
@@ -60,6 +61,52 @@ export interface BillingDocumentAssociatedOrderResponse {
   customerName: string;
   total: number;
   isPrimary: boolean;
+}
+
+export interface BillingDocumentRemovedItemTraceResponse {
+  removalId: number;
+  billingDocumentId: number;
+  fiscalDocumentId?: number | null;
+  salesOrderId: number;
+  salesOrderItemId: number;
+  sourceLegacyOrderId: string;
+  customerName: string;
+  sourceSalesOrderLineNumber: number;
+  productInternalCode?: string | null;
+  description: string;
+  quantityRemoved: number;
+  removalReason: string;
+  observations?: string | null;
+  removalDisposition: string;
+  availableForPendingBillingReuse: boolean;
+  removedAtUtc: string;
+  currentTraceStatus: string;
+  currentTraceMessage: string;
+  currentDestinationBillingDocumentId?: number | null;
+  currentDestinationBillingDocumentStatus?: string | null;
+  currentDestinationFiscalDocumentId?: number | null;
+  currentDestinationFiscalDocumentStatus?: string | null;
+  finalCfdiUuid?: string | null;
+  finalCfdiSeries?: string | null;
+  finalCfdiFolio?: string | null;
+  finalStampedAtUtc?: string | null;
+  assignmentHistory?: BillingDocumentRemovedItemAssignmentTraceResponse[];
+}
+
+export interface BillingDocumentRemovedItemAssignmentTraceResponse {
+  assignmentId: number;
+  destinationBillingDocumentId: number;
+  destinationBillingDocumentStatus?: string | null;
+  destinationFiscalDocumentId?: number | null;
+  destinationFiscalDocumentStatus?: string | null;
+  destinationFinalCfdiUuid?: string | null;
+  destinationFinalCfdiSeries?: string | null;
+  destinationFinalCfdiFolio?: string | null;
+  destinationStampedAtUtc?: string | null;
+  assignedAtUtc: string;
+  assignedByDisplayName?: string | null;
+  releasedAtUtc?: string | null;
+  releasedByDisplayName?: string | null;
 }
 
 export interface IssuedFiscalDocumentListItemResponse {

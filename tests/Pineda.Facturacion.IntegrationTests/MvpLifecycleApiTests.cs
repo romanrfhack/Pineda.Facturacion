@@ -530,6 +530,38 @@ public class MvpLifecycleApiTests
         Assert.NotNull(pendingAfterAssign);
         Assert.DoesNotContain(pendingAfterAssign!, x => x.RemovalId == pendingItem.RemovalId);
 
+        factory.FiscalStampingGateway.ResponseFactory = _ => new FiscalStampingGatewayResult
+        {
+            Outcome = FiscalStampingGatewayOutcome.Stamped,
+            ProviderName = "FacturaloPlus",
+            ProviderOperation = "stamp",
+            ProviderTrackingId = "TRACK-PENDING-1",
+            Uuid = "UUID-PENDING-1",
+            StampedAtUtc = DateTime.UtcNow,
+            XmlContent = "<cfdi:Comprobante Version=\"4.0\" />",
+            XmlHash = "XML-HASH-PENDING",
+            OriginalString = "||1.1|UUID-PENDING-1||"
+        };
+
+        var stampAssignedResponse = await client.PostAsJsonAsync(
+            $"/api/fiscal-documents/{fiscalBody2.FiscalDocumentId}/stamp",
+            new FiscalDocumentsEndpoints.StampFiscalDocumentRequest());
+        Assert.Equal(HttpStatusCode.OK, stampAssignedResponse.StatusCode);
+
+        var originLookupAfterStamp = await (await client.GetAsync($"/api/billing-documents/{billingBody1.BillingDocumentId}"))
+            .Content.ReadFromJsonAsync<BillingDocumentsEndpoints.BillingDocumentLookupResponse>();
+        Assert.NotNull(originLookupAfterStamp);
+        var removedTrace = Assert.Single(originLookupAfterStamp!.RemovedItems);
+        Assert.Equal(pendingItem.RemovalId, removedTrace.RemovalId);
+        Assert.Equal(billingBody2.BillingDocumentId, removedTrace.CurrentDestinationBillingDocumentId);
+        Assert.Equal(fiscalBody2.FiscalDocumentId, removedTrace.CurrentDestinationFiscalDocumentId);
+        Assert.Equal("UUID-PENDING-1", removedTrace.FinalCfdiUuid);
+        Assert.Equal("ReassignedAndStamped", removedTrace.CurrentTraceStatus);
+        var movement = Assert.Single(removedTrace.AssignmentHistory);
+        Assert.Equal(billingBody2.BillingDocumentId, movement.DestinationBillingDocumentId);
+        Assert.Equal(fiscalBody2.FiscalDocumentId, movement.DestinationFiscalDocumentId);
+        Assert.Equal("UUID-PENDING-1", movement.DestinationFinalCfdiUuid);
+
         using var scope = factory.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
         var persistedRemoval = await dbContext.BillingDocumentItemRemovals.SingleAsync();

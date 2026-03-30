@@ -4,6 +4,8 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { FiscalDocumentsApiService } from '../infrastructure/fiscal-documents-api.service';
 import {
+  BillingDocumentRemovedItemTraceResponse,
+  BillingDocumentRemovedItemAssignmentTraceResponse,
   BillingDocumentLookupResponse,
   BillingDocumentLookupItemResponse,
   AssignPendingBillingItemsResponse,
@@ -278,6 +280,73 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
                       <small>Motivo {{ getDisplayLabel(item.removalReason) }} · Removido {{ formatUtcToLocal(item.removedAtUtc) }}</small>
                       @if (item.observations) {
                         <small>Observaciones: {{ item.observations }}</small>
+                      }
+                    </div>
+                  </article>
+                }
+              </div>
+            }
+          </section>
+
+          <section class="associated-orders removed-items-trace">
+            <div class="associated-orders-header">
+              <div>
+                <p class="selected-title">Trazabilidad de productos removidos</p>
+                <strong>{{ removedBillingItems().length }} producto(s) removidos con historial</strong>
+                <span class="helper">Aquí puedes validar de qué orden salió cada producto, a qué documento se reasignó y, si ya existe, en qué CFDI final terminó.</span>
+              </div>
+            </div>
+
+            @if (!removedBillingItems().length) {
+              <p class="helper">Todavía no hay productos removidos con trazabilidad para este documento.</p>
+            } @else {
+              <div class="included-items-list">
+                @for (item of removedBillingItems(); track item.removalId) {
+                  <article class="included-item-card removed-trace-card">
+                    <div>
+                      <strong>{{ item.productInternalCode || 'Sin código' }} · {{ item.description }}</strong>
+                      <span>{{ item.sourceLegacyOrderId }} · Cliente {{ item.customerName }} · Línea origen {{ item.sourceSalesOrderLineNumber }}</span>
+                      <small>
+                        Documento origen #{{ item.billingDocumentId }} · CFDI origen {{ item.fiscalDocumentId ?? 'Sin preparar' }} ·
+                        Cant. removida {{ item.quantityRemoved }} · Removido {{ formatUtcToLocal(item.removedAtUtc) }}
+                      </small>
+                      <small>Motivo {{ getDisplayLabel(item.removalReason) }} · Destino {{ getDisplayLabel(item.removalDisposition) }}</small>
+                      <small><strong>Estado actual:</strong> {{ item.currentTraceMessage }}</small>
+                      @if (item.currentDestinationBillingDocumentId) {
+                        <small>
+                          Documento destino #{{ item.currentDestinationBillingDocumentId }} ·
+                          Estatus {{ item.currentDestinationBillingDocumentStatus || 'Sin dato' }} ·
+                          Fiscal {{ item.currentDestinationFiscalDocumentId ?? 'Sin preparar' }}
+                        </small>
+                      }
+                      @if (item.finalCfdiUuid || item.finalCfdiSeries || item.finalCfdiFolio) {
+                        <small>
+                          <strong>CFDI final:</strong>
+                          {{ formatFinalCfdiReference(item) }}
+                          @if (item.finalStampedAtUtc) {
+                            <span> · Timbrado {{ formatUtcToLocal(item.finalStampedAtUtc) }}</span>
+                          }
+                        </small>
+                      }
+                      @if (item.observations) {
+                        <small>Observaciones: {{ item.observations }}</small>
+                      }
+                      @if (item.assignmentHistory?.length) {
+                        <div class="trace-history">
+                          <small><strong>Movimientos manuales</strong></small>
+                          @for (movement of item.assignmentHistory; track movement.assignmentId) {
+                            <small>
+                              Asignado {{ formatUtcToLocal(movement.assignedAtUtc) }} a documento #{{ movement.destinationBillingDocumentId }}
+                              · Fiscal {{ movement.destinationFiscalDocumentId ?? 'Sin preparar' }}
+                              @if (movement.destinationFinalCfdiUuid || movement.destinationFinalCfdiSeries || movement.destinationFinalCfdiFolio) {
+                                <span> · CFDI {{ formatMovementFinalCfdiReference(movement) }}</span>
+                              }
+                              @if (movement.releasedAtUtc) {
+                                <span> · Liberado {{ formatUtcToLocal(movement.releasedAtUtc) }}</span>
+                              }
+                            </small>
+                          }
+                        </div>
                       }
                     </div>
                   </article>
@@ -796,6 +865,8 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
     .included-item-card div { display:grid; gap:0.15rem; }
     .included-item-card small { color:#5f6b76; }
     .pending-item-card { align-items:flex-start; }
+    .removed-trace-card { align-items:flex-start; }
+    .trace-history { display:grid; gap:0.15rem; margin-top:0.35rem; padding-top:0.35rem; border-top:1px dashed #d8d1c2; }
     .pending-item-selection { display:flex; align-items:flex-start; padding-top:0.3rem; }
     .associated-order-form { align-items:end; }
     .context-actions { display:flex; flex-wrap:wrap; gap:0.75rem; justify-content:flex-end; }
@@ -958,6 +1029,9 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   });
   protected readonly includedBillingItems = computed(() => {
     return this.billingDocumentContext()?.items ?? [];
+  });
+  protected readonly removedBillingItems = computed(() => {
+    return this.billingDocumentContext()?.removedItems ?? [];
   });
   protected readonly pendingBillingSelectionCount = computed(() => this.selectedPendingBillingRemovalIds().length);
   protected readonly activeReceiverSpecialFields = computed(() => this.specialFieldDrafts().filter((field) => field.isActive));
@@ -1342,6 +1416,25 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     } finally {
       this.loadingBillingDocumentComposition.set(false);
     }
+  }
+
+  protected formatFinalCfdiReference(item: BillingDocumentRemovedItemTraceResponse): string {
+    if (item.finalCfdiUuid) {
+      return item.finalCfdiUuid;
+    }
+
+    const segments = [item.finalCfdiSeries, item.finalCfdiFolio].filter((value): value is string => !!value && !!value.trim());
+    return segments.length ? segments.join('-') : 'CFDI final sin folio visible';
+  }
+
+  protected formatMovementFinalCfdiReference(movement: BillingDocumentRemovedItemAssignmentTraceResponse): string {
+    if (movement.destinationFinalCfdiUuid) {
+      return movement.destinationFinalCfdiUuid;
+    }
+
+    const segments = [movement.destinationFinalCfdiSeries, movement.destinationFinalCfdiFolio]
+      .filter((value): value is string => !!value && !!value.trim());
+    return segments.length ? segments.join('-') : 'sin folio visible';
   }
 
   protected async confirmRemoveBillingItem(): Promise<void> {

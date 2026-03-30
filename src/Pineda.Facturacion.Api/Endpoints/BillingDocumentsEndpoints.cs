@@ -414,6 +414,7 @@ public static class BillingDocumentsEndpoints
         public string? FiscalDocumentStatus { get; init; }
         public IReadOnlyList<BillingDocumentLookupItemResponse> Items { get; init; } = [];
         public IReadOnlyList<BillingDocumentAssociatedOrderResponse> AssociatedOrders { get; init; } = [];
+        public IReadOnlyList<BillingDocumentRemovedItemTraceResponse> RemovedItems { get; init; } = [];
     }
 
     public sealed class BillingDocumentLookupItemResponse
@@ -457,6 +458,54 @@ public static class BillingDocumentsEndpoints
         public string CustomerName { get; init; } = string.Empty;
         public decimal Total { get; init; }
         public bool IsPrimary { get; init; }
+    }
+
+    public sealed class BillingDocumentRemovedItemTraceResponse
+    {
+        public long RemovalId { get; init; }
+        public long BillingDocumentId { get; init; }
+        public long? FiscalDocumentId { get; init; }
+        public long SalesOrderId { get; init; }
+        public long SalesOrderItemId { get; init; }
+        public string SourceLegacyOrderId { get; init; } = string.Empty;
+        public string CustomerName { get; init; } = string.Empty;
+        public int SourceSalesOrderLineNumber { get; init; }
+        public string? ProductInternalCode { get; init; }
+        public string Description { get; init; } = string.Empty;
+        public decimal QuantityRemoved { get; init; }
+        public string RemovalReason { get; init; } = string.Empty;
+        public string? Observations { get; init; }
+        public string RemovalDisposition { get; init; } = string.Empty;
+        public bool AvailableForPendingBillingReuse { get; init; }
+        public DateTime RemovedAtUtc { get; init; }
+        public string CurrentTraceStatus { get; init; } = string.Empty;
+        public string CurrentTraceMessage { get; init; } = string.Empty;
+        public long? CurrentDestinationBillingDocumentId { get; init; }
+        public string? CurrentDestinationBillingDocumentStatus { get; init; }
+        public long? CurrentDestinationFiscalDocumentId { get; init; }
+        public string? CurrentDestinationFiscalDocumentStatus { get; init; }
+        public string? FinalCfdiUuid { get; init; }
+        public string? FinalCfdiSeries { get; init; }
+        public string? FinalCfdiFolio { get; init; }
+        public DateTime? FinalStampedAtUtc { get; init; }
+        public IReadOnlyList<BillingDocumentRemovedItemAssignmentTraceResponse> AssignmentHistory { get; init; } = [];
+    }
+
+    public sealed class BillingDocumentRemovedItemAssignmentTraceResponse
+    {
+        public long AssignmentId { get; init; }
+        public long DestinationBillingDocumentId { get; init; }
+        public string? DestinationBillingDocumentStatus { get; init; }
+        public long? DestinationFiscalDocumentId { get; init; }
+        public string? DestinationFiscalDocumentStatus { get; init; }
+        public string? DestinationFinalCfdiUuid { get; init; }
+        public string? DestinationFinalCfdiSeries { get; init; }
+        public string? DestinationFinalCfdiFolio { get; init; }
+        public DateTime? DestinationStampedAtUtc { get; init; }
+        public DateTime AssignedAtUtc { get; init; }
+        public string? AssignedByDisplayName { get; init; }
+        public DateTime? ReleasedAtUtc { get; init; }
+        public string? ReleasedByDisplayName { get; init; }
     }
 
     public sealed class UpdateBillingDocumentOrderAssociationResponse
@@ -551,6 +600,55 @@ public static class BillingDocumentsEndpoints
                     CustomerName = order.CustomerName,
                     Total = order.Total,
                     IsPrimary = order.IsPrimary
+                })
+                .ToArray(),
+            RemovedItems = billingDocument.RemovedItems
+                .Select(removal => new BillingDocumentRemovedItemTraceResponse
+                {
+                    RemovalId = removal.RemovalId,
+                    BillingDocumentId = removal.BillingDocumentId,
+                    FiscalDocumentId = removal.FiscalDocumentId,
+                    SalesOrderId = removal.SalesOrderId,
+                    SalesOrderItemId = removal.SalesOrderItemId,
+                    SourceLegacyOrderId = removal.SourceLegacyOrderId,
+                    CustomerName = removal.CustomerName,
+                    SourceSalesOrderLineNumber = removal.SourceSalesOrderLineNumber,
+                    ProductInternalCode = removal.ProductInternalCode,
+                    Description = removal.Description,
+                    QuantityRemoved = removal.QuantityRemoved,
+                    RemovalReason = removal.RemovalReason,
+                    Observations = removal.Observations,
+                    RemovalDisposition = removal.RemovalDisposition,
+                    AvailableForPendingBillingReuse = removal.AvailableForPendingBillingReuse,
+                    RemovedAtUtc = removal.RemovedAtUtc,
+                    CurrentTraceStatus = removal.CurrentTraceStatus,
+                    CurrentTraceMessage = removal.CurrentTraceMessage,
+                    CurrentDestinationBillingDocumentId = removal.CurrentDestinationBillingDocumentId,
+                    CurrentDestinationBillingDocumentStatus = removal.CurrentDestinationBillingDocumentStatus,
+                    CurrentDestinationFiscalDocumentId = removal.CurrentDestinationFiscalDocumentId,
+                    CurrentDestinationFiscalDocumentStatus = removal.CurrentDestinationFiscalDocumentStatus,
+                    FinalCfdiUuid = removal.FinalCfdiUuid,
+                    FinalCfdiSeries = removal.FinalCfdiSeries,
+                    FinalCfdiFolio = removal.FinalCfdiFolio,
+                    FinalStampedAtUtc = removal.FinalStampedAtUtc,
+                    AssignmentHistory = removal.AssignmentHistory
+                        .Select(assignment => new BillingDocumentRemovedItemAssignmentTraceResponse
+                        {
+                            AssignmentId = assignment.AssignmentId,
+                            DestinationBillingDocumentId = assignment.DestinationBillingDocumentId,
+                            DestinationBillingDocumentStatus = assignment.DestinationBillingDocumentStatus,
+                            DestinationFiscalDocumentId = assignment.DestinationFiscalDocumentId,
+                            DestinationFiscalDocumentStatus = assignment.DestinationFiscalDocumentStatus,
+                            DestinationFinalCfdiUuid = assignment.DestinationFinalCfdiUuid,
+                            DestinationFinalCfdiSeries = assignment.DestinationFinalCfdiSeries,
+                            DestinationFinalCfdiFolio = assignment.DestinationFinalCfdiFolio,
+                            DestinationStampedAtUtc = assignment.DestinationStampedAtUtc,
+                            AssignedAtUtc = assignment.AssignedAtUtc,
+                            AssignedByDisplayName = assignment.AssignedByDisplayName,
+                            ReleasedAtUtc = assignment.ReleasedAtUtc,
+                            ReleasedByDisplayName = assignment.ReleasedByDisplayName
+                        })
+                        .ToArray()
                 })
                 .ToArray()
         };

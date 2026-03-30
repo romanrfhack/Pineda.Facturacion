@@ -1911,4 +1911,89 @@ describe('FiscalDocumentOperationsPageComponent', () => {
 
     expect(assignPendingBillingItems).toHaveBeenCalledWith(30, { removalIds: [91, 92] });
   });
+
+  it('renders removed product trace including destination document and final cfdi when available', async () => {
+    const fixture = await configure(
+      {
+        getBillingDocumentById: vi.fn().mockReturnValue(of({
+          billingDocumentId: 30,
+          salesOrderId: 20,
+          legacyOrderId: 'LEG-1001',
+          status: 'Draft',
+          documentType: 'I',
+          currencyCode: 'MXN',
+          total: 100,
+          createdAtUtc: '2026-03-20T12:00:00Z',
+          fiscalDocumentId: null,
+          fiscalDocumentStatus: null,
+          associatedOrders: [
+            {
+              salesOrderId: 20,
+              legacyOrderId: 'LEG-1001-ORD-LEG-1001',
+              customerName: 'Receiver One',
+              total: 100,
+              isPrimary: true
+            }
+          ],
+          items: [],
+          removedItems: [
+            {
+              removalId: 91,
+              billingDocumentId: 30,
+              fiscalDocumentId: 40,
+              salesOrderId: 20,
+              salesOrderItemId: 601,
+              sourceLegacyOrderId: 'LEG-1001-ORD-LEG-1001',
+              customerName: 'Receiver One',
+              sourceSalesOrderLineNumber: 2,
+              productInternalCode: 'MTE-4259',
+              description: 'FILTRO DE ACEITE',
+              quantityRemoved: 1,
+              removalReason: 'WrongDocument',
+              observations: 'Se facturó en otro CFDI',
+              removalDisposition: 'PendingBilling',
+              availableForPendingBillingReuse: false,
+              removedAtUtc: '2026-03-30T12:00:00Z',
+              currentTraceStatus: 'ReassignedAndStamped',
+              currentTraceMessage: 'Producto reasignado y timbrado finalmente en el CFDI UUID-PENDING-1.',
+              currentDestinationBillingDocumentId: 31,
+              currentDestinationBillingDocumentStatus: 'Draft',
+              currentDestinationFiscalDocumentId: 41,
+              currentDestinationFiscalDocumentStatus: 'Stamped',
+              finalCfdiUuid: 'UUID-PENDING-1',
+              finalCfdiSeries: 'A',
+              finalCfdiFolio: '501',
+              finalStampedAtUtc: '2026-03-30T15:00:00Z',
+              assignmentHistory: [
+                {
+                  assignmentId: 1001,
+                  destinationBillingDocumentId: 31,
+                  destinationBillingDocumentStatus: 'Draft',
+                  destinationFiscalDocumentId: 41,
+                  destinationFiscalDocumentStatus: 'Stamped',
+                  destinationFinalCfdiUuid: 'UUID-PENDING-1',
+                  destinationFinalCfdiSeries: 'A',
+                  destinationFinalCfdiFolio: '501',
+                  destinationStampedAtUtc: '2026-03-30T15:00:00Z',
+                  assignedAtUtc: '2026-03-30T13:00:00Z',
+                  assignedByDisplayName: 'Operador',
+                  releasedAtUtc: null,
+                  releasedByDisplayName: null
+                }
+              ]
+            }
+          ]
+        }))
+      },
+      { id: null, billingDocumentId: '30' }
+    );
+
+    await fixture.componentInstance['loadBillingDocumentContext'](30);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Trazabilidad de productos removidos');
+    expect(fixture.nativeElement.textContent).toContain('UUID-PENDING-1');
+    expect(fixture.nativeElement.textContent).toContain('Documento destino #31');
+    expect(fixture.nativeElement.textContent).toContain('Movimientos manuales');
+  });
 });
