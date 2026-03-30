@@ -340,6 +340,13 @@ export interface StampFiscalDocumentResponse {
   stampedAtUtc?: string | null;
   providerName?: string | null;
   providerTrackingId?: string | null;
+  providerCode?: string | null;
+  providerMessage?: string | null;
+  errorCode?: string | null;
+  supportMessage?: string | null;
+  rawResponseSummaryJson?: string | null;
+  isRetryable?: boolean | null;
+  retryAdvice?: string | null;
 }
 
 export interface FiscalStampResponse {
@@ -407,6 +414,8 @@ export interface CancelFiscalDocumentResponse {
   rawResponseSummaryJson?: string | null;
   supportMessage?: string | null;
   cancelledAtUtc?: string | null;
+  isRetryable?: boolean | null;
+  retryAdvice?: string | null;
 }
 
 export interface FiscalCancellationResponse {
@@ -492,6 +501,8 @@ export interface RespondCancellationAuthorizationResponse {
   supportMessage?: string | null;
   rawResponseSummaryJson?: string | null;
   respondedAtUtc?: string | null;
+  isRetryable?: boolean | null;
+  retryAdvice?: string | null;
 }
 
 export interface RefreshFiscalDocumentStatusResponse {

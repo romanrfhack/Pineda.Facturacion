@@ -893,6 +893,55 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Actualizar estatus solo está disponible para CFDI timbrados con UUID.');
   });
 
+  it('disables stamp when the fiscal document is already being stamped', async () => {
+    const fixture = await configure({
+      getFiscalDocumentById: vi.fn().mockReturnValue(of({
+        id: 40,
+        billingDocumentId: 30,
+        issuerProfileId: 1,
+        fiscalReceiverId: 9,
+        status: 'StampingRequested',
+        cfdiVersion: '4.0',
+        documentType: 'I',
+        series: 'A',
+        folio: '31787',
+        issuedAtUtc: '2026-03-20T12:00:00Z',
+        currencyCode: 'MXN',
+        exchangeRate: 1,
+        paymentMethodSat: 'PPD',
+        paymentFormSat: '99',
+        paymentCondition: 'CREDITO',
+        isCreditSale: true,
+        creditDays: 7,
+        issuerRfc: 'AAA010101AAA',
+        issuerLegalName: 'Issuer SA',
+        issuerFiscalRegimeCode: '601',
+        issuerPostalCode: '01000',
+        pacEnvironment: 'Sandbox',
+        hasCertificateReference: true,
+        hasPrivateKeyReference: true,
+        hasPrivateKeyPasswordReference: true,
+        receiverRfc: 'BBB010101BBB',
+        receiverLegalName: 'Receiver One',
+        receiverFiscalRegimeCode: '601',
+        receiverCfdiUseCode: 'G03',
+        receiverPostalCode: '02000',
+        receiverCountryCode: 'MX',
+        receiverForeignTaxRegistration: null,
+        subtotal: 100,
+        discountTotal: 0,
+        taxTotal: 0,
+        total: 100,
+        items: []
+      }))
+    });
+
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['canStampCurrentFiscalDocument']()).toBe(false);
+    expect(fixture.nativeElement.textContent).toContain('Timbrar solo está disponible para documentos listos para timbrar o reintentos explícitos de rechazo.');
+  });
+
   it('renders dynamic special billing fields for the selected receiver', async () => {
     const fixture = await configure(
       undefined,

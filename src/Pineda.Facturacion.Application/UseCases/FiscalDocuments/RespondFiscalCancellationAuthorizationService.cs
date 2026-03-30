@@ -68,16 +68,6 @@ public class RespondFiscalCancellationAuthorizationService
             return ValidationFailure("Active issuer private key reference is required to respond to pending cancellation authorizations.", normalizedResponse);
         }
 
-        var gatewayResult = await _fiscalCancellationGateway.RespondAuthorizationAsync(
-            new FiscalCancellationAuthorizationDecisionRequest
-            {
-                CertificateReference = FiscalMasterDataNormalization.NormalizeRequiredText(issuerProfile.CertificateReference),
-                PrivateKeyReference = FiscalMasterDataNormalization.NormalizeRequiredText(issuerProfile.PrivateKeyReference),
-                Uuid = uuid,
-                Response = providerResponseValue!
-            },
-            cancellationToken);
-
         var fiscalStamp = await _fiscalStampRepository.GetTrackedByUuidAsync(uuid, cancellationToken);
         FiscalDocument? fiscalDocument = null;
         FiscalCancellation? fiscalCancellation = null;
@@ -85,6 +75,32 @@ public class RespondFiscalCancellationAuthorizationService
         {
             fiscalDocument = await _fiscalDocumentRepository.GetTrackedByIdAsync(fiscalStamp.FiscalDocumentId, cancellationToken);
             fiscalCancellation = await _fiscalCancellationRepository.GetTrackedByFiscalDocumentIdAsync(fiscalStamp.FiscalDocumentId, cancellationToken);
+
+            if (fiscalDocument?.Status == FiscalDocumentStatus.Cancelled)
+            {
+                return Conflict(
+                    uuid,
+                    normalizedResponse,
+                    "The fiscal document is already cancelled. The pending authorization no longer requires a manual response.",
+                    fiscalDocument.Id,
+                    fiscalDocument.Status.ToString(),
+                    fiscalCancellation?.Id,
+                    fiscalCancellation?.Status.ToString(),
+                    fiscalCancellation?.AuthorizationStatus.ToString());
+            }
+
+            if (fiscalCancellation?.AuthorizationStatus is FiscalCancellationAuthorizationStatus.Accepted or FiscalCancellationAuthorizationStatus.Rejected)
+            {
+                return Conflict(
+                    uuid,
+                    normalizedResponse,
+                    $"The pending cancellation authorization was already responded as '{fiscalCancellation.AuthorizationStatus}'.",
+                    fiscalDocument?.Id,
+                    fiscalDocument?.Status.ToString(),
+                    fiscalCancellation.Id,
+                    fiscalCancellation.Status.ToString(),
+                    fiscalCancellation.AuthorizationStatus.ToString());
+            }
 
             if (fiscalCancellation is null && fiscalDocument is not null)
             {
@@ -94,7 +110,7 @@ public class RespondFiscalCancellationAuthorizationService
                     FiscalStampId = fiscalStamp.Id,
                     Status = FiscalCancellationStatus.Requested,
                     CancellationReasonCode = string.Empty,
-                    ProviderName = gatewayResult.ProviderName,
+                    ProviderName = "FacturaloPlus",
                     ProviderOperation = "autorizarCancelacion",
                     RequestedAtUtc = DateTime.UtcNow,
                     CreatedAtUtc = DateTime.UtcNow,
@@ -103,6 +119,16 @@ public class RespondFiscalCancellationAuthorizationService
                 await _fiscalCancellationRepository.AddAsync(fiscalCancellation, cancellationToken);
             }
         }
+
+        var gatewayResult = await _fiscalCancellationGateway.RespondAuthorizationAsync(
+            new FiscalCancellationAuthorizationDecisionRequest
+            {
+                CertificateReference = FiscalMasterDataNormalization.NormalizeRequiredText(issuerProfile.CertificateReference),
+                PrivateKeyReference = FiscalMasterDataNormalization.NormalizeRequiredText(issuerProfile.PrivateKeyReference),
+                Uuid = uuid,
+                Response = providerResponseValue!
+            },
+            cancellationToken);
 
         var now = DateTime.UtcNow;
         if (fiscalCancellation is not null)
@@ -133,7 +159,8 @@ public class RespondFiscalCancellationAuthorizationService
                     IsSuccess = true,
                     RequestedResponse = normalizedResponse,
                     AppliedResponse = normalizedResponse,
-                    Uuid = uuid
+                    Uuid = uuid,
+                    IsRetryable = false
                 };
                 break;
             case FiscalCancellationAuthorizationDecisionGatewayOutcome.ProviderRejected:
@@ -148,7 +175,9 @@ public class RespondFiscalCancellationAuthorizationService
                     IsSuccess = false,
                     RequestedResponse = normalizedResponse,
                     Uuid = uuid,
-                    ErrorMessage = gatewayResult.ErrorMessage ?? gatewayResult.ProviderMessage ?? "Provider rejected the authorization response."
+                    ErrorMessage = gatewayResult.ErrorMessage ?? gatewayResult.ProviderMessage ?? "Provider rejected the authorization response.",
+                    IsRetryable = false,
+                    RetryAdvice = FiscalOperationRobustnessPolicy.BuildRetryAdvice(RespondFiscalCancellationAuthorizationOutcome.ProviderRejected)
                 };
                 break;
             case FiscalCancellationAuthorizationDecisionGatewayOutcome.ValidationFailed:
@@ -162,7 +191,9 @@ public class RespondFiscalCancellationAuthorizationService
                     IsSuccess = false,
                     RequestedResponse = normalizedResponse,
                     Uuid = uuid,
-                    ErrorMessage = gatewayResult.ErrorMessage ?? "Provider unavailable."
+                    ErrorMessage = gatewayResult.ErrorMessage ?? "Provider unavailable.",
+                    IsRetryable = true,
+                    RetryAdvice = FiscalOperationRobustnessPolicy.BuildRetryAdvice(RespondFiscalCancellationAuthorizationOutcome.ProviderUnavailable)
                 };
                 break;
         }
@@ -254,7 +285,36 @@ public class RespondFiscalCancellationAuthorizationService
             Outcome = RespondFiscalCancellationAuthorizationOutcome.ValidationFailed,
             IsSuccess = false,
             ErrorMessage = errorMessage,
-            RequestedResponse = requestedResponse ?? string.Empty
+            RequestedResponse = requestedResponse ?? string.Empty,
+            IsRetryable = false,
+            RetryAdvice = FiscalOperationRobustnessPolicy.BuildRetryAdvice(RespondFiscalCancellationAuthorizationOutcome.ValidationFailed)
+        };
+    }
+
+    private static RespondFiscalCancellationAuthorizationResult Conflict(
+        string uuid,
+        string requestedResponse,
+        string errorMessage,
+        long? fiscalDocumentId,
+        string? fiscalDocumentStatus,
+        long? fiscalCancellationId,
+        string? cancellationStatus,
+        string? authorizationStatus)
+    {
+        return new RespondFiscalCancellationAuthorizationResult
+        {
+            Outcome = RespondFiscalCancellationAuthorizationOutcome.Conflict,
+            IsSuccess = false,
+            Uuid = uuid,
+            RequestedResponse = requestedResponse,
+            FiscalDocumentId = fiscalDocumentId,
+            FiscalDocumentStatus = fiscalDocumentStatus,
+            FiscalCancellationId = fiscalCancellationId,
+            CancellationStatus = cancellationStatus,
+            AuthorizationStatus = authorizationStatus,
+            ErrorMessage = errorMessage,
+            IsRetryable = false,
+            RetryAdvice = FiscalOperationRobustnessPolicy.BuildRetryAdvice(RespondFiscalCancellationAuthorizationOutcome.Conflict)
         };
     }
 }

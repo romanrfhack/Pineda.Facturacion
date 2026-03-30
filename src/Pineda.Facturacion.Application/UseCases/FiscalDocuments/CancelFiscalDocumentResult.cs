@@ -33,4 +33,8 @@ public class CancelFiscalDocumentResult
     public string? SupportMessage { get; set; }
 
     public DateTime? CancelledAtUtc { get; set; }
+
+    public bool IsRetryable { get; set; }
+
+    public string? RetryAdvice { get; set; }
 }

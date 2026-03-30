@@ -73,8 +73,12 @@ public class CancelFiscalDocumentService
             return Conflict(fiscalDocument, "Fiscal document is already cancelled.");
         }
 
-        if (fiscalDocument.Status is not FiscalDocumentStatus.Stamped
-            && fiscalDocument.Status is not FiscalDocumentStatus.CancellationRejected)
+        if (FiscalOperationRobustnessPolicy.IsCancellationInProgress(fiscalDocument.Status))
+        {
+            return Conflict(fiscalDocument, "A cancellation request is already in progress for this fiscal document.");
+        }
+
+        if (!FiscalOperationRobustnessPolicy.CanCancel(fiscalDocument.Status))
         {
             return Conflict(fiscalDocument, $"Fiscal document status '{fiscalDocument.Status}' is not eligible for cancellation.");
         }
@@ -98,7 +102,13 @@ public class CancelFiscalDocumentService
                 CancellationStatus = existingCancellation.Status,
                 ProviderName = existingCancellation.ProviderName,
                 ProviderTrackingId = existingCancellation.ProviderTrackingId,
+                ProviderCode = existingCancellation.ProviderCode,
+                ProviderMessage = existingCancellation.ProviderMessage,
+                ErrorCode = existingCancellation.ErrorCode,
+                RawResponseSummaryJson = existingCancellation.RawResponseSummaryJson,
                 CancelledAtUtc = existingCancellation.CancelledAtUtc,
+                IsRetryable = false,
+                RetryAdvice = FiscalOperationRobustnessPolicy.BuildRetryAdvice(CancelFiscalDocumentOutcome.Conflict),
                 ErrorMessage = "Fiscal document already has a successful persisted cancellation."
             };
         }
@@ -185,6 +195,8 @@ public class CancelFiscalDocumentService
         result.RawResponseSummaryJson = fiscalCancellation.RawResponseSummaryJson;
         result.SupportMessage = gatewayResult.SupportMessage;
         result.CancelledAtUtc = fiscalCancellation.CancelledAtUtc;
+        result.IsRetryable = FiscalOperationRobustnessPolicy.IsRetryable(result.Outcome);
+        result.RetryAdvice = FiscalOperationRobustnessPolicy.BuildRetryAdvice(result.Outcome);
         return result;
     }
 
@@ -275,7 +287,12 @@ public class CancelFiscalDocumentService
             CancellationStatus = fiscalCancellation.Status,
             ProviderName = fiscalCancellation.ProviderName,
             ProviderTrackingId = fiscalCancellation.ProviderTrackingId,
-            CancelledAtUtc = fiscalCancellation.CancelledAtUtc
+            ProviderCode = fiscalCancellation.ProviderCode,
+            ProviderMessage = fiscalCancellation.ProviderMessage,
+            ErrorCode = fiscalCancellation.ErrorCode,
+            RawResponseSummaryJson = fiscalCancellation.RawResponseSummaryJson,
+            CancelledAtUtc = fiscalCancellation.CancelledAtUtc,
+            IsRetryable = false
         };
     }
 
@@ -296,7 +313,13 @@ public class CancelFiscalDocumentService
             CancellationStatus = fiscalCancellation.Status,
             ProviderName = fiscalCancellation.ProviderName,
             ProviderTrackingId = fiscalCancellation.ProviderTrackingId,
-            CancelledAtUtc = fiscalCancellation.CancelledAtUtc
+            ProviderCode = fiscalCancellation.ProviderCode,
+            ProviderMessage = fiscalCancellation.ProviderMessage,
+            ErrorCode = fiscalCancellation.ErrorCode,
+            RawResponseSummaryJson = fiscalCancellation.RawResponseSummaryJson,
+            CancelledAtUtc = fiscalCancellation.CancelledAtUtc,
+            IsRetryable = FiscalOperationRobustnessPolicy.IsRetryable(outcome),
+            RetryAdvice = FiscalOperationRobustnessPolicy.BuildRetryAdvice(outcome)
         };
     }
 
@@ -308,7 +331,9 @@ public class CancelFiscalDocumentService
             IsSuccess = false,
             ErrorMessage = errorMessage,
             FiscalDocumentId = fiscalDocument.Id,
-            FiscalDocumentStatus = fiscalDocument.Status
+            FiscalDocumentStatus = fiscalDocument.Status,
+            IsRetryable = false,
+            RetryAdvice = FiscalOperationRobustnessPolicy.BuildRetryAdvice(CancelFiscalDocumentOutcome.Conflict)
         };
     }
 
@@ -319,7 +344,9 @@ public class CancelFiscalDocumentService
             Outcome = CancelFiscalDocumentOutcome.ValidationFailed,
             IsSuccess = false,
             FiscalDocumentId = fiscalDocumentId,
-            ErrorMessage = errorMessage
+            ErrorMessage = errorMessage,
+            IsRetryable = false,
+            RetryAdvice = FiscalOperationRobustnessPolicy.BuildRetryAdvice(CancelFiscalDocumentOutcome.ValidationFailed)
         };
     }
 }

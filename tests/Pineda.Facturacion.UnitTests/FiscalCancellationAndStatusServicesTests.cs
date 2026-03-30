@@ -96,6 +96,30 @@ public class FiscalCancellationAndStatusServicesTests
     }
 
     [Fact]
+    public async Task CancelFiscalDocument_ReturnsConflict_WhenCancellationAlreadyInProgress()
+    {
+        var fiscalDocument = CreateStampedFiscalDocument();
+        fiscalDocument.Status = FiscalDocumentStatus.CancellationRequested;
+
+        var service = new CancelFiscalDocumentService(
+            new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
+            new FakeFiscalStampRepository { ExistingTracked = CreateFiscalStamp() },
+            new FakeFiscalCancellationRepository(),
+            new FakeFiscalCancellationGateway(),
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new CancelFiscalDocumentCommand
+        {
+            FiscalDocumentId = fiscalDocument.Id,
+            CancellationReasonCode = "02"
+        });
+
+        Assert.Equal(CancelFiscalDocumentOutcome.Conflict, result.Outcome);
+        Assert.False(result.IsRetryable);
+        Assert.Contains("already in progress", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task CancelFiscalDocument_MissingStampUuid_FailsValidation()
     {
         var fiscalStamp = CreateFiscalStamp();
@@ -761,6 +785,47 @@ public class FiscalCancellationAndStatusServicesTests
         Assert.Equal(FiscalCancellationAuthorizationStatus.Rejected, fiscalCancellation.AuthorizationStatus);
     }
 
+    [Fact]
+    public async Task RespondFiscalCancellationAuthorization_ReturnsConflict_WhenAlreadyResponded()
+    {
+        var fiscalDocument = CreateStampedFiscalDocument();
+        fiscalDocument.Status = FiscalDocumentStatus.CancellationRequested;
+        var fiscalCancellation = new FiscalCancellation
+        {
+            Id = 90,
+            FiscalDocumentId = fiscalDocument.Id,
+            FiscalStampId = 70,
+            Status = FiscalCancellationStatus.Requested,
+            CancellationReasonCode = "03",
+            AuthorizationStatus = FiscalCancellationAuthorizationStatus.Accepted,
+            ProviderName = "FacturaloPlus",
+            ProviderOperation = "cancelar2",
+            RequestedAtUtc = DateTime.UtcNow,
+            CreatedAtUtc = DateTime.UtcNow,
+            UpdatedAtUtc = DateTime.UtcNow
+        };
+
+        var gateway = new FakeFiscalCancellationGateway();
+        var service = new RespondFiscalCancellationAuthorizationService(
+            new FakeIssuerProfileRepository { Existing = CreateActiveIssuerProfile() },
+            new FakeFiscalStampRepository { ExistingTracked = CreateFiscalStamp() },
+            new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
+            new FakeFiscalCancellationRepository { ExistingTracked = fiscalCancellation },
+            gateway,
+            new FakeCurrentUserAccessor(),
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new RespondFiscalCancellationAuthorizationCommand
+        {
+            Uuid = "UUID-1",
+            Response = "Accept"
+        });
+
+        Assert.Equal(RespondFiscalCancellationAuthorizationOutcome.Conflict, result.Outcome);
+        Assert.False(result.IsRetryable);
+        Assert.Equal(0, gateway.AuthorizationDecisionCallCount);
+    }
+
     private static FiscalDocument CreateStampedFiscalDocument()
     {
         return new FiscalDocument
@@ -878,6 +943,7 @@ public class FiscalCancellationAndStatusServicesTests
 
     private sealed class FakeFiscalCancellationGateway : IFiscalCancellationGateway
     {
+        public int AuthorizationDecisionCallCount { get; private set; }
         public FiscalCancellationRequest? LastRequest { get; private set; }
         public FiscalCancellationAuthorizationPendingQueryRequest? LastPendingRequest { get; private set; }
         public FiscalCancellationAuthorizationDecisionRequest? LastAuthorizationDecisionRequest { get; private set; }
@@ -922,6 +988,7 @@ public class FiscalCancellationAndStatusServicesTests
             FiscalCancellationAuthorizationDecisionRequest request,
             CancellationToken cancellationToken = default)
         {
+            AuthorizationDecisionCallCount++;
             LastAuthorizationDecisionRequest = request;
             return Task.FromResult(NextAuthorizationDecisionResult);
         }

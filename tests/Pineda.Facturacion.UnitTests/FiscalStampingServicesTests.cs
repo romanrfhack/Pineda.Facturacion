@@ -76,6 +76,28 @@ public class FiscalStampingServicesTests
     }
 
     [Fact]
+    public async Task StampFiscalDocument_ReturnsConflict_WhenStampAlreadyInProgress()
+    {
+        var fiscalDocument = CreateFiscalDocument();
+        fiscalDocument.Status = FiscalDocumentStatus.StampingRequested;
+
+        var service = new StampFiscalDocumentService(
+            new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
+            new FakeFiscalStampRepository(),
+            new FakeFiscalStampingGateway(),
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new StampFiscalDocumentCommand
+        {
+            FiscalDocumentId = fiscalDocument.Id
+        });
+
+        Assert.Equal(StampFiscalDocumentOutcome.Conflict, result.Outcome);
+        Assert.False(result.IsRetryable);
+        Assert.Contains("already in progress", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task StampFiscalDocument_ProviderRejection_PersistsRejectionEvidence()
     {
         var fiscalDocument = CreateFiscalDocument();
@@ -144,6 +166,8 @@ public class FiscalStampingServicesTests
         Assert.Equal(StampFiscalDocumentOutcome.ProviderUnavailable, result.Outcome);
         Assert.Equal(FiscalDocumentStatus.ReadyForStamping, fiscalDocument.Status);
         Assert.Equal(FiscalStampStatus.Unavailable, fiscalStampRepository.Added!.Status);
+        Assert.True(result.IsRetryable);
+        Assert.Contains("reintentar", result.RetryAdvice, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

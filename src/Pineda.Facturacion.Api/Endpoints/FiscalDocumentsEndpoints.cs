@@ -248,9 +248,16 @@ public static class FiscalDocumentsEndpoints
             FiscalDocumentStatus = result.FiscalDocumentStatus?.ToString(),
             FiscalStampId = result.FiscalStampId,
             Uuid = result.Uuid,
-            StampedAtUtc = result.StampedAtUtc,
+            StampedAtUtc = EnsureUtc(result.StampedAtUtc),
             ProviderName = result.ProviderName,
-            ProviderTrackingId = result.ProviderTrackingId
+            ProviderTrackingId = result.ProviderTrackingId,
+            ProviderCode = result.ProviderCode,
+            ProviderMessage = result.ProviderMessage,
+            ErrorCode = result.ErrorCode,
+            SupportMessage = result.SupportMessage,
+            RawResponseSummaryJson = result.RawResponseSummaryJson,
+            IsRetryable = result.IsRetryable,
+            RetryAdvice = result.RetryAdvice
         };
 
         await AuditApiHelper.RecordAsync(
@@ -260,7 +267,18 @@ public static class FiscalDocumentsEndpoints
             fiscalDocumentId.ToString(),
             result.Outcome.ToString(),
             new { fiscalDocumentId, retryRejected = request?.RetryRejected ?? false },
-            new { result.FiscalStampId, result.Uuid, result.FiscalDocumentStatus, result.ProviderName, result.ProviderTrackingId },
+            new
+            {
+                result.FiscalStampId,
+                result.Uuid,
+                result.FiscalDocumentStatus,
+                result.ProviderName,
+                result.ProviderTrackingId,
+                result.ProviderCode,
+                result.ProviderMessage,
+                result.ErrorCode,
+                result.SupportMessage
+            },
             result.ErrorMessage,
             cancellationToken);
 
@@ -437,7 +455,9 @@ public static class FiscalDocumentsEndpoints
             ErrorCode = result.ErrorCode,
             RawResponseSummaryJson = result.RawResponseSummaryJson,
             SupportMessage = result.SupportMessage,
-            CancelledAtUtc = EnsureUtc(result.CancelledAtUtc)
+            CancelledAtUtc = EnsureUtc(result.CancelledAtUtc),
+            IsRetryable = result.IsRetryable,
+            RetryAdvice = result.RetryAdvice
         };
 
         await AuditApiHelper.RecordAsync(
@@ -560,7 +580,9 @@ public static class FiscalDocumentsEndpoints
             ErrorCode = result.ErrorCode,
             SupportMessage = result.SupportMessage,
             RawResponseSummaryJson = result.RawResponseSummaryJson,
-            RespondedAtUtc = EnsureUtc(result.RespondedAtUtc)
+            RespondedAtUtc = EnsureUtc(result.RespondedAtUtc),
+            IsRetryable = result.IsRetryable,
+            RetryAdvice = result.RetryAdvice
         };
 
         await AuditApiHelper.RecordAsync(
@@ -586,6 +608,7 @@ public static class FiscalDocumentsEndpoints
         {
             RespondFiscalCancellationAuthorizationOutcome.Responded => TypedResults.Ok(response),
             RespondFiscalCancellationAuthorizationOutcome.NotFound => TypedResults.NotFound(response),
+            RespondFiscalCancellationAuthorizationOutcome.Conflict => TypedResults.Conflict(response),
             RespondFiscalCancellationAuthorizationOutcome.ProviderRejected => TypedResults.Conflict(response),
             RespondFiscalCancellationAuthorizationOutcome.ProviderUnavailable => TypedResults.Json(response, statusCode: StatusCodes.Status503ServiceUnavailable),
             _ => TypedResults.BadRequest(response)
@@ -1014,6 +1037,13 @@ public static class FiscalDocumentsEndpoints
         public DateTime? StampedAtUtc { get; init; }
         public string? ProviderName { get; init; }
         public string? ProviderTrackingId { get; init; }
+        public string? ProviderCode { get; init; }
+        public string? ProviderMessage { get; init; }
+        public string? ErrorCode { get; init; }
+        public string? SupportMessage { get; init; }
+        public string? RawResponseSummaryJson { get; init; }
+        public bool IsRetryable { get; init; }
+        public string? RetryAdvice { get; init; }
     }
 
     public sealed class FiscalStampResponse
@@ -1087,6 +1117,8 @@ public static class FiscalDocumentsEndpoints
         public string? RawResponseSummaryJson { get; init; }
         public string? SupportMessage { get; init; }
         public DateTime? CancelledAtUtc { get; init; }
+        public bool IsRetryable { get; init; }
+        public string? RetryAdvice { get; init; }
     }
 
     public sealed class FiscalCancellationResponse
@@ -1179,6 +1211,8 @@ public static class FiscalDocumentsEndpoints
         public string? SupportMessage { get; init; }
         public string? RawResponseSummaryJson { get; init; }
         public DateTime? RespondedAtUtc { get; init; }
+        public bool IsRetryable { get; init; }
+        public string? RetryAdvice { get; init; }
     }
 
     public sealed class RefreshFiscalDocumentStatusResponse

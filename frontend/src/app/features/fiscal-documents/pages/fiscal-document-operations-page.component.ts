@@ -572,7 +572,7 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
           <h3>Operaciones</h3>
           <div class="button-row">
             @if (permissionService.canStampFiscal()) {
-              <button type="button" (click)="stamp()" [disabled]="loadingOperation() || currentDocument.status === 'Stamped'">Timbrar</button>
+              <button type="button" (click)="stamp()" [disabled]="loadingOperation() || !canStampCurrentFiscalDocument()">Timbrar</button>
             }
             @if (permissionService.canCancelFiscal()) {
               <button type="button" class="danger" (click)="openCancelDialog()" [disabled]="loadingOperation() || !canCancelCurrentFiscalDocument()">Cancelar</button>
@@ -599,6 +599,9 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
           }
           @if (!canRefreshCurrentFiscalDocument()) {
             <p class="helper">Actualizar estatus solo está disponible para CFDI timbrados con UUID.</p>
+          }
+          @if (!canStampCurrentFiscalDocument()) {
+            <p class="helper">Timbrar solo está disponible para documentos listos para timbrar o reintentos explícitos de rechazo.</p>
           }
         </section>
       }
@@ -1732,7 +1735,12 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     await this.runOperation(async () => {
       const response = await firstValueFrom(this.api.stampFiscalDocument(fiscalDocumentId, { retryRejected: false }));
       this.lastOperationMessage.set(
-        response.errorMessage || (response.isSuccess ? 'Documento fiscal timbrado correctamente.' : `Resultado del timbrado: ${getDisplayLabel(response.outcome)}`)
+        (response.isSuccess ? 'Documento fiscal timbrado correctamente.' : null)
+          || response.providerMessage
+          || response.supportMessage
+          || response.retryAdvice
+          || response.errorMessage
+          || `Resultado del timbrado: ${getDisplayLabel(response.outcome)}`
       );
       await this.loadFiscalDocument(fiscalDocumentId);
       await this.loadStamp(fiscalDocumentId);
@@ -1766,6 +1774,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
         (response.isSuccess ? 'Cancelación exitosa.' : null)
           || response.providerMessage
           || response.supportMessage
+          || response.retryAdvice
           || response.errorMessage
           || `Resultado de la cancelación: ${getDisplayLabel(response.outcome)}`
       );
@@ -1837,6 +1846,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       this.lastOperationMessage.set(
         result.providerMessage
           || result.supportMessage
+          || result.retryAdvice
           || result.errorMessage
           || `Respuesta de autorización registrada para ${item.uuid}.`
       );
@@ -2195,6 +2205,11 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
 
   protected canCancelCurrentFiscalDocument(): boolean {
     return canCancelFiscalDocumentStatus(this.fiscalDocument()?.status);
+  }
+
+  protected canStampCurrentFiscalDocument(): boolean {
+    const status = this.fiscalDocument()?.status;
+    return status === 'ReadyForStamping' || status === 'StampingRejected';
   }
 
   protected canRefreshCurrentFiscalDocument(): boolean {

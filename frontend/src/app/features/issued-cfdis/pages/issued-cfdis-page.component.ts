@@ -722,6 +722,7 @@ export class IssuedCfdisPageComponent {
         (response.isSuccess ? 'Cancelación exitosa.' : null)
           || response.providerMessage
           || response.supportMessage
+          || response.retryAdvice
           || response.errorMessage
           || `Resultado de la cancelación: ${getDisplayLabel(response.outcome)}`
       );

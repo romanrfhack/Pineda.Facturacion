@@ -52,13 +52,17 @@ public class StampFiscalDocumentService
             return Conflict(fiscalDocument, "Fiscal document is already stamped.");
         }
 
+        if (FiscalOperationRobustnessPolicy.IsStampInProgress(fiscalDocument.Status))
+        {
+            return Conflict(fiscalDocument, "A stamp request is already in progress for this fiscal document.");
+        }
+
         if (fiscalDocument.Status == FiscalDocumentStatus.StampingRejected && !command.RetryRejected)
         {
             return Conflict(fiscalDocument, "Fiscal document was previously rejected. Set retryRejected to true to retry stamping.");
         }
 
-        if (fiscalDocument.Status is not FiscalDocumentStatus.ReadyForStamping
-            && fiscalDocument.Status is not FiscalDocumentStatus.StampingRejected)
+        if (!FiscalOperationRobustnessPolicy.CanStamp(fiscalDocument.Status))
         {
             return Conflict(fiscalDocument, $"Fiscal document status '{fiscalDocument.Status}' is not eligible for stamping.");
         }
@@ -77,6 +81,17 @@ public class StampFiscalDocumentService
                 StampedAtUtc = existingStamp.StampedAtUtc,
                 ProviderName = existingStamp.ProviderName,
                 ProviderTrackingId = existingStamp.ProviderTrackingId,
+                ProviderCode = existingStamp.ProviderCode,
+                ProviderMessage = existingStamp.ProviderMessage,
+                ErrorCode = existingStamp.ErrorCode,
+                SupportMessage = FiscalOperationRobustnessPolicy.BuildStampSupportMessage(
+                    existingStamp.ProviderCode,
+                    existingStamp.ProviderMessage,
+                    existingStamp.ErrorCode,
+                    existingStamp.ProviderTrackingId),
+                RawResponseSummaryJson = existingStamp.RawResponseSummaryJson,
+                IsRetryable = false,
+                RetryAdvice = FiscalOperationRobustnessPolicy.BuildRetryAdvice(StampFiscalDocumentOutcome.Conflict),
                 ErrorMessage = "Fiscal document already has a successful persisted stamp."
             };
         }
@@ -154,6 +169,17 @@ public class StampFiscalDocumentService
         result.StampedAtUtc = fiscalStamp.StampedAtUtc;
         result.ProviderName = fiscalStamp.ProviderName;
         result.ProviderTrackingId = fiscalStamp.ProviderTrackingId;
+        result.ProviderCode = fiscalStamp.ProviderCode;
+        result.ProviderMessage = fiscalStamp.ProviderMessage;
+        result.ErrorCode = fiscalStamp.ErrorCode;
+        result.SupportMessage = FiscalOperationRobustnessPolicy.BuildStampSupportMessage(
+            fiscalStamp.ProviderCode,
+            fiscalStamp.ProviderMessage,
+            fiscalStamp.ErrorCode,
+            fiscalStamp.ProviderTrackingId);
+        result.RawResponseSummaryJson = fiscalStamp.RawResponseSummaryJson;
+        result.IsRetryable = FiscalOperationRobustnessPolicy.IsRetryable(result.Outcome);
+        result.RetryAdvice = FiscalOperationRobustnessPolicy.BuildRetryAdvice(result.Outcome);
         return result;
     }
 
@@ -331,7 +357,16 @@ public class StampFiscalDocumentService
             Uuid = fiscalStamp.Uuid,
             StampedAtUtc = fiscalStamp.StampedAtUtc,
             ProviderName = fiscalStamp.ProviderName,
-            ProviderTrackingId = fiscalStamp.ProviderTrackingId
+            ProviderTrackingId = fiscalStamp.ProviderTrackingId,
+            ProviderCode = fiscalStamp.ProviderCode,
+            ProviderMessage = fiscalStamp.ProviderMessage,
+            ErrorCode = fiscalStamp.ErrorCode,
+            SupportMessage = FiscalOperationRobustnessPolicy.BuildStampSupportMessage(
+                fiscalStamp.ProviderCode,
+                fiscalStamp.ProviderMessage,
+                fiscalStamp.ErrorCode,
+                fiscalStamp.ProviderTrackingId),
+            RawResponseSummaryJson = fiscalStamp.RawResponseSummaryJson
         };
     }
 
@@ -352,7 +387,18 @@ public class StampFiscalDocumentService
             Uuid = fiscalStamp.Uuid,
             StampedAtUtc = fiscalStamp.StampedAtUtc,
             ProviderName = fiscalStamp.ProviderName,
-            ProviderTrackingId = fiscalStamp.ProviderTrackingId
+            ProviderTrackingId = fiscalStamp.ProviderTrackingId,
+            ProviderCode = fiscalStamp.ProviderCode,
+            ProviderMessage = fiscalStamp.ProviderMessage,
+            ErrorCode = fiscalStamp.ErrorCode,
+            SupportMessage = FiscalOperationRobustnessPolicy.BuildStampSupportMessage(
+                fiscalStamp.ProviderCode,
+                fiscalStamp.ProviderMessage,
+                fiscalStamp.ErrorCode,
+                fiscalStamp.ProviderTrackingId),
+            RawResponseSummaryJson = fiscalStamp.RawResponseSummaryJson,
+            IsRetryable = FiscalOperationRobustnessPolicy.IsRetryable(outcome),
+            RetryAdvice = FiscalOperationRobustnessPolicy.BuildRetryAdvice(outcome)
         };
     }
 
@@ -364,7 +410,9 @@ public class StampFiscalDocumentService
             IsSuccess = false,
             ErrorMessage = errorMessage,
             FiscalDocumentId = fiscalDocument.Id,
-            FiscalDocumentStatus = fiscalDocument.Status
+            FiscalDocumentStatus = fiscalDocument.Status,
+            IsRetryable = false,
+            RetryAdvice = FiscalOperationRobustnessPolicy.BuildRetryAdvice(StampFiscalDocumentOutcome.Conflict)
         };
     }
 
@@ -375,7 +423,9 @@ public class StampFiscalDocumentService
             Outcome = StampFiscalDocumentOutcome.ValidationFailed,
             IsSuccess = false,
             FiscalDocumentId = fiscalDocumentId,
-            ErrorMessage = errorMessage
+            ErrorMessage = errorMessage,
+            IsRetryable = false,
+            RetryAdvice = FiscalOperationRobustnessPolicy.BuildRetryAdvice(StampFiscalDocumentOutcome.ValidationFailed)
         };
     }
 }

@@ -39,4 +39,8 @@ public class RespondFiscalCancellationAuthorizationResult
     public string? RawResponseSummaryJson { get; set; }
 
     public DateTime? RespondedAtUtc { get; set; }
+
+    public bool IsRetryable { get; set; }
+
+    public string? RetryAdvice { get; set; }
 }
