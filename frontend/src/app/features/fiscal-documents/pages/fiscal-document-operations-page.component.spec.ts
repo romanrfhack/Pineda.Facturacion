@@ -1759,4 +1759,79 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       removalDisposition: 'PendingBilling'
     });
   });
+
+  it('enables removal confirmation when product reason and disposition are selected', async () => {
+    const fixture = await configure({
+      getFiscalDocumentById: vi.fn().mockReturnValue(of({
+        id: 40,
+        billingDocumentId: 30,
+        issuerProfileId: 1,
+        fiscalReceiverId: 9,
+        status: 'ReadyForStamping',
+        cfdiVersion: '4.0',
+        documentType: 'I',
+        series: 'A',
+        folio: '31787',
+        issuedAtUtc: '2026-03-20T12:00:00Z',
+        currencyCode: 'MXN',
+        exchangeRate: 1,
+        paymentMethodSat: 'PPD',
+        paymentFormSat: '99',
+        paymentCondition: 'CREDITO',
+        isCreditSale: true,
+        creditDays: 7,
+        issuerRfc: 'AAA010101AAA',
+        issuerLegalName: 'Issuer SA',
+        issuerFiscalRegimeCode: '601',
+        issuerPostalCode: '01000',
+        pacEnvironment: 'Sandbox',
+        hasCertificateReference: true,
+        hasPrivateKeyReference: true,
+        hasPrivateKeyPasswordReference: true,
+        receiverRfc: 'BBB010101BBB',
+        receiverLegalName: 'Receiver One',
+        receiverFiscalRegimeCode: '601',
+        receiverCfdiUseCode: 'G03',
+        receiverPostalCode: '02000',
+        receiverCountryCode: 'MX',
+        receiverForeignTaxRegistration: null,
+        subtotal: 100,
+        discountTotal: 0,
+        taxTotal: 16,
+        total: 116,
+        items: []
+      }))
+    });
+
+    fixture.componentInstance['openRemoveBillingItemDialog']({
+      billingDocumentItemId: 501,
+      salesOrderId: 20,
+      salesOrderItemId: 601,
+      sourceSalesOrderLineNumber: 1,
+      sourceLegacyOrderId: 'LEG-1001-ORD-LEG-1001',
+      lineNumber: 1,
+      productInternalCode: 'MTE-4259',
+      description: 'FILTRO DE ACEITE',
+      quantity: 1,
+      total: 116
+    });
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Quitar producto completo');
+    expect(fixture.nativeElement.textContent).toContain('Selecciona el motivo base del producto removido.');
+
+    fixture.componentInstance['onBillingItemRemovalReasonChange']('WrongDocument');
+    fixture.componentInstance['onBillingItemRemovalDispositionChange']('PendingBilling');
+    fixture.detectChanges();
+
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const buttons = Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[];
+    const confirmButton = buttons.find((button) => button.textContent?.includes('Confirmar remoción'));
+
+    expect(confirmButton).toBeTruthy();
+    expect(fixture.componentInstance['billingItemRemovalValidationError']()).toBeNull();
+    expect(fixture.nativeElement.textContent).not.toContain('Selecciona el motivo base del producto removido.');
+  });
 });

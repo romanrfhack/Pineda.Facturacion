@@ -192,9 +192,9 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
           <section class="associated-orders included-items">
             <div class="associated-orders-header">
               <div>
-                <p class="selected-title">Renglones incluidos</p>
-                <strong>{{ includedBillingItems().length }} renglón(es) activos en el documento</strong>
-                <span class="helper">Puedes quitar renglones completos antes del timbrado. La trazabilidad queda persistida y los totales se recalculan en cada cambio.</span>
+                <p class="selected-title">Productos incluidos</p>
+                <strong>{{ includedBillingItems().length }} producto(s) activos en el documento</strong>
+                <span class="helper">Puedes quitar productos completos antes del timbrado. La trazabilidad queda persistida y los totales se recalculan en cada cambio.</span>
               </div>
             </div>
 
@@ -215,7 +215,7 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
                       class="secondary danger"
                       (click)="openRemoveBillingItemDialog(item)"
                       [disabled]="!canEditCurrentBillingComposition() || loadingBillingDocumentComposition() || includedBillingItems().length <= 1">
-                      {{ loadingBillingDocumentComposition() ? 'Actualizando...' : 'Quitar renglón' }}
+                      {{ loadingBillingDocumentComposition() ? 'Actualizando...' : 'Quitar producto' }}
                     </button>
                   </div>
                 </article>
@@ -223,7 +223,7 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
             </div>
 
             @if (!canEditCurrentBillingComposition()) {
-              <p class="helper">La edición de renglones queda bloqueada cuando el CFDI ya no es editable antes del timbrado.</p>
+              <p class="helper">La edición de productos queda bloqueada cuando el CFDI ya no es editable antes del timbrado.</p>
             }
           </section>
         }
@@ -610,22 +610,22 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
             <header class="modal-header">
               <div>
                 <p class="selected-title">Composición del documento fiscal</p>
-                <h3>Quitar renglón completo</h3>
+                <h3>Quitar producto completo</h3>
               </div>
               <button type="button" class="secondary" (click)="closeRemoveBillingItemDialog()" [disabled]="loadingBillingDocumentComposition()">Cerrar</button>
             </header>
 
             @if (selectedBillingItemForRemoval(); as selectedItem) {
               <p class="helper">
-                Vas a quitar la línea {{ selectedItem.lineNumber }} de la orden {{ selectedItem.sourceLegacyOrderId }}.
-                El renglón dejará de formar parte del documento actual y la operación quedará trazada.
+                Vas a quitar el producto de la línea {{ selectedItem.lineNumber }} de la orden {{ selectedItem.sourceLegacyOrderId }}.
+                El producto dejará de formar parte del documento actual y la operación quedará trazada.
               </p>
 
               <form class="form-grid" (ngSubmit)="confirmRemoveBillingItem()">
                 <label class="receiver-selector">
                   <span>Motivo base</span>
                   <select
-                    [ngModel]="billingItemRemovalReason"
+                    [ngModel]="billingItemRemovalReason()"
                     (ngModelChange)="onBillingItemRemovalReasonChange($event)"
                     name="billingItemRemovalReason"
                     required>
@@ -637,9 +637,9 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
                 </label>
 
                 <label class="receiver-selector">
-                  <span>Destino del renglón removido</span>
+                  <span>Destino del producto removido</span>
                   <select
-                    [ngModel]="billingItemRemovalDisposition"
+                    [ngModel]="billingItemRemovalDisposition()"
                     (ngModelChange)="onBillingItemRemovalDispositionChange($event)"
                     name="billingItemRemovalDisposition"
                     required>
@@ -653,7 +653,7 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
                 <label class="receiver-selector">
                   <span>Observaciones</span>
                   <textarea
-                    [ngModel]="billingItemRemovalObservations"
+                    [ngModel]="billingItemRemovalObservations()"
                     (ngModelChange)="onBillingItemRemovalObservationsChange($event)"
                     name="billingItemRemovalObservations"
                     rows="4"
@@ -764,7 +764,9 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
     .modal-header h3 { margin:0.2rem 0 0; }
     button, a { border:none; border-radius:0.8rem; padding:0.75rem 1rem; background:#182533; color:#fff; cursor:pointer; text-decoration:none; display:inline-flex; }
     button.secondary { background:#d8c49b; color:#182533; }
-    button.danger { background:#7a2020; }
+    button.danger { background:#8f1d1d; color:#ffffff; box-shadow:inset 0 0 0 1px rgba(255,255,255,0.08); }
+    button.danger:hover:not(:disabled) { background:#751616; }
+    button.danger:disabled { background:#c98686; color:#ffffff; opacity:1; }
     button:disabled { opacity:0.6; cursor:wait; }
     textarea { border:1px solid #c9d1da; border-radius:0.8rem; padding:0.75rem 0.9rem; font:inherit; resize:vertical; }
     .error { margin:0; color:#7a2020; }
@@ -851,9 +853,9 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected paymentCondition = '';
   protected cancellationReasonCode = '';
   protected cancellationReplacementUuid = '';
-  protected billingItemRemovalReason = '';
-  protected billingItemRemovalDisposition = '';
-  protected billingItemRemovalObservations = '';
+  protected readonly billingItemRemovalReason = signal('');
+  protected readonly billingItemRemovalDisposition = signal('');
+  protected readonly billingItemRemovalObservations = signal('');
   protected isCreditSale = true;
   protected creditDays: number | null = 7;
   protected emailRecipientsInput = '';
@@ -896,8 +898,6 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected readonly isCreditSaleCheckboxDisabled = computed(
     () => this.normalizedPaymentMethodSat() !== 'PPD'
   );
-  protected readonly billingItemRemovalValidationError = computed(() => this.getBillingItemRemovalValidationError());
-
   private receiverSearchTimer: number | null = null;
 
   constructor() {
@@ -1024,9 +1024,9 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     }
 
     this.selectedBillingItemForRemoval.set(item);
-    this.billingItemRemovalReason = '';
-    this.billingItemRemovalDisposition = '';
-    this.billingItemRemovalObservations = '';
+    this.billingItemRemovalReason.set('');
+    this.billingItemRemovalDisposition.set('');
+    this.billingItemRemovalObservations.set('');
     this.showRemoveBillingItemDialog.set(true);
   }
 
@@ -1051,15 +1051,15 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   }
 
   protected onBillingItemRemovalReasonChange(value: string): void {
-    this.billingItemRemovalReason = value.trim();
+    this.billingItemRemovalReason.set(value.trim());
   }
 
   protected onBillingItemRemovalDispositionChange(value: string): void {
-    this.billingItemRemovalDisposition = value.trim();
+    this.billingItemRemovalDisposition.set(value.trim());
   }
 
   protected onBillingItemRemovalObservationsChange(value: string): void {
-    this.billingItemRemovalObservations = value;
+    this.billingItemRemovalObservations.set(value);
   }
 
   protected requiresCancellationReplacementUuid(): boolean {
@@ -1249,17 +1249,17 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     this.loadingBillingDocumentComposition.set(true);
     try {
       const response = await firstValueFrom(this.api.removeBillingDocumentItem(billingDocumentId, selectedItem.billingDocumentItemId, {
-        removalReason: this.billingItemRemovalReason,
-        observations: this.billingItemRemovalObservations.trim() || null,
-        removalDisposition: this.billingItemRemovalDisposition
+        removalReason: this.billingItemRemovalReason(),
+        observations: this.billingItemRemovalObservations().trim() || null,
+        removalDisposition: this.billingItemRemovalDisposition()
       }));
-      this.lastOperationMessage.set(response.errorMessage || 'Renglón quitado del documento fiscal con trazabilidad persistida.');
+      this.lastOperationMessage.set(response.errorMessage || 'Producto quitado del documento fiscal con trazabilidad persistida.');
       this.showRemoveBillingItemDialog.set(false);
       this.selectedBillingItemForRemoval.set(null);
       await this.reloadCompositionContext();
-      this.feedbackService.show('success', 'Renglón quitado correctamente.');
+      this.feedbackService.show('success', 'Producto quitado correctamente.');
     } catch (error) {
-      this.feedbackService.show('error', extractApiErrorMessage(error, 'No fue posible quitar el renglón del documento fiscal.'));
+      this.feedbackService.show('error', extractApiErrorMessage(error, 'No fue posible quitar el producto del documento fiscal.'));
     } finally {
       this.loadingBillingDocumentComposition.set(false);
     }
@@ -1866,24 +1866,28 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     return !!this.stampEvidence()?.uuid;
   }
 
+  protected billingItemRemovalValidationError(): string | null {
+    return this.getBillingItemRemovalValidationError();
+  }
+
   protected getCancellationValidationError(): string | null {
     return getCancellationValidationError(this.cancellationReasonCode, this.cancellationReplacementUuid);
   }
 
   private getBillingItemRemovalValidationError(): string | null {
     if (!this.selectedBillingItemForRemoval()) {
-      return 'Selecciona un renglón válido para quitar.';
+      return 'Selecciona un producto válido para quitar.';
     }
 
-    if (!this.billingItemRemovalReason.trim()) {
-      return 'Selecciona el motivo base del renglón removido.';
+    if (!this.billingItemRemovalReason().trim()) {
+      return 'Selecciona el motivo base del producto removido.';
     }
 
-    if (!this.billingItemRemovalDisposition.trim()) {
-      return 'Selecciona el destino del renglón removido.';
+    if (!this.billingItemRemovalDisposition().trim()) {
+      return 'Selecciona el destino del producto removido.';
     }
 
-    if (this.billingItemRemovalObservations.trim().length > 1000) {
+    if (this.billingItemRemovalObservations().trim().length > 1000) {
       return 'Las observaciones no pueden exceder 1000 caracteres.';
     }
 
