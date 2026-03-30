@@ -28,6 +28,10 @@ public class BillingDocumentItemConfiguration : IEntityTypeConfiguration<Billing
             .HasColumnName("sales_order_item_id")
             .IsRequired();
 
+        builder.Property(x => x.SourceBillingDocumentItemRemovalId)
+            .HasColumnName("source_billing_document_item_removal_id")
+            .IsRequired(false);
+
         builder.Property(x => x.SourceSalesOrderLineNumber)
             .HasColumnName("source_sales_order_line_number")
             .IsRequired();
@@ -120,5 +124,10 @@ public class BillingDocumentItemConfiguration : IEntityTypeConfiguration<Billing
             .WithMany()
             .HasForeignKey(x => x.SalesOrderItemId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne<BillingDocumentItemRemoval>()
+            .WithMany()
+            .HasForeignKey(x => x.SourceBillingDocumentItemRemovalId)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }

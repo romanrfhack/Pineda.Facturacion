@@ -29,6 +29,11 @@ public static class BillingDocumentsEndpoints
             .WithSummary("Search billing documents by billing id, sales order id, or legacy order id")
             .Produces<IReadOnlyList<BillingDocumentLookupResponse>>(StatusCodes.Status200OK);
 
+        group.MapGet("/pending-items", ListPendingBillingItemsAsync)
+            .WithName("ListPendingBillingItems")
+            .WithSummary("List reusable pending billing items removed from other billing documents")
+            .Produces<IReadOnlyList<PendingBillingItemResponse>>(StatusCodes.Status200OK);
+
         group.MapPost("/{billingDocumentId:long}/sales-orders/{salesOrderId:long}", AddSalesOrderToBillingDocumentAsync)
             .WithName("AddSalesOrderToBillingDocument")
             .WithSummary("Associate another imported sales order to a draft billing document before stamping")
@@ -52,6 +57,14 @@ public static class BillingDocumentsEndpoints
             .Produces<RemoveBillingDocumentItemResponse>(StatusCodes.Status400BadRequest)
             .Produces<RemoveBillingDocumentItemResponse>(StatusCodes.Status404NotFound)
             .Produces<RemoveBillingDocumentItemResponse>(StatusCodes.Status409Conflict);
+
+        group.MapPost("/{billingDocumentId:long}/pending-items/assign", AssignPendingBillingItemsAsync)
+            .WithName("AssignPendingBillingItems")
+            .WithSummary("Manually assign one or more reusable pending billing items to an editable billing document before stamping")
+            .Produces<AssignPendingBillingItemsResponse>(StatusCodes.Status200OK)
+            .Produces<AssignPendingBillingItemsResponse>(StatusCodes.Status400BadRequest)
+            .Produces<AssignPendingBillingItemsResponse>(StatusCodes.Status404NotFound)
+            .Produces<AssignPendingBillingItemsResponse>(StatusCodes.Status409Conflict);
 
         group.MapPost("/{billingDocumentId:long}/fiscal-documents", PrepareFiscalDocumentAsync)
             .WithName("PrepareFiscalDocument")
@@ -82,6 +95,14 @@ public static class BillingDocumentsEndpoints
     {
         var results = await service.ExecuteAsync(q, 5, cancellationToken);
         return TypedResults.Ok(results.Select(MapBillingDocumentLookup).ToArray());
+    }
+
+    private static async Task<Ok<PendingBillingItemResponse[]>> ListPendingBillingItemsAsync(
+        ListPendingBillingItemsService service,
+        CancellationToken cancellationToken)
+    {
+        var results = await service.ExecuteAsync(cancellationToken);
+        return TypedResults.Ok(results.Select(MapPendingBillingItem).ToArray());
     }
 
     private static async Task<Results<Ok<UpdateBillingDocumentOrderAssociationResponse>, NotFound<UpdateBillingDocumentOrderAssociationResponse>, Conflict<UpdateBillingDocumentOrderAssociationResponse>, BadRequest<UpdateBillingDocumentOrderAssociationResponse>>> AddSalesOrderToBillingDocumentAsync(
@@ -306,6 +327,49 @@ public static class BillingDocumentsEndpoints
         };
     }
 
+    private static async Task<Results<Ok<AssignPendingBillingItemsResponse>, NotFound<AssignPendingBillingItemsResponse>, Conflict<AssignPendingBillingItemsResponse>, BadRequest<AssignPendingBillingItemsResponse>>> AssignPendingBillingItemsAsync(
+        long billingDocumentId,
+        AssignPendingBillingItemsRequest request,
+        AssignPendingBillingItemsService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(billingDocumentId, request.RemovalIds, cancellationToken);
+
+        var response = new AssignPendingBillingItemsResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            BillingDocumentId = result.BillingDocumentId,
+            FiscalDocumentId = result.FiscalDocumentId,
+            FiscalDocumentStatus = result.FiscalDocumentStatus?.ToString(),
+            AssignedCount = result.AssignedCount,
+            IncludedItemCount = result.IncludedItemCount,
+            Total = result.Total
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "BillingDocument.AssignPendingItems",
+            "BillingDocument",
+            billingDocumentId.ToString(),
+            result.Outcome.ToString(),
+            new { billingDocumentId, request.RemovalIds },
+            new { result.FiscalDocumentId, result.FiscalDocumentStatus, result.AssignedCount, result.IncludedItemCount, result.Total },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            AssignPendingBillingItemsOutcome.Assigned => TypedResults.Ok(response),
+            AssignPendingBillingItemsOutcome.NotFound => TypedResults.NotFound(response),
+            AssignPendingBillingItemsOutcome.Conflict => TypedResults.Conflict(response),
+            AssignPendingBillingItemsOutcome.ValidationFailed => TypedResults.BadRequest(response),
+            _ => TypedResults.BadRequest(response)
+        };
+    }
+
     public sealed class PrepareFiscalDocumentRequest
     {
         public long FiscalReceiverId { get; init; }
@@ -357,6 +421,7 @@ public static class BillingDocumentsEndpoints
         public long BillingDocumentItemId { get; init; }
         public long SalesOrderId { get; init; }
         public long SalesOrderItemId { get; init; }
+        public long? SourceBillingDocumentItemRemovalId { get; init; }
         public int SourceSalesOrderLineNumber { get; init; }
         public string SourceLegacyOrderId { get; init; } = string.Empty;
         public int LineNumber { get; init; }
@@ -364,6 +429,25 @@ public static class BillingDocumentsEndpoints
         public string Description { get; init; } = string.Empty;
         public decimal Quantity { get; init; }
         public decimal Total { get; init; }
+    }
+
+    public sealed class PendingBillingItemResponse
+    {
+        public long RemovalId { get; init; }
+        public long BillingDocumentId { get; init; }
+        public long? FiscalDocumentId { get; init; }
+        public long SalesOrderId { get; init; }
+        public long SalesOrderItemId { get; init; }
+        public string SourceLegacyOrderId { get; init; } = string.Empty;
+        public string CustomerName { get; init; } = string.Empty;
+        public int SourceSalesOrderLineNumber { get; init; }
+        public string? ProductInternalCode { get; init; }
+        public string Description { get; init; } = string.Empty;
+        public decimal QuantityRemoved { get; init; }
+        public string RemovalReason { get; init; } = string.Empty;
+        public string? Observations { get; init; }
+        public string RemovalDisposition { get; init; } = string.Empty;
+        public DateTime RemovedAtUtc { get; init; }
     }
 
     public sealed class BillingDocumentAssociatedOrderResponse
@@ -411,6 +495,24 @@ public static class BillingDocumentsEndpoints
         public decimal Total { get; init; }
     }
 
+    public sealed class AssignPendingBillingItemsRequest
+    {
+        public IReadOnlyList<long> RemovalIds { get; init; } = [];
+    }
+
+    public sealed class AssignPendingBillingItemsResponse
+    {
+        public string Outcome { get; init; } = string.Empty;
+        public bool IsSuccess { get; init; }
+        public string? ErrorMessage { get; init; }
+        public long BillingDocumentId { get; init; }
+        public long? FiscalDocumentId { get; init; }
+        public string? FiscalDocumentStatus { get; init; }
+        public int AssignedCount { get; init; }
+        public int IncludedItemCount { get; init; }
+        public decimal Total { get; init; }
+    }
+
     private static BillingDocumentLookupResponse MapBillingDocumentLookup(Application.Abstractions.Persistence.BillingDocumentLookupModel billingDocument)
     {
         return new BillingDocumentLookupResponse
@@ -431,6 +533,7 @@ public static class BillingDocumentsEndpoints
                     BillingDocumentItemId = item.BillingDocumentItemId,
                     SalesOrderId = item.SalesOrderId,
                     SalesOrderItemId = item.SalesOrderItemId,
+                    SourceBillingDocumentItemRemovalId = item.SourceBillingDocumentItemRemovalId,
                     SourceSalesOrderLineNumber = item.SourceSalesOrderLineNumber,
                     SourceLegacyOrderId = item.SourceLegacyOrderId,
                     LineNumber = item.LineNumber,
@@ -450,6 +553,28 @@ public static class BillingDocumentsEndpoints
                     IsPrimary = order.IsPrimary
                 })
                 .ToArray()
+        };
+    }
+
+    private static PendingBillingItemResponse MapPendingBillingItem(Application.Abstractions.Persistence.PendingBillingItemLookupModel item)
+    {
+        return new PendingBillingItemResponse
+        {
+            RemovalId = item.RemovalId,
+            BillingDocumentId = item.BillingDocumentId,
+            FiscalDocumentId = item.FiscalDocumentId,
+            SalesOrderId = item.SalesOrderId,
+            SalesOrderItemId = item.SalesOrderItemId,
+            SourceLegacyOrderId = item.SourceLegacyOrderId,
+            CustomerName = item.CustomerName,
+            SourceSalesOrderLineNumber = item.SourceSalesOrderLineNumber,
+            ProductInternalCode = item.ProductInternalCode,
+            Description = item.Description,
+            QuantityRemoved = item.QuantityRemoved,
+            RemovalReason = item.RemovalReason,
+            Observations = item.Observations,
+            RemovalDisposition = item.RemovalDisposition,
+            RemovedAtUtc = item.RemovedAtUtc
         };
     }
 

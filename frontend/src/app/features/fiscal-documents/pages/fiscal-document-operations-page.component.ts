@@ -6,6 +6,7 @@ import { FiscalDocumentsApiService } from '../infrastructure/fiscal-documents-ap
 import {
   BillingDocumentLookupResponse,
   BillingDocumentLookupItemResponse,
+  AssignPendingBillingItemsResponse,
   CancelFiscalDocumentRequest,
   FiscalCancellationResponse,
   FiscalDocumentResponse,
@@ -13,6 +14,7 @@ import {
   FiscalReceiverSearchResponse,
   FiscalStampResponse,
   IssuerProfileResponse,
+  PendingBillingItemResponse,
   PrepareFiscalDocumentRequest
 } from '../models/fiscal-documents.models';
 import { FeedbackService } from '../../../core/ui/feedback.service';
@@ -208,6 +210,9 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
                       Orden {{ item.sourceLegacyOrderId }} · Línea origen {{ item.sourceSalesOrderLineNumber }} ·
                       Cant. {{ item.quantity }} · {{ currentBillingDocument.currencyCode }} {{ item.total }}
                     </small>
+                    @if (item.sourceBillingDocumentItemRemovalId) {
+                      <small>Reutilizado manualmente desde PendingBilling #{{ item.sourceBillingDocumentItemRemovalId }}</small>
+                    }
                   </div>
                   <div class="context-actions">
                     <button
@@ -224,6 +229,60 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
 
             @if (!canEditCurrentBillingComposition()) {
               <p class="helper">La edición de productos queda bloqueada cuando el CFDI ya no es editable antes del timbrado.</p>
+            }
+          </section>
+
+          <section class="associated-orders pending-billing-items">
+            <div class="associated-orders-header">
+              <div>
+                <p class="selected-title">PendingBilling disponible</p>
+                <strong>{{ pendingBillingItems().length }} producto(s) pendientes por facturar</strong>
+                <span class="helper">Puedes seleccionar uno o varios productos removidos con destino PendingBilling y agregarlos manualmente a este documento antes del timbrado.</span>
+              </div>
+              @if (canEditCurrentBillingComposition()) {
+                <button
+                  type="button"
+                  class="secondary"
+                  (click)="assignSelectedPendingBillingItems()"
+                  [disabled]="loadingBillingDocumentComposition() || pendingBillingSelectionCount() === 0">
+                  {{ loadingBillingDocumentComposition() ? 'Agregando...' : 'Agregar seleccionados al documento' }}
+                </button>
+              }
+            </div>
+
+            @if (pendingBillingItemsError()) {
+              <p class="error">{{ pendingBillingItemsError() }}</p>
+            } @else if (loadingPendingBillingItems()) {
+              <p class="helper">Cargando productos pendientes por facturar...</p>
+            } @else if (!pendingBillingItems().length) {
+              <p class="helper">No hay productos PendingBilling disponibles para reutilizar.</p>
+            } @else {
+              <div class="included-items-list">
+                @for (item of pendingBillingItems(); track item.removalId) {
+                  <article class="included-item-card pending-item-card">
+                    <div class="pending-item-selection">
+                      <input
+                        type="checkbox"
+                        [checked]="isPendingBillingItemSelected(item.removalId)"
+                        (change)="togglePendingBillingSelection(item.removalId, $any($event.target).checked)"
+                        [disabled]="loadingBillingDocumentComposition() || !canEditCurrentBillingComposition()"
+                      />
+                    </div>
+                    <div>
+                      <strong>{{ item.productInternalCode || 'Sin código' }} · {{ item.description }}</strong>
+                      <span>{{ item.sourceLegacyOrderId }} · Cliente {{ item.customerName }}</span>
+                      <small>
+                        Documento origen #{{ item.billingDocumentId }} · CFDI origen {{ item.fiscalDocumentId ?? 'Sin preparar' }} ·
+                        Línea origen {{ item.sourceSalesOrderLineNumber }} · Cant. {{ item.quantityRemoved }}
+                      </small>
+                      <small>Motivo {{ getDisplayLabel(item.removalReason) }} · Removido {{ formatUtcToLocal(item.removedAtUtc) }}</small>
+                      @if (item.observations) {
+                        <small>Observaciones: {{ item.observations }}</small>
+                      }
+                    </div>
+                  </article>
+                }
+              </div>
             }
           </section>
         }
@@ -736,6 +795,8 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
     .included-item-card { display:flex; justify-content:space-between; gap:1rem; align-items:center; border:1px solid #ece5d7; border-radius:0.8rem; background:#fff; padding:0.75rem 0.9rem; }
     .included-item-card div { display:grid; gap:0.15rem; }
     .included-item-card small { color:#5f6b76; }
+    .pending-item-card { align-items:flex-start; }
+    .pending-item-selection { display:flex; align-items:flex-start; padding-top:0.3rem; }
     .associated-order-form { align-items:end; }
     .context-actions { display:flex; flex-wrap:wrap; gap:0.75rem; justify-content:flex-end; }
     .receiver-selector { grid-column:1 / -1; display:grid; gap:0.75rem; }
@@ -840,6 +901,10 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected readonly receiverCreateError = signal<string | null>(null);
   protected readonly receiverCreateDraft = signal<UpsertFiscalReceiverRequest | null>(null);
   protected readonly loadingBillingDocumentComposition = signal(false);
+  protected readonly loadingPendingBillingItems = signal(false);
+  protected readonly pendingBillingItems = signal<PendingBillingItemResponse[]>([]);
+  protected readonly pendingBillingItemsError = signal<string | null>(null);
+  protected readonly selectedPendingBillingRemovalIds = signal<number[]>([]);
   protected readonly specialFieldDrafts = signal<ReceiverSpecialFieldDraft[]>([]);
   protected readonly paymentMethodCatalog = signal<FiscalReceiverSatCatalogOption[]>([]);
   protected readonly paymentFormCatalog = signal<FiscalReceiverSatCatalogOption[]>([]);
@@ -894,6 +959,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected readonly includedBillingItems = computed(() => {
     return this.billingDocumentContext()?.items ?? [];
   });
+  protected readonly pendingBillingSelectionCount = computed(() => this.selectedPendingBillingRemovalIds().length);
   protected readonly activeReceiverSpecialFields = computed(() => this.specialFieldDrafts().filter((field) => field.isActive));
   protected readonly isCreditSaleCheckboxDisabled = computed(
     () => this.normalizedPaymentMethodSat() !== 'PPD'
@@ -1164,6 +1230,9 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected async clearBillingDocumentSelection(): Promise<void> {
     this.clearMissingProductFiscalProfileState();
     this.billingDocumentContext.set(null);
+    this.pendingBillingItems.set([]);
+    this.pendingBillingItemsError.set(null);
+    this.selectedPendingBillingRemovalIds.set([]);
     this.billingDocumentId.set(null);
     this.billingDocumentQuery = '';
     this.billingDocumentSearchResults.set([]);
@@ -1232,6 +1301,44 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       this.feedbackService.show('success', 'Orden legacy quitada correctamente.');
     } catch (error) {
       this.feedbackService.show('error', extractApiErrorMessage(error, 'No fue posible quitar la orden legacy del documento fiscal.'));
+    } finally {
+      this.loadingBillingDocumentComposition.set(false);
+    }
+  }
+
+  protected isPendingBillingItemSelected(removalId: number): boolean {
+    return this.selectedPendingBillingRemovalIds().includes(removalId);
+  }
+
+  protected togglePendingBillingSelection(removalId: number, checked: boolean): void {
+    const next = new Set(this.selectedPendingBillingRemovalIds());
+    if (checked) {
+      next.add(removalId);
+    } else {
+      next.delete(removalId);
+    }
+
+    this.selectedPendingBillingRemovalIds.set(Array.from(next).sort((left, right) => left - right));
+  }
+
+  protected async assignSelectedPendingBillingItems(): Promise<void> {
+    const billingDocumentId = this.billingDocumentId();
+    const removalIds = this.selectedPendingBillingRemovalIds();
+
+    if (!billingDocumentId || !removalIds.length || this.loadingBillingDocumentComposition() || !this.canEditCurrentBillingComposition()) {
+      return;
+    }
+
+    this.loadingBillingDocumentComposition.set(true);
+    try {
+      const response = await firstValueFrom(this.api.assignPendingBillingItems(billingDocumentId, { removalIds }));
+      this.selectedPendingBillingRemovalIds.set([]);
+      this.lastOperationMessage.set(response.errorMessage || 'Productos PendingBilling agregados manualmente al documento fiscal.');
+      await this.reloadCompositionContext();
+      await this.loadPendingBillingItems();
+      this.feedbackService.show('success', 'Productos PendingBilling agregados correctamente.');
+    } catch (error) {
+      this.feedbackService.show('error', extractApiErrorMessage(error, 'No fue posible agregar los productos PendingBilling al documento fiscal.'));
     } finally {
       this.loadingBillingDocumentComposition.set(false);
     }
@@ -1698,8 +1805,10 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       this.closeEmailComposer();
       this.closeRemoveBillingItemDialog();
       this.billingDocumentContext.set(billingDocument);
+      this.selectedPendingBillingRemovalIds.set([]);
       this.billingDocumentId.set(billingDocument.billingDocumentId);
       this.billingDocumentQuery = `${billingDocument.billingDocumentId}`;
+      await this.loadPendingBillingItems();
 
       if (syncRoute) {
         await this.router.navigate(['/app/fiscal-documents'], {
@@ -1712,6 +1821,8 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       }
     } catch (error) {
       this.billingDocumentContext.set(null);
+      this.pendingBillingItems.set([]);
+      this.pendingBillingItemsError.set(null);
       this.billingDocumentSearchError.set(extractApiErrorMessage(error, 'No fue posible cargar el documento de facturación.'));
     }
   }
@@ -1727,6 +1838,20 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
 
     if (billingDocumentId) {
       await this.loadBillingDocumentContext(billingDocumentId);
+    }
+  }
+
+  private async loadPendingBillingItems(): Promise<void> {
+    this.loadingPendingBillingItems.set(true);
+    this.pendingBillingItemsError.set(null);
+
+    try {
+      this.pendingBillingItems.set(await firstValueFrom(this.api.listPendingBillingItems()));
+    } catch (error) {
+      this.pendingBillingItems.set([]);
+      this.pendingBillingItemsError.set(extractApiErrorMessage(error, 'No fue posible cargar los productos PendingBilling.'));
+    } finally {
+      this.loadingPendingBillingItems.set(false);
     }
   }
 
@@ -1868,6 +1993,17 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
 
   protected billingItemRemovalValidationError(): string | null {
     return this.getBillingItemRemovalValidationError();
+  }
+
+  protected formatUtcToLocal(value: string | null | undefined): string {
+    if (!value) {
+      return 'Sin fecha';
+    }
+
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime())
+      ? value
+      : parsed.toLocaleString();
   }
 
   protected getCancellationValidationError(): string | null {

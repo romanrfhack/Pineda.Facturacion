@@ -44,6 +44,7 @@ export interface BillingDocumentLookupItemResponse {
   billingDocumentItemId: number;
   salesOrderId: number;
   salesOrderItemId: number;
+  sourceBillingDocumentItemRemovalId?: number | null;
   sourceSalesOrderLineNumber: number;
   sourceLegacyOrderId: string;
   lineNumber: number;
@@ -166,6 +167,40 @@ export interface RemoveBillingDocumentItemResponse {
   fiscalDocumentId?: number | null;
   fiscalDocumentStatus?: string | null;
   removalId?: number | null;
+  includedItemCount: number;
+  total: number;
+}
+
+export interface PendingBillingItemResponse {
+  removalId: number;
+  billingDocumentId: number;
+  fiscalDocumentId?: number | null;
+  salesOrderId: number;
+  salesOrderItemId: number;
+  sourceLegacyOrderId: string;
+  customerName: string;
+  sourceSalesOrderLineNumber: number;
+  productInternalCode?: string | null;
+  description: string;
+  quantityRemoved: number;
+  removalReason: string;
+  observations?: string | null;
+  removalDisposition: string;
+  removedAtUtc: string;
+}
+
+export interface AssignPendingBillingItemsRequest {
+  removalIds: number[];
+}
+
+export interface AssignPendingBillingItemsResponse {
+  outcome: string;
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  billingDocumentId: number;
+  fiscalDocumentId?: number | null;
+  fiscalDocumentStatus?: string | null;
+  assignedCount: number;
   includedItemCount: number;
   total: number;
 }

@@ -52,6 +52,7 @@ public sealed class BillingDocumentLookupRepository : IBillingDocumentLookupRepo
                         BillingDocumentItemId = item.Id,
                         SalesOrderId = item.SalesOrderId,
                         SalesOrderItemId = item.SalesOrderItemId,
+                        SourceBillingDocumentItemRemovalId = item.SourceBillingDocumentItemRemovalId,
                         SourceSalesOrderLineNumber = item.SourceSalesOrderLineNumber,
                         SourceLegacyOrderId = item.SourceLegacyOrderId,
                         LineNumber = item.LineNumber,

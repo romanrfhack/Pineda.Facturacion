@@ -6,23 +6,23 @@ using Pineda.Facturacion.Domain.Enums;
 
 namespace Pineda.Facturacion.Application.UseCases.BillingDocuments;
 
-public sealed class RemoveBillingDocumentItemService
+public sealed class AssignPendingBillingItemsService
 {
     private readonly IBillingDocumentRepository _billingDocumentRepository;
+    private readonly IFiscalDocumentRepository _fiscalDocumentRepository;
     private readonly IBillingDocumentItemRemovalRepository _billingDocumentItemRemovalRepository;
     private readonly IBillingDocumentPendingItemAssignmentRepository _billingDocumentPendingItemAssignmentRepository;
-    private readonly IFiscalDocumentRepository _fiscalDocumentRepository;
     private readonly ILegacyImportRecordRepository _legacyImportRecordRepository;
     private readonly IProductFiscalProfileRepository _productFiscalProfileRepository;
     private readonly ISalesOrderSnapshotRepository _salesOrderSnapshotRepository;
     private readonly ICurrentUserAccessor _currentUserAccessor;
     private readonly IUnitOfWork _unitOfWork;
 
-    public RemoveBillingDocumentItemService(
+    public AssignPendingBillingItemsService(
         IBillingDocumentRepository billingDocumentRepository,
+        IFiscalDocumentRepository fiscalDocumentRepository,
         IBillingDocumentItemRemovalRepository billingDocumentItemRemovalRepository,
         IBillingDocumentPendingItemAssignmentRepository billingDocumentPendingItemAssignmentRepository,
-        IFiscalDocumentRepository fiscalDocumentRepository,
         ILegacyImportRecordRepository legacyImportRecordRepository,
         IProductFiscalProfileRepository productFiscalProfileRepository,
         ISalesOrderSnapshotRepository salesOrderSnapshotRepository,
@@ -30,9 +30,9 @@ public sealed class RemoveBillingDocumentItemService
         IUnitOfWork unitOfWork)
     {
         _billingDocumentRepository = billingDocumentRepository;
+        _fiscalDocumentRepository = fiscalDocumentRepository;
         _billingDocumentItemRemovalRepository = billingDocumentItemRemovalRepository;
         _billingDocumentPendingItemAssignmentRepository = billingDocumentPendingItemAssignmentRepository;
-        _fiscalDocumentRepository = fiscalDocumentRepository;
         _legacyImportRecordRepository = legacyImportRecordRepository;
         _productFiscalProfileRepository = productFiscalProfileRepository;
         _salesOrderSnapshotRepository = salesOrderSnapshotRepository;
@@ -40,129 +40,119 @@ public sealed class RemoveBillingDocumentItemService
         _unitOfWork = unitOfWork;
     }
 
-    public async Task<RemoveBillingDocumentItemResult> ExecuteAsync(
-        RemoveBillingDocumentItemCommand command,
+    public async Task<AssignPendingBillingItemsResult> ExecuteAsync(
+        long billingDocumentId,
+        IReadOnlyCollection<long> removalIds,
         CancellationToken cancellationToken = default)
     {
-        if (command.BillingDocumentId <= 0)
+        if (billingDocumentId <= 0)
         {
-            return ValidationFailure(command.BillingDocumentId, command.BillingDocumentItemId, "Billing document id is required.");
+            return ValidationFailure(billingDocumentId, "Billing document id is required.");
         }
 
-        if (command.BillingDocumentItemId <= 0)
+        var normalizedRemovalIds = removalIds.Where(x => x > 0).Distinct().ToArray();
+        if (normalizedRemovalIds.Length == 0)
         {
-            return ValidationFailure(command.BillingDocumentId, command.BillingDocumentItemId, "Billing document item id is required.");
+            return ValidationFailure(billingDocumentId, "At least one pending billing item must be selected.");
         }
 
-        var billingDocument = await _billingDocumentRepository.GetTrackedByIdAsync(command.BillingDocumentId, cancellationToken);
+        var billingDocument = await _billingDocumentRepository.GetTrackedByIdAsync(billingDocumentId, cancellationToken);
         if (billingDocument is null)
         {
-            return NotFound(command.BillingDocumentId, command.BillingDocumentItemId, $"Billing document '{command.BillingDocumentId}' was not found.");
+            return NotFound(billingDocumentId, $"Billing document '{billingDocumentId}' was not found.");
         }
 
-        var billingDocumentItem = billingDocument.Items.FirstOrDefault(x => x.Id == command.BillingDocumentItemId);
-        if (billingDocumentItem is null)
-        {
-            return NotFound(command.BillingDocumentId, command.BillingDocumentItemId, $"Billing document item '{command.BillingDocumentItemId}' was not found.");
-        }
-
-        var fiscalDocument = await _fiscalDocumentRepository.GetTrackedByBillingDocumentIdAsync(command.BillingDocumentId, cancellationToken);
+        var fiscalDocument = await _fiscalDocumentRepository.GetTrackedByBillingDocumentIdAsync(billingDocumentId, cancellationToken);
         if (!CanEditFiscalComposition(fiscalDocument))
         {
             return Conflict(
-                billingDocument,
+                billingDocumentId,
                 fiscalDocument,
-                command.BillingDocumentItemId,
                 "The billing document composition is locked because the fiscal document is no longer editable before stamping.");
         }
 
-        var removals = await _billingDocumentItemRemovalRepository.ListByBillingDocumentIdAsync(command.BillingDocumentId, cancellationToken);
-        if (removals.Any(x => x.SalesOrderItemId == billingDocumentItem.SalesOrderItemId))
+        var removals = await _billingDocumentItemRemovalRepository.ListByIdsAsync(normalizedRemovalIds, cancellationToken);
+        if (removals.Count != normalizedRemovalIds.Length)
         {
-            return ValidationFailure(
-                command.BillingDocumentId,
-                command.BillingDocumentItemId,
-                $"Billing document item '{command.BillingDocumentItemId}' was already removed from the current document.");
+            return NotFound(billingDocumentId, "One or more pending billing items were not found.");
+        }
+
+        foreach (var removal in removals)
+        {
+            if (removal.RemovalDisposition != BillingDocumentItemRemovalDisposition.PendingBilling)
+            {
+                return ValidationFailure(billingDocumentId, $"Pending billing item '{removal.Id}' is not reusable because its disposition is '{removal.RemovalDisposition}'.");
+            }
+
+            if (removal.BillingDocumentId == billingDocumentId)
+            {
+                return ValidationFailure(billingDocumentId, $"Pending billing item '{removal.Id}' already belongs to the selected billing document context.");
+            }
+
+            var activeAssignment = await _billingDocumentPendingItemAssignmentRepository.GetActiveByRemovalIdAsync(removal.Id, cancellationToken);
+            if (activeAssignment is not null)
+            {
+                return Conflict(
+                    billingDocumentId,
+                    fiscalDocument,
+                    $"Pending billing item '{removal.Id}' is already assigned to billing document '{activeAssignment.DestinationBillingDocumentId}'.");
+            }
+
+            if (!removal.AvailableForPendingBillingReuse)
+            {
+                return ValidationFailure(billingDocumentId, $"Pending billing item '{removal.Id}' is no longer available for manual reuse.");
+            }
+        }
+
+        var existingSalesOrderItemIds = billingDocument.Items.Select(x => x.SalesOrderItemId).ToHashSet();
+        var requestedSalesOrderItemIds = new HashSet<long>();
+        foreach (var removal in removals)
+        {
+            if (!requestedSalesOrderItemIds.Add(removal.SalesOrderItemId))
+            {
+                return ValidationFailure(billingDocumentId, $"Sales order item '{removal.SalesOrderItemId}' was selected more than once.");
+            }
+
+            if (existingSalesOrderItemIds.Contains(removal.SalesOrderItemId))
+            {
+                return ValidationFailure(billingDocumentId, $"Pending billing item '{removal.Id}' already exists in the destination billing document.");
+            }
+
+            var salesOrder = await _salesOrderSnapshotRepository.GetByIdWithItemsAsync(removal.SalesOrderId, cancellationToken);
+            if (salesOrder is null)
+            {
+                return ValidationFailure(billingDocumentId, $"Sales order '{removal.SalesOrderId}' was not found for pending billing item '{removal.Id}'.");
+            }
+
+            if (!string.Equals(
+                    FiscalMasterDataNormalization.NormalizeRequiredCode(salesOrder.CurrencyCode),
+                    FiscalMasterDataNormalization.NormalizeRequiredCode(billingDocument.CurrencyCode),
+                    StringComparison.Ordinal))
+            {
+                return ValidationFailure(
+                    billingDocumentId,
+                    $"Pending billing item '{removal.Id}' currency '{salesOrder.CurrencyCode}' does not match billing document currency '{billingDocument.CurrencyCode}'.");
+            }
         }
 
         var associatedSalesOrders = await EnsurePrimaryAssociationAndLoadSalesOrdersAsync(billingDocument, cancellationToken);
         var legacyOrderReferences = await BuildLegacyOrderReferenceMapAsync(associatedSalesOrders, cancellationToken);
-
-        var now = DateTime.UtcNow;
-        var currentUser = _currentUserAccessor.GetCurrentUser();
-        if (billingDocumentItem.SourceBillingDocumentItemRemovalId.HasValue)
-        {
-            var activeAssignment = await _billingDocumentPendingItemAssignmentRepository.GetActiveByRemovalIdAsync(
-                billingDocumentItem.SourceBillingDocumentItemRemovalId.Value,
-                cancellationToken);
-
-            if (activeAssignment is not null && activeAssignment.DestinationBillingDocumentId == billingDocument.Id)
-            {
-                activeAssignment.ReleasedAtUtc = now;
-                activeAssignment.ReleasedByUsername = currentUser.Username;
-                activeAssignment.ReleasedByDisplayName = currentUser.DisplayName;
-                activeAssignment.UpdatedAtUtc = now;
-            }
-        }
-
-        var removal = new BillingDocumentItemRemoval
-        {
-            BillingDocumentId = billingDocument.Id,
-            FiscalDocumentId = fiscalDocument?.Id,
-            SalesOrderId = billingDocumentItem.SalesOrderId,
-            SalesOrderItemId = billingDocumentItem.SalesOrderItemId,
-            BillingDocumentItemId = billingDocumentItem.Id,
-            SourceLegacyOrderId = string.IsNullOrWhiteSpace(billingDocumentItem.SourceLegacyOrderId)
-                ? legacyOrderReferences.GetValueOrDefault(billingDocumentItem.SalesOrderId, string.Empty)
-                : billingDocumentItem.SourceLegacyOrderId,
-            SourceSalesOrderLineNumber = billingDocumentItem.SourceSalesOrderLineNumber,
-            ProductInternalCode = billingDocumentItem.ProductInternalCode,
-            Description = billingDocumentItem.Description,
-            QuantityRemoved = billingDocumentItem.Quantity,
-            UnitPrice = billingDocumentItem.UnitPrice,
-            DiscountAmount = billingDocumentItem.DiscountAmount,
-            TaxRate = billingDocumentItem.TaxRate,
-            TaxAmount = billingDocumentItem.TaxAmount,
-            LineTotal = billingDocumentItem.LineTotal,
-            SatProductServiceCode = billingDocumentItem.SatProductServiceCode,
-            SatUnitCode = billingDocumentItem.SatUnitCode,
-            RemovalReason = command.RemovalReason,
-            Observations = string.IsNullOrWhiteSpace(command.Observations) ? null : command.Observations.Trim(),
-            RemovalDisposition = command.RemovalDisposition,
-            AvailableForPendingBillingReuse = command.RemovalDisposition == BillingDocumentItemRemovalDisposition.PendingBilling,
-            RemovedByUsername = currentUser.Username,
-            RemovedByDisplayName = currentUser.DisplayName,
-            RemovedAtUtc = now,
-            BillingDocumentStatusAtRemoval = billingDocument.Status.ToString(),
-            FiscalDocumentStatusAtRemoval = fiscalDocument?.Status.ToString(),
-            RemovedFromCurrentDocument = true,
-            CreatedAtUtc = now,
-            UpdatedAtUtc = now
-        };
-
-        await _billingDocumentItemRemovalRepository.AddAsync(removal, cancellationToken);
-
-        var nextRemovedSalesOrderItemIds = removals.Select(x => x.SalesOrderItemId)
-            .Concat([billingDocumentItem.SalesOrderItemId])
+        var removedSalesOrderItemIds = (await _billingDocumentItemRemovalRepository.ListByBillingDocumentIdAsync(billingDocument.Id, cancellationToken))
+            .Select(x => x.SalesOrderItemId)
             .ToHashSet();
-        var activeAssignments = await _billingDocumentPendingItemAssignmentRepository.ListActiveByBillingDocumentIdAsync(billingDocument.Id, cancellationToken);
-        var assignedPendingItems = activeAssignments.Count == 0
+
+        var existingAssignments = await _billingDocumentPendingItemAssignmentRepository.ListActiveByBillingDocumentIdAsync(billingDocument.Id, cancellationToken);
+        var existingAssignedRemovalIds = existingAssignments.Select(x => x.BillingDocumentItemRemovalId).ToHashSet();
+        var allAssignedRemovalIds = existingAssignedRemovalIds.Concat(normalizedRemovalIds).Distinct().ToArray();
+        var assignedPendingItems = allAssignedRemovalIds.Length == 0
             ? []
-            : await _billingDocumentItemRemovalRepository.ListByIdsAsync(activeAssignments.Select(x => x.BillingDocumentItemRemovalId).Distinct().ToArray(), cancellationToken);
+            : await _billingDocumentItemRemovalRepository.ListByIdsAsync(allAssignedRemovalIds, cancellationToken);
 
         var nextBillingItems = BillingDocumentOrderCompositionBuilder.BuildBillingItems(
             associatedSalesOrders,
-            nextRemovedSalesOrderItemIds,
+            removedSalesOrderItemIds,
             legacyOrderReferences,
             assignedPendingItems);
-
-        if (nextBillingItems.Count == 0)
-        {
-            return ValidationFailure(
-                command.BillingDocumentId,
-                command.BillingDocumentItemId,
-                "At least one billing line must remain in the billing document.");
-        }
 
         List<FiscalDocumentItem>? nextFiscalItems = null;
         if (fiscalDocument is not null)
@@ -173,8 +163,27 @@ public sealed class RemoveBillingDocumentItemService
             }
             catch (InvalidOperationException exception)
             {
-                return ValidationFailure(command.BillingDocumentId, command.BillingDocumentItemId, exception.Message);
+                return ValidationFailure(billingDocumentId, exception.Message);
             }
+        }
+
+        var now = DateTime.UtcNow;
+        var currentUser = _currentUserAccessor.GetCurrentUser();
+        foreach (var removal in removals)
+        {
+            removal.AvailableForPendingBillingReuse = false;
+            removal.UpdatedAtUtc = now;
+            await _billingDocumentPendingItemAssignmentRepository.AddAsync(new BillingDocumentPendingItemAssignment
+            {
+                BillingDocumentItemRemovalId = removal.Id,
+                DestinationBillingDocumentId = billingDocument.Id,
+                DestinationFiscalDocumentId = fiscalDocument?.Id,
+                AssignedByUsername = currentUser.Username,
+                AssignedByDisplayName = currentUser.DisplayName,
+                AssignedAtUtc = now,
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now
+            }, cancellationToken);
         }
 
         ApplyBillingDocumentComposition(billingDocument, associatedSalesOrders, nextBillingItems);
@@ -186,16 +195,14 @@ public sealed class RemoveBillingDocumentItemService
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return new RemoveBillingDocumentItemResult
+        return new AssignPendingBillingItemsResult
         {
-            Outcome = RemoveBillingDocumentItemOutcome.Removed,
+            Outcome = AssignPendingBillingItemsOutcome.Assigned,
             IsSuccess = true,
             BillingDocumentId = billingDocument.Id,
-            BillingDocumentStatus = billingDocument.Status,
-            BillingDocumentItemId = command.BillingDocumentItemId,
             FiscalDocumentId = fiscalDocument?.Id,
             FiscalDocumentStatus = fiscalDocument?.Status,
-            RemovalId = removal.Id,
+            AssignedCount = removals.Count,
             IncludedItemCount = billingDocument.Items.Count,
             Total = billingDocument.Total
         };
@@ -342,47 +349,37 @@ public sealed class RemoveBillingDocumentItemService
         fiscalDocument.Status = FiscalDocumentStatus.ReadyForStamping;
     }
 
-    private static RemoveBillingDocumentItemResult ValidationFailure(long billingDocumentId, long billingDocumentItemId, string errorMessage)
+    private static AssignPendingBillingItemsResult ValidationFailure(long billingDocumentId, string errorMessage)
     {
-        return new RemoveBillingDocumentItemResult
+        return new AssignPendingBillingItemsResult
         {
-            Outcome = RemoveBillingDocumentItemOutcome.ValidationFailed,
+            Outcome = AssignPendingBillingItemsOutcome.ValidationFailed,
             IsSuccess = false,
             BillingDocumentId = billingDocumentId,
-            BillingDocumentItemId = billingDocumentItemId,
             ErrorMessage = errorMessage
         };
     }
 
-    private static RemoveBillingDocumentItemResult NotFound(long billingDocumentId, long billingDocumentItemId, string errorMessage)
+    private static AssignPendingBillingItemsResult NotFound(long billingDocumentId, string errorMessage)
     {
-        return new RemoveBillingDocumentItemResult
+        return new AssignPendingBillingItemsResult
         {
-            Outcome = RemoveBillingDocumentItemOutcome.NotFound,
+            Outcome = AssignPendingBillingItemsOutcome.NotFound,
             IsSuccess = false,
             BillingDocumentId = billingDocumentId,
-            BillingDocumentItemId = billingDocumentItemId,
             ErrorMessage = errorMessage
         };
     }
 
-    private static RemoveBillingDocumentItemResult Conflict(
-        BillingDocument billingDocument,
-        FiscalDocument? fiscalDocument,
-        long billingDocumentItemId,
-        string errorMessage)
+    private static AssignPendingBillingItemsResult Conflict(long billingDocumentId, FiscalDocument? fiscalDocument, string errorMessage)
     {
-        return new RemoveBillingDocumentItemResult
+        return new AssignPendingBillingItemsResult
         {
-            Outcome = RemoveBillingDocumentItemOutcome.Conflict,
+            Outcome = AssignPendingBillingItemsOutcome.Conflict,
             IsSuccess = false,
-            BillingDocumentId = billingDocument.Id,
-            BillingDocumentStatus = billingDocument.Status,
-            BillingDocumentItemId = billingDocumentItemId,
+            BillingDocumentId = billingDocumentId,
             FiscalDocumentId = fiscalDocument?.Id,
             FiscalDocumentStatus = fiscalDocument?.Status,
-            IncludedItemCount = billingDocument.Items.Count,
-            Total = billingDocument.Total,
             ErrorMessage = errorMessage
         };
     }

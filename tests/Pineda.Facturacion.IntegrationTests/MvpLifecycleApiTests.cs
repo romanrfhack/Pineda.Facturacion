@@ -419,6 +419,130 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
+    public async Task BillingDocument_Can_Assign_PendingBilling_Items_To_Another_Editable_Document_Manually()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        var seed = await factory.SeedStandardFiscalMasterDataAsync();
+
+        var legacyOrder1 = CreateLegacyOrder("LEG-6001", "SKU-1", 100m);
+        legacyOrder1.Subtotal = 150m;
+        legacyOrder1.Total = 150m;
+        legacyOrder1.Items.Add(new LegacyOrderItemReadModel
+        {
+            LineNumber = 2,
+            LegacyArticleId = "SKU-1",
+            Sku = "SKU-1",
+            Description = "Product SKU-1 Extra",
+            UnitCode = "H87",
+            UnitName = "Pieza",
+            Quantity = 1m,
+            UnitPrice = 50m,
+            DiscountAmount = 0m,
+            TaxRate = 0m,
+            TaxAmount = 0m,
+            LineTotal = 50m
+        });
+        factory.LegacyOrderReader.Orders["LEG-6001"] = legacyOrder1;
+        factory.LegacyOrderReader.Orders["LEG-6002"] = CreateLegacyOrder("LEG-6002", "SKU-1", 100m);
+
+        var importOrder1 = await (await client.PostAsync("/api/orders/LEG-6001/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+        var importOrder2 = await (await client.PostAsync("/api/orders/LEG-6002/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+
+        var billingBody1 = await (await client.PostAsJsonAsync($"/api/sales-orders/{importOrder1!.SalesOrderId}/billing-documents", new SalesOrdersEndpoints.CreateBillingDocumentRequest
+        {
+            DocumentType = "I"
+        })).Content.ReadFromJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>();
+        var fiscalBody1 = await (await client.PostAsJsonAsync($"/api/billing-documents/{billingBody1!.BillingDocumentId}/fiscal-documents", new BillingDocumentsEndpoints.PrepareFiscalDocumentRequest
+        {
+            FiscalReceiverId = seed.ReceiverId,
+            IssuerProfileId = seed.IssuerId,
+            PaymentMethodSat = "PPD",
+            PaymentFormSat = "99",
+            PaymentCondition = "CREDITO",
+            IsCreditSale = true,
+            CreditDays = 7
+        })).Content.ReadFromJsonAsync<BillingDocumentsEndpoints.PrepareFiscalDocumentResponse>();
+
+        var lookupBeforeRemoval = await (await client.GetAsync($"/api/billing-documents/{billingBody1.BillingDocumentId}"))
+            .Content.ReadFromJsonAsync<BillingDocumentsEndpoints.BillingDocumentLookupResponse>();
+        var itemToRemove = lookupBeforeRemoval!.Items.Single(x => x.SourceSalesOrderLineNumber == 2);
+
+        var removeResponse = await client.PostAsJsonAsync(
+            $"/api/billing-documents/{billingBody1.BillingDocumentId}/items/{itemToRemove.BillingDocumentItemId}/remove",
+            new BillingDocumentsEndpoints.RemoveBillingDocumentItemRequest
+            {
+                RemovalReason = "WrongDocument",
+                Observations = "Pendiente de facturar en otro CFDI.",
+                RemovalDisposition = "PendingBilling"
+            });
+        Assert.Equal(HttpStatusCode.OK, removeResponse.StatusCode);
+
+        var billingBody2 = await (await client.PostAsJsonAsync($"/api/sales-orders/{importOrder2!.SalesOrderId}/billing-documents", new SalesOrdersEndpoints.CreateBillingDocumentRequest
+        {
+            DocumentType = "I"
+        })).Content.ReadFromJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>();
+        var fiscalBody2 = await (await client.PostAsJsonAsync($"/api/billing-documents/{billingBody2!.BillingDocumentId}/fiscal-documents", new BillingDocumentsEndpoints.PrepareFiscalDocumentRequest
+        {
+            FiscalReceiverId = seed.ReceiverId,
+            IssuerProfileId = seed.IssuerId,
+            PaymentMethodSat = "PPD",
+            PaymentFormSat = "99",
+            PaymentCondition = "CREDITO",
+            IsCreditSale = true,
+            CreditDays = 7
+        })).Content.ReadFromJsonAsync<BillingDocumentsEndpoints.PrepareFiscalDocumentResponse>();
+
+        var pendingResponse = await client.GetAsync("/api/billing-documents/pending-items");
+        Assert.Equal(HttpStatusCode.OK, pendingResponse.StatusCode);
+        var pendingItems = await pendingResponse.Content.ReadFromJsonAsync<BillingDocumentsEndpoints.PendingBillingItemResponse[]>();
+        Assert.NotNull(pendingItems);
+        var pendingItem = Assert.Single(pendingItems!);
+        Assert.Equal("LEG-6001-ORD-LEG-6001", pendingItem.SourceLegacyOrderId);
+        Assert.Equal(billingBody1.BillingDocumentId, pendingItem.BillingDocumentId);
+
+        var assignResponse = await client.PostAsJsonAsync(
+            $"/api/billing-documents/{billingBody2.BillingDocumentId}/pending-items/assign",
+            new BillingDocumentsEndpoints.AssignPendingBillingItemsRequest
+            {
+                RemovalIds = [pendingItem.RemovalId]
+            });
+        Assert.Equal(HttpStatusCode.OK, assignResponse.StatusCode);
+
+        var lookupAfterAssign = await (await client.GetAsync($"/api/billing-documents/{billingBody2.BillingDocumentId}"))
+            .Content.ReadFromJsonAsync<BillingDocumentsEndpoints.BillingDocumentLookupResponse>();
+        Assert.NotNull(lookupAfterAssign);
+        Assert.Equal(2, lookupAfterAssign!.Items.Count);
+        Assert.Equal(174m, lookupAfterAssign.Total);
+        Assert.Contains(lookupAfterAssign.Items, x => x.SourceBillingDocumentItemRemovalId == pendingItem.RemovalId);
+
+        var fiscalAfterAssign = await (await client.GetAsync($"/api/fiscal-documents/{fiscalBody2!.FiscalDocumentId}"))
+            .Content.ReadFromJsonAsync<FiscalDocumentsEndpoints.FiscalDocumentResponse>();
+        Assert.NotNull(fiscalAfterAssign);
+        Assert.Equal(174m, fiscalAfterAssign!.Total);
+        Assert.Equal(2, fiscalAfterAssign.Items.Count);
+        Assert.Equal("ReadyForStamping", fiscalAfterAssign.Status);
+
+        var pendingAfterAssign = await (await client.GetAsync("/api/billing-documents/pending-items"))
+            .Content.ReadFromJsonAsync<BillingDocumentsEndpoints.PendingBillingItemResponse[]>();
+        Assert.NotNull(pendingAfterAssign);
+        Assert.DoesNotContain(pendingAfterAssign!, x => x.RemovalId == pendingItem.RemovalId);
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+        var persistedRemoval = await dbContext.BillingDocumentItemRemovals.SingleAsync();
+        Assert.False(persistedRemoval.AvailableForPendingBillingReuse);
+
+        var assignment = await dbContext.BillingDocumentPendingItemAssignments.SingleAsync();
+        Assert.Equal(pendingItem.RemovalId, assignment.BillingDocumentItemRemovalId);
+        Assert.Equal(billingBody2.BillingDocumentId, assignment.DestinationBillingDocumentId);
+        Assert.Equal(fiscalBody2.FiscalDocumentId, assignment.DestinationFiscalDocumentId);
+        Assert.Null(assignment.ReleasedAtUtc);
+    }
+
+    [Fact]
     public async Task BillingDocument_RemoveItem_Is_Blocked_After_Stamping()
     {
         await using var factory = new MvpApiFactory();

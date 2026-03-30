@@ -10,6 +10,7 @@ public sealed class UpdateBillingDocumentOrderAssociationService
     private readonly IBillingDocumentRepository _billingDocumentRepository;
     private readonly IFiscalDocumentRepository _fiscalDocumentRepository;
     private readonly IBillingDocumentItemRemovalRepository _billingDocumentItemRemovalRepository;
+    private readonly IBillingDocumentPendingItemAssignmentRepository _billingDocumentPendingItemAssignmentRepository;
     private readonly ILegacyImportRecordRepository _legacyImportRecordRepository;
     private readonly IProductFiscalProfileRepository _productFiscalProfileRepository;
     private readonly ISalesOrderSnapshotRepository _salesOrderSnapshotRepository;
@@ -19,6 +20,7 @@ public sealed class UpdateBillingDocumentOrderAssociationService
         IBillingDocumentRepository billingDocumentRepository,
         IFiscalDocumentRepository fiscalDocumentRepository,
         IBillingDocumentItemRemovalRepository billingDocumentItemRemovalRepository,
+        IBillingDocumentPendingItemAssignmentRepository billingDocumentPendingItemAssignmentRepository,
         ILegacyImportRecordRepository legacyImportRecordRepository,
         IProductFiscalProfileRepository productFiscalProfileRepository,
         ISalesOrderSnapshotRepository salesOrderSnapshotRepository,
@@ -27,6 +29,7 @@ public sealed class UpdateBillingDocumentOrderAssociationService
         _billingDocumentRepository = billingDocumentRepository;
         _fiscalDocumentRepository = fiscalDocumentRepository;
         _billingDocumentItemRemovalRepository = billingDocumentItemRemovalRepository;
+        _billingDocumentPendingItemAssignmentRepository = billingDocumentPendingItemAssignmentRepository;
         _legacyImportRecordRepository = legacyImportRecordRepository;
         _productFiscalProfileRepository = productFiscalProfileRepository;
         _salesOrderSnapshotRepository = salesOrderSnapshotRepository;
@@ -168,9 +171,13 @@ public sealed class UpdateBillingDocumentOrderAssociationService
 
         var removals = await _billingDocumentItemRemovalRepository.ListByBillingDocumentIdAsync(billingDocumentId, cancellationToken);
         var removedSalesOrderItemIds = removals.Select(x => x.SalesOrderItemId).ToHashSet();
+        var activeAssignments = await _billingDocumentPendingItemAssignmentRepository.ListActiveByBillingDocumentIdAsync(billingDocumentId, cancellationToken);
+        var assignedPendingItems = activeAssignments.Count == 0
+            ? []
+            : await _billingDocumentItemRemovalRepository.ListByIdsAsync(activeAssignments.Select(x => x.BillingDocumentItemRemovalId).Distinct().ToArray(), cancellationToken);
         var legacyOrderReferences = await BuildLegacyOrderReferenceMapAsync(nextSalesOrders, cancellationToken);
 
-        var nextBillingItems = BillingDocumentOrderCompositionBuilder.BuildBillingItems(nextSalesOrders, removedSalesOrderItemIds, legacyOrderReferences);
+        var nextBillingItems = BillingDocumentOrderCompositionBuilder.BuildBillingItems(nextSalesOrders, removedSalesOrderItemIds, legacyOrderReferences, assignedPendingItems);
         List<FiscalDocumentItem>? nextFiscalItems = null;
         if (fiscalDocument is not null)
         {

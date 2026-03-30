@@ -35,6 +35,8 @@ public sealed class BillingDocumentLookupItemModel
 
     public long SalesOrderItemId { get; init; }
 
+    public long? SourceBillingDocumentItemRemovalId { get; init; }
+
     public int SourceSalesOrderLineNumber { get; init; }
 
     public string SourceLegacyOrderId { get; init; } = string.Empty;

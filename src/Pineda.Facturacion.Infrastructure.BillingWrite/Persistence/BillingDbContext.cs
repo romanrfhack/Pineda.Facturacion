@@ -23,6 +23,8 @@ public class BillingDbContext : DbContext, IUnitOfWork
 
     public DbSet<BillingDocumentItemRemoval> BillingDocumentItemRemovals => Set<BillingDocumentItemRemoval>();
 
+    public DbSet<BillingDocumentPendingItemAssignment> BillingDocumentPendingItemAssignments => Set<BillingDocumentPendingItemAssignment>();
+
     public DbSet<FiscalDocument> FiscalDocuments => Set<FiscalDocument>();
 
     public DbSet<FiscalDocumentItem> FiscalDocumentItems => Set<FiscalDocumentItem>();

@@ -26,11 +26,27 @@ public class BillingDocumentItemRemoval
 
     public decimal QuantityRemoved { get; set; }
 
+    public decimal UnitPrice { get; set; }
+
+    public decimal DiscountAmount { get; set; }
+
+    public decimal TaxRate { get; set; }
+
+    public decimal TaxAmount { get; set; }
+
+    public decimal LineTotal { get; set; }
+
+    public string? SatProductServiceCode { get; set; }
+
+    public string? SatUnitCode { get; set; }
+
     public BillingDocumentItemRemovalReason RemovalReason { get; set; }
 
     public string? Observations { get; set; }
 
     public BillingDocumentItemRemovalDisposition RemovalDisposition { get; set; }
+
+    public bool AvailableForPendingBillingReuse { get; set; }
 
     public string? RemovedByUsername { get; set; }
 

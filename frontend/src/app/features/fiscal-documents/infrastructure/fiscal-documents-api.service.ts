@@ -4,6 +4,8 @@ import { Observable } from 'rxjs';
 import { buildApiUrl } from '../../../core/config/api-url';
 import {
   BillingDocumentLookupResponse,
+  AssignPendingBillingItemsRequest,
+  AssignPendingBillingItemsResponse,
   CancelFiscalDocumentRequest,
   CancelFiscalDocumentResponse,
   FiscalCancellationResponse,
@@ -17,6 +19,7 @@ import {
   IssuedFiscalDocumentSpecialFieldOptionResponse,
   PrepareFiscalDocumentRequest,
   PrepareFiscalDocumentResponse,
+  PendingBillingItemResponse,
   RemoveBillingDocumentItemRequest,
   RemoveBillingDocumentItemResponse,
   RefreshFiscalDocumentStatusResponse,
@@ -89,6 +92,16 @@ export class FiscalDocumentsApiService {
   removeBillingDocumentItem(billingDocumentId: number, billingDocumentItemId: number, request: RemoveBillingDocumentItemRequest): Observable<RemoveBillingDocumentItemResponse> {
     return this.http.post<RemoveBillingDocumentItemResponse>(
       buildApiUrl(`/billing-documents/${billingDocumentId}/items/${billingDocumentItemId}/remove`),
+      request);
+  }
+
+  listPendingBillingItems(): Observable<PendingBillingItemResponse[]> {
+    return this.http.get<PendingBillingItemResponse[]>(buildApiUrl('/billing-documents/pending-items'));
+  }
+
+  assignPendingBillingItems(billingDocumentId: number, request: AssignPendingBillingItemsRequest): Observable<AssignPendingBillingItemsResponse> {
+    return this.http.post<AssignPendingBillingItemsResponse>(
+      buildApiUrl(`/billing-documents/${billingDocumentId}/pending-items/assign`),
       request);
   }
 

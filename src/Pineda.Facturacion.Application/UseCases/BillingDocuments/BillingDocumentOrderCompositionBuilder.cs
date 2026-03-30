@@ -8,7 +8,8 @@ internal static class BillingDocumentOrderCompositionBuilder
     public static List<BillingDocumentItem> BuildBillingItems(
         IReadOnlyList<SalesOrder> salesOrders,
         IReadOnlySet<long>? removedSalesOrderItemIds = null,
-        IReadOnlyDictionary<long, string>? legacyOrderReferences = null)
+        IReadOnlyDictionary<long, string>? legacyOrderReferences = null,
+        IReadOnlyList<BillingDocumentItemRemoval>? pendingBillingItems = null)
     {
         var items = new List<BillingDocumentItem>();
         var nextLineNumber = 1;
@@ -26,6 +27,7 @@ internal static class BillingDocumentOrderCompositionBuilder
                 {
                     SalesOrderId = salesOrder.Id,
                     SalesOrderItemId = salesOrderItem.Id,
+                    SourceBillingDocumentItemRemovalId = null,
                     SourceSalesOrderLineNumber = salesOrderItem.LineNumber,
                     SourceLegacyOrderId = legacyOrderReferences is not null && legacyOrderReferences.TryGetValue(salesOrder.Id, out var sourceLegacyOrderId)
                         ? sourceLegacyOrderId
@@ -44,6 +46,36 @@ internal static class BillingDocumentOrderCompositionBuilder
                     LineTotal = 0m,
                     SatProductServiceCode = salesOrderItem.SatProductServiceCode,
                     SatUnitCode = salesOrderItem.SatUnitCode,
+                    TaxObjectCode = "02"
+                });
+            }
+        }
+
+        if (pendingBillingItems is not null)
+        {
+            foreach (var pendingBillingItem in pendingBillingItems.OrderBy(x => x.RemovedAtUtc).ThenBy(x => x.Id))
+            {
+                items.Add(new BillingDocumentItem
+                {
+                    SalesOrderId = pendingBillingItem.SalesOrderId,
+                    SalesOrderItemId = pendingBillingItem.SalesOrderItemId,
+                    SourceBillingDocumentItemRemovalId = pendingBillingItem.Id,
+                    SourceSalesOrderLineNumber = pendingBillingItem.SourceSalesOrderLineNumber,
+                    SourceLegacyOrderId = pendingBillingItem.SourceLegacyOrderId,
+                    LineNumber = nextLineNumber++,
+                    Sku = pendingBillingItem.ProductInternalCode,
+                    ProductInternalCode = string.IsNullOrWhiteSpace(pendingBillingItem.ProductInternalCode)
+                        ? null
+                        : FiscalMasterDataNormalization.NormalizeRequiredCode(pendingBillingItem.ProductInternalCode),
+                    Description = pendingBillingItem.Description,
+                    Quantity = pendingBillingItem.QuantityRemoved,
+                    UnitPrice = pendingBillingItem.UnitPrice,
+                    DiscountAmount = pendingBillingItem.DiscountAmount,
+                    TaxRate = pendingBillingItem.TaxRate,
+                    TaxAmount = pendingBillingItem.TaxAmount,
+                    LineTotal = pendingBillingItem.LineTotal,
+                    SatProductServiceCode = pendingBillingItem.SatProductServiceCode,
+                    SatUnitCode = pendingBillingItem.SatUnitCode,
                     TaxObjectCode = "02"
                 });
             }

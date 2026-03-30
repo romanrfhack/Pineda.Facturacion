@@ -97,6 +97,17 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         includedItemCount: 1,
         total: 100
       })),
+      listPendingBillingItems: vi.fn().mockReturnValue(of([])),
+      assignPendingBillingItems: vi.fn().mockReturnValue(of({
+        outcome: 'Assigned',
+        isSuccess: true,
+        billingDocumentId: 30,
+        fiscalDocumentId: 40,
+        fiscalDocumentStatus: 'ReadyForStamping',
+        assignedCount: 1,
+        includedItemCount: 2,
+        total: 158
+      })),
       getFiscalDocumentById: vi.fn().mockReturnValue(of({
         id: 40,
         billingDocumentId: 30,
@@ -1833,5 +1844,71 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(confirmButton).toBeTruthy();
     expect(fixture.componentInstance['billingItemRemovalValidationError']()).toBeNull();
     expect(fixture.nativeElement.textContent).not.toContain('Selecciona el motivo base del producto removido.');
+  });
+
+  it('assigns selected pending billing items to the current editable document', async () => {
+    const assignPendingBillingItems = vi.fn().mockReturnValue(of({
+      outcome: 'Assigned',
+      isSuccess: true,
+      billingDocumentId: 30,
+      fiscalDocumentId: 40,
+      fiscalDocumentStatus: 'ReadyForStamping',
+      assignedCount: 2,
+      includedItemCount: 3,
+      total: 174
+    }));
+
+    const fixture = await configure(
+      {
+        assignPendingBillingItems,
+        listPendingBillingItems: vi.fn().mockReturnValue(of([
+          {
+            removalId: 91,
+            billingDocumentId: 29,
+            fiscalDocumentId: 39,
+            salesOrderId: 19,
+            salesOrderItemId: 601,
+            sourceLegacyOrderId: 'LEG-5001-ORD-LEG-5001',
+            customerName: 'Receiver One',
+            sourceSalesOrderLineNumber: 2,
+            productInternalCode: 'MTE-4259',
+            description: 'FILTRO DE ACEITE',
+            quantityRemoved: 1,
+            removalReason: 'WrongDocument',
+            observations: 'Se facturará aparte',
+            removalDisposition: 'PendingBilling',
+            removedAtUtc: '2026-03-30T12:00:00Z'
+          },
+          {
+            removalId: 92,
+            billingDocumentId: 28,
+            fiscalDocumentId: 38,
+            salesOrderId: 18,
+            salesOrderItemId: 602,
+            sourceLegacyOrderId: 'LEG-5002-ORD-LEG-5002',
+            customerName: 'Receiver One',
+            sourceSalesOrderLineNumber: 3,
+            productInternalCode: 'PS-317',
+            description: 'PASTILLA DE FRENO',
+            quantityRemoved: 1,
+            removalReason: 'CommercialValidationPending',
+            observations: null,
+            removalDisposition: 'PendingBilling',
+            removedAtUtc: '2026-03-30T13:00:00Z'
+          }
+        ]))
+      },
+      { id: null, billingDocumentId: '30' }
+    );
+
+    await fixture.componentInstance['loadBillingDocumentContext'](30);
+    fixture.detectChanges();
+
+    fixture.componentInstance['togglePendingBillingSelection'](91, true);
+    fixture.componentInstance['togglePendingBillingSelection'](92, true);
+
+    await fixture.componentInstance['assignSelectedPendingBillingItems']();
+
+    expect(assignPendingBillingItems).toHaveBeenCalledWith(30, { removalIds: [91, 92] });
   });
 });

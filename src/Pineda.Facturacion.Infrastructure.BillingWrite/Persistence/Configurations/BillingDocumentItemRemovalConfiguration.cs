@@ -63,6 +63,43 @@ public class BillingDocumentItemRemovalConfiguration : IEntityTypeConfiguration<
             .HasPrecision(18, 6)
             .IsRequired();
 
+        builder.Property(x => x.UnitPrice)
+            .HasColumnName("unit_price")
+            .HasPrecision(18, 6)
+            .IsRequired();
+
+        builder.Property(x => x.DiscountAmount)
+            .HasColumnName("discount_amount")
+            .HasPrecision(18, 6)
+            .IsRequired();
+
+        builder.Property(x => x.TaxRate)
+            .HasColumnName("tax_rate")
+            .HasPrecision(9, 6)
+            .IsRequired();
+
+        builder.Property(x => x.TaxAmount)
+            .HasColumnName("tax_amount")
+            .HasPrecision(18, 6)
+            .IsRequired();
+
+        builder.Property(x => x.LineTotal)
+            .HasColumnName("line_total")
+            .HasPrecision(18, 6)
+            .IsRequired();
+
+        builder.Property(x => x.SatProductServiceCode)
+            .HasColumnName("sat_product_service_code")
+            .HasMaxLength(8)
+            .HasColumnType("char(8)")
+            .IsRequired(false);
+
+        builder.Property(x => x.SatUnitCode)
+            .HasColumnName("sat_unit_code")
+            .HasMaxLength(20)
+            .HasColumnType("varchar(20)")
+            .IsRequired(false);
+
         builder.Property(x => x.RemovalReason)
             .HasColumnName("removal_reason")
             .HasConversion<int>()
@@ -77,6 +114,10 @@ public class BillingDocumentItemRemovalConfiguration : IEntityTypeConfiguration<
         builder.Property(x => x.RemovalDisposition)
             .HasColumnName("removal_disposition")
             .HasConversion<int>()
+            .IsRequired();
+
+        builder.Property(x => x.AvailableForPendingBillingReuse)
+            .HasColumnName("available_for_pending_billing_reuse")
             .IsRequired();
 
         builder.Property(x => x.RemovedByUsername)

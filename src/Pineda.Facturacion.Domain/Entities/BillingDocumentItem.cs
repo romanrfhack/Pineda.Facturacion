@@ -10,6 +10,8 @@ public class BillingDocumentItem
 
     public long SalesOrderItemId { get; set; }
 
+    public long? SourceBillingDocumentItemRemovalId { get; set; }
+
     public int SourceSalesOrderLineNumber { get; set; }
 
     public string SourceLegacyOrderId { get; set; } = string.Empty;
