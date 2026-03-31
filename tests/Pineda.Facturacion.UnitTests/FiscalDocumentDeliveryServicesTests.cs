@@ -314,17 +314,18 @@ public class FiscalDocumentDeliveryServicesTests
     }
 
     [Fact]
-    public async Task FiscalDocumentPdfRenderer_Moves_Summary_To_Second_Page_When_It_No_Longer_Fits_After_Concepts()
+    public async Task FiscalDocumentPdfRenderer_Starts_Summary_At_The_Top_When_It_Moves_To_A_New_Page()
     {
         var renderer = new FiscalDocumentPdfRenderer(new FakeIssuerProfileRepository(), new FakeIssuerProfileLogoStorage(), new SatCatalogDescriptionProvider(new FakeFiscalReceiverSatCatalogProvider()));
-        var xml = CreateStampedXmlWithConceptCount(18, false);
+        var xml = CreateStampedXmlWithConceptCount(57, false);
 
         var bytes = await renderer.RenderAsync(CreateFiscalDocument(), CreateFiscalStamp(xmlContent: xml));
         var pages = ExtractPageTextStreams(bytes);
+        var summaryPage = pages.Last(page => page.Contains("Resumen fiscal", StringComparison.Ordinal));
+        var summaryY = ExtractTextYPosition(summaryPage, "Resumen fiscal");
 
         Assert.True(pages.Count >= 2);
-        Assert.DoesNotContain("Resumen fiscal", pages[0], StringComparison.Ordinal);
-        Assert.Contains("Resumen fiscal", pages[1], StringComparison.Ordinal);
+        Assert.True(summaryY > 700f);
     }
 
     [Fact]
@@ -356,6 +357,7 @@ public class FiscalDocumentDeliveryServicesTests
         Assert.Contains("SELLOSAT1234567890", pdfText, StringComparison.Ordinal);
         Assert.Contains("Total", pdfText, StringComparison.Ordinal);
         Assert.Contains("CONSULTA SAT / QR:", pages[^1], StringComparison.Ordinal);
+        Assert.Contains("/Im", pages[^1], StringComparison.Ordinal);
     }
 
     [Fact]
@@ -568,6 +570,18 @@ public class FiscalDocumentDeliveryServicesTests
             .Select(match => match.Groups[1].Value)
             .Where(stream => stream.Contains("BT", StringComparison.Ordinal) || stream.Contains("Resumen fiscal", StringComparison.Ordinal))
             .ToArray();
+    }
+
+    private static float ExtractTextYPosition(string pageStream, string text)
+    {
+        var escapedText = Regex.Escape(text);
+        var match = Regex.Match(
+            pageStream,
+            $@"BT\s+/F\d+\s+[\d.]+\s+Tf\s+[0-9. ]+rg\s+[\d.]+\s+([\d.]+)\s+Td\s+\({escapedText}\)\s+Tj\s+ET",
+            RegexOptions.Singleline);
+
+        Assert.True(match.Success, $"No se encontró la coordenada vertical para '{text}'.");
+        return float.Parse(match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private static string CreateStampedXmlWithConceptCount(int conceptCount, bool longDescriptions)

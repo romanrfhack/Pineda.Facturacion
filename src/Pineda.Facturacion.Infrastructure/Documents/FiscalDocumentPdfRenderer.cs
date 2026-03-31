@@ -540,11 +540,8 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
             var rightWidth = contentWidth - columnGap - leftWidth;
             var leftX = Margin + innerPad;
             var rightX = leftX + leftWidth + columnGap;
-            var topY = _cursorY;
-
             var receiverNameLines = WrapTextConservatively(model.ReceiverName, contentWidth, nameFontSize, isBold: true);
             var receiverNameHeight = Math.Max(nameLineHeight, receiverNameLines.Length * nameLineHeight);
-            var columnsStartY = topY - headerHeight - topPad - receiverNameHeight - 8f;
 
             var leftHeight =
                 MeasureStackedFieldHeight(model.ReceiverRfc, leftWidth, fieldValueFontSize, fieldLabelLineHeight, fieldValueLineHeight) +
@@ -555,6 +552,9 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
             var sectionHeight = headerHeight + topPad + receiverNameHeight + 8f + Math.Max(leftHeight, rightHeight) + bottomPad;
 
             EnsureSpace(sectionHeight + SectionGap);
+
+            var topY = _cursorY;
+            var columnsStartY = topY - headerHeight - topPad - receiverNameHeight - 8f;
 
             _page.FillRectangle(Margin, topY - sectionHeight, sectionWidth, sectionHeight, PdfColor.White);
             _page.StrokeRectangle(Margin, topY - sectionHeight, sectionWidth, sectionHeight, new PdfColor(218, 213, 204), 0.8f);
@@ -724,7 +724,6 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
             const float taxFontSize = 8f;
             const float taxLineHeight = 10f;
 
-            var summaryY = _cursorY;
             var leftWidth = 306f;
             var rightWidth = 232f;
             var leftContentWidth = leftWidth - (innerPad * 2);
@@ -743,6 +742,8 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
             var sectionHeight = Math.Max(leftHeight, totalsHeight);
 
             EnsureSpace(sectionHeight + SectionGap);
+
+            var summaryY = _cursorY;
 
             _page.FillRectangle(Margin, summaryY - leftHeight, leftWidth, leftHeight, PdfColor.White);
             _page.StrokeRectangle(Margin, summaryY - leftHeight, leftWidth, leftHeight, new PdfColor(218, 213, 204), 0.8f);
@@ -818,14 +819,14 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
                 allBlocks.Add(("CADENA ORIGINAL DEL COMPLEMENTO DE CERTIFICACION DIGITAL DEL SAT", model.OriginalString!));
 
             var pendingBlocks = new Queue<(string Label, string Value)>(allBlocks);
-            var drawQrOnThisPage = qr is not null;
+            var hasPendingQr = qr is not null;
 
             while (pendingBlocks.Count > 0)
             {
                 if (!TryDrawTimbreSectionOnCurrentPage(
                         pendingBlocks,
                         qr,
-                        drawQrOnThisPage,
+                        hasPendingQr,
                         qrBoxSize,
                         contentLeftX,
                         contentRightX,
@@ -836,13 +837,17 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
                         metaLineH))
                 {
                     StartNewPage();
-                    drawQrOnThisPage = false;
                     continue;
                 }
+
+                if (hasPendingQr)
+                {
+                    hasPendingQr = false;
+                }
+
                 if (pendingBlocks.Count > 0)
                 {
                     StartNewPage();
-                    drawQrOnThisPage = false;
                 }
             }
         }
