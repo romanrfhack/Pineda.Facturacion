@@ -417,6 +417,7 @@ export interface SendFiscalDocumentEmailResponse {
   outcome: string;
   isSuccess: boolean;
   errorMessage?: string | null;
+  supportMessage?: string | null;
   fiscalDocumentId: number;
   recipients: string[];
   sentAtUtc?: string | null;

@@ -123,7 +123,8 @@ public class SendFiscalDocumentEmailService
                 Outcome = SendFiscalDocumentEmailOutcome.DeliveryFailed,
                 FiscalDocumentId = command.FiscalDocumentId,
                 Recipients = recipients,
-                ErrorMessage = exception.Message
+                ErrorMessage = "No fue posible enviar el CFDI por correo. Revisa la conectividad SMTP, credenciales o restricciones del servidor.",
+                SupportMessage = $"SmtpStatusCode={exception.StatusCode} | Detail={exception.Message}"
             };
         }
         catch (InvalidOperationException exception)
@@ -133,7 +134,8 @@ public class SendFiscalDocumentEmailService
                 Outcome = SendFiscalDocumentEmailOutcome.DeliveryFailed,
                 FiscalDocumentId = command.FiscalDocumentId,
                 Recipients = recipients,
-                ErrorMessage = exception.Message
+                ErrorMessage = "El envío por correo no está configurado correctamente en el servidor.",
+                SupportMessage = exception.Message
             };
         }
 
@@ -143,7 +145,8 @@ public class SendFiscalDocumentEmailService
             IsSuccess = true,
             FiscalDocumentId = command.FiscalDocumentId,
             Recipients = recipients,
-            SentAtUtc = DateTime.UtcNow
+            SentAtUtc = DateTime.UtcNow,
+            SupportMessage = $"Adjuntos preparados: XML+PDF | Recipients={recipients.Count}"
         };
     }
 

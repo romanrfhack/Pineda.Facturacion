@@ -100,6 +100,28 @@ public class FiscalDocumentDeliveryServicesTests
 
         Assert.Equal(SendFiscalDocumentEmailOutcome.DeliveryFailed, result.Outcome);
         Assert.Equal(FiscalStampStatus.Succeeded, fiscalStamp.Status);
+        Assert.Contains("SmtpStatusCode", result.SupportMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SendFiscalDocumentEmail_Returns_Clear_Message_When_Smtp_Is_Not_Configured()
+    {
+        var service = new SendFiscalDocumentEmailService(
+            new FakeFiscalDocumentRepository { Existing = CreateFiscalDocument() },
+            new FakeFiscalStampRepository { Existing = CreateFiscalStamp() },
+            new FakeEmailSender { Exception = new InvalidOperationException("SMTP no configurado correctamente. Faltan o son inválidos: Host, FromAddress.") },
+            new FakeFiscalDocumentPdfRenderer());
+
+        var result = await service.ExecuteAsync(
+            new SendFiscalDocumentEmailCommand
+            {
+                FiscalDocumentId = 8,
+                Recipients = ["cliente@example.com"]
+            });
+
+        Assert.Equal(SendFiscalDocumentEmailOutcome.DeliveryFailed, result.Outcome);
+        Assert.Equal("El envío por correo no está configurado correctamente en el servidor.", result.ErrorMessage);
+        Assert.Contains("Host", result.SupportMessage, StringComparison.Ordinal);
     }
 
     [Fact]

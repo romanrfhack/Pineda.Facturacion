@@ -22,4 +22,6 @@ public class SendFiscalDocumentEmailResult
     public DateTime? SentAtUtc { get; set; }
 
     public string? ErrorMessage { get; set; }
+
+    public string? SupportMessage { get; set; }
 }

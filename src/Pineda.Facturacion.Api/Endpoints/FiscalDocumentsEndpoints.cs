@@ -475,6 +475,7 @@ public static class FiscalDocumentsEndpoints
             Outcome = result.Outcome.ToString(),
             IsSuccess = result.IsSuccess,
             ErrorMessage = result.ErrorMessage,
+            SupportMessage = result.SupportMessage,
             FiscalDocumentId = result.FiscalDocumentId,
             Recipients = result.Recipients,
             SentAtUtc = result.SentAtUtc
@@ -487,7 +488,7 @@ public static class FiscalDocumentsEndpoints
             fiscalDocumentId.ToString(),
             result.Outcome.ToString(),
             new { fiscalDocumentId, request.Recipients, request.Subject },
-            new { result.Recipients, result.SentAtUtc },
+            new { result.Recipients, result.SentAtUtc, result.SupportMessage },
             result.ErrorMessage,
             cancellationToken);
 
@@ -1203,6 +1204,7 @@ public static class FiscalDocumentsEndpoints
         public string Outcome { get; init; } = string.Empty;
         public bool IsSuccess { get; init; }
         public string? ErrorMessage { get; init; }
+        public string? SupportMessage { get; init; }
         public long FiscalDocumentId { get; init; }
         public IReadOnlyList<string> Recipients { get; init; } = [];
         public DateTime? SentAtUtc { get; init; }

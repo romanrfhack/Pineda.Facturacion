@@ -19,9 +19,10 @@ public class SmtpEmailSender : IEmailSender
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        if (string.IsNullOrWhiteSpace(_options.Host) || string.IsNullOrWhiteSpace(_options.FromAddress))
+        var configurationValidationError = ValidateConfiguration();
+        if (configurationValidationError is not null)
         {
-            throw new InvalidOperationException("SMTP email delivery is not configured.");
+            throw new InvalidOperationException(configurationValidationError);
         }
 
         using var mailMessage = new MailMessage
@@ -67,5 +68,45 @@ public class SmtpEmailSender : IEmailSender
                 await stream.DisposeAsync();
             }
         }
+    }
+
+    private string? ValidateConfiguration()
+    {
+        var missingFields = new List<string>();
+
+        if (string.IsNullOrWhiteSpace(_options.Host))
+        {
+            missingFields.Add("Host");
+        }
+
+        if (string.IsNullOrWhiteSpace(_options.FromAddress))
+        {
+            missingFields.Add("FromAddress");
+        }
+
+        if (_options.Port <= 0)
+        {
+            missingFields.Add("Port");
+        }
+
+        var hasUsername = !string.IsNullOrWhiteSpace(_options.Username);
+        var hasPassword = !string.IsNullOrWhiteSpace(_options.Password);
+        if (hasUsername != hasPassword)
+        {
+            missingFields.Add(hasUsername ? "Password" : "Username");
+        }
+
+        if (missingFields.Count == 0)
+        {
+            return null;
+        }
+
+        return $"SMTP no configurado correctamente. Faltan o son inválidos: {string.Join(", ", missingFields)}. "
+            + $"HostConfigured={(!string.IsNullOrWhiteSpace(_options.Host) ? "yes" : "no")} | "
+            + $"Port={_options.Port} | "
+            + $"EnableSsl={_options.EnableSsl} | "
+            + $"UsernameConfigured={(hasUsername ? "yes" : "no")} | "
+            + $"PasswordConfigured={(hasPassword ? "yes" : "no")} | "
+            + $"FromAddressConfigured={(!string.IsNullOrWhiteSpace(_options.FromAddress) ? "yes" : "no")}.";
     }
 }
