@@ -712,9 +712,9 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
 
         private void DrawTotals(PdfViewModel model)
         {
-            const float headerHeight = 20f;
-            const float innerPad = 10f;
-            const float bottomPad = 12f;
+            const float headerHeight = 18f;
+            const float innerPad = 8f;
+            const float bottomPad = 10f;
             const float wordsFontSize = 9.5f;
             const float wordsLineHeight = 11f;
             const float fieldLabelFontSize = 9f;
@@ -737,10 +737,10 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
                 MeasureStackedFieldHeight(model.Currency, leftContentWidth, fieldValueFontSize, fieldLabelLineHeight, fieldValueLineHeight);
             var taxLines = model.TaxesBreakdown.Take(2).Select(x => $"{x.Label} {x.Rate}: {x.Amount}").ToArray();
             var taxHeight = taxLines.Length * taxLineHeight;
-            var leftHeight = headerHeight + 10f + wordsHeight + 8f + fieldHeight + (taxLines.Length > 0 ? 6f + taxHeight : 0f) + bottomPad;
+            var leftHeight = headerHeight + 8f + wordsHeight + 6f + fieldHeight + (taxLines.Length > 0 ? 4f + taxHeight : 0f) + bottomPad;
 
-            var totalsHeight = 92f;
-            var sectionHeight = Math.Max(leftHeight, totalsHeight + 12f);
+            var totalsHeight = 84f;
+            var sectionHeight = Math.Max(leftHeight, totalsHeight);
 
             EnsureSpace(sectionHeight + SectionGap);
 
@@ -750,9 +750,9 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
             _page.DrawText("Resumen fiscal", Margin + 10f, summaryY - 14f, 10f, PdfFont.Bold, new PdfColor(22, 30, 42));
 
             var leftX = Margin + innerPad;
-            var currentY = summaryY - headerHeight - 10f;
+            var currentY = summaryY - headerHeight - 8f;
             DrawWrappedTextLines(wordsLines, leftX, currentY, wordsFontSize, wordsLineHeight, PdfFont.Bold, new PdfColor(40, 48, 60));
-            currentY -= wordsHeight + 8f;
+            currentY -= wordsHeight + 6f;
 
             currentY = DrawStackedField("Forma de pago", model.PaymentForm, leftX, currentY, leftContentWidth, fieldLabelFontSize, fieldValueFontSize, fieldLabelLineHeight, fieldValueLineHeight);
             currentY = DrawStackedField("Método de pago", model.PaymentMethod, leftX, currentY, leftContentWidth, fieldLabelFontSize, fieldValueFontSize, fieldLabelLineHeight, fieldValueLineHeight);
@@ -822,48 +822,141 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
 
             while (pendingBlocks.Count > 0)
             {
-                EnsureSpace(drawQrOnThisPage ? (qrBoxSize + 24f) : 60f);
-
-                var pageBlockList = new List<(string Label, string Value)>();
-                var previewQueue = new Queue<(string Label, string Value)>(pendingBlocks);
-                var qrBoxX = contentLeftX;
-                var qrBoxY = _cursorY - 8f - qrBoxSize;
-                var qrFlowStartX = qrBoxX + qrBoxSize + qrGap;
-                var qrBottomY = qrBoxY;
-                var textStartY = _cursorY - 16f;
-
-                while (previewQueue.Count > 0)
-                {
-                    pageBlockList.Add(previewQueue.Dequeue());
-                    var previewBottomY = LayoutTimbreBlocks(
-                        pageBlockList,
-                        textStartY,
-                        contentLeftX,
-                        qrFlowStartX,
-                        contentRightX,
-                        qrBottomY,
+                if (!TryDrawTimbreSectionOnCurrentPage(
+                        pendingBlocks,
+                        qr,
                         drawQrOnThisPage,
+                        qrBoxSize,
+                        contentLeftX,
+                        contentRightX,
+                        qrGap,
                         labelFontSize,
                         sealFontSize,
                         sealLineHeight,
-                        metaLineH,
-                        draw: false);
-
-                    if (previewBottomY < ContentBottom)
-                    {
-                        pageBlockList.RemoveAt(pageBlockList.Count - 1);
-                        break;
-                    }
-                }
-
-                if (pageBlockList.Count == 0)
+                        metaLineH))
                 {
                     StartNewPage();
                     drawQrOnThisPage = false;
                     continue;
                 }
+                if (pendingBlocks.Count > 0)
+                {
+                    StartNewPage();
+                    drawQrOnThisPage = false;
+                }
+            }
+        }
 
-                var textBottomY = LayoutTimbreBlocks(
+        private bool TryDrawTimbreSectionOnCurrentPage(
+            Queue<(string Label, string Value)> pendingBlocks,
+            PdfImageAsset? qr,
+            bool drawQrOnThisPage,
+            float qrBoxSize,
+            float contentLeftX,
+            float contentRightX,
+            float qrGap,
+            float labelFontSize,
+            float sealFontSize,
+            float sealLineHeight,
+            float metaLineH)
+        {
+            var pageBlockList = SelectTimbreBlocksForCurrentPage(
+                pendingBlocks,
+                drawQrOnThisPage,
+                qrBoxSize,
+                contentLeftX,
+                contentRightX,
+                qrGap,
+                labelFontSize,
+                sealFontSize,
+                sealLineHeight,
+                metaLineH);
+
+            if (pageBlockList.Count == 0)
+            {
+                return false;
+            }
+
+            var qrBoxX = contentLeftX;
+            var qrBoxY = _cursorY - 8f - qrBoxSize;
+            var qrFlowStartX = qrBoxX + qrBoxSize + qrGap;
+            var qrBottomY = qrBoxY;
+            var textStartY = _cursorY - 16f;
+
+            var textBottomY = LayoutTimbreBlocks(
+                pageBlockList,
+                textStartY,
+                contentLeftX,
+                qrFlowStartX,
+                contentRightX,
+                qrBottomY,
+                drawQrOnThisPage,
+                labelFontSize,
+                sealFontSize,
+                sealLineHeight,
+                metaLineH,
+                draw: false);
+
+            var sectionBottomY = Math.Min(drawQrOnThisPage ? qrBoxY : textBottomY, textBottomY) - 8f;
+            var sectionHeight = _cursorY - sectionBottomY;
+
+            _page.FillRectangle(Margin, _cursorY - sectionHeight, PageWidth - (Margin * 2), sectionHeight, PdfColor.White);
+            _page.StrokeRectangle(Margin, _cursorY - sectionHeight, PageWidth - (Margin * 2), sectionHeight, new PdfColor(218, 213, 204), 0.8f);
+
+            if (drawQrOnThisPage && qr is not null)
+            {
+                _page.FillRectangle(qrBoxX, qrBoxY, qrBoxSize, qrBoxSize, PdfColor.White);
+                _page.StrokeRectangle(qrBoxX, qrBoxY, qrBoxSize, qrBoxSize, new PdfColor(218, 213, 204), 0.8f);
+                _page.DrawImage(qr, qrBoxX + 6f, qrBoxY + 6f, qrBoxSize - 12f, qrBoxSize - 12f);
+            }
+
+            LayoutTimbreBlocks(
+                pageBlockList,
+                textStartY,
+                contentLeftX,
+                qrFlowStartX,
+                contentRightX,
+                qrBottomY,
+                drawQrOnThisPage,
+                labelFontSize,
+                sealFontSize,
+                sealLineHeight,
+                metaLineH,
+                draw: true);
+
+            for (var index = 0; index < pageBlockList.Count; index++)
+            {
+                pendingBlocks.Dequeue();
+            }
+
+            _cursorY = sectionBottomY - SectionGap;
+            return true;
+        }
+
+        private List<(string Label, string Value)> SelectTimbreBlocksForCurrentPage(
+            Queue<(string Label, string Value)> pendingBlocks,
+            bool drawQrOnThisPage,
+            float qrBoxSize,
+            float contentLeftX,
+            float contentRightX,
+            float qrGap,
+            float labelFontSize,
+            float sealFontSize,
+            float sealLineHeight,
+            float metaLineH)
+        {
+            var pageBlockList = new List<(string Label, string Value)>();
+            var previewQueue = new Queue<(string Label, string Value)>(pendingBlocks);
+            var qrBoxX = contentLeftX;
+            var qrBoxY = _cursorY - 8f - qrBoxSize;
+            var qrFlowStartX = qrBoxX + qrBoxSize + qrGap;
+            var qrBottomY = qrBoxY;
+            var textStartY = _cursorY - 16f;
+
+            while (previewQueue.Count > 0)
+            {
+                pageBlockList.Add(previewQueue.Dequeue());
+                var previewBottomY = LayoutTimbreBlocks(
                     pageBlockList,
                     textStartY,
                     contentLeftX,
@@ -877,45 +970,14 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
                     metaLineH,
                     draw: false);
 
-                var sectionBottomY = Math.Min(drawQrOnThisPage ? qrBoxY : textBottomY, textBottomY) - 8f;
-                var sectionHeight = _cursorY - sectionBottomY;
-
-                _page.FillRectangle(Margin, _cursorY - sectionHeight, PageWidth - (Margin * 2), sectionHeight, PdfColor.White);
-                _page.StrokeRectangle(Margin, _cursorY - sectionHeight, PageWidth - (Margin * 2), sectionHeight, new PdfColor(218, 213, 204), 0.8f);
-
-                if (drawQrOnThisPage && qr is not null)
+                if (previewBottomY < ContentBottom)
                 {
-                    _page.FillRectangle(qrBoxX, qrBoxY, qrBoxSize, qrBoxSize, PdfColor.White);
-                    _page.StrokeRectangle(qrBoxX, qrBoxY, qrBoxSize, qrBoxSize, new PdfColor(218, 213, 204), 0.8f);
-                    _page.DrawImage(qr, qrBoxX + 6f, qrBoxY + 6f, qrBoxSize - 12f, qrBoxSize - 12f);
-                }
-
-                LayoutTimbreBlocks(
-                    pageBlockList,
-                    textStartY,
-                    contentLeftX,
-                    qrFlowStartX,
-                    contentRightX,
-                    qrBottomY,
-                    drawQrOnThisPage,
-                    labelFontSize,
-                    sealFontSize,
-                    sealLineHeight,
-                    metaLineH,
-                    draw: true);
-
-                for (var index = 0; index < pageBlockList.Count; index++)
-                {
-                    pendingBlocks.Dequeue();
-                }
-
-                _cursorY = sectionBottomY - SectionGap;
-                if (pendingBlocks.Count > 0)
-                {
-                    StartNewPage();
-                    drawQrOnThisPage = false;
+                    pageBlockList.RemoveAt(pageBlockList.Count - 1);
+                    break;
                 }
             }
+
+            return pageBlockList;
         }
 
         private float LayoutTimbreBlocks(

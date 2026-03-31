@@ -1,4 +1,5 @@
 using System.Net.Mail;
+using System.Text.RegularExpressions;
 using Pineda.Facturacion.Application.Abstractions.Communication;
 using Pineda.Facturacion.Application.Abstractions.Documents;
 using Pineda.Facturacion.Application.Abstractions.FiscalReceivers;
@@ -300,6 +301,47 @@ public class FiscalDocumentDeliveryServicesTests
     }
 
     [Fact]
+    public async Task FiscalDocumentPdfRenderer_Keeps_Summary_And_Timbre_On_The_First_Page_When_They_Fit()
+    {
+        var renderer = new FiscalDocumentPdfRenderer(new FakeIssuerProfileRepository(), new FakeIssuerProfileLogoStorage(), new SatCatalogDescriptionProvider(new FakeFiscalReceiverSatCatalogProvider()));
+
+        var bytes = await renderer.RenderAsync(CreateFiscalDocument(), CreateFiscalStamp());
+        var pages = ExtractPageTextStreams(bytes);
+
+        Assert.Single(pages);
+        Assert.Contains("Resumen fiscal", pages[0], StringComparison.Ordinal);
+        Assert.Contains("CONSULTA SAT / QR:", pages[0], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task FiscalDocumentPdfRenderer_Moves_Summary_To_Second_Page_When_It_No_Longer_Fits_After_Concepts()
+    {
+        var renderer = new FiscalDocumentPdfRenderer(new FakeIssuerProfileRepository(), new FakeIssuerProfileLogoStorage(), new SatCatalogDescriptionProvider(new FakeFiscalReceiverSatCatalogProvider()));
+        var xml = CreateStampedXmlWithConceptCount(18, false);
+
+        var bytes = await renderer.RenderAsync(CreateFiscalDocument(), CreateFiscalStamp(xmlContent: xml));
+        var pages = ExtractPageTextStreams(bytes);
+
+        Assert.True(pages.Count >= 2);
+        Assert.DoesNotContain("Resumen fiscal", pages[0], StringComparison.Ordinal);
+        Assert.Contains("Resumen fiscal", pages[1], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task FiscalDocumentPdfRenderer_Packs_Summary_And_Timbre_Together_On_Second_Page_When_Both_Fit()
+    {
+        var renderer = new FiscalDocumentPdfRenderer(new FakeIssuerProfileRepository(), new FakeIssuerProfileLogoStorage(), new SatCatalogDescriptionProvider(new FakeFiscalReceiverSatCatalogProvider()));
+        var xml = CreateStampedXmlWithConceptCount(24, false);
+
+        var bytes = await renderer.RenderAsync(CreateFiscalDocument(), CreateFiscalStamp(xmlContent: xml));
+        var pages = ExtractPageTextStreams(bytes);
+
+        Assert.Equal(2, pages.Count);
+        Assert.Contains("Resumen fiscal", pages[1], StringComparison.Ordinal);
+        Assert.Contains("CONSULTA SAT / QR:", pages[1], StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task FiscalDocumentPdfRenderer_Can_Render_Three_Pages_For_Very_Long_Documents()
     {
         var renderer = new FiscalDocumentPdfRenderer(new FakeIssuerProfileRepository(), new FakeIssuerProfileLogoStorage(), new SatCatalogDescriptionProvider(new FakeFiscalReceiverSatCatalogProvider()));
@@ -307,11 +349,13 @@ public class FiscalDocumentDeliveryServicesTests
 
         var bytes = await renderer.RenderAsync(CreateFiscalDocument(), CreateFiscalStamp(xmlContent: xml));
         var pdfText = System.Text.Encoding.ASCII.GetString(bytes);
+        var pages = ExtractPageTextStreams(bytes);
 
         Assert.True(CountOccurrences(pdfText, "/Type /Page /Parent") >= 3);
         Assert.Contains("Producto de prueba 55", pdfText, StringComparison.Ordinal);
         Assert.Contains("SELLOSAT1234567890", pdfText, StringComparison.Ordinal);
         Assert.Contains("Total", pdfText, StringComparison.Ordinal);
+        Assert.Contains("CONSULTA SAT / QR:", pages[^1], StringComparison.Ordinal);
     }
 
     [Fact]
@@ -515,6 +559,15 @@ public class FiscalDocumentDeliveryServicesTests
         }
 
         return count;
+    }
+
+    private static IReadOnlyList<string> ExtractPageTextStreams(byte[] pdfBytes)
+    {
+        var pdfText = System.Text.Encoding.ASCII.GetString(pdfBytes);
+        return Regex.Matches(pdfText, "stream\\r?\\n(.*?)\\r?\\nendstream", RegexOptions.Singleline)
+            .Select(match => match.Groups[1].Value)
+            .Where(stream => stream.Contains("BT", StringComparison.Ordinal) || stream.Contains("Resumen fiscal", StringComparison.Ordinal))
+            .ToArray();
     }
 
     private static string CreateStampedXmlWithConceptCount(int conceptCount, bool longDescriptions)
