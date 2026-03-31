@@ -319,9 +319,19 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
         private const float PageHeight = 792f;
         private const float Margin = 10f;
         private const float SectionGap = 4f;
+        private const float FooterReserve = 30f;
 
-        private readonly PdfPageBuilder _page = new(PageWidth, PageHeight);
-        private float _cursorY = PageHeight - Margin;
+        private readonly List<PdfPageBuilder> _pages = [];
+        private PdfPageBuilder _page;
+        private PdfViewModel? _model;
+        private float _cursorY;
+
+        private FiscalPdfDocument()
+        {
+            _page = new PdfPageBuilder(PageWidth, PageHeight);
+            _pages.Add(_page);
+            _cursorY = PageHeight - Margin;
+        }
 
         public static byte[] Create(PdfViewModel model, PdfImageAsset? logo, PdfImageAsset? qr)
         {
@@ -330,6 +340,7 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
 
         private byte[] Build(PdfViewModel model, PdfImageAsset? logo, PdfImageAsset? qr)
         {
+            _model = model;
             DrawHeader(model, logo);
             DrawReceiverSection(model);
             DrawAdditionalFields(model.AdditionalFields);
@@ -337,7 +348,31 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
             DrawTotals(model);
             DrawTimbre(model, qr);
             DrawFooter(model);
-            return _page.Build();
+            return PdfPageBuilder.BuildDocument(_pages);
+        }
+
+        private float ContentBottom => Margin + FooterReserve;
+
+        private bool HasSpace(float requiredHeight) => (_cursorY - requiredHeight) >= ContentBottom;
+
+        private void EnsureSpace(float requiredHeight)
+        {
+            if (!HasSpace(requiredHeight))
+            {
+                StartNewPage();
+            }
+        }
+
+        private void StartNewPage()
+        {
+            if (_model is not null)
+            {
+                DrawFooter(_model);
+            }
+
+            _page = new PdfPageBuilder(PageWidth, PageHeight);
+            _pages.Add(_page);
+            _cursorY = PageHeight - Margin;
         }
 
         private void DrawHeader(PdfViewModel model, PdfImageAsset? logo)
@@ -519,6 +554,8 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
                 MeasureStackedFieldHeight(model.ReceiverUse, rightWidth, fieldValueFontSize, fieldLabelLineHeight, fieldValueLineHeight);
             var sectionHeight = headerHeight + topPad + receiverNameHeight + 8f + Math.Max(leftHeight, rightHeight) + bottomPad;
 
+            EnsureSpace(sectionHeight + SectionGap);
+
             _page.FillRectangle(Margin, topY - sectionHeight, sectionWidth, sectionHeight, PdfColor.White);
             _page.StrokeRectangle(Margin, topY - sectionHeight, sectionWidth, sectionHeight, new PdfColor(218, 213, 204), 0.8f);
             _page.FillRectangle(Margin, topY - headerHeight, sectionWidth, headerHeight, new PdfColor(238, 235, 228));
@@ -543,36 +580,52 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
             var tableX = Margin;
             var tableWidth = PageWidth - (Margin * 2);
             var headerHeight = 24f;
-            var rowHeights = concepts
-                .Select(row => Math.Max(30f, 16f + (WrapText(row.Description, 28).Take(3).Count() * 10f)))
+            var descriptionLinesByRow = concepts
+                .Select(row => WrapText(row.Description, 28).ToArray())
                 .ToArray();
-            var totalHeight = headerHeight + rowHeights.Sum();
-
-            _page.FillRectangle(tableX, _cursorY - totalHeight, tableWidth, totalHeight, PdfColor.White);
-            _page.StrokeRectangle(tableX, _cursorY - totalHeight, tableWidth, totalHeight, new PdfColor(218, 213, 204), 0.8f);
-            _page.FillRectangle(tableX, _cursorY - headerHeight, tableWidth, headerHeight, new PdfColor(32, 42, 56));
-
+            var rowHeights = descriptionLinesByRow
+                .Select(lines => Math.Max(30f, 16f + (Math.Max(1, lines.Length) * 10f)))
+                .ToArray();
             var columns = new[] { 62f, 52f, 38f, 46f, 46f, 144f, 38f, 54f, 52f };
             var labels = new[] { "Clave prod./serv.", "No. id", "Cant.", "Clave u.", "Unidad", "Descripcion", "Obj. imp.", "V. unitario", "Importe" };
-            var cursorX = tableX;
-            for (var index = 0; index < columns.Length; index++)
+
+            void DrawTableHeader()
             {
-                _page.DrawText(labels[index], cursorX + 4f, _cursorY - 16f, 7.5f, PdfFont.Bold, PdfColor.White);
-                cursorX += columns[index];
-                if (index < columns.Length - 1)
+                EnsureSpace(headerHeight + 30f);
+                _page.FillRectangle(tableX, _cursorY - headerHeight, tableWidth, headerHeight, new PdfColor(32, 42, 56));
+
+                var headerCursorX = tableX;
+                for (var columnIndex = 0; columnIndex < columns.Length; columnIndex++)
                 {
-                    _page.DrawLine(cursorX, _cursorY, cursorX, _cursorY - totalHeight, new PdfColor(226, 226, 226), 0.5f);
+                    _page.DrawText(labels[columnIndex], headerCursorX + 4f, _cursorY - 16f, 7.5f, PdfFont.Bold, PdfColor.White);
+                    headerCursorX += columns[columnIndex];
+                    if (columnIndex < columns.Length - 1)
+                    {
+                        _page.DrawLine(headerCursorX, _cursorY, headerCursorX, _cursorY - headerHeight, new PdfColor(226, 226, 226), 0.5f);
+                    }
                 }
+
+                _cursorY -= headerHeight;
             }
 
-            var rowTop = _cursorY - headerHeight;
+            DrawTableHeader();
+
             for (var index = 0; index < concepts.Count; index++)
             {
                 var rowHeight = rowHeights[index];
+                if (!HasSpace(rowHeight + SectionGap))
+                {
+                    StartNewPage();
+                    DrawTableHeader();
+                }
+
+                var rowTop = _cursorY;
                 if (index % 2 == 0)
                 {
                     _page.FillRectangle(tableX, rowTop - rowHeight, tableWidth, rowHeight, new PdfColor(250, 250, 248));
                 }
+
+                _page.StrokeRectangle(tableX, rowTop - rowHeight, tableWidth, rowHeight, new PdfColor(218, 213, 204), 0.4f);
 
                 var row = concepts[index];
                 var x = tableX;
@@ -587,7 +640,7 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
                 _page.DrawText(row.UnitText, x + 4f, rowTop - 16f, 7.5f, PdfFont.Regular, new PdfColor(50, 58, 70));
                 x += columns[4];
 
-                var descriptionLines = WrapText(row.Description, 28).Take(3).ToArray();
+                var descriptionLines = descriptionLinesByRow[index];
                 _page.DrawText(descriptionLines[0], x + 4f, rowTop - 14f, 7.8f, PdfFont.Regular, new PdfColor(50, 58, 70));
                 for (var lineIndex = 1; lineIndex < descriptionLines.Length; lineIndex++)
                 {
@@ -602,10 +655,10 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
                 _page.DrawText(row.Amount, x + 4f, rowTop - 16f, 7.5f, PdfFont.Bold, new PdfColor(50, 58, 70));
 
                 _page.DrawLine(tableX, rowTop - rowHeight, tableX + tableWidth, rowTop - rowHeight, new PdfColor(230, 230, 230), 0.5f);
-                rowTop -= rowHeight;
+                _cursorY -= rowHeight;
             }
 
-            _cursorY = _cursorY - totalHeight - SectionGap;
+            _cursorY -= SectionGap;
         }
 
         private void DrawAdditionalFields(IReadOnlyList<PdfAdditionalFieldRow> fields)
@@ -617,22 +670,44 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
 
             var contentWidth = PageWidth - (Margin * 2);
             var rowHeight = 18f;
-            var sectionHeight = 28f + (fields.Count * rowHeight);
+            var fieldIndex = 0;
 
-            _page.FillRectangle(Margin, _cursorY - sectionHeight, contentWidth, sectionHeight, PdfColor.White);
-            _page.StrokeRectangle(Margin, _cursorY - sectionHeight, contentWidth, sectionHeight, new PdfColor(218, 213, 204), 0.8f);
-            _page.FillRectangle(Margin, _cursorY - 20f, contentWidth, 20f, new PdfColor(238, 235, 228));
-            _page.DrawText("Datos adicionales", Margin + 10f, _cursorY - 14f, 10f, PdfFont.Bold, new PdfColor(22, 30, 42));
-
-            var y = _cursorY - 38f;
-            foreach (var field in fields)
+            while (fieldIndex < fields.Count)
             {
-                _page.DrawText($"{field.Label}:", Margin + 10f, y, 9f, PdfFont.Bold, new PdfColor(76, 84, 96));
-                _page.DrawText(field.Value, Margin + 160f, y, 9f, PdfFont.Regular, new PdfColor(76, 84, 96));
-                y -= rowHeight;
-            }
+                EnsureSpace(48f);
 
-            _cursorY -= sectionHeight + SectionGap;
+                var sectionTop = _cursorY;
+                var bodyStartY = sectionTop - 38f;
+                var usedRows = 0;
+
+                while (fieldIndex + usedRows < fields.Count && (bodyStartY - (usedRows + 1) * rowHeight) >= ContentBottom)
+                {
+                    usedRows++;
+                }
+
+                var sectionHeight = 28f + (usedRows * rowHeight);
+                _page.FillRectangle(Margin, sectionTop - sectionHeight, contentWidth, sectionHeight, PdfColor.White);
+                _page.StrokeRectangle(Margin, sectionTop - sectionHeight, contentWidth, sectionHeight, new PdfColor(218, 213, 204), 0.8f);
+                _page.FillRectangle(Margin, sectionTop - 20f, contentWidth, 20f, new PdfColor(238, 235, 228));
+                _page.DrawText("Datos adicionales", Margin + 10f, sectionTop - 14f, 10f, PdfFont.Bold, new PdfColor(22, 30, 42));
+
+                var y = bodyStartY;
+                for (var row = 0; row < usedRows; row++)
+                {
+                    var field = fields[fieldIndex + row];
+                    _page.DrawText($"{field.Label}:", Margin + 10f, y, 9f, PdfFont.Bold, new PdfColor(76, 84, 96));
+                    _page.DrawText(field.Value, Margin + 160f, y, 9f, PdfFont.Regular, new PdfColor(76, 84, 96));
+                    y -= rowHeight;
+                }
+
+                fieldIndex += usedRows;
+                _cursorY -= sectionHeight + SectionGap;
+
+                if (fieldIndex < fields.Count)
+                {
+                    StartNewPage();
+                }
+            }
         }
 
         private void DrawTotals(PdfViewModel model)
@@ -666,6 +741,8 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
 
             var totalsHeight = 92f;
             var sectionHeight = Math.Max(leftHeight, totalsHeight + 12f);
+
+            EnsureSpace(sectionHeight + SectionGap);
 
             _page.FillRectangle(Margin, summaryY - leftHeight, leftWidth, leftHeight, PdfColor.White);
             _page.StrokeRectangle(Margin, summaryY - leftHeight, leftWidth, leftHeight, new PdfColor(218, 213, 204), 0.8f);
@@ -740,56 +817,105 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
             if (!string.IsNullOrWhiteSpace(model.OriginalString))
                 allBlocks.Add(("CADENA ORIGINAL DEL COMPLEMENTO DE CERTIFICACION DIGITAL DEL SAT", model.OriginalString!));
 
-            var qrBoxX = contentLeftX;
-            var qrBoxY = _cursorY - 8f - qrBoxSize;
-            var qrFlowStartX = qrBoxX + qrBoxSize + qrGap;
-            var qrBottomY = qrBoxY;
-            var textStartY = _cursorY - 16f;
+            var pendingBlocks = new Queue<(string Label, string Value)>(allBlocks);
+            var drawQrOnThisPage = qr is not null;
 
-            var textBottomY = LayoutTimbreBlocks(
-                allBlocks,
-                textStartY,
-                contentLeftX,
-                qrFlowStartX,
-                contentRightX,
-                qrBottomY,
-                qr is not null,
-                labelFontSize,
-                sealFontSize,
-                sealLineHeight,
-                metaLineH,
-                draw: false);
-
-            var sectionBottomY = Math.Min(qr is not null ? qrBoxY : textBottomY, textBottomY) - 8f;
-            var sectionHeight = _cursorY - sectionBottomY;
-
-            // --- Dibujar caja ---
-            _page.FillRectangle(Margin, _cursorY - sectionHeight, PageWidth - (Margin * 2), sectionHeight, PdfColor.White);
-            _page.StrokeRectangle(Margin, _cursorY - sectionHeight, PageWidth - (Margin * 2), sectionHeight, new PdfColor(218, 213, 204), 0.8f);
-
-            // --- Dibujar QR ---
-            if (qr is not null)
+            while (pendingBlocks.Count > 0)
             {
-                _page.FillRectangle(qrBoxX, qrBoxY, qrBoxSize, qrBoxSize, PdfColor.White);
-                _page.StrokeRectangle(qrBoxX, qrBoxY, qrBoxSize, qrBoxSize, new PdfColor(218, 213, 204), 0.8f);
-                _page.DrawImage(qr, qrBoxX + 6f, qrBoxY + 6f, qrBoxSize - 12f, qrBoxSize - 12f);
+                EnsureSpace(drawQrOnThisPage ? (qrBoxSize + 24f) : 60f);
+
+                var pageBlockList = new List<(string Label, string Value)>();
+                var previewQueue = new Queue<(string Label, string Value)>(pendingBlocks);
+                var qrBoxX = contentLeftX;
+                var qrBoxY = _cursorY - 8f - qrBoxSize;
+                var qrFlowStartX = qrBoxX + qrBoxSize + qrGap;
+                var qrBottomY = qrBoxY;
+                var textStartY = _cursorY - 16f;
+
+                while (previewQueue.Count > 0)
+                {
+                    pageBlockList.Add(previewQueue.Dequeue());
+                    var previewBottomY = LayoutTimbreBlocks(
+                        pageBlockList,
+                        textStartY,
+                        contentLeftX,
+                        qrFlowStartX,
+                        contentRightX,
+                        qrBottomY,
+                        drawQrOnThisPage,
+                        labelFontSize,
+                        sealFontSize,
+                        sealLineHeight,
+                        metaLineH,
+                        draw: false);
+
+                    if (previewBottomY < ContentBottom)
+                    {
+                        pageBlockList.RemoveAt(pageBlockList.Count - 1);
+                        break;
+                    }
+                }
+
+                if (pageBlockList.Count == 0)
+                {
+                    StartNewPage();
+                    drawQrOnThisPage = false;
+                    continue;
+                }
+
+                var textBottomY = LayoutTimbreBlocks(
+                    pageBlockList,
+                    textStartY,
+                    contentLeftX,
+                    qrFlowStartX,
+                    contentRightX,
+                    qrBottomY,
+                    drawQrOnThisPage,
+                    labelFontSize,
+                    sealFontSize,
+                    sealLineHeight,
+                    metaLineH,
+                    draw: false);
+
+                var sectionBottomY = Math.Min(drawQrOnThisPage ? qrBoxY : textBottomY, textBottomY) - 8f;
+                var sectionHeight = _cursorY - sectionBottomY;
+
+                _page.FillRectangle(Margin, _cursorY - sectionHeight, PageWidth - (Margin * 2), sectionHeight, PdfColor.White);
+                _page.StrokeRectangle(Margin, _cursorY - sectionHeight, PageWidth - (Margin * 2), sectionHeight, new PdfColor(218, 213, 204), 0.8f);
+
+                if (drawQrOnThisPage && qr is not null)
+                {
+                    _page.FillRectangle(qrBoxX, qrBoxY, qrBoxSize, qrBoxSize, PdfColor.White);
+                    _page.StrokeRectangle(qrBoxX, qrBoxY, qrBoxSize, qrBoxSize, new PdfColor(218, 213, 204), 0.8f);
+                    _page.DrawImage(qr, qrBoxX + 6f, qrBoxY + 6f, qrBoxSize - 12f, qrBoxSize - 12f);
+                }
+
+                LayoutTimbreBlocks(
+                    pageBlockList,
+                    textStartY,
+                    contentLeftX,
+                    qrFlowStartX,
+                    contentRightX,
+                    qrBottomY,
+                    drawQrOnThisPage,
+                    labelFontSize,
+                    sealFontSize,
+                    sealLineHeight,
+                    metaLineH,
+                    draw: true);
+
+                for (var index = 0; index < pageBlockList.Count; index++)
+                {
+                    pendingBlocks.Dequeue();
+                }
+
+                _cursorY = sectionBottomY - SectionGap;
+                if (pendingBlocks.Count > 0)
+                {
+                    StartNewPage();
+                    drawQrOnThisPage = false;
+                }
             }
-
-            LayoutTimbreBlocks(
-                allBlocks,
-                textStartY,
-                contentLeftX,
-                qrFlowStartX,
-                contentRightX,
-                qrBottomY,
-                qr is not null,
-                labelFontSize,
-                sealFontSize,
-                sealLineHeight,
-                metaLineH,
-                draw: true);
-
-            _cursorY = sectionBottomY - SectionGap;
         }
 
         private float LayoutTimbreBlocks(
@@ -958,7 +1084,7 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
 
         private void DrawFooter(PdfViewModel model)
         {
-            var footerY = Math.Max(_cursorY, 34f);
+            var footerY = 28f;
             _page.DrawLine(Margin, footerY, PageWidth - Margin, footerY, new PdfColor(210, 204, 193), 0.7f);
             _page.DrawText("Este documento es una representacion impresa de un CFDI 4.0", Margin, footerY - 12f, 8f, PdfFont.Regular, new PdfColor(92, 98, 110));
             _page.DrawText("PAC / Proveedor: FacturaloPlus", PageWidth - Margin - 180f, footerY - 12f, 8f, PdfFont.Regular, new PdfColor(92, 98, 110));
@@ -1059,7 +1185,7 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
             _content.AppendLine("Q");
         }
 
-        public byte[] Build()
+        public static byte[] BuildDocument(IReadOnlyList<PdfPageBuilder> pages)
         {
             var objects = new List<PdfObject>();
             var nextId = 1;
@@ -1072,28 +1198,33 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
             objects.Add(PdfObject.FromText(regularFontId, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"));
             objects.Add(PdfObject.FromText(boldFontId, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>"));
 
-            var imageIds = new List<int>();
-            foreach (var image in _images)
+            var pageIds = new List<int>();
+            foreach (var page in pages)
             {
-                var imageId = nextId++;
-                imageIds.Add(imageId);
-                objects.Add(image.BuildObject(imageId));
+                var imageIds = new List<int>();
+                foreach (var image in page._images)
+                {
+                    var imageId = nextId++;
+                    imageIds.Add(imageId);
+                    objects.Add(image.BuildObject(imageId));
+                }
+
+                var contentId = nextId++;
+                var contentText = page._content.ToString();
+                objects.Add(PdfObject.FromText(contentId, $"<< /Length {Encoding.ASCII.GetByteCount(contentText)} >>\nstream\n{contentText}\nendstream"));
+
+                var xObjectEntries = imageIds.Count == 0
+                    ? string.Empty
+                    : $"/XObject << {string.Join(' ', imageIds.Select((id, index) => $"/Im{index + 1} {id} 0 R"))} >>";
+
+                var pageId = nextId++;
+                pageIds.Add(pageId);
+                objects.Add(PdfObject.FromText(
+                    pageId,
+                    $"<< /Type /Page /Parent {pagesId} 0 R /MediaBox [0 0 {Fmt(page._pageWidth)} {Fmt(page._pageHeight)}] /Resources << /Font << /F1 {regularFontId} 0 R /F2 {boldFontId} 0 R >> {xObjectEntries} >> /Contents {contentId} 0 R >>"));
             }
 
-            var contentId = nextId++;
-            var contentText = _content.ToString();
-            objects.Add(PdfObject.FromText(contentId, $"<< /Length {Encoding.ASCII.GetByteCount(contentText)} >>\nstream\n{contentText}\nendstream"));
-
-            var xObjectEntries = imageIds.Count == 0
-                ? string.Empty
-                : $"/XObject << {string.Join(' ', imageIds.Select((id, index) => $"/Im{index + 1} {id} 0 R"))} >>";
-
-            var pageId = nextId++;
-            objects.Add(PdfObject.FromText(
-                pageId,
-                $"<< /Type /Page /Parent {pagesId} 0 R /MediaBox [0 0 {Fmt(_pageWidth)} {Fmt(_pageHeight)}] /Resources << /Font << /F1 {regularFontId} 0 R /F2 {boldFontId} 0 R >> {xObjectEntries} >> /Contents {contentId} 0 R >>"));
-
-            objects.Add(PdfObject.FromText(pagesId, $"<< /Type /Pages /Count 1 /Kids [{pageId} 0 R] >>"));
+            objects.Add(PdfObject.FromText(pagesId, $"<< /Type /Pages /Count {pageIds.Count} /Kids [{string.Join(' ', pageIds.Select(id => $"{id} 0 R"))}] >>"));
 
             objects.Sort((left, right) => left.Id.CompareTo(right.Id));
             return PdfSerializer.Serialize(objects);

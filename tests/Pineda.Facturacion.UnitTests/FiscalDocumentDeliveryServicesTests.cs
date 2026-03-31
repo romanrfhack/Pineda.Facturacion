@@ -263,6 +263,36 @@ public class FiscalDocumentDeliveryServicesTests
     }
 
     [Fact]
+    public async Task FiscalDocumentPdfRenderer_Splits_Many_Concepts_Across_Two_Or_More_Pages_And_Repeats_Table_Header()
+    {
+        var renderer = new FiscalDocumentPdfRenderer(new FakeIssuerProfileRepository(), new FakeIssuerProfileLogoStorage(), new SatCatalogDescriptionProvider(new FakeFiscalReceiverSatCatalogProvider()));
+        var xml = CreateStampedXmlWithConceptCount(24, false);
+
+        var bytes = await renderer.RenderAsync(CreateFiscalDocument(), CreateFiscalStamp(xmlContent: xml));
+        var pdfText = System.Text.Encoding.ASCII.GetString(bytes);
+
+        Assert.True(CountOccurrences(pdfText, "/Type /Page /Parent") >= 2);
+        Assert.True(CountOccurrences(pdfText, "Clave prod./serv.") >= 2);
+        Assert.Contains("Producto de prueba 24", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Este documento es una representacion impresa de un CFDI 4.0", pdfText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task FiscalDocumentPdfRenderer_Can_Render_Three_Pages_For_Very_Long_Documents()
+    {
+        var renderer = new FiscalDocumentPdfRenderer(new FakeIssuerProfileRepository(), new FakeIssuerProfileLogoStorage(), new SatCatalogDescriptionProvider(new FakeFiscalReceiverSatCatalogProvider()));
+        var xml = CreateStampedXmlWithConceptCount(55, true);
+
+        var bytes = await renderer.RenderAsync(CreateFiscalDocument(), CreateFiscalStamp(xmlContent: xml));
+        var pdfText = System.Text.Encoding.ASCII.GetString(bytes);
+
+        Assert.True(CountOccurrences(pdfText, "/Type /Page /Parent") >= 3);
+        Assert.Contains("Producto de prueba 55", pdfText, StringComparison.Ordinal);
+        Assert.Contains("SELLOSAT1234567890", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Total", pdfText, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task FiscalDocumentPdfRenderer_Wraps_Long_Fiscal_And_Timbre_Text_Without_Losing_Content()
     {
         var renderer = new FiscalDocumentPdfRenderer(new FakeIssuerProfileRepository(), new FakeIssuerProfileLogoStorage(), new SatCatalogDescriptionProvider(new FakeFiscalReceiverSatCatalogProvider()));
@@ -463,6 +493,47 @@ public class FiscalDocumentDeliveryServicesTests
         }
 
         return count;
+    }
+
+    private static string CreateStampedXmlWithConceptCount(int conceptCount, bool longDescriptions)
+    {
+        var conceptBuilder = new System.Text.StringBuilder();
+        decimal subtotal = 0m;
+
+        for (var index = 1; index <= conceptCount; index++)
+        {
+            var amount = 10m + index;
+            subtotal += amount;
+            var description = longDescriptions
+                ? $"Producto de prueba {index} con descripcion extremadamente larga para validar el crecimiento vertical del concepto y el salto de pagina controlado sin encimar bloques fiscales finales ni cortar informacion relevante."
+                : $"Producto de prueba {index}";
+
+            conceptBuilder.Append($"""
+                <cfdi:Concepto ClaveProdServ="010101{index % 10}" NoIdentificacion="SKU-{index}" Cantidad="1" ClaveUnidad="H87" Unidad="PIEZA" Descripcion="{description}" ValorUnitario="{amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)}" Importe="{amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)}" ObjetoImp="02" />
+                """);
+        }
+
+        var taxes = Math.Round(subtotal * 0.16m, 2, MidpointRounding.AwayFromZero);
+        var total = subtotal + taxes;
+
+        return $"""
+            <?xml version="1.0" encoding="utf-8"?>
+            <cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" Version="4.0" Serie="A" Folio="8" Fecha="2026-03-24T06:00:00" SubTotal="{subtotal.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)}" Total="{total.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)}" Moneda="MXN" MetodoPago="PUE" FormaPago="03" LugarExpedicion="01000" Sello="SE1234567890ABCDEF1234567890ABCDEFSE1234567890ABCDEF1234567890ABCDEFSE1234567890ABCDEF1234567890ABCDEF" NoCertificado="30001000000500003416">
+              <cfdi:Emisor Rfc="AAA010101AAA" Nombre="Emisor SA" RegimenFiscal="601" />
+              <cfdi:Receptor Rfc="BBB010101BBB" Nombre="Cliente SA" UsoCFDI="G03" RegimenFiscalReceptor="601" DomicilioFiscalReceptor="02000" />
+              <cfdi:Conceptos>
+                {conceptBuilder}
+              </cfdi:Conceptos>
+              <cfdi:Impuestos TotalImpuestosTrasladados="{taxes.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)}">
+                <cfdi:Traslados>
+                  <cfdi:Traslado Base="{subtotal.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)}" Impuesto="002" TipoFactor="Tasa" TasaOCuota="0.160000" Importe="{taxes.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)}" />
+                </cfdi:Traslados>
+              </cfdi:Impuestos>
+              <cfdi:Complemento>
+                <tfd:TimbreFiscalDigital UUID="4cb4eed3-3d93-4938-8872-028106881e4c" FechaTimbrado="2026-03-24T06:05:59" NoCertificadoSAT="00001000000500001234" SelloSAT="SELLOSAT1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890" Version="1.1" />
+              </cfdi:Complemento>
+            </cfdi:Comprobante>
+            """;
     }
 
     private sealed class FakeFiscalDocumentRepository : IFiscalDocumentRepository
