@@ -18,8 +18,15 @@ import { PaymentComplementStampResponse } from '../models/payment-complements.mo
         <div><dt>Id de timbre</dt><dd>{{ stamp().id }}</dd></div>
         <div><dt>Operación del proveedor</dt><dd>{{ stamp().providerOperation || 'N/D' }}</dd></div>
         <div><dt>Id de tracking</dt><dd>{{ stamp().providerTrackingId || 'N/D' }}</dd></div>
+        <div><dt>Código proveedor</dt><dd>{{ stamp().providerCode || 'N/D' }}</dd></div>
+        <div><dt>Mensaje proveedor</dt><dd>{{ stamp().providerMessage || 'N/D' }}</dd></div>
+        <div><dt>Soporte</dt><dd>{{ stamp().supportMessage || 'N/D' }}</dd></div>
+        <div><dt>Estado SAT/PAC</dt><dd>{{ stamp().lastKnownExternalStatus || 'N/D' }}</dd></div>
+        <div><dt>Última consulta</dt><dd>{{ stamp().lastStatusCheckAtUtc ? (stamp().lastStatusCheckAtUtc | date: 'medium') : 'N/D' }}</dd></div>
         <div><dt>Texto / URL QR</dt><dd>{{ stamp().qrCodeTextOrUrl || 'N/D' }}</dd></div>
         <div><dt>Cadena original</dt><dd class="mono">{{ stamp().originalString || 'N/D' }}</dd></div>
+        <div><dt>Resumen raw timbrado</dt><dd class="mono">{{ stamp().rawResponseSummaryJson || 'N/D' }}</dd></div>
+        <div><dt>Resumen raw estatus</dt><dd class="mono">{{ stamp().lastStatusRawResponseSummaryJson || 'N/D' }}</dd></div>
         <div><dt>Creado</dt><dd>{{ stamp().createdAtUtc | date: 'medium' }}</dd></div>
         <div><dt>Actualizado</dt><dd>{{ stamp().updatedAtUtc | date: 'medium' }}</dd></div>
       </dl>

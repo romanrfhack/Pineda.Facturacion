@@ -80,7 +80,12 @@ public class RefreshPaymentComplementStatusService
 
         if (gatewayResult.Outcome == PaymentComplementStatusQueryGatewayOutcome.ValidationFailed)
         {
-            return ValidationFailure(command.PaymentComplementId, gatewayResult.ErrorMessage ?? "Status refresh request validation failed.");
+            return ValidationFailure(
+                command.PaymentComplementId,
+                gatewayResult.ErrorMessage ?? "Status refresh request validation failed.",
+                gatewayResult.ProviderCode,
+                gatewayResult.ProviderMessage,
+                gatewayResult.RawResponseSummaryJson);
         }
 
         if (gatewayResult.Outcome == PaymentComplementStatusQueryGatewayOutcome.Unavailable)
@@ -96,6 +101,8 @@ public class RefreshPaymentComplementStatusService
                 ProviderCode = stamp.LastStatusProviderCode,
                 ProviderMessage = stamp.LastStatusProviderMessage,
                 CheckedAtUtc = stamp.LastStatusCheckAtUtc,
+                RawResponseSummaryJson = stamp.LastStatusRawResponseSummaryJson,
+                SupportMessage = BuildStatusSupportMessage(stamp.LastStatusProviderCode, stamp.LastStatusProviderMessage, stamp.LastKnownExternalStatus),
                 ErrorMessage = gatewayResult.ErrorMessage ?? "Provider unavailable."
             };
         }
@@ -122,7 +129,9 @@ public class RefreshPaymentComplementStatusService
             LastKnownExternalStatus = stamp.LastKnownExternalStatus,
             ProviderCode = stamp.LastStatusProviderCode,
             ProviderMessage = stamp.LastStatusProviderMessage,
-            CheckedAtUtc = stamp.LastStatusCheckAtUtc
+            CheckedAtUtc = stamp.LastStatusCheckAtUtc,
+            RawResponseSummaryJson = stamp.LastStatusRawResponseSummaryJson,
+            SupportMessage = BuildStatusSupportMessage(stamp.LastStatusProviderCode, stamp.LastStatusProviderMessage, stamp.LastKnownExternalStatus)
         };
     }
 
@@ -146,14 +155,47 @@ public class RefreshPaymentComplementStatusService
         }
     }
 
-    private static RefreshPaymentComplementStatusResult ValidationFailure(long paymentComplementId, string errorMessage)
+    private static RefreshPaymentComplementStatusResult ValidationFailure(
+        long paymentComplementId,
+        string errorMessage,
+        string? providerCode = null,
+        string? providerMessage = null,
+        string? rawResponseSummaryJson = null)
     {
         return new RefreshPaymentComplementStatusResult
         {
             Outcome = RefreshPaymentComplementStatusOutcome.ValidationFailed,
             IsSuccess = false,
             PaymentComplementId = paymentComplementId,
+            ProviderCode = providerCode,
+            ProviderMessage = providerMessage,
+            RawResponseSummaryJson = rawResponseSummaryJson,
+            SupportMessage = BuildStatusSupportMessage(providerCode, providerMessage, null),
             ErrorMessage = errorMessage
         };
+    }
+
+    private static string BuildStatusSupportMessage(string? providerCode, string? providerMessage, string? externalStatus)
+    {
+        var parts = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(providerCode))
+        {
+            parts.Add($"Código proveedor: {providerCode}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(providerMessage))
+        {
+            parts.Add($"Mensaje proveedor: {providerMessage}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(externalStatus))
+        {
+            parts.Add($"Estado externo: {externalStatus}");
+        }
+
+        return parts.Count == 0
+            ? "No hay datos remotos suficientes para conciliar el estatus del complemento."
+            : string.Join(" | ", parts);
     }
 }

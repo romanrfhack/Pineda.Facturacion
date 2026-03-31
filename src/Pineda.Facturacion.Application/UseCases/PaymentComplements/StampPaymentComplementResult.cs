@@ -23,4 +23,14 @@ public class StampPaymentComplementResult
     public string? ProviderName { get; set; }
 
     public string? ProviderTrackingId { get; set; }
+
+    public string? ProviderCode { get; set; }
+
+    public string? ProviderMessage { get; set; }
+
+    public string? ErrorCode { get; set; }
+
+    public string? SupportMessage { get; set; }
+
+    public string? RawResponseSummaryJson { get; set; }
 }

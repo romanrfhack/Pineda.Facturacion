@@ -152,6 +152,11 @@ public class StampPaymentComplementService
         result.StampedAtUtc = stamp.StampedAtUtc;
         result.ProviderName = stamp.ProviderName;
         result.ProviderTrackingId = stamp.ProviderTrackingId;
+        result.ProviderCode = stamp.ProviderCode;
+        result.ProviderMessage = stamp.ProviderMessage;
+        result.ErrorCode = stamp.ErrorCode;
+        result.RawResponseSummaryJson = stamp.RawResponseSummaryJson;
+        result.SupportMessage = BuildStampSupportMessage(stamp);
         return result;
     }
 
@@ -283,7 +288,12 @@ public class StampPaymentComplementService
             Uuid = stamp.Uuid,
             StampedAtUtc = stamp.StampedAtUtc,
             ProviderName = stamp.ProviderName,
-            ProviderTrackingId = stamp.ProviderTrackingId
+            ProviderTrackingId = stamp.ProviderTrackingId,
+            ProviderCode = stamp.ProviderCode,
+            ProviderMessage = stamp.ProviderMessage,
+            ErrorCode = stamp.ErrorCode,
+            RawResponseSummaryJson = stamp.RawResponseSummaryJson,
+            SupportMessage = BuildStampSupportMessage(stamp)
         };
     }
 
@@ -300,6 +310,11 @@ public class StampPaymentComplementService
             StampedAtUtc = stamp.StampedAtUtc,
             ProviderName = stamp.ProviderName,
             ProviderTrackingId = stamp.ProviderTrackingId,
+            ProviderCode = stamp.ProviderCode,
+            ProviderMessage = stamp.ProviderMessage,
+            ErrorCode = stamp.ErrorCode,
+            RawResponseSummaryJson = stamp.RawResponseSummaryJson,
+            SupportMessage = BuildStampSupportMessage(stamp),
             ErrorMessage = errorMessage
         };
     }
@@ -312,6 +327,7 @@ public class StampPaymentComplementService
             IsSuccess = false,
             PaymentComplementId = document.Id,
             Status = document.Status,
+            SupportMessage = "El complemento de pago ya no está en un estado elegible para timbrado manual.",
             ErrorMessage = errorMessage
         };
     }
@@ -323,7 +339,42 @@ public class StampPaymentComplementService
             Outcome = StampPaymentComplementOutcome.ValidationFailed,
             IsSuccess = false,
             PaymentComplementId = paymentComplementId,
+            SupportMessage = "La preparación del complemento no es elegible todavía. Revisa que el pago esté aplicado contra CFDI de ingreso PPD/99 ya timbrados.",
             ErrorMessage = errorMessage
         };
+    }
+
+    private static string BuildStampSupportMessage(PaymentComplementStamp stamp)
+    {
+        var parts = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(stamp.ProviderCode))
+        {
+            parts.Add($"Código proveedor: {stamp.ProviderCode}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(stamp.ProviderMessage))
+        {
+            parts.Add($"Mensaje proveedor: {stamp.ProviderMessage}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(stamp.ErrorCode))
+        {
+            parts.Add($"Error: {stamp.ErrorCode}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(stamp.ProviderTrackingId))
+        {
+            parts.Add($"Tracking: {stamp.ProviderTrackingId}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(stamp.Uuid))
+        {
+            parts.Add($"UUID: {stamp.Uuid}");
+        }
+
+        return parts.Count == 0
+            ? "No hay metadatos adicionales de timbrado del complemento."
+            : string.Join(" | ", parts);
     }
 }

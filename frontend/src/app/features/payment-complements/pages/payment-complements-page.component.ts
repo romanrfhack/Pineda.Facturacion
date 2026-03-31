@@ -31,6 +31,7 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
       @if (paymentId()) {
         <section class="card">
           <h3>Evento de pago #{{ paymentId() }}</h3>
+          <p class="helper">Este flujo formaliza complementos de pago para CFDI de ingreso emitidos con MetodoPago PPD y FormaPago 99.</p>
           @if (permissionService.canManagePayments()) {
             <button type="button" (click)="prepare()" [disabled]="loading()">Preparar complemento de pago</button>
           }
@@ -43,11 +44,12 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
         <section class="card actions">
           <div class="button-row">
             @if (permissionService.canStampFiscal()) {
-              <button type="button" (click)="stamp()" [disabled]="loading() || currentComplement.status === 'Stamped'">Timbrar</button>
-              <button type="button" class="danger" (click)="cancel()" [disabled]="loading() || currentComplement.status !== 'Stamped'">Cancelar</button>
-              <button type="button" class="secondary" (click)="refreshStatus()" [disabled]="loading()">Actualizar estatus</button>
+              <button type="button" (click)="stamp()" [disabled]="loading() || !canStamp(currentComplement)">Timbrar</button>
+              <button type="button" class="danger" (click)="cancel()" [disabled]="loading() || !canCancel(currentComplement)">Cancelar</button>
+              <button type="button" class="secondary" (click)="refreshStatus()" [disabled]="loading() || !canRefreshStatus(currentComplement)">Actualizar estatus</button>
             }
           </div>
+          <p class="helper">El complemento queda ligado a los CFDI base relacionados y reutiliza el mismo criterio de soporte fiscal: código, mensaje, tracking y resumen técnico del proveedor.</p>
         </section>
       }
 
@@ -145,7 +147,7 @@ export class PaymentComplementsPageComponent {
 
     await this.run(async () => {
       const response = await firstValueFrom(this.paymentComplementsApi.stamp(complement.id));
-      this.feedbackService.show(response.isSuccess ? 'success' : 'warning', response.errorMessage || getDisplayLabel(response.outcome));
+      this.feedbackService.show(response.isSuccess ? 'success' : 'warning', response.providerMessage || response.supportMessage || response.errorMessage || getDisplayLabel(response.outcome));
       await this.loadComplementByPayment(complement.accountsReceivablePaymentId);
       await this.loadStamp(complement.id);
     });
@@ -159,7 +161,7 @@ export class PaymentComplementsPageComponent {
 
     await this.run(async () => {
       const response = await firstValueFrom(this.paymentComplementsApi.cancel(complement.id));
-      this.feedbackService.show(response.isSuccess ? 'success' : 'warning', response.errorMessage || getDisplayLabel(response.outcome));
+      this.feedbackService.show(response.isSuccess ? 'success' : 'warning', response.providerMessage || response.supportMessage || response.errorMessage || getDisplayLabel(response.outcome));
       await this.loadComplementByPayment(complement.accountsReceivablePaymentId);
       await this.loadCancellation(complement.id);
     });
@@ -175,12 +177,24 @@ export class PaymentComplementsPageComponent {
       const response = await firstValueFrom(this.paymentComplementsApi.refreshStatus(complement.id));
       this.feedbackService.show(
         response.isSuccess ? 'success' : 'warning',
-        response.providerMessage || response.errorMessage || getDisplayLabel(response.outcome)
+        response.providerMessage || response.supportMessage || response.errorMessage || getDisplayLabel(response.outcome)
       );
       await this.loadComplementByPayment(complement.accountsReceivablePaymentId);
       await this.loadStamp(complement.id);
       await this.loadCancellation(complement.id);
     });
+  }
+
+  protected canStamp(complement: PaymentComplementDocumentResponse): boolean {
+    return complement.status === 'ReadyForStamping' || complement.status === 'StampingRejected';
+  }
+
+  protected canCancel(complement: PaymentComplementDocumentResponse): boolean {
+    return complement.status === 'Stamped' || complement.status === 'CancellationRejected';
+  }
+
+  protected canRefreshStatus(complement: PaymentComplementDocumentResponse): boolean {
+    return complement.status === 'Stamped' || complement.status === 'CancellationRequested' || complement.status === 'CancellationRejected' || complement.status === 'Cancelled';
   }
 
   protected toggleStampDetail(): void {

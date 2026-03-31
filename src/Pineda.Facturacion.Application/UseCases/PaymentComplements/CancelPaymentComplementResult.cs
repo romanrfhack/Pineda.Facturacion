@@ -23,4 +23,14 @@ public class CancelPaymentComplementResult
     public string? ProviderTrackingId { get; set; }
 
     public DateTime? CancelledAtUtc { get; set; }
+
+    public string? ProviderCode { get; set; }
+
+    public string? ProviderMessage { get; set; }
+
+    public string? ErrorCode { get; set; }
+
+    public string? SupportMessage { get; set; }
+
+    public string? RawResponseSummaryJson { get; set; }
 }

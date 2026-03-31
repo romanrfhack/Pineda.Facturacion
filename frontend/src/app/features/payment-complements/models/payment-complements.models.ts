@@ -19,6 +19,8 @@ export interface PaymentComplementDocumentResponse {
   providerName?: string | null;
   cfdiVersion: string;
   documentType: string;
+  appliesToIncomePpdInvoices: boolean;
+  eligibilitySummary: string;
   issuedAtUtc: string;
   paymentDateUtc: string;
   currencyCode: string;
@@ -53,6 +55,11 @@ export interface StampPaymentComplementResponse {
   stampedAtUtc?: string | null;
   providerName?: string | null;
   providerTrackingId?: string | null;
+  providerCode?: string | null;
+  providerMessage?: string | null;
+  errorCode?: string | null;
+  supportMessage?: string | null;
+  rawResponseSummaryJson?: string | null;
 }
 
 export interface PaymentComplementStampResponse {
@@ -68,9 +75,17 @@ export interface PaymentComplementStampResponse {
   providerMessage?: string | null;
   errorCode?: string | null;
   errorMessage?: string | null;
+  supportMessage?: string | null;
+  rawResponseSummaryJson?: string | null;
   xmlHash?: string | null;
   qrCodeTextOrUrl?: string | null;
   originalString?: string | null;
+  lastKnownExternalStatus?: string | null;
+  lastStatusProviderCode?: string | null;
+  lastStatusProviderMessage?: string | null;
+  lastStatusSupportMessage?: string | null;
+  lastStatusRawResponseSummaryJson?: string | null;
+  lastStatusCheckAtUtc?: string | null;
   createdAtUtc: string;
   updatedAtUtc: string;
 }
@@ -85,6 +100,11 @@ export interface CancelPaymentComplementResponse {
   cancellationStatus?: string | null;
   providerName?: string | null;
   providerTrackingId?: string | null;
+  providerCode?: string | null;
+  providerMessage?: string | null;
+  errorCode?: string | null;
+  supportMessage?: string | null;
+  rawResponseSummaryJson?: string | null;
   cancelledAtUtc?: string | null;
 }
 
@@ -94,10 +114,13 @@ export interface PaymentComplementCancellationResponse {
   cancellationReasonCode: string;
   replacementUuid?: string | null;
   providerName: string;
+  providerTrackingId?: string | null;
   providerCode?: string | null;
   providerMessage?: string | null;
   errorCode?: string | null;
   errorMessage?: string | null;
+  supportMessage?: string | null;
+  rawResponseSummaryJson?: string | null;
   requestedAtUtc: string;
   cancelledAtUtc?: string | null;
 }
@@ -113,4 +136,6 @@ export interface RefreshPaymentComplementStatusResponse {
   providerCode?: string | null;
   providerMessage?: string | null;
   checkedAtUtc?: string | null;
+  supportMessage?: string | null;
+  rawResponseSummaryJson?: string | null;
 }

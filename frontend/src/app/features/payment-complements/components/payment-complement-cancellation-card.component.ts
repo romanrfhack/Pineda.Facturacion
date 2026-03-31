@@ -18,9 +18,15 @@ import { StatusBadgeComponent } from '../../../shared/components/status-badge.co
         <div><dt>Cancelado</dt><dd>{{ cancellation().cancelledAtUtc ? (cancellation().cancelledAtUtc | date: 'medium') : 'Pendiente' }}</dd></div>
         <div><dt>Proveedor</dt><dd>{{ cancellation().providerName }}</dd></div>
       </dl>
+      @if (cancellation().providerMessage || cancellation().errorMessage) {
+        <p class="message">{{ cancellation().providerMessage || cancellation().errorMessage }}</p>
+      }
+      @if (cancellation().supportMessage) {
+        <p class="helper">{{ cancellation().supportMessage }}</p>
+      }
     </section>
   `,
-  styles: [`.panel { border:1px solid #d8d1c2; border-radius:1rem; padding:1rem; background:#fff; } .header { display:flex; justify-content:space-between; gap:1rem; } .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:0.75rem; margin-top:0.75rem; } dt { font-size:0.82rem; color:#666; } dd { margin:0.2rem 0 0; font-weight:600; }`],
+  styles: [`.panel { border:1px solid #d8d1c2; border-radius:1rem; padding:1rem; background:#fff; } .header { display:flex; justify-content:space-between; gap:1rem; } .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:0.75rem; margin-top:0.75rem; } dt { font-size:0.82rem; color:#666; } dd { margin:0.2rem 0 0; font-weight:600; } .message { margin-top:0.75rem; color:#5c4a1f; } .helper { margin-top:0.5rem; color:#5f6b76; }`],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class PaymentComplementCancellationCardComponent {

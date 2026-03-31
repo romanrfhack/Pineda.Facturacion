@@ -253,6 +253,8 @@ public class PaymentComplementServicesTests
                 ProviderName = "FacturaloPlus",
                 ProviderOperation = "payment-complement-stamp",
                 ProviderTrackingId = "TRACK-PC-1",
+                ProviderCode = "200",
+                ProviderMessage = "Complemento timbrado",
                 Uuid = "UUID-PC-1",
                 StampedAtUtc = DateTime.UtcNow,
                 XmlContent = "<xml/>",
@@ -274,6 +276,8 @@ public class PaymentComplementServicesTests
         Assert.Equal(StampPaymentComplementOutcome.Stamped, result.Outcome);
         Assert.Equal(PaymentComplementDocumentStatus.Stamped, document.Status);
         Assert.Equal(FiscalStampStatus.Succeeded, stampRepository.Added!.Status);
+        Assert.Equal("200", result.ProviderCode);
+        Assert.Contains("UUID", result.SupportMessage, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -308,8 +312,11 @@ public class PaymentComplementServicesTests
                 Outcome = PaymentComplementStampingGatewayOutcome.Rejected,
                 ProviderName = "FacturaloPlus",
                 ProviderOperation = "payment-complement-stamp",
+                ProviderCode = "CFDI_400",
+                ProviderMessage = "Complemento inválido",
                 ErrorCode = "CFDI_400",
-                ErrorMessage = "Rejected"
+                ErrorMessage = "Rejected",
+                RawResponseSummaryJson = "{\"error\":\"Complemento inválido\"}"
             }
         };
 
@@ -327,6 +334,9 @@ public class PaymentComplementServicesTests
         Assert.Equal(StampPaymentComplementOutcome.ProviderRejected, result.Outcome);
         Assert.Equal(PaymentComplementDocumentStatus.StampingRejected, document.Status);
         Assert.Equal(FiscalStampStatus.Rejected, stampRepository.Added!.Status);
+        Assert.Equal("CFDI_400", result.ProviderCode);
+        Assert.NotNull(result.RawResponseSummaryJson);
+        Assert.Contains("Complemento inválido", result.SupportMessage, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

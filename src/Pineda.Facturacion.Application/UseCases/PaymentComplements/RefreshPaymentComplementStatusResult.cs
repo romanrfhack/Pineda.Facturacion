@@ -23,4 +23,8 @@ public class RefreshPaymentComplementStatusResult
     public string? ProviderMessage { get; set; }
 
     public DateTime? CheckedAtUtc { get; set; }
+
+    public string? SupportMessage { get; set; }
+
+    public string? RawResponseSummaryJson { get; set; }
 }

@@ -21,7 +21,11 @@ import { StatusBadgeComponent } from '../../../shared/components/status-badge.co
         <div><dt>Total de pagos</dt><dd>{{ complement().totalPaymentsAmount | number: '1.2-2' }} {{ complement().currencyCode }}</dd></div>
         <div><dt>Receptor</dt><dd>{{ complement().receiverLegalName }} ({{ complement().receiverRfc }})</dd></div>
         <div><dt>Emitido</dt><dd>{{ complement().issuedAtUtc | date: 'medium' }}</dd></div>
+        <div><dt>Aplica a</dt><dd>{{ complement().appliesToIncomePpdInvoices ? 'CFDI ingreso PPD / FormaPago 99' : 'N/D' }}</dd></div>
+        <div><dt>CFDI base</dt><dd>{{ complement().relatedDocuments.length }}</dd></div>
       </dl>
+
+      <p class="helper">{{ complement().eligibilitySummary }}</p>
 
       <table>
         <thead>
@@ -41,7 +45,7 @@ import { StatusBadgeComponent } from '../../../shared/components/status-badge.co
       </table>
     </section>
   `,
-  styles: [`.panel { border:1px solid #d8d1c2; border-radius:1rem; padding:1rem; background:#fff; } .header { display:flex; justify-content:space-between; gap:1rem; } .eyebrow { margin:0; text-transform:uppercase; letter-spacing:0.12em; font-size:0.72rem; color:#8a6a32; } .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:0.75rem; margin:1rem 0; } dt { font-size:0.82rem; color:#666; } dd { margin:0.2rem 0 0; font-weight:600; } table { width:100%; border-collapse:collapse; } th, td { text-align:left; padding:0.6rem; border-top:1px solid #ece3d3; }`],
+  styles: [`.panel { border:1px solid #d8d1c2; border-radius:1rem; padding:1rem; background:#fff; } .header { display:flex; justify-content:space-between; gap:1rem; } .eyebrow { margin:0; text-transform:uppercase; letter-spacing:0.12em; font-size:0.72rem; color:#8a6a32; } .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:0.75rem; margin:1rem 0; } dt { font-size:0.82rem; color:#666; } dd { margin:0.2rem 0 0; font-weight:600; } .helper { margin:0 0 1rem; color:#5f6b76; } table { width:100%; border-collapse:collapse; } th, td { text-align:left; padding:0.6rem; border-top:1px solid #ece3d3; }`],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class PaymentComplementCardComponent {

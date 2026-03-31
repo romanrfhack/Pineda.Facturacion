@@ -93,7 +93,12 @@ public static class PaymentComplementsEndpoints
             Uuid = result.Uuid,
             StampedAtUtc = result.StampedAtUtc,
             ProviderName = result.ProviderName,
-            ProviderTrackingId = result.ProviderTrackingId
+            ProviderTrackingId = result.ProviderTrackingId,
+            ProviderCode = result.ProviderCode,
+            ProviderMessage = result.ProviderMessage,
+            ErrorCode = result.ErrorCode,
+            SupportMessage = result.SupportMessage,
+            RawResponseSummaryJson = result.RawResponseSummaryJson
         };
 
         await AuditApiHelper.RecordAsync(
@@ -175,7 +180,12 @@ public static class PaymentComplementsEndpoints
             CancellationStatus = result.CancellationStatus?.ToString(),
             ProviderName = result.ProviderName,
             ProviderTrackingId = result.ProviderTrackingId,
-            CancelledAtUtc = result.CancelledAtUtc
+            CancelledAtUtc = result.CancelledAtUtc,
+            ProviderCode = result.ProviderCode,
+            ProviderMessage = result.ProviderMessage,
+            ErrorCode = result.ErrorCode,
+            SupportMessage = result.SupportMessage,
+            RawResponseSummaryJson = result.RawResponseSummaryJson
         };
 
         await AuditApiHelper.RecordAsync(
@@ -238,7 +248,9 @@ public static class PaymentComplementsEndpoints
             LastKnownExternalStatus = result.LastKnownExternalStatus,
             ProviderCode = result.ProviderCode,
             ProviderMessage = result.ProviderMessage,
-            CheckedAtUtc = result.CheckedAtUtc
+            CheckedAtUtc = result.CheckedAtUtc,
+            SupportMessage = result.SupportMessage,
+            RawResponseSummaryJson = result.RawResponseSummaryJson
         };
 
         await AuditApiHelper.RecordAsync(
@@ -271,6 +283,8 @@ public static class PaymentComplementsEndpoints
             ProviderName = document.ProviderName,
             CfdiVersion = document.CfdiVersion,
             DocumentType = document.DocumentType,
+            AppliesToIncomePpdInvoices = true,
+            EligibilitySummary = BuildComplementEligibilitySummary(document),
             IssuedAtUtc = document.IssuedAtUtc,
             PaymentDateUtc = document.PaymentDateUtc,
             CurrencyCode = document.CurrencyCode,
@@ -330,9 +344,17 @@ public static class PaymentComplementsEndpoints
             ProviderMessage = stamp.ProviderMessage,
             ErrorCode = stamp.ErrorCode,
             ErrorMessage = stamp.ErrorMessage,
+            SupportMessage = BuildPaymentComplementStampSupportMessage(stamp),
+            RawResponseSummaryJson = stamp.RawResponseSummaryJson,
             XmlHash = stamp.XmlHash,
             OriginalString = stamp.OriginalString,
             QrCodeTextOrUrl = stamp.QrCodeTextOrUrl,
+            LastKnownExternalStatus = stamp.LastKnownExternalStatus,
+            LastStatusProviderCode = stamp.LastStatusProviderCode,
+            LastStatusProviderMessage = stamp.LastStatusProviderMessage,
+            LastStatusSupportMessage = BuildPaymentComplementStatusSupportMessage(stamp),
+            LastStatusRawResponseSummaryJson = stamp.LastStatusRawResponseSummaryJson,
+            LastStatusCheckAtUtc = stamp.LastStatusCheckAtUtc,
             CreatedAtUtc = stamp.CreatedAtUtc,
             UpdatedAtUtc = stamp.UpdatedAtUtc
         };
@@ -347,15 +369,105 @@ public static class PaymentComplementsEndpoints
             CancellationReasonCode = cancellation.CancellationReasonCode,
             ReplacementUuid = cancellation.ReplacementUuid,
             ProviderName = cancellation.ProviderName,
+            ProviderTrackingId = cancellation.ProviderTrackingId,
             ProviderCode = cancellation.ProviderCode,
             ProviderMessage = cancellation.ProviderMessage,
             ErrorCode = cancellation.ErrorCode,
             ErrorMessage = cancellation.ErrorMessage,
+            SupportMessage = BuildPaymentComplementCancellationSupportMessage(cancellation),
+            RawResponseSummaryJson = cancellation.RawResponseSummaryJson,
             RequestedAtUtc = cancellation.RequestedAtUtc,
             CancelledAtUtc = cancellation.CancelledAtUtc,
             CreatedAtUtc = cancellation.CreatedAtUtc,
             UpdatedAtUtc = cancellation.UpdatedAtUtc
         };
+    }
+
+    private static string BuildComplementEligibilitySummary(PaymentComplementDocument document)
+    {
+        return $"Formalizado para CFDI de ingreso con MetodoPago PPD y FormaPago 99. CFDI base relacionados: {document.RelatedDocuments.Count}.";
+    }
+
+    private static string BuildPaymentComplementStampSupportMessage(PaymentComplementStamp stamp)
+    {
+        var parts = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(stamp.ProviderCode))
+        {
+            parts.Add($"Código proveedor: {stamp.ProviderCode}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(stamp.ProviderMessage))
+        {
+            parts.Add($"Mensaje proveedor: {stamp.ProviderMessage}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(stamp.ErrorCode))
+        {
+            parts.Add($"Error: {stamp.ErrorCode}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(stamp.ProviderTrackingId))
+        {
+            parts.Add($"Tracking: {stamp.ProviderTrackingId}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(stamp.Uuid))
+        {
+            parts.Add($"UUID: {stamp.Uuid}");
+        }
+
+        return parts.Count == 0 ? "Sin metadatos adicionales de timbrado." : string.Join(" | ", parts);
+    }
+
+    private static string? BuildPaymentComplementStatusSupportMessage(PaymentComplementStamp stamp)
+    {
+        var parts = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(stamp.LastStatusProviderCode))
+        {
+            parts.Add($"Código proveedor: {stamp.LastStatusProviderCode}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(stamp.LastStatusProviderMessage))
+        {
+            parts.Add($"Mensaje proveedor: {stamp.LastStatusProviderMessage}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(stamp.LastKnownExternalStatus))
+        {
+            parts.Add($"Estado externo: {stamp.LastKnownExternalStatus}");
+        }
+
+        return parts.Count == 0 ? null : string.Join(" | ", parts);
+    }
+
+    private static string BuildPaymentComplementCancellationSupportMessage(PaymentComplementCancellation cancellation)
+    {
+        var parts = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(cancellation.ProviderCode))
+        {
+            parts.Add($"Código proveedor: {cancellation.ProviderCode}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(cancellation.ProviderMessage))
+        {
+            parts.Add($"Mensaje proveedor: {cancellation.ProviderMessage}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(cancellation.ErrorCode))
+        {
+            parts.Add($"Error: {cancellation.ErrorCode}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(cancellation.ProviderTrackingId))
+        {
+            parts.Add($"Tracking: {cancellation.ProviderTrackingId}");
+        }
+
+        parts.Add($"Motivo SAT: {cancellation.CancellationReasonCode}");
+        return string.Join(" | ", parts);
     }
 }
 
@@ -385,6 +497,16 @@ public class StampPaymentComplementResponse
     public string? ProviderName { get; set; }
 
     public string? ProviderTrackingId { get; set; }
+
+    public string? ProviderCode { get; set; }
+
+    public string? ProviderMessage { get; set; }
+
+    public string? ErrorCode { get; set; }
+
+    public string? SupportMessage { get; set; }
+
+    public string? RawResponseSummaryJson { get; set; }
 }
 
 public class PaymentComplementDocumentResponse
@@ -400,6 +522,10 @@ public class PaymentComplementDocumentResponse
     public string CfdiVersion { get; set; } = string.Empty;
 
     public string DocumentType { get; set; } = string.Empty;
+
+    public bool AppliesToIncomePpdInvoices { get; set; }
+
+    public string EligibilitySummary { get; set; } = string.Empty;
 
     public DateTime IssuedAtUtc { get; set; }
 
@@ -499,11 +625,27 @@ public class PaymentComplementStampResponse
 
     public string? ErrorMessage { get; set; }
 
+    public string? SupportMessage { get; set; }
+
+    public string? RawResponseSummaryJson { get; set; }
+
     public string? XmlHash { get; set; }
 
     public string? OriginalString { get; set; }
 
     public string? QrCodeTextOrUrl { get; set; }
+
+    public string? LastKnownExternalStatus { get; set; }
+
+    public string? LastStatusProviderCode { get; set; }
+
+    public string? LastStatusProviderMessage { get; set; }
+
+    public string? LastStatusSupportMessage { get; set; }
+
+    public string? LastStatusRawResponseSummaryJson { get; set; }
+
+    public DateTime? LastStatusCheckAtUtc { get; set; }
 
     public DateTime CreatedAtUtc { get; set; }
 
@@ -537,6 +679,16 @@ public class CancelPaymentComplementResponse
 
     public string? ProviderTrackingId { get; set; }
 
+    public string? ProviderCode { get; set; }
+
+    public string? ProviderMessage { get; set; }
+
+    public string? ErrorCode { get; set; }
+
+    public string? SupportMessage { get; set; }
+
+    public string? RawResponseSummaryJson { get; set; }
+
     public DateTime? CancelledAtUtc { get; set; }
 }
 
@@ -552,6 +704,8 @@ public class PaymentComplementCancellationResponse
 
     public string ProviderName { get; set; } = string.Empty;
 
+    public string? ProviderTrackingId { get; set; }
+
     public string? ProviderCode { get; set; }
 
     public string? ProviderMessage { get; set; }
@@ -559,6 +713,10 @@ public class PaymentComplementCancellationResponse
     public string? ErrorCode { get; set; }
 
     public string? ErrorMessage { get; set; }
+
+    public string? SupportMessage { get; set; }
+
+    public string? RawResponseSummaryJson { get; set; }
 
     public DateTime RequestedAtUtc { get; set; }
 
@@ -590,4 +748,8 @@ public class RefreshPaymentComplementStatusResponse
     public string? ProviderMessage { get; set; }
 
     public DateTime? CheckedAtUtc { get; set; }
+
+    public string? SupportMessage { get; set; }
+
+    public string? RawResponseSummaryJson { get; set; }
 }

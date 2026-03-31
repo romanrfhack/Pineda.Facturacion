@@ -183,6 +183,11 @@ public class CancelPaymentComplementService
         result.ProviderName = cancellation.ProviderName;
         result.ProviderTrackingId = cancellation.ProviderTrackingId;
         result.CancelledAtUtc = cancellation.CancelledAtUtc;
+        result.ProviderCode = cancellation.ProviderCode;
+        result.ProviderMessage = cancellation.ProviderMessage;
+        result.ErrorCode = cancellation.ErrorCode;
+        result.RawResponseSummaryJson = cancellation.RawResponseSummaryJson;
+        result.SupportMessage = BuildCancellationSupportMessage(cancellation);
         return result;
     }
 
@@ -221,7 +226,12 @@ public class CancelPaymentComplementService
             CancellationStatus = cancellation.Status,
             ProviderName = cancellation.ProviderName,
             ProviderTrackingId = cancellation.ProviderTrackingId,
-            CancelledAtUtc = cancellation.CancelledAtUtc
+            CancelledAtUtc = cancellation.CancelledAtUtc,
+            ProviderCode = cancellation.ProviderCode,
+            ProviderMessage = cancellation.ProviderMessage,
+            ErrorCode = cancellation.ErrorCode,
+            RawResponseSummaryJson = cancellation.RawResponseSummaryJson,
+            SupportMessage = BuildCancellationSupportMessage(cancellation)
         };
     }
 
@@ -238,6 +248,11 @@ public class CancelPaymentComplementService
             ProviderName = cancellation.ProviderName,
             ProviderTrackingId = cancellation.ProviderTrackingId,
             CancelledAtUtc = cancellation.CancelledAtUtc,
+            ProviderCode = cancellation.ProviderCode,
+            ProviderMessage = cancellation.ProviderMessage,
+            ErrorCode = cancellation.ErrorCode,
+            RawResponseSummaryJson = cancellation.RawResponseSummaryJson,
+            SupportMessage = BuildCancellationSupportMessage(cancellation),
             ErrorMessage = errorMessage
         };
     }
@@ -250,6 +265,7 @@ public class CancelPaymentComplementService
             IsSuccess = false,
             PaymentComplementId = document.Id,
             PaymentComplementStatus = document.Status,
+            SupportMessage = "La cancelación del complemento ya no procede en este estado.",
             ErrorMessage = errorMessage
         };
     }
@@ -261,7 +277,37 @@ public class CancelPaymentComplementService
             Outcome = CancelPaymentComplementOutcome.ValidationFailed,
             IsSuccess = false,
             PaymentComplementId = paymentComplementId,
+            SupportMessage = "Solo se puede cancelar un complemento con evidencia fiscal timbrada y UUID persistido.",
             ErrorMessage = errorMessage
         };
+    }
+
+    private static string BuildCancellationSupportMessage(PaymentComplementCancellation cancellation)
+    {
+        var parts = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(cancellation.ProviderCode))
+        {
+            parts.Add($"Código proveedor: {cancellation.ProviderCode}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(cancellation.ProviderMessage))
+        {
+            parts.Add($"Mensaje proveedor: {cancellation.ProviderMessage}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(cancellation.ErrorCode))
+        {
+            parts.Add($"Error: {cancellation.ErrorCode}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(cancellation.ProviderTrackingId))
+        {
+            parts.Add($"Tracking: {cancellation.ProviderTrackingId}");
+        }
+
+        parts.Add($"Motivo SAT: {cancellation.CancellationReasonCode}");
+
+        return string.Join(" | ", parts);
     }
 }

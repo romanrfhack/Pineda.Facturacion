@@ -48,6 +48,8 @@ public class PaymentComplementCancellationAndStatusServicesTests
         Assert.Equal(CancelPaymentComplementOutcome.Cancelled, result.Outcome);
         Assert.Equal(PaymentComplementDocumentStatus.Cancelled, document.Status);
         Assert.Equal(PaymentComplementCancellationStatus.Cancelled, cancellationRepository.Added!.Status);
+        Assert.Equal("200", result.ProviderCode);
+        Assert.Contains("Motivo SAT", result.SupportMessage, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -150,6 +152,8 @@ public class PaymentComplementCancellationAndStatusServicesTests
         Assert.Equal(CancelPaymentComplementOutcome.ProviderRejected, result.Outcome);
         Assert.Equal(PaymentComplementDocumentStatus.CancellationRejected, document.Status);
         Assert.Equal(PaymentComplementCancellationStatus.Rejected, cancellationRepository.Added!.Status);
+        Assert.Equal("409", result.ProviderCode);
+        Assert.Contains("Rejected", result.SupportMessage, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -257,6 +261,8 @@ public class PaymentComplementCancellationAndStatusServicesTests
         Assert.Equal(RefreshPaymentComplementStatusOutcome.Refreshed, result.Outcome);
         Assert.Equal("VIGENTE", stamp.LastKnownExternalStatus);
         Assert.Equal("200", stamp.LastStatusProviderCode);
+        Assert.Contains("Estado externo", result.SupportMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("{\"status\":\"VIGENTE\"}", result.RawResponseSummaryJson);
     }
 
     [Fact]
