@@ -137,6 +137,37 @@ public class FiscalStampConfiguration : IEntityTypeConfiguration<FiscalStamp>
             .HasColumnType("longtext")
             .IsRequired(false);
 
+        builder.Property(x => x.LastRemoteQueryAtUtc)
+            .HasColumnName("last_remote_query_at_utc")
+            .IsRequired(false);
+
+        builder.Property(x => x.LastRemoteProviderTrackingId)
+            .HasColumnName("last_remote_provider_tracking_id")
+            .HasMaxLength(100)
+            .HasColumnType("varchar(100)")
+            .IsRequired(false);
+
+        builder.Property(x => x.LastRemoteProviderCode)
+            .HasColumnName("last_remote_provider_code")
+            .HasMaxLength(100)
+            .HasColumnType("varchar(100)")
+            .IsRequired(false);
+
+        builder.Property(x => x.LastRemoteProviderMessage)
+            .HasColumnName("last_remote_provider_message")
+            .HasMaxLength(1000)
+            .HasColumnType("varchar(1000)")
+            .IsRequired(false);
+
+        builder.Property(x => x.LastRemoteRawResponseSummaryJson)
+            .HasColumnName("last_remote_raw_response_summary_json")
+            .HasColumnType("longtext")
+            .IsRequired(false);
+
+        builder.Property(x => x.XmlRecoveredFromProviderAtUtc)
+            .HasColumnName("xml_recovered_from_provider_at_utc")
+            .IsRequired(false);
+
         builder.Property(x => x.CreatedAtUtc)
             .HasColumnName("created_at_utc")
             .IsRequired();

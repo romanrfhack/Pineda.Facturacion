@@ -50,6 +50,15 @@ public static class FiscalDocumentsEndpoints
             .Produces<FiscalStampResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status404NotFound);
 
+        group.MapPost("/{fiscalDocumentId:long}/stamp/remote-query", QueryRemoteFiscalStampAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
+            .WithName("QueryRemoteFiscalStamp")
+            .WithSummary("Query remote CFDI evidence in the PAC for support and recovery")
+            .Produces<QueryRemoteFiscalStampResponse>(StatusCodes.Status200OK)
+            .Produces<QueryRemoteFiscalStampResponse>(StatusCodes.Status400BadRequest)
+            .Produces<QueryRemoteFiscalStampResponse>(StatusCodes.Status404NotFound)
+            .Produces<QueryRemoteFiscalStampResponse>(StatusCodes.Status503ServiceUnavailable);
+
         group.MapGet("/{fiscalDocumentId:long}/stamp/xml", GetFiscalStampXmlByFiscalDocumentIdAsync)
             .WithName("GetFiscalStampXmlByFiscalDocumentId")
             .WithSummary("Get persisted XML evidence for a fiscal document")
@@ -306,6 +315,75 @@ public static class FiscalDocumentsEndpoints
         }
 
         return TypedResults.Ok(MapFiscalStamp(result.FiscalStamp));
+    }
+
+    private static async Task<Results<Ok<QueryRemoteFiscalStampResponse>, BadRequest<QueryRemoteFiscalStampResponse>, NotFound<QueryRemoteFiscalStampResponse>, JsonHttpResult<QueryRemoteFiscalStampResponse>>> QueryRemoteFiscalStampAsync(
+        long fiscalDocumentId,
+        QueryRemoteFiscalStampService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(new QueryRemoteFiscalStampCommand
+        {
+            FiscalDocumentId = fiscalDocumentId
+        }, cancellationToken);
+
+        var response = new QueryRemoteFiscalStampResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            FiscalDocumentId = result.FiscalDocumentId,
+            FiscalDocumentStatus = result.FiscalDocumentStatus?.ToString(),
+            FiscalStampId = result.FiscalStampId,
+            Uuid = result.Uuid,
+            HasLocalXml = result.HasLocalXml,
+            RemoteExists = result.RemoteExists,
+            HasRemoteXml = result.HasRemoteXml,
+            XmlRecoveredLocally = result.XmlRecoveredLocally,
+            ProviderName = result.ProviderName,
+            ProviderOperation = result.ProviderOperation,
+            ProviderTrackingId = result.ProviderTrackingId,
+            ProviderCode = result.ProviderCode,
+            ProviderMessage = result.ProviderMessage,
+            ErrorCode = result.ErrorCode,
+            SupportMessage = result.SupportMessage,
+            RawResponseSummaryJson = result.RawResponseSummaryJson,
+            CheckedAtUtc = EnsureUtc(result.CheckedAtUtc)
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "FiscalDocument.QueryRemoteStamp",
+            "FiscalDocument",
+            fiscalDocumentId.ToString(),
+            result.Outcome.ToString(),
+            new { fiscalDocumentId },
+            new
+            {
+                result.FiscalStampId,
+                result.Uuid,
+                result.HasLocalXml,
+                result.RemoteExists,
+                result.HasRemoteXml,
+                result.XmlRecoveredLocally,
+                result.ProviderName,
+                result.ProviderTrackingId,
+                result.ProviderCode,
+                result.ProviderMessage,
+                result.ErrorCode,
+                result.SupportMessage
+            },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            QueryRemoteFiscalStampOutcome.FoundRemote => TypedResults.Ok(response),
+            QueryRemoteFiscalStampOutcome.NotFound => TypedResults.NotFound(response),
+            QueryRemoteFiscalStampOutcome.ProviderUnavailable => TypedResults.Json(response, statusCode: StatusCodes.Status503ServiceUnavailable),
+            _ => TypedResults.BadRequest(response)
+        };
     }
 
     private static async Task<IResult> GetFiscalStampXmlByFiscalDocumentIdAsync(
@@ -739,6 +817,12 @@ public static class FiscalDocumentsEndpoints
             XmlHash = fiscalStamp.XmlHash,
             OriginalString = fiscalStamp.OriginalString,
             QrCodeTextOrUrl = fiscalStamp.QrCodeTextOrUrl,
+            LastRemoteQueryAtUtc = EnsureUtc(fiscalStamp.LastRemoteQueryAtUtc),
+            LastRemoteProviderTrackingId = fiscalStamp.LastRemoteProviderTrackingId,
+            LastRemoteProviderCode = fiscalStamp.LastRemoteProviderCode,
+            LastRemoteProviderMessage = fiscalStamp.LastRemoteProviderMessage,
+            LastRemoteRawResponseSummaryJson = fiscalStamp.LastRemoteRawResponseSummaryJson,
+            XmlRecoveredFromProviderAtUtc = EnsureUtc(fiscalStamp.XmlRecoveredFromProviderAtUtc),
             CreatedAtUtc = fiscalStamp.CreatedAtUtc,
             UpdatedAtUtc = fiscalStamp.UpdatedAtUtc
         };
@@ -1063,8 +1147,38 @@ public static class FiscalDocumentsEndpoints
         public string? XmlHash { get; init; }
         public string? OriginalString { get; init; }
         public string? QrCodeTextOrUrl { get; init; }
+        public DateTime? LastRemoteQueryAtUtc { get; init; }
+        public string? LastRemoteProviderTrackingId { get; init; }
+        public string? LastRemoteProviderCode { get; init; }
+        public string? LastRemoteProviderMessage { get; init; }
+        public string? LastRemoteRawResponseSummaryJson { get; init; }
+        public DateTime? XmlRecoveredFromProviderAtUtc { get; init; }
         public DateTime CreatedAtUtc { get; init; }
         public DateTime UpdatedAtUtc { get; init; }
+    }
+
+    public sealed class QueryRemoteFiscalStampResponse
+    {
+        public string Outcome { get; init; } = string.Empty;
+        public bool IsSuccess { get; init; }
+        public string? ErrorMessage { get; init; }
+        public long FiscalDocumentId { get; init; }
+        public string? FiscalDocumentStatus { get; init; }
+        public long? FiscalStampId { get; init; }
+        public string? Uuid { get; init; }
+        public bool HasLocalXml { get; init; }
+        public bool RemoteExists { get; init; }
+        public bool HasRemoteXml { get; init; }
+        public bool XmlRecoveredLocally { get; init; }
+        public string? ProviderName { get; init; }
+        public string? ProviderOperation { get; init; }
+        public string? ProviderTrackingId { get; init; }
+        public string? ProviderCode { get; init; }
+        public string? ProviderMessage { get; init; }
+        public string? ErrorCode { get; init; }
+        public string? SupportMessage { get; init; }
+        public string? RawResponseSummaryJson { get; init; }
+        public DateTime? CheckedAtUtc { get; init; }
     }
 
     public sealed class FiscalDocumentEmailDraftResponse

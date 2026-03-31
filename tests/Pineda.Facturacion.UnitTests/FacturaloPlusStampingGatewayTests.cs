@@ -703,6 +703,99 @@ public class FacturaloPlusStampingGatewayTests
         Assert.Null(handler.LastRequest);
     }
 
+    [Fact]
+    public async Task QueryRemoteCfdiAsync_Posts_FormUrlEncoded_Request_To_ConsultarCfdi()
+    {
+        var handler = new RecordingHandler(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""
+                {
+                  "code": "200",
+                  "message": "CFDI encontrado",
+                  "trackingId": "REMOTE-1",
+                  "data": "<cfdi:Comprobante Version=\"4.0\" />"
+                }
+                """, Encoding.UTF8, "application/json")
+        });
+
+        var client = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://dev.facturaloplus.com/api/rest/servicio/")
+        };
+        var secretResolver = new RecordingSecretResolver(new Dictionary<string, string?>
+        {
+            ["FACTURALOPLUS_API_KEY_REFERENCE"] = "APIKEY-TEST"
+        });
+
+        var gateway = new FacturaloPlusStampingGateway(
+            client,
+            Options.Create(new FacturaloPlusOptions
+            {
+                BaseUrl = "https://dev.facturaloplus.com/api/rest/servicio/",
+                RemoteCfdiQueryPath = "consultarCFDI",
+                ApiKeyReference = "FACTURALOPLUS_API_KEY_REFERENCE"
+            }),
+            secretResolver);
+
+        var result = await gateway.QueryRemoteCfdiAsync(new FiscalRemoteCfdiQueryRequest
+        {
+            FiscalDocumentId = 40,
+            Uuid = "UUID-REMOTE-1"
+        });
+
+        Assert.Equal(FiscalRemoteCfdiQueryGatewayOutcome.Found, result.Outcome);
+        Assert.NotNull(handler.LastRequest);
+        Assert.Equal(HttpMethod.Post, handler.LastRequest!.Method);
+        Assert.EndsWith("/consultarCFDI", handler.LastRequest.RequestUri!.ToString(), StringComparison.Ordinal);
+        Assert.Equal("application/x-www-form-urlencoded", handler.LastContentType);
+
+        var form = ParseFormBody(handler.LastBody!);
+        Assert.Equal("APIKEY-TEST", form["apikey"]);
+        Assert.Equal("UUID-REMOTE-1", form["uuid"]);
+        Assert.Equal("200", result.ProviderCode);
+        Assert.True(result.RemoteExists);
+        Assert.Contains("<cfdi:Comprobante", result.XmlContent, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task QueryRemoteCfdiAsync_Parses_Nested_Data_String_Response()
+    {
+        var handler = new RecordingHandler(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""
+                {
+                  "success": true,
+                  "response": {
+                    "CodigoEstatus": "S",
+                    "mensaje": "Consulta remota correcta",
+                    "payload": "{\"XML\":\"<cfdi:Comprobante Version=\\\"4.0\\\" />\"}"
+                  }
+                }
+                """, Encoding.UTF8, "application/json")
+        });
+
+        var gateway = new FacturaloPlusStampingGateway(
+            new HttpClient(handler) { BaseAddress = new Uri("https://dev.facturaloplus.com/api/rest/servicio/") },
+            Options.Create(new FacturaloPlusOptions
+            {
+                BaseUrl = "https://dev.facturaloplus.com/api/rest/servicio/",
+                RemoteCfdiQueryPath = "consultarCFDI"
+            }),
+            new RecordingSecretResolver(new Dictionary<string, string?>()));
+
+        var result = await gateway.QueryRemoteCfdiAsync(new FiscalRemoteCfdiQueryRequest
+        {
+            FiscalDocumentId = 41,
+            Uuid = "UUID-REMOTE-2"
+        });
+
+        Assert.Equal(FiscalRemoteCfdiQueryGatewayOutcome.Found, result.Outcome);
+        Assert.Equal("S", result.ProviderCode);
+        Assert.Equal("Consulta remota correcta", result.ProviderMessage);
+        Assert.True(result.RemoteExists);
+        Assert.Contains("<cfdi:Comprobante", result.XmlContent, StringComparison.Ordinal);
+    }
+
     private static FiscalStampingRequest CreateRequest()
     {
         return new FiscalStampingRequest

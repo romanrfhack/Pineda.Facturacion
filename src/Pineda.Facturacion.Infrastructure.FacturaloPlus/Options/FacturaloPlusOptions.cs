@@ -18,6 +18,8 @@ public class FacturaloPlusOptions
 
     public string StatusQueryPath { get; set; } = "consultarEstadoSAT";
 
+    public string RemoteCfdiQueryPath { get; set; } = "consultarCFDI";
+
     public string PendingCancellationAuthorizationsPath { get; set; } = "consultarAutorizacionesPendientes";
 
     public string CancellationAuthorizationDecisionPath { get; set; } = "autorizarCancelacion";

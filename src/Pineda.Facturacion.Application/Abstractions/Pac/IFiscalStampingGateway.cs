@@ -7,4 +7,8 @@ public interface IFiscalStampingGateway
     Task<FiscalStampingGatewayResult> StampAsync(
         FiscalStampingRequest request,
         CancellationToken cancellationToken = default);
+
+    Task<FiscalRemoteCfdiQueryGatewayResult> QueryRemoteCfdiAsync(
+        FiscalRemoteCfdiQueryRequest request,
+        CancellationToken cancellationToken = default);
 }

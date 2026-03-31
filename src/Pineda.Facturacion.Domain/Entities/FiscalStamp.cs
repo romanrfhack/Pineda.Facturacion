@@ -50,6 +50,18 @@ public class FiscalStamp
 
     public string? LastStatusRawResponseSummaryJson { get; set; }
 
+    public DateTime? LastRemoteQueryAtUtc { get; set; }
+
+    public string? LastRemoteProviderTrackingId { get; set; }
+
+    public string? LastRemoteProviderCode { get; set; }
+
+    public string? LastRemoteProviderMessage { get; set; }
+
+    public string? LastRemoteRawResponseSummaryJson { get; set; }
+
+    public DateTime? XmlRecoveredFromProviderAtUtc { get; set; }
+
     public DateTime CreatedAtUtc { get; set; }
 
     public DateTime UpdatedAtUtc { get; set; }

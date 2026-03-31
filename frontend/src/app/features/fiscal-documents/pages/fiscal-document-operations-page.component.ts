@@ -15,6 +15,7 @@ import {
   FiscalDocumentEmailDraftResponse,
   FiscalReceiverSearchResponse,
   FiscalStampResponse,
+  QueryRemoteFiscalStampResponse,
   IssuerProfileResponse,
   PendingBillingItemResponse,
   PendingCancellationAuthorizationItemResponse,
@@ -580,6 +581,9 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
             @if (permissionService.canCancelFiscal()) {
               <button type="button" class="secondary" (click)="refreshStatus()" [disabled]="loadingOperation() || !canRefreshCurrentFiscalDocument()">Actualizar estatus</button>
             }
+            @if (permissionService.canCancelFiscal()) {
+              <button type="button" class="secondary" (click)="queryRemoteStamp()" [disabled]="loadingOperation() || !canQueryRemoteStamp()">Consultar CFDI en PAC</button>
+            }
             @if (currentDocument.status === 'Stamped') {
               <button type="button" class="secondary" (click)="openStampPdf()" [disabled]="loadingPdf() || sendingEmail()">
                 {{ loadingPdf() ? 'Abriendo PDF...' : 'Ver PDF' }}
@@ -599,6 +603,9 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
           }
           @if (!canRefreshCurrentFiscalDocument()) {
             <p class="helper">Actualizar estatus solo está disponible para CFDI timbrados con UUID.</p>
+          }
+          @if (!canQueryRemoteStamp()) {
+            <p class="helper">Consultar CFDI en PAC solo está disponible para CFDI con UUID persistido.</p>
           }
           @if (!canStampCurrentFiscalDocument()) {
             <p class="helper">Timbrar solo está disponible para documentos listos para timbrar o reintentos explícitos de rechazo.</p>
@@ -666,6 +673,7 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
           [stamp]="currentStamp"
           (detailsRequested)="toggleStampDetail()"
           (xmlRequested)="openStampXml()"
+          (remoteQueryRequested)="queryRemoteStamp()"
         />
         @if (showStampDetail()) {
           <app-fiscal-stamp-evidence-detail [stamp]="currentStamp" />
@@ -1809,6 +1817,19 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     });
   }
 
+  protected async queryRemoteStamp(): Promise<void> {
+    const fiscalDocumentId = this.fiscalDocumentId();
+    if (!fiscalDocumentId || !this.canQueryRemoteStamp()) {
+      return;
+    }
+
+    await this.runOperation(async () => {
+      const response = await firstValueFrom(this.api.queryRemoteStamp(fiscalDocumentId));
+      this.applyRemoteStampQueryResult(response);
+      await this.loadStamp(fiscalDocumentId);
+    });
+  }
+
   protected async loadPendingCancellationAuthorizations(notifyOnError = true): Promise<void> {
     this.loadingPendingCancellationAuthorizations.set(true);
     this.pendingCancellationAuthorizationsError.set(null);
@@ -2189,6 +2210,18 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     return buildCancellationRequest(this.cancellationReasonCode, this.cancellationReplacementUuid);
   }
 
+  private applyRemoteStampQueryResult(response: QueryRemoteFiscalStampResponse): void {
+    this.lastOperationMessage.set(
+      (response.xmlRecoveredLocally ? 'Se recuperó XML remoto y ya quedó persistido localmente.' : null)
+        || response.supportMessage
+        || response.providerMessage
+        || response.errorMessage
+        || (response.remoteExists
+          ? 'El CFDI fue encontrado remotamente en el PAC.'
+          : 'El PAC no devolvió evidencia remota para el UUID consultado.')
+    );
+  }
+
   private reconcileCancellationAfterOperation(
     response: import('../models/fiscal-documents.models').CancelFiscalDocumentResponse,
     request: CancelFiscalDocumentRequest): void
@@ -2213,6 +2246,10 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   }
 
   protected canRefreshCurrentFiscalDocument(): boolean {
+    return !!this.stampEvidence()?.uuid;
+  }
+
+  protected canQueryRemoteStamp(): boolean {
     return !!this.stampEvidence()?.uuid;
   }
 

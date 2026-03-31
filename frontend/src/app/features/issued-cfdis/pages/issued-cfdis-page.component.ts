@@ -171,6 +171,7 @@ import {
                       {{ loadingOperation() && showCancelDialog() ? 'Cancelando...' : 'Cancelar' }}
                     </button>
                     <button type="button" class="secondary" (click)="refreshStatus()" [disabled]="loadingOperation() || !canRefreshSelectedDocument()">Actualizar estatus</button>
+                    <button type="button" class="secondary" (click)="queryRemoteStamp()" [disabled]="loadingOperation() || !canQueryRemoteStamp()">Consultar CFDI en PAC</button>
                   }
                   <button type="button" class="secondary" (click)="openPdfForSelected(false)">Ver PDF</button>
                   <button type="button" class="secondary" (click)="openPdfForSelected(true)">Descargar PDF</button>
@@ -185,6 +186,9 @@ import {
                 @if (!canRefreshSelectedDocument()) {
                   <p class="helper">Actualizar estatus solo está disponible para CFDI timbrados con UUID.</p>
                 }
+                @if (!canQueryRemoteStamp()) {
+                  <p class="helper">Consultar CFDI en PAC solo está disponible para CFDI con UUID persistido.</p>
+                }
               </section>
 
               <app-fiscal-document-card [document]="currentDocument" />
@@ -195,7 +199,7 @@ import {
             }
 
             @if (selectedStamp(); as currentStamp) {
-              <app-fiscal-stamp-evidence-card [stamp]="currentStamp" (detailsRequested)="toggleStampDetail()" (xmlRequested)="openXmlForSelected()" />
+              <app-fiscal-stamp-evidence-card [stamp]="currentStamp" (detailsRequested)="toggleStampDetail()" (xmlRequested)="openXmlForSelected()" (remoteQueryRequested)="queryRemoteStamp()" />
               @if (showStampDetail()) {
                 <app-fiscal-stamp-evidence-detail [stamp]="currentStamp" />
               }
@@ -545,6 +549,10 @@ export class IssuedCfdisPageComponent {
     return !!this.selectedStamp()?.uuid;
   }
 
+  protected canQueryRemoteStamp(): boolean {
+    return !!this.selectedStamp()?.uuid;
+  }
+
   protected async openPdf(item: IssuedFiscalDocumentListItemResponse, download: boolean): Promise<void> {
     await this.handlePdf(item, download);
   }
@@ -748,6 +756,27 @@ export class IssuedCfdisPageComponent {
           || response.supportMessage
           || response.errorMessage
           || `Último estatus externo: ${getDisplayLabel(response.lastKnownExternalStatus ?? 'Unknown')}`
+      );
+      await this.reloadSelectedContext(currentDocument.id);
+    });
+  }
+
+  protected async queryRemoteStamp(): Promise<void> {
+    const currentDocument = this.selectedDocument();
+    if (!currentDocument || !this.canQueryRemoteStamp()) {
+      return;
+    }
+
+    await this.runOperation(async () => {
+      const response = await firstValueFrom(this.api.queryRemoteStamp(currentDocument.id));
+      this.lastOperationMessage.set(
+        (response.xmlRecoveredLocally ? 'Se recuperó XML remoto y ya quedó persistido localmente.' : null)
+          || response.supportMessage
+          || response.providerMessage
+          || response.errorMessage
+          || (response.remoteExists
+            ? 'El CFDI fue encontrado remotamente en el PAC.'
+            : 'El PAC no devolvió evidencia remota para el UUID consultado.')
       );
       await this.reloadSelectedContext(currentDocument.id);
     });

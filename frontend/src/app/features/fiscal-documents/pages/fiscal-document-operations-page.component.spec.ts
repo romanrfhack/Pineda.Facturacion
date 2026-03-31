@@ -203,6 +203,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       stampFiscalDocument: vi.fn(),
       cancelFiscalDocument: vi.fn(),
       refreshStatus: vi.fn(),
+      queryRemoteStamp: vi.fn(),
       ...overrides
     };
   }
@@ -841,6 +842,80 @@ describe('FiscalDocumentOperationsPageComponent', () => {
 
     expect(refreshStatus).toHaveBeenCalledWith(40);
     expect(fixture.componentInstance['lastOperationMessage']()).toContain('sigue en proceso en SAT');
+  });
+
+  it('updates support message and reloads stamp evidence after remote CFDI lookup', async () => {
+    const queryRemoteStamp = vi.fn().mockReturnValue(of({
+      outcome: 'FoundRemote',
+      isSuccess: true,
+      fiscalDocumentId: 40,
+      fiscalDocumentStatus: 'Stamped',
+      fiscalStampId: 11,
+      uuid: 'UUID-123',
+      hasLocalXml: false,
+      remoteExists: true,
+      hasRemoteXml: true,
+      xmlRecoveredLocally: true,
+      providerCode: '200',
+      providerMessage: 'CFDI encontrado',
+      supportMessage: 'El CFDI existe en el PAC y el XML faltante se recuperó en la evidencia local.',
+      checkedAtUtc: '2026-03-30T12:00:00Z'
+    }));
+    const getStamp = vi.fn()
+      .mockReturnValueOnce(of({
+        id: 11,
+        fiscalDocumentId: 40,
+        providerName: 'FacturaloPlus',
+        providerOperation: 'stamp',
+        providerTrackingId: 'TRACK-1',
+        status: 'Stamped',
+        uuid: 'UUID-123',
+        stampedAtUtc: '2026-03-20T12:00:00Z',
+        providerCode: '200',
+        providerMessage: 'Stamped',
+        createdAtUtc: '2026-03-20T12:00:00Z',
+        updatedAtUtc: '2026-03-20T12:00:00Z'
+      }))
+      .mockReturnValueOnce(of({
+        id: 11,
+        fiscalDocumentId: 40,
+        providerName: 'FacturaloPlus',
+        providerOperation: 'stamp',
+        providerTrackingId: 'TRACK-1',
+        status: 'Stamped',
+        uuid: 'UUID-123',
+        stampedAtUtc: '2026-03-20T12:00:00Z',
+        providerCode: '200',
+        providerMessage: 'Stamped',
+        lastRemoteQueryAtUtc: '2026-03-30T12:00:00Z',
+        lastRemoteProviderCode: '200',
+        lastRemoteProviderMessage: 'CFDI encontrado',
+        xmlRecoveredFromProviderAtUtc: '2026-03-30T12:00:00Z',
+        createdAtUtc: '2026-03-20T12:00:00Z',
+        updatedAtUtc: '2026-03-30T12:00:00Z'
+      }));
+
+    const fixture = await configure({ queryRemoteStamp, getStamp });
+    fixture.componentInstance['stampEvidence'].set({
+      id: 11,
+      fiscalDocumentId: 40,
+      providerName: 'FacturaloPlus',
+      providerOperation: 'stamp',
+      providerTrackingId: 'TRACK-1',
+      status: 'Stamped',
+      uuid: 'UUID-123',
+      stampedAtUtc: '2026-03-20T12:00:00Z',
+      providerCode: '200',
+      providerMessage: 'Stamped',
+      createdAtUtc: '2026-03-20T12:00:00Z',
+      updatedAtUtc: '2026-03-20T12:00:00Z'
+    });
+
+    await fixture.componentInstance['queryRemoteStamp']();
+
+    expect(queryRemoteStamp).toHaveBeenCalledWith(40);
+    expect(getStamp).toHaveBeenCalledTimes(2);
+    expect(fixture.componentInstance['lastOperationMessage']()).toContain('recuperó XML remoto');
   });
 
   it('disables refresh-status when the document has no stamped UUID evidence', async () => {

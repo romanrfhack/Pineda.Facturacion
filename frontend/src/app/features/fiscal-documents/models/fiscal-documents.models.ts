@@ -365,8 +365,37 @@ export interface FiscalStampResponse {
   xmlHash?: string | null;
   qrCodeTextOrUrl?: string | null;
   originalString?: string | null;
+  lastRemoteQueryAtUtc?: string | null;
+  lastRemoteProviderTrackingId?: string | null;
+  lastRemoteProviderCode?: string | null;
+  lastRemoteProviderMessage?: string | null;
+  lastRemoteRawResponseSummaryJson?: string | null;
+  xmlRecoveredFromProviderAtUtc?: string | null;
   createdAtUtc: string;
   updatedAtUtc: string;
+}
+
+export interface QueryRemoteFiscalStampResponse {
+  outcome: string;
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  fiscalDocumentId: number;
+  fiscalDocumentStatus?: string | null;
+  fiscalStampId?: number | null;
+  uuid?: string | null;
+  hasLocalXml: boolean;
+  remoteExists: boolean;
+  hasRemoteXml: boolean;
+  xmlRecoveredLocally: boolean;
+  providerName?: string | null;
+  providerOperation?: string | null;
+  providerTrackingId?: string | null;
+  providerCode?: string | null;
+  providerMessage?: string | null;
+  errorCode?: string | null;
+  supportMessage?: string | null;
+  rawResponseSummaryJson?: string | null;
+  checkedAtUtc?: string | null;
 }
 
 export interface FiscalDocumentEmailDraftResponse {

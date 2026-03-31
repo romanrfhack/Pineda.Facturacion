@@ -298,6 +298,89 @@ public class FiscalStampingServicesTests
         Assert.DoesNotContain("PrivateKeyPassword", entityFields);
     }
 
+    [Fact]
+    public async Task QueryRemoteFiscalStamp_RecoversXml_WhenMissingLocally()
+    {
+        var fiscalDocument = CreateFiscalDocument();
+        fiscalDocument.Status = FiscalDocumentStatus.Stamped;
+        var fiscalStamp = new FiscalStamp
+        {
+            Id = 700,
+            FiscalDocumentId = fiscalDocument.Id,
+            ProviderName = "FacturaloPlus",
+            ProviderOperation = "stamp",
+            Status = FiscalStampStatus.Succeeded,
+            Uuid = "UUID-REMOTE-1",
+            XmlContent = null,
+            CreatedAtUtc = DateTime.UtcNow.AddMinutes(-10),
+            UpdatedAtUtc = DateTime.UtcNow.AddMinutes(-10)
+        };
+
+        var service = new QueryRemoteFiscalStampService(
+            new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
+            new FakeFiscalStampRepository { ExistingTracked = fiscalStamp },
+            new FakeFiscalStampingGateway
+            {
+                RemoteQueryResult = new FiscalRemoteCfdiQueryGatewayResult
+                {
+                    Outcome = FiscalRemoteCfdiQueryGatewayOutcome.Found,
+                    ProviderName = "FacturaloPlus",
+                    ProviderOperation = "consultarCFDI",
+                    ProviderCode = "200",
+                    ProviderMessage = "Remote CFDI found.",
+                    RemoteExists = true,
+                    XmlContent = "<cfdi:Comprobante Version=\"4.0\" />"
+                }
+            },
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new QueryRemoteFiscalStampCommand
+        {
+            FiscalDocumentId = fiscalDocument.Id
+        });
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(QueryRemoteFiscalStampOutcome.FoundRemote, result.Outcome);
+        Assert.True(result.XmlRecoveredLocally);
+        Assert.True(result.HasLocalXml);
+        Assert.NotNull(fiscalStamp.XmlContent);
+        Assert.NotNull(fiscalStamp.XmlRecoveredFromProviderAtUtc);
+        Assert.Equal("200", fiscalStamp.LastRemoteProviderCode);
+    }
+
+    [Fact]
+    public async Task QueryRemoteFiscalStamp_RequiresPersistedUuid()
+    {
+        var fiscalDocument = CreateFiscalDocument();
+        fiscalDocument.Status = FiscalDocumentStatus.Stamped;
+        var fiscalStamp = new FiscalStamp
+        {
+            Id = 701,
+            FiscalDocumentId = fiscalDocument.Id,
+            ProviderName = "FacturaloPlus",
+            ProviderOperation = "stamp",
+            Status = FiscalStampStatus.Succeeded,
+            Uuid = null,
+            CreatedAtUtc = DateTime.UtcNow,
+            UpdatedAtUtc = DateTime.UtcNow
+        };
+
+        var gateway = new FakeFiscalStampingGateway();
+        var service = new QueryRemoteFiscalStampService(
+            new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
+            new FakeFiscalStampRepository { ExistingTracked = fiscalStamp },
+            gateway,
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new QueryRemoteFiscalStampCommand
+        {
+            FiscalDocumentId = fiscalDocument.Id
+        });
+
+        Assert.Equal(QueryRemoteFiscalStampOutcome.ValidationFailed, result.Outcome);
+        Assert.Equal(0, gateway.RemoteQueryCallCount);
+    }
+
     private static FiscalDocument CreateFiscalDocument()
     {
         return new FiscalDocument
@@ -412,6 +495,7 @@ public class FiscalStampingServicesTests
     private sealed class FakeFiscalStampingGateway : IFiscalStampingGateway
     {
         public int CallCount { get; private set; }
+        public int RemoteQueryCallCount { get; private set; }
         public FiscalStampingRequest? LastRequest { get; private set; }
         public FiscalStampingGatewayResult NextResult { get; init; } = new()
         {
@@ -421,12 +505,27 @@ public class FiscalStampingServicesTests
             Uuid = "UUID-DEFAULT",
             StampedAtUtc = DateTime.UtcNow
         };
+        public FiscalRemoteCfdiQueryGatewayResult RemoteQueryResult { get; init; } = new()
+        {
+            Outcome = FiscalRemoteCfdiQueryGatewayOutcome.Found,
+            ProviderName = "FacturaloPlus",
+            ProviderOperation = "consultarCFDI",
+            ProviderCode = "200",
+            ProviderMessage = "Remote CFDI found.",
+            RemoteExists = true
+        };
 
         public Task<FiscalStampingGatewayResult> StampAsync(FiscalStampingRequest request, CancellationToken cancellationToken = default)
         {
             CallCount++;
             LastRequest = request;
             return Task.FromResult(NextResult);
+        }
+
+        public Task<FiscalRemoteCfdiQueryGatewayResult> QueryRemoteCfdiAsync(FiscalRemoteCfdiQueryRequest request, CancellationToken cancellationToken = default)
+        {
+            RemoteQueryCallCount++;
+            return Task.FromResult(RemoteQueryResult);
         }
     }
 

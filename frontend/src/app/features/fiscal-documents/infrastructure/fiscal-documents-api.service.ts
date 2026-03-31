@@ -14,6 +14,7 @@ import {
   IssuedFiscalDocumentListResponse,
   FiscalReceiverSearchResponse,
   FiscalStampResponse,
+  QueryRemoteFiscalStampResponse,
   FiscalDocumentEmailDraftResponse,
   IssuerProfileResponse,
   IssuedFiscalDocumentSpecialFieldOptionResponse,
@@ -118,6 +119,10 @@ export class FiscalDocumentsApiService {
 
   getStamp(fiscalDocumentId: number): Observable<FiscalStampResponse> {
     return this.http.get<FiscalStampResponse>(buildApiUrl(`/fiscal-documents/${fiscalDocumentId}/stamp`));
+  }
+
+  queryRemoteStamp(fiscalDocumentId: number): Observable<QueryRemoteFiscalStampResponse> {
+    return this.http.post<QueryRemoteFiscalStampResponse>(buildApiUrl(`/fiscal-documents/${fiscalDocumentId}/stamp/remote-query`), {});
   }
 
   getStampXml(fiscalDocumentId: number): Observable<string> {

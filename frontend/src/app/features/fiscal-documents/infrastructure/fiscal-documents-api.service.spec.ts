@@ -138,4 +138,16 @@ describe('FiscalDocumentsApiService', () => {
     req.flush(new Blob(['<cfdi:Comprobante />'], { type: 'application/xml' }));
     httpTesting.verify();
   });
+
+  it('posts remote CFDI lookup to the support endpoint', () => {
+    const service = TestBed.inject(FiscalDocumentsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.queryRemoteStamp(40).subscribe();
+
+    const req = httpTesting.expectOne('/api/fiscal-documents/40/stamp/remote-query');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({});
+    httpTesting.verify();
+  });
 });

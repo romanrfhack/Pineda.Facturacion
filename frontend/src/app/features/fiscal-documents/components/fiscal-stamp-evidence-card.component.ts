@@ -24,9 +24,20 @@ import { StatusBadgeComponent } from '../../../shared/components/status-badge.co
       @if (stamp().providerMessage || stamp().errorMessage) {
         <p class="message">{{ stamp().providerMessage || stamp().errorMessage }}</p>
       }
+      @if (stamp().lastRemoteQueryAtUtc || stamp().xmlRecoveredFromProviderAtUtc) {
+        <p class="message">
+          @if (stamp().lastRemoteQueryAtUtc) {
+            <span>Última consulta remota: {{ stamp().lastRemoteQueryAtUtc | date: 'medium' }}</span>
+          }
+          @if (stamp().xmlRecoveredFromProviderAtUtc) {
+            <span> · XML recuperado: {{ stamp().xmlRecoveredFromProviderAtUtc | date: 'medium' }}</span>
+          }
+        </p>
+      }
       <div class="actions">
         <button type="button" class="secondary" (click)="detailsRequested.emit()">Ver detalle de evidencia</button>
         <button type="button" (click)="xmlRequested.emit()">Ver XML</button>
+        <button type="button" class="secondary" (click)="remoteQueryRequested.emit()">Consultar CFDI en PAC</button>
       </div>
     </section>
   `,
@@ -54,4 +65,5 @@ export class FiscalStampEvidenceCardComponent {
   readonly stamp = input.required<FiscalStampResponse>();
   readonly detailsRequested = output<void>();
   readonly xmlRequested = output<void>();
+  readonly remoteQueryRequested = output<void>();
 }

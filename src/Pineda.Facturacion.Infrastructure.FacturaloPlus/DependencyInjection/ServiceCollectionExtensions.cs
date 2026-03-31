@@ -27,7 +27,8 @@ public static class ServiceCollectionExtensions
             .Validate(options => !string.IsNullOrWhiteSpace(options.PaymentComplementCancelPath), "FacturaloPlus payment complement cancel path is required.")
             .Validate(options => !string.IsNullOrWhiteSpace(options.PaymentComplementStatusQueryPath), "FacturaloPlus payment complement status query path is required.")
             .Validate(options => !string.IsNullOrWhiteSpace(options.CancelPath), "FacturaloPlus cancel path is required.")
-            .Validate(options => !string.IsNullOrWhiteSpace(options.StatusQueryPath), "FacturaloPlus status query path is required.");
+            .Validate(options => !string.IsNullOrWhiteSpace(options.StatusQueryPath), "FacturaloPlus status query path is required.")
+            .Validate(options => !string.IsNullOrWhiteSpace(options.RemoteCfdiQueryPath), "FacturaloPlus remote CFDI query path is required.");
 
         services.AddOptions<SecretReferenceOptions>()
             .Bind(configuration.GetSection(secretReferencesSectionName));

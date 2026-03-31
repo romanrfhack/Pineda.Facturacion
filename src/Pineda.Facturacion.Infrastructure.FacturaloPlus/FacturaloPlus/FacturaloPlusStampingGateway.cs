@@ -166,6 +166,138 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
         };
     }
 
+    public async Task<FiscalRemoteCfdiQueryGatewayResult> QueryRemoteCfdiAsync(
+        FiscalRemoteCfdiQueryRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (string.IsNullOrWhiteSpace(request.Uuid))
+        {
+            return RemoteValidationFailed("Fiscal document UUID is required for remote CFDI lookup.");
+        }
+
+        var apiKey = await ResolveOptionalSecretAsync(_options.ApiKeyReference, cancellationToken);
+        if (!string.IsNullOrWhiteSpace(_options.ApiKeyReference) && string.IsNullOrWhiteSpace(apiKey))
+        {
+            return RemoteValidationFailed("Configured PAC API key reference could not be resolved.");
+        }
+
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _options.RemoteCfdiQueryPath)
+        {
+            Content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["apikey"] = apiKey ?? string.Empty,
+                ["uuid"] = request.Uuid.Trim()
+            })
+        };
+
+        HttpResponseMessage response;
+        string responseContent;
+
+        try
+        {
+            response = await _httpClient.SendAsync(httpRequest, cancellationToken);
+            responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return RemoteUnavailable("Provider timeout.");
+        }
+        catch (HttpRequestException)
+        {
+            return RemoteUnavailable("Provider transport failure.");
+        }
+
+        var providerResponse = TryDeserializeRemoteCfdi(responseContent);
+        var rawResponseSummaryJson = BuildRemoteCfdiRawResponseSummary(response.StatusCode, providerResponse, responseContent);
+
+        if ((int)response.StatusCode >= 500)
+        {
+            return new FiscalRemoteCfdiQueryGatewayResult
+            {
+                Outcome = FiscalRemoteCfdiQueryGatewayOutcome.Unavailable,
+                ProviderName = _options.ProviderName,
+                ProviderOperation = _options.RemoteCfdiQueryPath,
+                ProviderTrackingId = providerResponse?.TrackingId,
+                ProviderCode = providerResponse?.Code ?? ((int)response.StatusCode).ToString(CultureInfo.InvariantCulture),
+                ProviderMessage = providerResponse?.Message,
+                ErrorCode = providerResponse?.ErrorCode ?? $"HTTP_{(int)response.StatusCode}",
+                ErrorMessage = providerResponse?.ErrorMessage ?? "Provider unavailable.",
+                SupportMessage = "La consulta remota del CFDI no pudo completarse porque el proveedor respondió con indisponibilidad.",
+                RawResponseSummaryJson = rawResponseSummaryJson
+            };
+        }
+
+        if (providerResponse is null)
+        {
+            return new FiscalRemoteCfdiQueryGatewayResult
+            {
+                Outcome = FiscalRemoteCfdiQueryGatewayOutcome.ValidationFailed,
+                ProviderName = _options.ProviderName,
+                ProviderOperation = _options.RemoteCfdiQueryPath,
+                ErrorMessage = "Provider remote CFDI response could not be parsed.",
+                SupportMessage = "El PAC respondió un formato no concluyente al consultar el CFDI. Revisa el resumen raw para soporte.",
+                RawResponseSummaryJson = rawResponseSummaryJson
+            };
+        }
+
+        if (response.IsSuccessStatusCode && providerResponse.RemoteExists)
+        {
+            return new FiscalRemoteCfdiQueryGatewayResult
+            {
+                Outcome = FiscalRemoteCfdiQueryGatewayOutcome.Found,
+                ProviderName = _options.ProviderName,
+                ProviderOperation = _options.RemoteCfdiQueryPath,
+                ProviderTrackingId = providerResponse.TrackingId,
+                ProviderCode = providerResponse.Code,
+                ProviderMessage = providerResponse.Message,
+                XmlContent = providerResponse.XmlContent,
+                XmlHash = string.IsNullOrWhiteSpace(providerResponse.XmlContent) ? null : ComputeSha256(providerResponse.XmlContent),
+                RemoteExists = true,
+                SupportMessage = string.IsNullOrWhiteSpace(providerResponse.XmlContent)
+                    ? "El CFDI existe remotamente en el PAC, pero la respuesta no incluyó XML."
+                    : "El CFDI existe remotamente en el PAC y devolvió evidencia XML útil para conciliación o recuperación.",
+                RawResponseSummaryJson = rawResponseSummaryJson
+            };
+        }
+
+        if (IsRemoteCfdiNotFound(providerResponse))
+        {
+            return new FiscalRemoteCfdiQueryGatewayResult
+            {
+                Outcome = FiscalRemoteCfdiQueryGatewayOutcome.NotFound,
+                ProviderName = _options.ProviderName,
+                ProviderOperation = _options.RemoteCfdiQueryPath,
+                ProviderTrackingId = providerResponse.TrackingId,
+                ProviderCode = providerResponse.Code,
+                ProviderMessage = providerResponse.Message,
+                RemoteExists = false,
+                ErrorCode = providerResponse.ErrorCode,
+                ErrorMessage = providerResponse.ErrorMessage ?? providerResponse.Message ?? "Remote CFDI was not found in provider records.",
+                SupportMessage = "El PAC no encontró evidencia remota para el UUID consultado.",
+                RawResponseSummaryJson = rawResponseSummaryJson
+            };
+        }
+
+        return new FiscalRemoteCfdiQueryGatewayResult
+        {
+            Outcome = FiscalRemoteCfdiQueryGatewayOutcome.ValidationFailed,
+            ProviderName = _options.ProviderName,
+            ProviderOperation = _options.RemoteCfdiQueryPath,
+            ProviderTrackingId = providerResponse.TrackingId,
+            ProviderCode = providerResponse.Code,
+            ProviderMessage = providerResponse.Message,
+            RemoteExists = providerResponse.RemoteExists,
+            XmlContent = providerResponse.XmlContent,
+            XmlHash = string.IsNullOrWhiteSpace(providerResponse.XmlContent) ? null : ComputeSha256(providerResponse.XmlContent),
+            ErrorCode = providerResponse.ErrorCode,
+            ErrorMessage = providerResponse.ErrorMessage ?? providerResponse.Message ?? "Remote CFDI response was not conclusive.",
+            SupportMessage = "La respuesta del PAC no fue concluyente para determinar la evidencia remota del CFDI. Revisa el resumen raw y concilia manualmente.",
+            RawResponseSummaryJson = rawResponseSummaryJson
+        };
+    }
+
     private async Task<string?> ResolveOptionalSecretAsync(string? referenceKey, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(referenceKey))
@@ -516,6 +648,27 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
         return JsonSerializer.Serialize(summary, JsonOptions);
     }
 
+    private static string BuildRemoteCfdiRawResponseSummary(HttpStatusCode statusCode, FacturaloPlusRemoteCfdiResponse? response, string rawContent)
+    {
+        var summary = new
+        {
+            HttpStatusCode = (int)statusCode,
+            response?.Success,
+            response?.TrackingId,
+            response?.Code,
+            response?.Message,
+            response?.ErrorCode,
+            response?.ErrorMessage,
+            response?.RemoteExists,
+            HasXml = !string.IsNullOrWhiteSpace(response?.XmlContent),
+            RawContentPreview = string.IsNullOrWhiteSpace(rawContent)
+                ? null
+                : rawContent.Length <= 500 ? rawContent : rawContent[..500]
+        };
+
+        return JsonSerializer.Serialize(summary, JsonOptions);
+    }
+
     private static FiscalStampingGatewayResult ValidationFailed(string errorMessage)
     {
         return new FiscalStampingGatewayResult
@@ -537,6 +690,32 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
             ProviderOperation = "stamp",
             ProviderRequestHash = providerRequestHash,
             ErrorMessage = errorMessage,
+            RawResponseSummaryJson = JsonSerializer.Serialize(new { error = errorMessage }, JsonOptions)
+        };
+    }
+
+    private static FiscalRemoteCfdiQueryGatewayResult RemoteValidationFailed(string errorMessage)
+    {
+        return new FiscalRemoteCfdiQueryGatewayResult
+        {
+            Outcome = FiscalRemoteCfdiQueryGatewayOutcome.ValidationFailed,
+            ProviderName = "FacturaloPlus",
+            ProviderOperation = "consultarCFDI",
+            ErrorMessage = errorMessage,
+            SupportMessage = errorMessage,
+            RawResponseSummaryJson = JsonSerializer.Serialize(new { error = errorMessage }, JsonOptions)
+        };
+    }
+
+    private static FiscalRemoteCfdiQueryGatewayResult RemoteUnavailable(string errorMessage)
+    {
+        return new FiscalRemoteCfdiQueryGatewayResult
+        {
+            Outcome = FiscalRemoteCfdiQueryGatewayOutcome.Unavailable,
+            ProviderName = "FacturaloPlus",
+            ProviderOperation = "consultarCFDI",
+            ErrorMessage = errorMessage,
+            SupportMessage = "La consulta remota del CFDI no pudo completarse. Es seguro reintentar manualmente.",
             RawResponseSummaryJson = JsonSerializer.Serialize(new { error = errorMessage }, JsonOptions)
         };
     }
@@ -593,6 +772,131 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
         catch (JsonException)
         {
             return null;
+        }
+    }
+
+    private static bool IsRemoteCfdiNotFound(FacturaloPlusRemoteCfdiResponse response)
+    {
+        if (!string.IsNullOrWhiteSpace(response.XmlContent))
+        {
+            return false;
+        }
+
+        var normalizedCode = NormalizeRemoteCode(response.Code);
+        return normalizedCode is "404" or "NOT_FOUND" or "N-404";
+    }
+
+    private static string? NormalizeRemoteCode(string? code)
+    {
+        if (string.IsNullOrWhiteSpace(code))
+        {
+            return null;
+        }
+
+        var trimmed = code.Trim();
+        var number = new string(trimmed.Where(char.IsDigit).ToArray());
+        if (trimmed.StartsWith('N') && number.Length > 0)
+        {
+            return $"N-{number}";
+        }
+
+        return number.Length > 0 ? number : trimmed.ToUpperInvariant();
+    }
+
+    private static FacturaloPlusRemoteCfdiResponse? TryDeserializeRemoteCfdi(string rawContent)
+    {
+        if (string.IsNullOrWhiteSpace(rawContent))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(rawContent);
+            var response = new FacturaloPlusRemoteCfdiResponse();
+            PopulateRemoteCfdiResponse(document.RootElement, response);
+            response.Code = NormalizeRemoteCode(response.Code) ?? response.Code;
+            response.RemoteExists = response.RemoteExists || !string.IsNullOrWhiteSpace(response.XmlContent);
+            response.Success = response.Success || response.RemoteExists || string.Equals(response.Code, "200", StringComparison.OrdinalIgnoreCase);
+            return response;
+        }
+        catch (JsonException)
+        {
+            if (rawContent.TrimStart().StartsWith('<'))
+            {
+                return new FacturaloPlusRemoteCfdiResponse
+                {
+                    Success = true,
+                    RemoteExists = true,
+                    XmlContent = rawContent,
+                    Code = "200",
+                    Message = "Remote CFDI XML recovered."
+                };
+            }
+
+            return null;
+        }
+    }
+
+    private static void PopulateRemoteCfdiResponse(JsonElement element, FacturaloPlusRemoteCfdiResponse response)
+    {
+        if (element.ValueKind == JsonValueKind.String)
+        {
+            var rawValue = element.GetString();
+            if (string.IsNullOrWhiteSpace(rawValue))
+            {
+                return;
+            }
+
+            var trimmed = rawValue.Trim();
+            if (trimmed.StartsWith('{') || trimmed.StartsWith('['))
+            {
+                try
+                {
+                    using var nested = JsonDocument.Parse(trimmed);
+                    PopulateRemoteCfdiResponse(nested.RootElement, response);
+                    return;
+                }
+                catch (JsonException)
+                {
+                }
+            }
+
+            if (trimmed.StartsWith('<'))
+            {
+                response.XmlContent ??= rawValue;
+                response.RemoteExists = true;
+            }
+
+            return;
+        }
+
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            return;
+        }
+
+        response.Success = response.Success || ReadBoolean(element, "success", "Success") == true;
+        response.TrackingId ??= ReadString(element, "trackingId", "trackingID", "TrackingId");
+        response.Code ??= ReadString(element, "code", "Code", "Codigo", "CodigoEstatus");
+        response.Message ??= ReadString(element, "message", "Message", "mensaje", "Mensaje");
+        response.ErrorCode ??= ReadString(element, "errorCode", "ErrorCode");
+        response.ErrorMessage ??= ReadString(element, "errorMessage", "ErrorMessage");
+        response.XmlContent ??= ReadString(element, "data", "xml", "XML", "xmlContent", "XmlContent");
+
+        if (!string.IsNullOrWhiteSpace(response.XmlContent) && !response.XmlContent.TrimStart().StartsWith('<'))
+        {
+            response.XmlContent = null;
+        }
+
+        response.RemoteExists = response.RemoteExists || !string.IsNullOrWhiteSpace(response.XmlContent);
+
+        foreach (var wrapper in new[] { "data", "Data", "result", "Result", "response", "Response", "payload", "Payload" })
+        {
+            if (TryGetProperty(element, out var nestedElement, wrapper))
+            {
+                PopulateRemoteCfdiResponse(nestedElement, response);
+            }
         }
     }
 
@@ -931,6 +1235,18 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
         public string? ErrorCode { get; set; }
         public string? ErrorMessage { get; set; }
         public bool HasSuccessfulStampEvidence { get; set; }
+    }
+
+    private sealed class FacturaloPlusRemoteCfdiResponse
+    {
+        public bool Success { get; set; }
+        public string? TrackingId { get; set; }
+        public string? Code { get; set; }
+        public string? Message { get; set; }
+        public string? XmlContent { get; set; }
+        public string? ErrorCode { get; set; }
+        public string? ErrorMessage { get; set; }
+        public bool RemoteExists { get; set; }
     }
 
     private sealed record CertificateMetadata(

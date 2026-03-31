@@ -1408,8 +1408,22 @@ internal sealed class FakeFiscalStampingGateway : IFiscalStampingGateway
         XmlHash = "XML-HASH-FISCAL"
     };
 
+    public Func<FiscalRemoteCfdiQueryRequest, FiscalRemoteCfdiQueryGatewayResult> RemoteQueryResponseFactory { get; set; } = _ => new FiscalRemoteCfdiQueryGatewayResult
+    {
+        Outcome = FiscalRemoteCfdiQueryGatewayOutcome.Found,
+        ProviderName = "FacturaloPlus",
+        ProviderOperation = "consultarCFDI",
+        ProviderCode = "200",
+        ProviderMessage = "Remote CFDI found.",
+        RemoteExists = true,
+        XmlContent = "<cfdi:Comprobante Version=\"4.0\" />"
+    };
+
     public Task<FiscalStampingGatewayResult> StampAsync(FiscalStampingRequest request, CancellationToken cancellationToken = default)
         => Task.FromResult(ResponseFactory(request));
+
+    public Task<FiscalRemoteCfdiQueryGatewayResult> QueryRemoteCfdiAsync(FiscalRemoteCfdiQueryRequest request, CancellationToken cancellationToken = default)
+        => Task.FromResult(RemoteQueryResponseFactory(request));
 }
 
 internal sealed class FakeFiscalCancellationGateway : IFiscalCancellationGateway

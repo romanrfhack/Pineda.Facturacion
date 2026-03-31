@@ -20,9 +20,21 @@ import { FiscalStampResponse } from '../models/fiscal-documents.models';
         <div class="detail-row"><dt>Id de tracking</dt><dd class="mono">{{ stamp().providerTrackingId || 'N/D' }}</dd></div>
         <div class="detail-row"><dt>Texto / URL QR</dt><dd class="mono">{{ stamp().qrCodeTextOrUrl || 'N/D' }}</dd></div>
         <div class="detail-row"><dt>Cadena original</dt><dd class="mono">{{ stamp().originalString || 'N/D' }}</dd></div>
+        <div class="detail-row"><dt>Última consulta remota</dt><dd>{{ stamp().lastRemoteQueryAtUtc ? (stamp().lastRemoteQueryAtUtc | date: 'medium') : 'Sin consultar' }}</dd></div>
+        <div class="detail-row"><dt>Tracking remoto</dt><dd class="mono">{{ stamp().lastRemoteProviderTrackingId || 'N/D' }}</dd></div>
+        <div class="detail-row"><dt>Código remoto</dt><dd class="mono">{{ stamp().lastRemoteProviderCode || 'N/D' }}</dd></div>
+        <div class="detail-row"><dt>Mensaje remoto</dt><dd>{{ stamp().lastRemoteProviderMessage || 'N/D' }}</dd></div>
+        <div class="detail-row"><dt>XML recuperado</dt><dd>{{ stamp().xmlRecoveredFromProviderAtUtc ? (stamp().xmlRecoveredFromProviderAtUtc | date: 'medium') : 'No' }}</dd></div>
         <div class="detail-row"><dt>Creado</dt><dd>{{ stamp().createdAtUtc | date: 'medium' }}</dd></div>
         <div class="detail-row"><dt>Actualizado</dt><dd>{{ stamp().updatedAtUtc | date: 'medium' }}</dd></div>
       </dl>
+
+      @if (stamp().lastRemoteRawResponseSummaryJson) {
+        <div class="raw-block">
+          <strong>Resumen raw de última consulta remota</strong>
+          <pre>{{ stamp().lastRemoteRawResponseSummaryJson }}</pre>
+        </div>
+      }
     </section>
   `,
   styles: [`
@@ -34,6 +46,8 @@ import { FiscalStampResponse } from '../models/fiscal-documents.models';
     dt { font-size:0.82rem; color:#666; }
     dd { margin:0.2rem 0 0; font-weight:600; min-width:0; overflow-wrap:anywhere; word-break:break-word; }
     .mono { font-family:"SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-weight:500; }
+    .raw-block { margin-top:0.9rem; display:grid; gap:0.35rem; }
+    pre { margin:0; padding:0.75rem; border-radius:0.75rem; background:#f6f0e4; overflow:auto; font-family:"SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-size:0.78rem; }
     @media (max-width: 720px) {
       .detail-row { grid-template-columns:1fr; }
     }
