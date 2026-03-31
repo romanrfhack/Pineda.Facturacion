@@ -10,6 +10,7 @@ using Pineda.Facturacion.Infrastructure.BillingWrite.DependencyInjection;
 using Pineda.Facturacion.Infrastructure.FacturaloPlus.DependencyInjection;
 using Pineda.Facturacion.Infrastructure.LegacyRead.DependencyInjection;
 using Pineda.Facturacion.Infrastructure.Options;
+using Pineda.Facturacion.Infrastructure.Security;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -83,6 +84,20 @@ builder.Services.AddAuthorization(options =>
 
 var app = builder.Build();
 
+if (args.Contains("seed-initial-production-users", StringComparer.OrdinalIgnoreCase))
+{
+    await using var scope = app.Services.CreateAsyncScope();
+    var seedService = scope.ServiceProvider.GetRequiredService<InitialProductionIdentitySeedService>();
+    var result = await seedService.ExecuteAsync();
+
+    Console.WriteLine("Initial production identity seed completed.");
+    Console.WriteLine($"Created roles: {FormatList(result.CreatedRoles)}");
+    Console.WriteLine($"Created users: {FormatList(result.CreatedUsers)}");
+    Console.WriteLine($"Assigned Admin role: {FormatList(result.AssignedAdminRoleUsers)}");
+    Console.WriteLine($"Skipped existing users: {FormatList(result.SkippedExistingUsers)}");
+    return;
+}
+
 var enableSwagger = app.Configuration.GetValue<bool?>("OpenApi:EnableSwagger") ?? IsSwaggerEnabledByEnvironment(app.Environment);
 
 if (enableSwagger)
@@ -135,6 +150,11 @@ static bool IsSwaggerEnabledByEnvironment(IHostEnvironment environment)
     return environment.IsDevelopment()
         || environment.IsEnvironment("Local")
         || environment.IsEnvironment("Sandbox");
+}
+
+static string FormatList(IReadOnlyCollection<string> values)
+{
+    return values.Count == 0 ? "(none)" : string.Join(", ", values);
 }
 
 public partial class Program;

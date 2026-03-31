@@ -58,6 +58,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ICurrentUserAccessor, CurrentUserAccessor>();
         services.AddScoped<IAuditService, AuditService>();
         services.AddScoped<IdentityBootstrapService>();
+        services.AddScoped<InitialProductionIdentitySeedService>();
         services.AddHostedService<DatabaseBootstrapHostedService>();
         services.AddHostedService<StandardVat16BackfillHostedService>();
         services.AddHostedService<AuthBootstrapHostedService>();

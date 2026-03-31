@@ -14,6 +14,46 @@ namespace Pineda.Facturacion.UnitTests;
 public class IdentityBootstrapServiceTests
 {
     [Fact]
+    public async Task InitialProductionSeed_Creates_AdminRole_AndConfiguredUsers_WithoutOverwritingExistingOnRerun()
+    {
+        var roleRepository = new BootstrapFakeAppRoleRepository();
+        var userRepository = new BootstrapFakeAppUserRepository();
+        var userRoleRepository = new BootstrapFakeAppUserRoleRepository();
+        var passwordHasher = new BootstrapFakePasswordHasher();
+        var unitOfWork = new BootstrapFakeUnitOfWork();
+        userRoleRepository.Attach(userRepository, roleRepository);
+
+        var service = new InitialProductionIdentitySeedService(
+            roleRepository,
+            userRepository,
+            userRoleRepository,
+            passwordHasher,
+            unitOfWork,
+            NullLogger<InitialProductionIdentitySeedService>.Instance);
+
+        var firstRun = await service.ExecuteAsync();
+        var secondRun = await service.ExecuteAsync();
+
+        Assert.Contains("ADMIN", roleRepository.Stored.Keys);
+        Assert.Equal(["martha.pineda", "memo.aguirre", "roman.romero"], firstRun.CreatedUsers);
+        Assert.Single(firstRun.CreatedRoles);
+        Assert.Equal(3, firstRun.AssignedAdminRoleUsers.Count);
+        Assert.Empty(firstRun.SkippedExistingUsers);
+
+        Assert.Equal(3, userRepository.Stored.Count);
+        Assert.Equal("HASH::martha.pineda::Mp630726", userRepository.Stored["MARTHA.PINEDA"].PasswordHash);
+        Assert.Equal("HASH::memo.aguirre::Ga560201", userRepository.Stored["MEMO.AGUIRRE"].PasswordHash);
+        Assert.Equal("HASH::roman.romero::hackGURU$1", userRepository.Stored["ROMAN.ROMERO"].PasswordHash);
+        Assert.Equal(3, userRoleRepository.Assignments.Count);
+
+        Assert.Empty(secondRun.CreatedRoles);
+        Assert.Empty(secondRun.CreatedUsers);
+        Assert.Empty(secondRun.AssignedAdminRoleUsers);
+        Assert.Equal(["martha.pineda", "memo.aguirre", "roman.romero"], secondRun.SkippedExistingUsers);
+        Assert.Equal(3, passwordHasher.HashCalls.Count);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_SeedsRoles_AndDefaultUsers_InNonProduction()
     {
         var roleRepository = new BootstrapFakeAppRoleRepository();
