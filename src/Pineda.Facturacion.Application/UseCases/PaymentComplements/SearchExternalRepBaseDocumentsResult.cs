@@ -11,4 +11,6 @@ public sealed class SearchExternalRepBaseDocumentsResult
     public int TotalPages { get; init; }
 
     public IReadOnlyList<ExternalRepBaseDocumentListItem> Items { get; init; } = [];
+
+    public RepOperationalSummaryCounts SummaryCounts { get; init; } = new();
 }

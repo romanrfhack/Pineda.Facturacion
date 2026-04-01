@@ -144,6 +144,7 @@ public class RepBaseDocumentSearchServicesTests
                 {
                     FiscalDocumentId = 601,
                     BillingDocumentId = 401,
+                    AccountsReceivableInvoiceId = 801,
                     DocumentType = "I",
                     FiscalStatus = FiscalDocumentStatus.Stamped.ToString(),
                     AccountsReceivableStatus = AccountsReceivableInvoiceStatus.PartiallyPaid.ToString(),
@@ -181,6 +182,86 @@ public class RepBaseDocumentSearchServicesTests
         var item = Assert.Single(result.Items);
         Assert.True(item.HasPreparedRepPendingStamp);
         Assert.Contains(item.Alerts, x => x.Code == "PreparedRepPendingStamp");
+        Assert.Equal("StampRep", item.NextRecommendedAction);
+        Assert.Equal(1, result.SummaryCounts.WarningCount);
+        Assert.Equal(1, result.SummaryCounts.NextRecommendedActionCounts.Single(x => x.Code == "StampRep").Count);
+    }
+
+    [Fact]
+    public async Task SearchInternalRepBaseDocuments_Filters_ByAlertSeverityAndRecommendedAction()
+    {
+        var repository = new FakeInternalRepository
+        {
+            Items =
+            [
+                new InternalRepBaseDocumentSummaryReadModel
+                {
+                    FiscalDocumentId = 701,
+                    AccountsReceivableInvoiceId = 901,
+                    DocumentType = "I",
+                    FiscalStatus = FiscalDocumentStatus.Stamped.ToString(),
+                    AccountsReceivableStatus = AccountsReceivableInvoiceStatus.PartiallyPaid.ToString(),
+                    Uuid = "UUID-INT-701",
+                    Series = "INT",
+                    Folio = "701",
+                    ReceiverRfc = "BBB010101BBB",
+                    ReceiverLegalName = "Cliente Interno",
+                    IssuedAtUtc = new DateTime(2026, 4, 1, 9, 0, 0, DateTimeKind.Utc),
+                    PaymentMethodSat = "PPD",
+                    PaymentFormSat = "99",
+                    CurrencyCode = "MXN",
+                    Total = 116m,
+                    PaidTotal = 116m,
+                    OutstandingBalance = 0m,
+                    RegisteredPaymentCount = 1,
+                    PaymentComplementCount = 1,
+                    StampedPaymentComplementCount = 0,
+                    PreparedPendingStampCount = 1
+                },
+                new InternalRepBaseDocumentSummaryReadModel
+                {
+                    FiscalDocumentId = 702,
+                    AccountsReceivableInvoiceId = 902,
+                    DocumentType = "I",
+                    FiscalStatus = FiscalDocumentStatus.Stamped.ToString(),
+                    AccountsReceivableStatus = AccountsReceivableInvoiceStatus.Open.ToString(),
+                    Uuid = "UUID-INT-702",
+                    Series = "INT",
+                    Folio = "702",
+                    ReceiverRfc = "CCC010101CCC",
+                    ReceiverLegalName = "Cliente Dos",
+                    IssuedAtUtc = new DateTime(2026, 4, 1, 10, 0, 0, DateTimeKind.Utc),
+                    PaymentMethodSat = "PPD",
+                    PaymentFormSat = "99",
+                    CurrencyCode = "MXN",
+                    Total = 232m,
+                    PaidTotal = 0m,
+                    OutstandingBalance = 232m,
+                    RegisteredPaymentCount = 0,
+                    PaymentComplementCount = 0,
+                    StampedPaymentComplementCount = 0
+                }
+            ]
+        };
+
+        var service = new SearchInternalRepBaseDocumentsService(
+            repository,
+            new FakeInternalStateRepository(),
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new SearchInternalRepBaseDocumentsFilter
+        {
+            Page = 1,
+            PageSize = 25,
+            AlertCode = "PreparedRepPendingStamp",
+            Severity = "warning",
+            NextRecommendedAction = "StampRep"
+        });
+
+        var item = Assert.Single(result.Items);
+        Assert.Equal(701, item.FiscalDocumentId);
+        Assert.Equal(1, result.SummaryCounts.WarningCount);
+        Assert.Equal(1, result.SummaryCounts.NextRecommendedActionCounts.Single(x => x.Code == "StampRep").Count);
     }
 
     [Fact]
@@ -319,8 +400,10 @@ public class RepBaseDocumentSearchServicesTests
 
         var item = Assert.Single(result.Items);
         Assert.True(item.HasBlockedOperation);
-        Assert.Null(item.NextRecommendedAction);
-        Assert.Contains(item.Alerts, x => x.Code == "BlockedOperation");
+        Assert.Equal("Blocked", item.NextRecommendedAction);
+        Assert.Contains(item.Alerts, x => x.Code == "CancelledBaseDocument");
+        Assert.Equal(1, result.SummaryCounts.CriticalCount);
+        Assert.Equal(1, result.SummaryCounts.BlockedCount);
     }
 
     private sealed class FakeInternalRepository : IRepBaseDocumentRepository

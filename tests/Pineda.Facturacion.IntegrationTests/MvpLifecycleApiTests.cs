@@ -1186,6 +1186,55 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
+    public async Task InternalRepBaseDocuments_List_FiltersByOperationalAlertSeverityAndAction_AndReturnsSummaryCounts()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-REP-F1-INT-1001", uuid: "UUID-REP-F1-INT-1001");
+
+        var createArBody = await (await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest()))
+            .Content.ReadFromJsonAsync<CreateAccountsReceivableInvoiceResponse>();
+        var invoiceId = createArBody!.AccountsReceivableInvoice!.Id;
+
+        var createPaymentBody = await (await client.PostAsJsonAsync("/api/accounts-receivable/payments", new CreateAccountsReceivablePaymentRequest
+        {
+            PaymentDateUtc = new DateTime(2026, 04, 03, 10, 0, 0, DateTimeKind.Utc),
+            PaymentFormSat = "03",
+            Amount = 40m,
+            Reference = "REP-F1-INT-REF"
+        })).Content.ReadFromJsonAsync<CreateAccountsReceivablePaymentResponse>();
+        var paymentId = createPaymentBody!.Payment!.Id;
+
+        var applyResponse = await client.PostAsJsonAsync($"/api/accounts-receivable/payments/{paymentId}/apply", new ApplyAccountsReceivablePaymentRequest
+        {
+            Applications =
+            [
+                new ApplyAccountsReceivablePaymentRowRequest
+                {
+                    AccountsReceivableInvoiceId = invoiceId,
+                    AppliedAmount = 40m
+                }
+            ]
+        });
+        Assert.Equal(HttpStatusCode.OK, applyResponse.StatusCode);
+
+        var response = await client.GetAsync("/api/payment-complements/base-documents/internal?page=1&pageSize=25&alertCode=AppliedPaymentsWithoutStampedRep&severity=warning&nextRecommendedAction=PrepareRep");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var json = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+        var item = Assert.Single(json.RootElement.GetProperty("items").EnumerateArray().ToList());
+        Assert.Equal(fiscalDocumentId, item.GetProperty("fiscalDocumentId").GetInt64());
+        Assert.Equal("PrepareRep", item.GetProperty("nextRecommendedAction").GetString());
+
+        var summaryCounts = json.RootElement.GetProperty("summaryCounts");
+        Assert.Equal(1, summaryCounts.GetProperty("warningCount").GetInt32());
+        Assert.Equal(0, summaryCounts.GetProperty("errorCount").GetInt32());
+        Assert.Contains(summaryCounts.GetProperty("nextRecommendedActionCounts").EnumerateArray().ToList(), x =>
+            x.GetProperty("code").GetString() == "PrepareRep" && x.GetProperty("count").GetInt32() == 1);
+    }
+
+    [Fact]
     public async Task InternalRepBaseDocuments_Detail_ReturnsEligibilityHistoryAndIssuedRepContext()
     {
         await using var factory = new MvpApiFactory();
@@ -1756,6 +1805,55 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
+    public async Task ExternalRepBaseDocuments_List_FiltersByOperationalAlertSeverityAndAction_AndReturnsSummaryCounts()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        await factory.SeedStandardFiscalMasterDataAsync();
+
+        factory.FiscalStatusQueryGateway.ResponseFactory = _ => new FiscalStatusQueryGatewayResult
+        {
+            Outcome = FiscalStatusQueryGatewayOutcome.Refreshed,
+            ExternalStatus = "Vigente",
+            CheckedAtUtc = DateTime.UtcNow
+        };
+
+        long externalId;
+        using (var content = new MultipartFormDataContent())
+        {
+            var file = new ByteArrayContent(Encoding.UTF8.GetBytes(CreateExternalRepXmlContent(uuid: "UUID-EXT-F1-1001")));
+            file.Headers.ContentType = new MediaTypeHeaderValue("application/xml");
+            content.Add(file, "file", "external-f1.xml");
+            var importResponse = await client.PostAsync("/api/payment-complements/external-base-documents/import-xml", content);
+            Assert.Equal(HttpStatusCode.OK, importResponse.StatusCode);
+            var importBody = await importResponse.Content.ReadFromJsonAsync<ExternalRepBaseDocumentImportResponse>();
+            externalId = importBody!.ExternalRepBaseDocumentId!.Value;
+        }
+
+        var paymentResponse = await client.PostAsJsonAsync($"/api/payment-complements/base-documents/external/{externalId}/payments", new RegisterExternalRepBaseDocumentPaymentRequest
+        {
+            PaymentDate = new DateOnly(2026, 04, 03),
+            PaymentFormSat = "03",
+            Amount = 40m,
+            Reference = "REP-F1-EXT-REF"
+        });
+        Assert.Equal(HttpStatusCode.OK, paymentResponse.StatusCode);
+
+        var response = await client.GetAsync("/api/payment-complements/base-documents/external?page=1&pageSize=25&alertCode=AppliedPaymentsWithoutStampedRep&severity=warning&nextRecommendedAction=PrepareRep");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var json = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+        var item = Assert.Single(json.RootElement.GetProperty("items").EnumerateArray().ToList());
+        Assert.Equal(externalId, item.GetProperty("externalRepBaseDocumentId").GetInt64());
+        Assert.Equal("PrepareRep", item.GetProperty("nextRecommendedAction").GetString());
+
+        var summaryCounts = json.RootElement.GetProperty("summaryCounts");
+        Assert.Equal(1, summaryCounts.GetProperty("warningCount").GetInt32());
+        Assert.Contains(summaryCounts.GetProperty("alertCounts").EnumerateArray().ToList(), x =>
+            x.GetProperty("code").GetString() == "AppliedPaymentsWithoutStampedRep" && x.GetProperty("count").GetInt32() == 1);
+    }
+
+    [Fact]
     public async Task RepBaseDocuments_UnifiedList_ReturnsInternalAndExternalRows()
     {
         await using var factory = new MvpApiFactory();
@@ -1788,6 +1886,28 @@ public class MvpLifecycleApiTests
         var items = listJson.RootElement.GetProperty("items").EnumerateArray().ToList();
         Assert.Contains(items, x => x.GetProperty("sourceType").GetString() == "Internal");
         Assert.Contains(items, x => x.GetProperty("sourceType").GetString() == "External");
+    }
+
+    [Fact]
+    public async Task RepBaseDocuments_UnifiedList_FiltersByRecommendedAction_AndReturnsSummaryCounts()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-REP-F1-UNI-1001", uuid: "UUID-REP-F1-UNI-1001");
+        var createArResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest());
+        Assert.Equal(HttpStatusCode.OK, createArResponse.StatusCode);
+
+        var response = await client.GetAsync("/api/payment-complements/base-documents?page=1&pageSize=25&nextRecommendedAction=RegisterPayment");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var json = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+        var items = json.RootElement.GetProperty("items").EnumerateArray().ToList();
+        Assert.Contains(items, x => x.GetProperty("fiscalDocumentId").GetInt64() == fiscalDocumentId);
+
+        var summaryCounts = json.RootElement.GetProperty("summaryCounts");
+        Assert.Contains(summaryCounts.GetProperty("nextRecommendedActionCounts").EnumerateArray().ToList(), x =>
+            x.GetProperty("code").GetString() == "RegisterPayment" && x.GetProperty("count").GetInt32() >= 1);
     }
 
     [Fact]

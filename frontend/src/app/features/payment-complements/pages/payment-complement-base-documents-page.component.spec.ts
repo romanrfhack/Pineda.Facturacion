@@ -12,6 +12,21 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
         pageSize: 25,
         totalCount: 2,
         totalPages: 1,
+        summaryCounts: {
+          infoCount: 0,
+          warningCount: 1,
+          errorCount: 0,
+          criticalCount: 1,
+          blockedCount: 1,
+          alertCounts: [
+            { code: 'AppliedPaymentsWithoutStampedRep', count: 1 },
+            { code: 'CancelledBaseDocument', count: 1 }
+          ],
+          nextRecommendedActionCounts: [
+            { code: 'PrepareRep', count: 1 },
+            { code: 'Blocked', count: 1 }
+          ]
+        },
         items: [
           {
             fiscalDocumentId: 501,
@@ -111,10 +126,10 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
             hasPreparedRepPendingStamp: false,
             hasRepWithError: false,
             hasBlockedOperation: true,
-            nextRecommendedAction: null,
+            nextRecommendedAction: 'Blocked',
             availableActions: ['ViewDetail'],
             alerts: [
-              { code: 'BlockedOperation', severity: 'critical', message: 'El CFDI está cancelado.' }
+              { code: 'CancelledBaseDocument', severity: 'critical', message: 'El CFDI está cancelado.' }
             ],
             operationalState: {
               lastEligibilityEvaluatedAtUtc: '2026-04-03T08:05:00Z',
@@ -397,6 +412,8 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
     fixture.componentInstance['receiverRfc'] = 'BBB010101BBB';
     fixture.componentInstance['query'] = 'UUID-REP-1';
     fixture.componentInstance['eligibleFilter'] = 'true';
+    fixture.componentInstance['severityFilter'] = 'warning';
+    fixture.componentInstance['nextRecommendedActionFilter'] = 'PrepareRep';
     await fixture.componentInstance['applyFilters']();
 
     expect(searchInternalBaseDocuments).toHaveBeenCalledWith(expect.objectContaining({
@@ -404,8 +421,20 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
       pageSize: 25,
       receiverRfc: 'BBB010101BBB',
       query: 'UUID-REP-1',
-      eligible: true
+      eligible: true,
+      severity: 'warning',
+      nextRecommendedAction: 'PrepareRep'
     }));
+  });
+
+  it('renders quick operational chips with summary counts', async () => {
+    const fixture = await configure();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Advertencias (1)');
+    expect(fixture.nativeElement.textContent).toContain('Críticos (1)');
+    expect(fixture.nativeElement.textContent).toContain('Preparar REP (1)');
+    expect(fixture.nativeElement.textContent).toContain('Bloqueados (1)');
   });
 
   it('opens the detail modal with payment and REP context', async () => {

@@ -152,6 +152,9 @@ export interface InternalRepBaseDocumentFilters {
   blocked?: boolean | null;
   withOutstandingBalance?: boolean | null;
   hasRepEmitted?: boolean | null;
+  alertCode?: string | null;
+  severity?: string | null;
+  nextRecommendedAction?: string | null;
 }
 
 export interface RegisterInternalRepBaseDocumentPaymentRequest {
@@ -195,6 +198,21 @@ export interface RepOperationalAlertResponse {
   code: string;
   severity: string;
   message: string;
+}
+
+export interface RepOperationalCountResponse {
+  code: string;
+  count: number;
+}
+
+export interface RepOperationalSummaryCountsResponse {
+  infoCount: number;
+  warningCount: number;
+  errorCount: number;
+  criticalCount: number;
+  blockedCount: number;
+  alertCounts: RepOperationalCountResponse[];
+  nextRecommendedActionCounts: RepOperationalCountResponse[];
 }
 
 export interface PrepareInternalRepBaseDocumentPaymentComplementRequest {
@@ -331,6 +349,9 @@ export interface ExternalRepBaseDocumentFilters {
   validationStatus?: string | null;
   eligible?: boolean | null;
   blocked?: boolean | null;
+  alertCode?: string | null;
+  severity?: string | null;
+  nextRecommendedAction?: string | null;
 }
 
 export interface ExternalRepBaseDocumentItemResponse {
@@ -382,7 +403,7 @@ export interface ExternalRepBaseDocumentItemResponse {
   hasPreparedRepPendingStamp: boolean;
   hasRepWithError: boolean;
   hasBlockedOperation: boolean;
-  nextRecommendedAction?: string | null;
+  nextRecommendedAction: string;
   availableActions: string[];
   alerts: RepOperationalAlertResponse[];
 }
@@ -578,6 +599,7 @@ export interface ExternalRepBaseDocumentListResponse {
   totalCount: number;
   totalPages: number;
   items: ExternalRepBaseDocumentItemResponse[];
+  summaryCounts?: RepOperationalSummaryCountsResponse;
 }
 
 export interface RepBaseDocumentFilters {
@@ -591,6 +613,9 @@ export interface RepBaseDocumentFilters {
   validationStatus?: string | null;
   eligible?: boolean | null;
   blocked?: boolean | null;
+  alertCode?: string | null;
+  severity?: string | null;
+  nextRecommendedAction?: string | null;
 }
 
 export interface RepBaseDocumentItemResponse {
@@ -624,7 +649,7 @@ export interface RepBaseDocumentItemResponse {
   hasPreparedRepPendingStamp: boolean;
   hasRepWithError: boolean;
   hasBlockedOperation: boolean;
-  nextRecommendedAction?: string | null;
+  nextRecommendedAction: string;
   availableActions: string[];
   alerts: RepOperationalAlertResponse[];
   importedAtUtc?: string | null;
@@ -636,6 +661,7 @@ export interface RepBaseDocumentListResponse {
   totalCount: number;
   totalPages: number;
   items: RepBaseDocumentItemResponse[];
+  summaryCounts?: RepOperationalSummaryCountsResponse;
 }
 
 export interface InternalRepBaseDocumentItemResponse {
@@ -671,7 +697,7 @@ export interface InternalRepBaseDocumentItemResponse {
   hasPreparedRepPendingStamp: boolean;
   hasRepWithError: boolean;
   hasBlockedOperation: boolean;
-  nextRecommendedAction?: string | null;
+  nextRecommendedAction: string;
   availableActions: string[];
   alerts: RepOperationalAlertResponse[];
   operationalState?: InternalRepBaseDocumentOperationalStateResponse | null;
@@ -683,6 +709,7 @@ export interface InternalRepBaseDocumentListResponse {
   totalCount: number;
   totalPages: number;
   items: InternalRepBaseDocumentItemResponse[];
+  summaryCounts?: RepOperationalSummaryCountsResponse;
 }
 
 export interface InternalRepBaseDocumentPaymentApplicationResponse {

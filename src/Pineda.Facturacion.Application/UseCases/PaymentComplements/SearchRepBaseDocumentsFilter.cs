@@ -21,4 +21,10 @@ public sealed class SearchRepBaseDocumentsFilter
     public bool? Eligible { get; init; }
 
     public bool? Blocked { get; init; }
+
+    public string? AlertCode { get; init; }
+
+    public string? Severity { get; init; }
+
+    public string? NextRecommendedAction { get; init; }
 }

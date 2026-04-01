@@ -11,4 +11,6 @@ public sealed class SearchRepBaseDocumentsResult
     public int TotalPages { get; init; }
 
     public IReadOnlyList<RepBaseDocumentUnifiedListItem> Items { get; init; } = [];
+
+    public RepOperationalSummaryCounts SummaryCounts { get; init; } = new();
 }

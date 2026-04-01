@@ -39,12 +39,22 @@ describe('PaymentComplementsApiService', () => {
       eligible: true,
       blocked: false,
       withOutstandingBalance: true,
-      hasRepEmitted: false
+      hasRepEmitted: false,
+      alertCode: 'PreparedRepPendingStamp',
+      severity: 'warning',
+      nextRecommendedAction: 'StampRep'
     }).subscribe();
 
-    const req = httpTesting.expectOne('/api/payment-complements/base-documents/internal?page=2&pageSize=10&fromDate=2026-04-01&toDate=2026-04-30&receiverRfc=BBB010101BBB&query=UUID-REP-1&eligible=true&blocked=false&withOutstandingBalance=true&hasRepEmitted=false');
+    const req = httpTesting.expectOne('/api/payment-complements/base-documents/internal?page=2&pageSize=10&fromDate=2026-04-01&toDate=2026-04-30&receiverRfc=BBB010101BBB&query=UUID-REP-1&eligible=true&blocked=false&withOutstandingBalance=true&hasRepEmitted=false&alertCode=PreparedRepPendingStamp&severity=warning&nextRecommendedAction=StampRep');
     expect(req.request.method).toBe('GET');
-    req.flush({ page: 2, pageSize: 10, totalCount: 0, totalPages: 0, items: [] });
+    req.flush({
+      page: 2,
+      pageSize: 10,
+      totalCount: 0,
+      totalPages: 0,
+      items: [],
+      summaryCounts: { infoCount: 0, warningCount: 0, errorCount: 0, criticalCount: 0, blockedCount: 0, alertCounts: [], nextRecommendedActionCounts: [] }
+    });
     httpTesting.verify();
   });
 
@@ -393,12 +403,22 @@ describe('PaymentComplementsApiService', () => {
       query: 'UUID-EXT-1',
       validationStatus: 'Accepted',
       eligible: true,
-      blocked: false
+      blocked: false,
+      alertCode: 'StampedRepAvailable',
+      severity: 'info',
+      nextRecommendedAction: 'RefreshRepStatus'
     }).subscribe();
 
-    const req = httpTesting.expectOne('/api/payment-complements/base-documents/external?page=1&pageSize=25&fromDate=2026-04-01&toDate=2026-04-30&receiverRfc=BBB010101BBB&query=UUID-EXT-1&validationStatus=Accepted&eligible=true&blocked=false');
+    const req = httpTesting.expectOne('/api/payment-complements/base-documents/external?page=1&pageSize=25&fromDate=2026-04-01&toDate=2026-04-30&receiverRfc=BBB010101BBB&query=UUID-EXT-1&validationStatus=Accepted&eligible=true&blocked=false&alertCode=StampedRepAvailable&severity=info&nextRecommendedAction=RefreshRepStatus');
     expect(req.request.method).toBe('GET');
-    req.flush({ page: 1, pageSize: 25, totalCount: 0, totalPages: 0, items: [] });
+    req.flush({
+      page: 1,
+      pageSize: 25,
+      totalCount: 0,
+      totalPages: 0,
+      items: [],
+      summaryCounts: { infoCount: 0, warningCount: 0, errorCount: 0, criticalCount: 0, blockedCount: 0, alertCounts: [], nextRecommendedActionCounts: [] }
+    });
     httpTesting.verify();
   });
 
@@ -416,12 +436,22 @@ describe('PaymentComplementsApiService', () => {
       sourceType: 'External',
       validationStatus: 'Accepted',
       eligible: true,
-      blocked: false
+      blocked: false,
+      alertCode: 'AppliedPaymentsWithoutStampedRep',
+      severity: 'warning',
+      nextRecommendedAction: 'PrepareRep'
     }).subscribe();
 
-    const req = httpTesting.expectOne('/api/payment-complements/base-documents?page=1&pageSize=25&fromDate=2026-04-01&toDate=2026-04-30&receiverRfc=BBB010101BBB&query=UUID-REP-1&sourceType=External&validationStatus=Accepted&eligible=true&blocked=false');
+    const req = httpTesting.expectOne('/api/payment-complements/base-documents?page=1&pageSize=25&fromDate=2026-04-01&toDate=2026-04-30&receiverRfc=BBB010101BBB&query=UUID-REP-1&sourceType=External&validationStatus=Accepted&eligible=true&blocked=false&alertCode=AppliedPaymentsWithoutStampedRep&severity=warning&nextRecommendedAction=PrepareRep');
     expect(req.request.method).toBe('GET');
-    req.flush({ page: 1, pageSize: 25, totalCount: 0, totalPages: 0, items: [] });
+    req.flush({
+      page: 1,
+      pageSize: 25,
+      totalCount: 0,
+      totalPages: 0,
+      items: [],
+      summaryCounts: { infoCount: 0, warningCount: 0, errorCount: 0, criticalCount: 0, blockedCount: 0, alertCounts: [], nextRecommendedActionCounts: [] }
+    });
     httpTesting.verify();
   });
 });

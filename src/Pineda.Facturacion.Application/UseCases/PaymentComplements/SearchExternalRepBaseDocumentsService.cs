@@ -49,16 +49,26 @@ public sealed class SearchExternalRepBaseDocumentsService
 
         var items = documents
             .Select(x => BuildListItem(x, activeIssuerProfile))
-            .Where(x => MatchesFilter(x, filter))
+            .Where(x => MatchesBaseFilter(x, filter))
             .OrderByDescending(x => x.IsEligible)
             .ThenByDescending(x => x.IsBlocked)
             .ThenByDescending(x => x.ImportedAtUtc)
             .ThenByDescending(x => x.IssuedAtUtc)
             .ToList();
 
-        var totalCount = items.Count;
+        var summaryCounts = RepOperationalSummaryCountsBuilder.Build(
+            items,
+            x => x.Alerts,
+            x => x.NextRecommendedAction,
+            x => x.IsBlocked);
+
+        var filteredItems = items
+            .Where(x => MatchesOperationalFilter(x, filter))
+            .ToList();
+
+        var totalCount = filteredItems.Count;
         var totalPages = totalCount == 0 ? 0 : (int)Math.Ceiling(totalCount / (double)normalizedPageSize);
-        var pageItems = items
+        var pageItems = filteredItems
             .Skip((normalizedPage - 1) * normalizedPageSize)
             .Take(normalizedPageSize)
             .ToList();
@@ -69,7 +79,8 @@ public sealed class SearchExternalRepBaseDocumentsService
             PageSize = normalizedPageSize,
             TotalCount = totalCount,
             TotalPages = totalPages,
-            Items = pageItems
+            Items = pageItems,
+            SummaryCounts = summaryCounts
         };
     }
 
@@ -136,7 +147,7 @@ public sealed class SearchExternalRepBaseDocumentsService
         };
     }
 
-    private static bool MatchesFilter(ExternalRepBaseDocumentListItem item, SearchExternalRepBaseDocumentsFilter filter)
+    private static bool MatchesBaseFilter(ExternalRepBaseDocumentListItem item, SearchExternalRepBaseDocumentsFilter filter)
     {
         if (!string.IsNullOrWhiteSpace(filter.ValidationStatus)
             && !string.Equals(item.ValidationStatus, filter.ValidationStatus.Trim(), StringComparison.OrdinalIgnoreCase))
@@ -150,6 +161,29 @@ public sealed class SearchExternalRepBaseDocumentsService
         }
 
         if (filter.Blocked.HasValue && item.IsBlocked != filter.Blocked.Value)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool MatchesOperationalFilter(ExternalRepBaseDocumentListItem item, SearchExternalRepBaseDocumentsFilter filter)
+    {
+        if (!string.IsNullOrWhiteSpace(filter.AlertCode)
+            && !item.Alerts.Any(x => string.Equals(x.Code, filter.AlertCode.Trim(), StringComparison.Ordinal)))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.Severity)
+            && !item.Alerts.Any(x => string.Equals(x.Severity, filter.Severity.Trim(), StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.NextRecommendedAction)
+            && !string.Equals(item.NextRecommendedAction, filter.NextRecommendedAction.Trim(), StringComparison.Ordinal))
         {
             return false;
         }

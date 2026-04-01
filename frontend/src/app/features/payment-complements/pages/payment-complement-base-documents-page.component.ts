@@ -13,6 +13,7 @@ import {
   InternalRepBaseDocumentPaymentHistoryResponse,
   PrepareInternalRepBaseDocumentPaymentComplementResponse,
   RepOperationalAlertResponse,
+  RepOperationalSummaryCountsResponse,
   RegisterInternalRepBaseDocumentPaymentResponse,
   StampInternalRepBaseDocumentPaymentComplementResponse
 } from '../models/payment-complements.models';
@@ -66,6 +67,33 @@ import {
               <option value="false">Sin REP emitidos</option>
             </select>
           </label>
+          <label>
+            <span>Alerta</span>
+            <select [(ngModel)]="alertCodeFilter" name="alertCodeFilter">
+              <option value="">Todas</option>
+              @for (option of alertOptions; track option) {
+                <option [value]="option">{{ getDisplayLabel(option) }}</option>
+              }
+            </select>
+          </label>
+          <label>
+            <span>Severidad</span>
+            <select [(ngModel)]="severityFilter" name="severityFilter">
+              <option value="">Todas</option>
+              @for (option of severityOptions; track option) {
+                <option [value]="option">{{ getDisplayLabel(option) }}</option>
+              }
+            </select>
+          </label>
+          <label>
+            <span>Acción recomendada</span>
+            <select [(ngModel)]="nextRecommendedActionFilter" name="nextRecommendedActionFilter">
+              <option value="">Todas</option>
+              @for (option of recommendedActionOptions; track option) {
+                <option [value]="option">{{ getDisplayLabel(option) }}</option>
+              }
+            </select>
+          </label>
 
           @if (filtersError()) {
             <p class="error wide">{{ filtersError() }}</p>
@@ -76,6 +104,32 @@ import {
             <button type="button" class="secondary" (click)="clearFilters()" [disabled]="loading()">Limpiar filtros</button>
           </div>
         </form>
+
+        <div class="quick-filters">
+          <button type="button" class="secondary small quick-chip" [class.quick-chip-active]="severityFilter === 'warning'" (click)="applySeverityChip('warning')" [disabled]="loading()">
+            Advertencias ({{ summaryCounts().warningCount }})
+          </button>
+          <button type="button" class="secondary small quick-chip" [class.quick-chip-active]="severityFilter === 'error'" (click)="applySeverityChip('error')" [disabled]="loading()">
+            Errores ({{ summaryCounts().errorCount }})
+          </button>
+          <button type="button" class="secondary small quick-chip" [class.quick-chip-active]="severityFilter === 'critical'" (click)="applySeverityChip('critical')" [disabled]="loading()">
+            Críticos ({{ summaryCounts().criticalCount }})
+          </button>
+          <button type="button" class="secondary small quick-chip" [class.quick-chip-active]="nextRecommendedActionFilter === 'PrepareRep'" (click)="applyRecommendedActionChip('PrepareRep')" [disabled]="loading()">
+            Preparar REP ({{ countForRecommendedAction('PrepareRep') }})
+          </button>
+          <button type="button" class="secondary small quick-chip" [class.quick-chip-active]="nextRecommendedActionFilter === 'StampRep'" (click)="applyRecommendedActionChip('StampRep')" [disabled]="loading()">
+            Timbrar REP ({{ countForRecommendedAction('StampRep') }})
+          </button>
+          <button type="button" class="secondary small quick-chip" [class.quick-chip-active]="nextRecommendedActionFilter === 'Blocked'" (click)="applyRecommendedActionChip('Blocked')" [disabled]="loading()">
+            Bloqueados ({{ summaryCounts().blockedCount }})
+          </button>
+          @if (hasOperationalFilters()) {
+            <button type="button" class="secondary small quick-chip" (click)="clearOperationalFilters()" [disabled]="loading()">
+              Limpiar operativos
+            </button>
+          }
+        </div>
       </section>
 
       <section class="card">
@@ -133,12 +187,17 @@ import {
                       <span class="status-pill" [class.status-eligible]="item.isEligible" [class.status-blocked]="item.isBlocked" [class.status-ineligible]="!item.isEligible && !item.isBlocked">
                         {{ getDisplayLabel(item.repOperationalStatus) }}
                       </span>
+                      @if (getPrimarySeverity(item); as severity) {
+                        <span class="severity-pill" [class.severity-warning]="severity === 'warning'" [class.severity-error]="severity === 'error'" [class.severity-critical]="severity === 'critical'" [class.severity-info]="severity === 'info'">
+                          {{ getDisplayLabel(severity) }}
+                        </span>
+                      }
                       <small class="row-reason">{{ item.eligibility.primaryReasonMessage }}</small>
                       <small class="row-reason">Siguiente: {{ getRecommendedActionLabel(item.nextRecommendedAction) }}</small>
                       @if (getAlerts(item).length) {
                         <div class="alert-chip-list">
                           @for (alert of visibleAlerts(getAlerts(item)); track alert.code + '-' + alert.message) {
-                            <span class="alert-chip" [class.alert-critical]="alert.severity === 'critical'" [class.alert-warning]="alert.severity === 'warning'" [class.alert-info]="alert.severity === 'info'">
+                            <span class="alert-chip" [class.alert-critical]="alert.severity === 'critical'" [class.alert-error]="alert.severity === 'error'" [class.alert-warning]="alert.severity === 'warning'" [class.alert-info]="alert.severity === 'info'">
                               {{ getDisplayLabel(alert.code) }}
                             </span>
                           }
@@ -282,7 +341,7 @@ import {
                   @if (getAlerts(detail.summary).length) {
                     <ul class="alert-list">
                       @for (alert of getAlerts(detail.summary); track alert.code + '-' + alert.message) {
-                        <li class="alert-item" [class.alert-critical]="alert.severity === 'critical'" [class.alert-warning]="alert.severity === 'warning'" [class.alert-info]="alert.severity === 'info'">
+                        <li class="alert-item" [class.alert-critical]="alert.severity === 'critical'" [class.alert-error]="alert.severity === 'error'" [class.alert-warning]="alert.severity === 'warning'" [class.alert-info]="alert.severity === 'info'">
                           <strong>{{ getDisplayLabel(alert.code) }}</strong>
                           <p>{{ alert.message }}</p>
                         </li>
@@ -551,7 +610,7 @@ import {
     button.secondary { background:#d8c49b; color:#182533; }
     button.small { padding:0.45rem 0.7rem; font-size:0.88rem; }
     button:disabled { opacity:0.6; cursor:not-allowed; }
-    .actions, .toolbar, .pagination, .modal-actions, .section-header, .row-actions { display:flex; flex-wrap:wrap; gap:0.75rem; align-items:center; }
+    .actions, .toolbar, .pagination, .modal-actions, .section-header, .row-actions, .quick-filters { display:flex; flex-wrap:wrap; gap:0.75rem; align-items:center; }
     .toolbar, .pagination { justify-content:space-between; }
     .section-header { justify-content:space-between; margin-bottom:0.75rem; }
     .table-wrap { overflow:auto; }
@@ -572,6 +631,11 @@ import {
     .signal-positive { background:#e5f6eb; color:#1b6b3a; }
     .signal-warning { background:#fff1d6; color:#8a5a00; }
     .signal-blocking { background:#fdeaea; color:#8a1f1f; }
+    .severity-pill { display:inline-flex; align-items:center; border-radius:999px; padding:0.2rem 0.55rem; margin-left:0.35rem; font-size:0.74rem; font-weight:700; }
+    .severity-info { background:#eef1f4; color:#425466; }
+    .severity-warning { background:#fff3dd; color:#8a5a00; }
+    .severity-error { background:#fde8e8; color:#8a1f1f; }
+    .severity-critical { background:#f8d7d7; color:#6f1111; }
     .alert-chip-list { display:flex; flex-wrap:wrap; gap:0.35rem; margin-top:0.45rem; }
     .alert-chip, .alert-item { border-radius:0.8rem; }
     .alert-chip { display:inline-flex; align-items:center; padding:0.2rem 0.55rem; font-size:0.75rem; font-weight:700; }
@@ -579,8 +643,11 @@ import {
     .alert-item { padding:0.7rem 0.8rem; border:1px solid #ece5d7; }
     .alert-item p { margin:0.2rem 0 0; color:#425466; }
     .alert-warning { background:#fff3dd; color:#8a5a00; }
+    .alert-error { background:#fde8e8; color:#8a1f1f; }
     .alert-critical { background:#fdeaea; color:#8a1f1f; }
     .alert-info { background:#eef1f4; color:#425466; }
+    .quick-chip { border:1px solid #d8d1c2; }
+    .quick-chip.quick-chip-active { outline:2px solid #182533; }
     .row-reason { display:block; margin-top:0.35rem; color:#5f6b76; }
     .modal-backdrop { position:fixed; inset:0; background:rgba(24, 37, 51, 0.42); display:grid; place-items:center; padding:1rem; z-index:50; }
     .modal-card { width:min(1180px, 100%); max-height:calc(100vh - 2rem); overflow:auto; border:1px solid #d8d1c2; border-radius:1rem; background:#fff; padding:1rem; display:grid; gap:1rem; box-shadow:0 24px 60px rgba(24, 37, 51, 0.24); }
@@ -612,11 +679,18 @@ export class PaymentComplementBaseDocumentsPageComponent {
   protected blockedFilter = '';
   protected outstandingFilter = '';
   protected repEmittedFilter = '';
+  protected alertCodeFilter = '';
+  protected severityFilter = '';
+  protected nextRecommendedActionFilter = '';
+  protected readonly alertOptions = REP_OPERATIONAL_ALERT_OPTIONS;
+  protected readonly severityOptions = REP_OPERATIONAL_SEVERITY_OPTIONS;
+  protected readonly recommendedActionOptions = REP_RECOMMENDED_ACTION_OPTIONS;
   protected readonly page = signal(1);
   protected readonly pageSize = signal(25);
   protected readonly totalCount = signal(0);
   protected readonly totalPages = signal(0);
   protected readonly items = signal<InternalRepBaseDocumentItemResponse[]>([]);
+  protected readonly summaryCounts = signal<RepOperationalSummaryCountsResponse>(createEmptySummaryCounts());
   protected readonly loading = signal(false);
   protected readonly errorMessage = signal<string | null>(null);
   protected readonly filtersError = signal<string | null>(null);
@@ -662,6 +736,9 @@ export class PaymentComplementBaseDocumentsPageComponent {
     this.blockedFilter = '';
     this.outstandingFilter = '';
     this.repEmittedFilter = '';
+    this.alertCodeFilter = '';
+    this.severityFilter = '';
+    this.nextRecommendedActionFilter = '';
     this.filtersError.set(null);
     this.page.set(1);
     this.pageSize.set(25);
@@ -900,12 +977,44 @@ export class PaymentComplementBaseDocumentsPageComponent {
     return alerts.slice(0, 3);
   }
 
+  protected getPrimarySeverity(source: { alerts?: RepOperationalAlertResponse[] | null }): string | null {
+    return resolvePrimarySeverity(source.alerts ?? []);
+  }
+
   protected getAlerts(source: { alerts?: RepOperationalAlertResponse[] | null }): RepOperationalAlertResponse[] {
     return source.alerts ?? [];
   }
 
   protected getRecommendedActionLabel(action?: string | null): string {
     return action ? getDisplayLabel(action) : 'Sin acción disponible';
+  }
+
+  protected async applySeverityChip(severity: string): Promise<void> {
+    this.severityFilter = this.severityFilter === severity ? '' : severity;
+    this.page.set(1);
+    await this.load();
+  }
+
+  protected async applyRecommendedActionChip(action: string): Promise<void> {
+    this.nextRecommendedActionFilter = this.nextRecommendedActionFilter === action ? '' : action;
+    this.page.set(1);
+    await this.load();
+  }
+
+  protected async clearOperationalFilters(): Promise<void> {
+    this.alertCodeFilter = '';
+    this.severityFilter = '';
+    this.nextRecommendedActionFilter = '';
+    this.page.set(1);
+    await this.load();
+  }
+
+  protected countForRecommendedAction(code: string): number {
+    return this.summaryCounts().nextRecommendedActionCounts.find((item) => item.code === code)?.count ?? 0;
+  }
+
+  protected hasOperationalFilters(): boolean {
+    return Boolean(this.alertCodeFilter || this.severityFilter || this.nextRecommendedActionFilter);
   }
 
   private async handleSuccessfulPaymentRegistration(
@@ -993,16 +1102,21 @@ export class PaymentComplementBaseDocumentsPageComponent {
         eligible: parseBooleanFilter(this.eligibleFilter),
         blocked: parseBooleanFilter(this.blockedFilter),
         withOutstandingBalance: parseBooleanFilter(this.outstandingFilter),
-        hasRepEmitted: parseBooleanFilter(this.repEmittedFilter)
+        hasRepEmitted: parseBooleanFilter(this.repEmittedFilter),
+        alertCode: this.alertCodeFilter || null,
+        severity: this.severityFilter || null,
+        nextRecommendedAction: this.nextRecommendedActionFilter || null
       }));
 
       this.items.set(response.items);
+      this.summaryCounts.set(response.summaryCounts ?? createEmptySummaryCounts());
       this.totalCount.set(response.totalCount);
       this.totalPages.set(response.totalPages);
       this.page.set(response.page);
       this.pageSize.set(response.pageSize);
     } catch (error) {
       this.errorMessage.set(extractApiErrorMessage(error, 'No fue posible cargar la bandeja REP interna.'));
+      this.summaryCounts.set(createEmptySummaryCounts());
     } finally {
       this.loading.set(false);
     }
@@ -1024,3 +1138,43 @@ function parseBooleanFilter(value: string): boolean | null {
 function todayInputValue(): string {
   return new Date().toISOString().slice(0, 10);
 }
+
+function createEmptySummaryCounts(): RepOperationalSummaryCountsResponse {
+  return {
+    infoCount: 0,
+    warningCount: 0,
+    errorCount: 0,
+    criticalCount: 0,
+    blockedCount: 0,
+    alertCounts: [],
+    nextRecommendedActionCounts: []
+  };
+}
+
+function resolvePrimarySeverity(alerts: RepOperationalAlertResponse[]): string | null {
+  for (const severity of REP_OPERATIONAL_SEVERITY_PRIORITY) {
+    if (alerts.some((alert) => alert.severity === severity)) {
+      return severity;
+    }
+  }
+
+  return null;
+}
+
+const REP_OPERATIONAL_ALERT_OPTIONS = [
+  'AppliedPaymentsWithoutStampedRep',
+  'PreparedRepPendingStamp',
+  'RepStampingRejected',
+  'RepCancellationRejected',
+  'BlockedOperation',
+  'CancelledBaseDocument',
+  'ValidationBlocked',
+  'SatValidationUnavailable',
+  'UnsupportedCurrency',
+  'DuplicateExternalInvoice',
+  'StampedRepAvailable'
+];
+
+const REP_OPERATIONAL_SEVERITY_OPTIONS = ['info', 'warning', 'error', 'critical'];
+const REP_OPERATIONAL_SEVERITY_PRIORITY = ['critical', 'error', 'warning', 'info'];
+const REP_RECOMMENDED_ACTION_OPTIONS = ['RegisterPayment', 'PrepareRep', 'StampRep', 'RefreshRepStatus', 'CancelRep', 'ViewDetail', 'Blocked', 'NoAction'];

@@ -16,7 +16,7 @@ import { PaymentComplementUnifiedBaseDocumentsPageComponent } from './payment-co
         <div>
           <p class="eyebrow">Complementos de pago</p>
           <h2>Administración REP interna y externa</h2>
-          <p class="helper">La experiencia se unifica por documento base, pero la operación completa sigue disponible sólo para CFDI internos. Los CFDI externos quedan en seguimiento y preparación para Fase 4.</p>
+          <p class="helper">La experiencia se unifica por documento base. Tanto CFDI internos como externos ya pueden operarse desde su contexto correcto, y esta vista concentra seguimiento, semáforos y filtros comunes.</p>
         </div>
       </header>
 

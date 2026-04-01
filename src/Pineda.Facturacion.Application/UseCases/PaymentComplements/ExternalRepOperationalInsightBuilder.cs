@@ -30,62 +30,42 @@ public static class ExternalRepOperationalInsightBuilder
         var alerts = new List<RepOperationalAlert>();
         if (hasBlockedOperation)
         {
-            alerts.Add(new RepOperationalAlert
-            {
-                Code = "BlockedOperation",
-                Severity = "critical",
-                Message = evaluation.PrimaryReasonMessage
-            });
+            alerts.Add(RepOperationalAlertCatalog.CreateBlockedAlert(evaluation.PrimaryReasonCode, evaluation.PrimaryReasonMessage));
         }
 
         if (hasAppliedPaymentsWithoutStampedRep)
         {
-            alerts.Add(new RepOperationalAlert
-            {
-                Code = "AppliedPaymentsWithoutStampedRep",
-                Severity = "warning",
-                Message = "Hay pagos aplicados sin REP timbrado en este CFDI externo."
-            });
+            alerts.Add(RepOperationalAlertCatalog.Create(
+                RepOperationalAlertCode.AppliedPaymentsWithoutStampedRep,
+                "Hay pagos aplicados sin REP timbrado en este CFDI externo."));
         }
 
         if (hasPreparedRepPendingStamp)
         {
-            alerts.Add(new RepOperationalAlert
-            {
-                Code = "PreparedRepPendingStamp",
-                Severity = "warning",
-                Message = "Existe al menos un REP externo preparado pendiente de timbrar."
-            });
+            alerts.Add(RepOperationalAlertCatalog.Create(
+                RepOperationalAlertCode.PreparedRepPendingStamp,
+                "Existe al menos un REP externo preparado pendiente de timbrar."));
         }
 
         if (hasStampingRejectedRep)
         {
-            alerts.Add(new RepOperationalAlert
-            {
-                Code = "RepStampingRejected",
-                Severity = "critical",
-                Message = "Existe al menos un REP externo con timbrado rechazado y requiere revisión o reintento."
-            });
+            alerts.Add(RepOperationalAlertCatalog.Create(
+                RepOperationalAlertCode.RepStampingRejected,
+                "Existe al menos un REP externo con timbrado rechazado y requiere revisión o reintento."));
         }
 
         if (hasCancellationRejectedRep)
         {
-            alerts.Add(new RepOperationalAlert
-            {
-                Code = "RepCancellationRejected",
-                Severity = "critical",
-                Message = "Existe al menos un REP externo con cancelación rechazada y requiere seguimiento."
-            });
+            alerts.Add(RepOperationalAlertCatalog.Create(
+                RepOperationalAlertCode.RepCancellationRejected,
+                "Existe al menos un REP externo con cancelación rechazada y requiere seguimiento."));
         }
 
         if (!hasBlockedOperation && !hasAppliedPaymentsWithoutStampedRep && !hasPreparedRepPendingStamp && !hasRepWithError && summary.StampedPaymentComplementCount > 0)
         {
-            alerts.Add(new RepOperationalAlert
-            {
-                Code = "StampedRepAvailable",
-                Severity = "info",
-                Message = "El CFDI externo ya cuenta con REP timbrado y sólo requiere seguimiento o refresh de estatus."
-            });
+            alerts.Add(RepOperationalAlertCatalog.Create(
+                RepOperationalAlertCode.StampedRepAvailable,
+                "El CFDI externo ya cuenta con REP timbrado y sólo requiere seguimiento o refresh de estatus."));
         }
 
         return new RepOperationalInsight
@@ -100,7 +80,7 @@ public static class ExternalRepOperationalInsightBuilder
         };
     }
 
-    private static string? ResolveNextRecommendedAction(
+    private static string ResolveNextRecommendedAction(
         HashSet<string> availableActions,
         bool hasBlockedOperation,
         bool hasCancellationRejectedRep,
@@ -108,29 +88,29 @@ public static class ExternalRepOperationalInsightBuilder
     {
         if (hasBlockedOperation)
         {
-            return null;
+            return RepBaseDocumentRecommendedAction.Blocked;
         }
 
         if (availableActions.Contains(RepBaseDocumentAvailableAction.StampRep.ToString()))
         {
-            return RepBaseDocumentAvailableAction.StampRep.ToString();
+            return RepBaseDocumentRecommendedAction.StampRep;
         }
 
         if (availableActions.Contains(RepBaseDocumentAvailableAction.PrepareRep.ToString()))
         {
-            return RepBaseDocumentAvailableAction.PrepareRep.ToString();
+            return RepBaseDocumentRecommendedAction.PrepareRep;
         }
 
         if (availableActions.Contains(RepBaseDocumentAvailableAction.RegisterPayment.ToString()))
         {
-            return RepBaseDocumentAvailableAction.RegisterPayment.ToString();
+            return RepBaseDocumentRecommendedAction.RegisterPayment;
         }
 
         if (hasCancellationRejectedRep || hasStampedRep)
         {
-            return RepBaseDocumentAvailableAction.RefreshRepStatus.ToString();
+            return RepBaseDocumentRecommendedAction.RefreshRepStatus;
         }
 
-        return null;
+        return RepBaseDocumentRecommendedAction.NoAction;
     }
 }

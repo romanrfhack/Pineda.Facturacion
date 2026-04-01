@@ -215,6 +215,9 @@ public static class PaymentComplementsEndpoints
         bool? blocked,
         bool? withOutstandingBalance,
         bool? hasRepEmitted,
+        string? alertCode,
+        string? severity,
+        string? nextRecommendedAction,
         SearchInternalRepBaseDocumentsService service,
         CancellationToken cancellationToken)
     {
@@ -238,7 +241,10 @@ public static class PaymentComplementsEndpoints
                 Eligible = eligible,
                 Blocked = blocked,
                 WithOutstandingBalance = withOutstandingBalance,
-                HasRepEmitted = hasRepEmitted
+                HasRepEmitted = hasRepEmitted,
+                AlertCode = alertCode,
+                Severity = severity,
+                NextRecommendedAction = nextRecommendedAction
             },
             cancellationToken);
 
@@ -248,7 +254,8 @@ public static class PaymentComplementsEndpoints
             PageSize = result.PageSize,
             TotalCount = result.TotalCount,
             TotalPages = result.TotalPages,
-            Items = result.Items.Select(MapInternalRepBaseDocument).ToList()
+            Items = result.Items.Select(MapInternalRepBaseDocument).ToList(),
+            SummaryCounts = MapOperationalSummaryCounts(result.SummaryCounts)
         });
     }
 
@@ -332,6 +339,9 @@ public static class PaymentComplementsEndpoints
         string? validationStatus,
         bool? eligible,
         bool? blocked,
+        string? alertCode,
+        string? severity,
+        string? nextRecommendedAction,
         SearchExternalRepBaseDocumentsService service,
         CancellationToken cancellationToken)
     {
@@ -354,7 +364,10 @@ public static class PaymentComplementsEndpoints
                 Query = query,
                 ValidationStatus = validationStatus,
                 Eligible = eligible,
-                Blocked = blocked
+                Blocked = blocked,
+                AlertCode = alertCode,
+                Severity = severity,
+                NextRecommendedAction = nextRecommendedAction
             },
             cancellationToken);
 
@@ -364,7 +377,8 @@ public static class PaymentComplementsEndpoints
             PageSize = result.PageSize,
             TotalCount = result.TotalCount,
             TotalPages = result.TotalPages,
-            Items = result.Items.Select(MapExternalRepBaseDocumentListItem).ToList()
+            Items = result.Items.Select(MapExternalRepBaseDocumentListItem).ToList(),
+            SummaryCounts = MapOperationalSummaryCounts(result.SummaryCounts)
         });
     }
 
@@ -379,6 +393,9 @@ public static class PaymentComplementsEndpoints
         string? validationStatus,
         bool? eligible,
         bool? blocked,
+        string? alertCode,
+        string? severity,
+        string? nextRecommendedAction,
         SearchRepBaseDocumentsService service,
         CancellationToken cancellationToken)
     {
@@ -402,7 +419,10 @@ public static class PaymentComplementsEndpoints
                 SourceType = sourceType,
                 ValidationStatus = validationStatus,
                 Eligible = eligible,
-                Blocked = blocked
+                Blocked = blocked,
+                AlertCode = alertCode,
+                Severity = severity,
+                NextRecommendedAction = nextRecommendedAction
             },
             cancellationToken);
 
@@ -412,7 +432,8 @@ public static class PaymentComplementsEndpoints
             PageSize = result.PageSize,
             TotalCount = result.TotalCount,
             TotalPages = result.TotalPages,
-            Items = result.Items.Select(MapRepBaseDocument).ToList()
+            Items = result.Items.Select(MapRepBaseDocument).ToList(),
+            SummaryCounts = MapOperationalSummaryCounts(result.SummaryCounts)
         });
     }
 
@@ -1643,6 +1664,32 @@ public static class PaymentComplementsEndpoints
         };
     }
 
+    private static RepOperationalSummaryCountsResponse MapOperationalSummaryCounts(RepOperationalSummaryCounts counts)
+    {
+        return new RepOperationalSummaryCountsResponse
+        {
+            InfoCount = counts.InfoCount,
+            WarningCount = counts.WarningCount,
+            ErrorCount = counts.ErrorCount,
+            CriticalCount = counts.CriticalCount,
+            BlockedCount = counts.BlockedCount,
+            AlertCounts = counts.AlertCounts
+                .Select(x => new RepOperationalCountResponse
+                {
+                    Code = x.Code,
+                    Count = x.Count
+                })
+                .ToList(),
+            NextRecommendedActionCounts = counts.NextRecommendedActionCounts
+                .Select(x => new RepOperationalCountResponse
+                {
+                    Code = x.Code,
+                    Count = x.Count
+                })
+                .ToList()
+        };
+    }
+
     private static InternalRepBaseDocumentEligibilityExplanationResponse MapEligibilityExplanation(InternalRepBaseDocumentEligibilityExplanation explanation)
     {
         return new InternalRepBaseDocumentEligibilityExplanationResponse
@@ -2066,6 +2113,8 @@ public sealed class InternalRepBaseDocumentListResponse
     public int TotalPages { get; set; }
 
     public List<InternalRepBaseDocumentItemResponse> Items { get; set; } = [];
+
+    public RepOperationalSummaryCountsResponse SummaryCounts { get; set; } = new();
 }
 
 public sealed class InternalRepBaseDocumentItemResponse
@@ -2134,7 +2183,7 @@ public sealed class InternalRepBaseDocumentItemResponse
 
     public bool HasBlockedOperation { get; set; }
 
-    public string? NextRecommendedAction { get; set; }
+    public string NextRecommendedAction { get; set; } = RepBaseDocumentRecommendedAction.NoAction;
 
     public List<string> AvailableActions { get; set; } = [];
 
@@ -2150,6 +2199,30 @@ public sealed class RepOperationalAlertResponse
     public string Severity { get; set; } = string.Empty;
 
     public string Message { get; set; } = string.Empty;
+}
+
+public sealed class RepOperationalCountResponse
+{
+    public string Code { get; set; } = string.Empty;
+
+    public int Count { get; set; }
+}
+
+public sealed class RepOperationalSummaryCountsResponse
+{
+    public int InfoCount { get; set; }
+
+    public int WarningCount { get; set; }
+
+    public int ErrorCount { get; set; }
+
+    public int CriticalCount { get; set; }
+
+    public int BlockedCount { get; set; }
+
+    public List<RepOperationalCountResponse> AlertCounts { get; set; } = [];
+
+    public List<RepOperationalCountResponse> NextRecommendedActionCounts { get; set; } = [];
 }
 
 public sealed class InternalRepBaseDocumentDetailResponse
@@ -2828,6 +2901,8 @@ public sealed class ExternalRepBaseDocumentListResponse
     public int TotalPages { get; set; }
 
     public List<ExternalRepBaseDocumentItemResponse> Items { get; set; } = [];
+
+    public RepOperationalSummaryCountsResponse SummaryCounts { get; set; } = new();
 }
 
 public sealed class ExternalRepBaseDocumentItemResponse
@@ -2928,7 +3003,7 @@ public sealed class ExternalRepBaseDocumentItemResponse
 
     public bool HasBlockedOperation { get; set; }
 
-    public string? NextRecommendedAction { get; set; }
+    public string NextRecommendedAction { get; set; } = RepBaseDocumentRecommendedAction.NoAction;
 
     public List<string> AvailableActions { get; set; } = [];
 
@@ -3029,6 +3104,8 @@ public sealed class RepBaseDocumentListResponse
     public int TotalPages { get; set; }
 
     public List<RepBaseDocumentItemResponse> Items { get; set; } = [];
+
+    public RepOperationalSummaryCountsResponse SummaryCounts { get; set; } = new();
 }
 
 public sealed class RepBaseDocumentItemResponse
@@ -3093,7 +3170,7 @@ public sealed class RepBaseDocumentItemResponse
 
     public bool HasBlockedOperation { get; set; }
 
-    public string? NextRecommendedAction { get; set; }
+    public string NextRecommendedAction { get; set; } = RepBaseDocumentRecommendedAction.NoAction;
 
     public List<string> AvailableActions { get; set; } = [];
 

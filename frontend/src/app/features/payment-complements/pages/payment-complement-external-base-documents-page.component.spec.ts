@@ -25,6 +25,15 @@ describe('PaymentComplementExternalBaseDocumentsPageComponent', () => {
               pageSize: 25,
               totalCount: 1,
               totalPages: 1,
+              summaryCounts: {
+                infoCount: 1,
+                warningCount: 0,
+                errorCount: 0,
+                criticalCount: 0,
+                blockedCount: 0,
+                alertCounts: [{ code: 'StampedRepAvailable', count: 1 }],
+                nextRecommendedActionCounts: [{ code: 'RegisterPayment', count: 1 }]
+              },
               items: [{
                 externalRepBaseDocumentId: 123,
                 accountsReceivableInvoiceId: null,
@@ -210,6 +219,8 @@ describe('PaymentComplementExternalBaseDocumentsPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Bandeja de CFDI externos importados');
     expect(fixture.nativeElement.textContent).toContain('UUID-EXT-123');
     expect(fixture.nativeElement.textContent).toContain('Listo para registrar pago');
+    expect(fixture.nativeElement.textContent).toContain('Advertencias (0)');
+    expect(fixture.nativeElement.textContent).toContain('Bloqueados (0)');
   });
 
   it('opens external detail context', async () => {

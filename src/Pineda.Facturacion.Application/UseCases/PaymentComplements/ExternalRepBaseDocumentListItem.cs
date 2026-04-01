@@ -98,7 +98,7 @@ public sealed class ExternalRepBaseDocumentListItem
 
     public bool HasBlockedOperation { get; init; }
 
-    public string? NextRecommendedAction { get; init; }
+    public string NextRecommendedAction { get; init; } = RepBaseDocumentRecommendedAction.NoAction;
 
     public IReadOnlyList<string> AvailableActions { get; init; } = [];
 

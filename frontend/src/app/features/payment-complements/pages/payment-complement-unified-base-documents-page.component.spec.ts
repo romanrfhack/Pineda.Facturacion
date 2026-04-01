@@ -16,6 +16,18 @@ describe('PaymentComplementUnifiedBaseDocumentsPageComponent', () => {
               pageSize: 25,
               totalCount: 2,
               totalPages: 1,
+              summaryCounts: {
+                infoCount: 0,
+                warningCount: 1,
+                errorCount: 0,
+                criticalCount: 0,
+                blockedCount: 0,
+                alertCounts: [{ code: 'AppliedPaymentsWithoutStampedRep', count: 1 }],
+                nextRecommendedActionCounts: [
+                  { code: 'PrepareRep', count: 1 },
+                  { code: 'RegisterPayment', count: 1 }
+                ]
+              },
               items: [
                 {
                   sourceType: 'Internal',
@@ -192,6 +204,8 @@ describe('PaymentComplementUnifiedBaseDocumentsPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Bandeja base REP interna y externa');
     expect(fixture.nativeElement.textContent).toContain('UUID-INT-501');
     expect(fixture.nativeElement.textContent).toContain('UUID-EXT-901');
+    expect(fixture.nativeElement.textContent).toContain('Advertencias (1)');
+    expect(fixture.nativeElement.textContent).toContain('Preparar REP (1)');
   });
 
   it('opens unified detail for an external row', async () => {
