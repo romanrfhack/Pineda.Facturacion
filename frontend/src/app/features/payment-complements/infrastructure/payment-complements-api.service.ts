@@ -19,6 +19,8 @@ import {
   PrepareInternalRepBaseDocumentPaymentComplementResponse,
   PrepareExternalRepBaseDocumentPaymentComplementRequest,
   PrepareExternalRepBaseDocumentPaymentComplementResponse,
+  RepBaseDocumentBulkRefreshRequest,
+  RepBaseDocumentBulkRefreshResponse,
   RegisterExternalRepBaseDocumentPaymentRequest,
   RegisterExternalRepBaseDocumentPaymentResponse,
   RegisterInternalRepBaseDocumentPaymentRequest,
@@ -73,6 +75,13 @@ export class PaymentComplementsApiService {
     return this.http.get<InternalRepBaseDocumentDetailResponse>(buildApiUrl(`/payment-complements/base-documents/internal/${fiscalDocumentId}`));
   }
 
+  bulkRefreshInternalBaseDocuments(request: RepBaseDocumentBulkRefreshRequest): Observable<RepBaseDocumentBulkRefreshResponse> {
+    return this.http.post<RepBaseDocumentBulkRefreshResponse>(
+      buildApiUrl('/payment-complements/base-documents/internal/refresh-rep-status/bulk'),
+      request
+    );
+  }
+
   searchExternalBaseDocuments(filters: ExternalRepBaseDocumentFilters): Observable<ExternalRepBaseDocumentListResponse> {
     const query = new URLSearchParams();
     query.set('page', `${filters.page}`);
@@ -91,6 +100,13 @@ export class PaymentComplementsApiService {
     setOptionalQuery(query, 'quickView', filters.quickView);
 
     return this.http.get<ExternalRepBaseDocumentListResponse>(buildApiUrl(`/payment-complements/base-documents/external?${query.toString()}`));
+  }
+
+  bulkRefreshExternalBaseDocuments(request: RepBaseDocumentBulkRefreshRequest): Observable<RepBaseDocumentBulkRefreshResponse> {
+    return this.http.post<RepBaseDocumentBulkRefreshResponse>(
+      buildApiUrl('/payment-complements/base-documents/external/refresh-rep-status/bulk'),
+      request
+    );
   }
 
   searchBaseDocuments(filters: RepBaseDocumentFilters): Observable<RepBaseDocumentListResponse> {
@@ -112,6 +128,13 @@ export class PaymentComplementsApiService {
     setOptionalQuery(query, 'quickView', filters.quickView);
 
     return this.http.get<RepBaseDocumentListResponse>(buildApiUrl(`/payment-complements/base-documents?${query.toString()}`));
+  }
+
+  bulkRefreshBaseDocuments(request: RepBaseDocumentBulkRefreshRequest): Observable<RepBaseDocumentBulkRefreshResponse> {
+    return this.http.post<RepBaseDocumentBulkRefreshResponse>(
+      buildApiUrl('/payment-complements/base-documents/refresh-rep-status/bulk'),
+      request
+    );
   }
 
   registerInternalBaseDocumentPayment(

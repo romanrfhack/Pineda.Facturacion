@@ -189,6 +189,39 @@ describe('PaymentComplementUnifiedBaseDocumentsPageComponent', () => {
               paymentHistory: [],
               paymentApplications: [],
               issuedReps: []
+            })),
+            bulkRefreshBaseDocuments: vi.fn().mockReturnValue(of({
+              isSuccess: true,
+              mode: 'Selected',
+              maxDocuments: 50,
+              totalRequested: 2,
+              totalAttempted: 2,
+              refreshedCount: 2,
+              noChangesCount: 0,
+              blockedCount: 0,
+              failedCount: 0,
+              items: [
+                {
+                  sourceType: 'Internal',
+                  sourceId: 501,
+                  attempted: true,
+                  outcome: 'Refreshed',
+                  message: 'Estatus refrescado correctamente.',
+                  paymentComplementDocumentId: 7001,
+                  paymentComplementStatus: 'Stamped',
+                  lastKnownExternalStatus: 'VIGENTE'
+                },
+                {
+                  sourceType: 'External',
+                  sourceId: 901,
+                  attempted: true,
+                  outcome: 'Refreshed',
+                  message: 'Estatus refrescado correctamente.',
+                  paymentComplementDocumentId: 8001,
+                  paymentComplementStatus: 'Stamped',
+                  lastKnownExternalStatus: 'VIGENTE'
+                }
+              ]
             }))
           }
         }
@@ -239,5 +272,25 @@ describe('PaymentComplementUnifiedBaseDocumentsPageComponent', () => {
 
     expect(fixture.nativeElement.textContent).toContain('Siguiente: Preparar REP');
     expect(fixture.nativeElement.textContent).toContain('Pago aplicado sin REP timbrado');
+  });
+
+  it('executes bulk refresh from selected mixed documents', async () => {
+    const fixture = await configure();
+    const api = TestBed.inject(PaymentComplementsApiService) as unknown as Record<string, ReturnType<typeof vi.fn>>;
+    const items = fixture.componentInstance['items']();
+
+    fixture.componentInstance['toggleSelection'](items[0], true);
+    fixture.componentInstance['toggleSelection'](items[1], true);
+    await fixture.componentInstance['refreshSelectedDocuments']();
+    fixture.detectChanges();
+
+    expect(api['bulkRefreshBaseDocuments']).toHaveBeenCalledWith(expect.objectContaining({
+      mode: 'Selected',
+      documents: [
+        { sourceType: 'Internal', sourceId: 501 },
+        { sourceType: 'External', sourceId: 901 }
+      ]
+    }));
+    expect(fixture.nativeElement.textContent).toContain('Resultado del refresh masivo');
   });
 });

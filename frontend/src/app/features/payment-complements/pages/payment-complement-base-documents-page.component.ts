@@ -7,6 +7,7 @@ import { FeedbackService } from '../../../core/ui/feedback.service';
 import { getDisplayLabel } from '../../../shared/ui/display-labels';
 import { PaymentComplementsApiService } from '../infrastructure/payment-complements-api.service';
 import {
+  RepBaseDocumentBulkRefreshResponse,
   InternalRepBaseDocumentDetailResponse,
   InternalRepBaseDocumentItemResponse,
   InternalRepBaseDocumentPaymentComplementResponse,
@@ -147,10 +148,76 @@ import {
             </label>
           </div>
 
+          <div class="bulk-toolbar">
+            <label class="selection-toggle">
+              <input type="checkbox" [checked]="allVisibleSelected()" (change)="toggleSelectAll($any($event.target).checked)" [disabled]="bulkRefreshing()" />
+              <span>Seleccionar visibles</span>
+            </label>
+            <span class="helper">{{ selectedCount() }} seleccionados</span>
+            <button type="button" [disabled]="bulkRefreshing() || !selectedCount()" (click)="refreshSelectedDocuments()">
+              {{ bulkRefreshing() ? 'Refrescando...' : 'Refrescar seleccionados' }}
+            </button>
+            <button type="button" class="secondary" [disabled]="bulkRefreshing() || !items().length" (click)="refreshFilteredDocuments()">
+              {{ bulkRefreshing() ? 'Refrescando...' : 'Refrescar filtrados' }}
+            </button>
+            @if (bulkRefreshResult()) {
+              <button type="button" class="secondary small" [disabled]="bulkRefreshing()" (click)="clearBulkRefreshResult()">
+                Limpiar resultado
+              </button>
+            }
+          </div>
+
+          @if (bulkRefreshError()) {
+            <p class="error">{{ bulkRefreshError() }}</p>
+          }
+
+          @if (bulkRefreshResult(); as result) {
+            <section class="nested-card bulk-result-card">
+              <div class="section-header">
+                <div>
+                  <h4>Resultado del refresh masivo</h4>
+                  <p class="helper">
+                    Modo {{ getDisplayLabel(result.mode) }} · solicitados {{ result.totalRequested }} · procesados {{ result.totalAttempted }} · actualizados {{ result.refreshedCount }} · sin cambios {{ result.noChangesCount }} · bloqueados {{ result.blockedCount }} · fallidos {{ result.failedCount }}
+                  </p>
+                </div>
+              </div>
+
+              @if (result.items.length) {
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Documento</th>
+                        <th>Resultado</th>
+                        <th>REP</th>
+                        <th>Estado externo</th>
+                        <th>Mensaje</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (item of result.items; track item.sourceId) {
+                        <tr>
+                          <td>#{{ item.sourceId }}</td>
+                          <td>{{ getDisplayLabel(item.outcome) }}</td>
+                          <td>{{ item.paymentComplementDocumentId ? ('#' + item.paymentComplementDocumentId) : '—' }}{{ item.paymentComplementStatus ? (' · ' + getDisplayLabel(item.paymentComplementStatus)) : '' }}</td>
+                          <td>{{ item.lastKnownExternalStatus || '—' }}</td>
+                          <td>{{ item.message }}</td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              }
+            </section>
+          }
+
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
+                  <th>
+                    <input type="checkbox" [checked]="allVisibleSelected()" (change)="toggleSelectAll($any($event.target).checked)" [disabled]="bulkRefreshing()" />
+                  </th>
                   <th>Emisión</th>
                   <th>Serie/Folio</th>
                   <th>UUID</th>
@@ -169,6 +236,9 @@ import {
               <tbody>
                 @for (item of items(); track item.fiscalDocumentId) {
                   <tr>
+                    <td>
+                      <input type="checkbox" [checked]="isSelected(item.fiscalDocumentId)" (change)="toggleSelection(item.fiscalDocumentId, $any($event.target).checked)" [disabled]="bulkRefreshing()" />
+                    </td>
                     <td>{{ formatUtc(item.issuedAtUtc) }}</td>
                     <td>{{ buildSeriesFolio(item) }}</td>
                     <td>{{ item.uuid || '—' }}</td>
@@ -605,9 +675,12 @@ import {
     button.secondary { background:#d8c49b; color:#182533; }
     button.small { padding:0.45rem 0.7rem; font-size:0.88rem; }
     button:disabled { opacity:0.6; cursor:not-allowed; }
-    .actions, .toolbar, .pagination, .modal-actions, .section-header, .row-actions, .quick-filters { display:flex; flex-wrap:wrap; gap:0.75rem; align-items:center; }
+    .actions, .toolbar, .pagination, .modal-actions, .section-header, .row-actions, .quick-filters, .bulk-toolbar { display:flex; flex-wrap:wrap; gap:0.75rem; align-items:center; }
     .toolbar, .pagination { justify-content:space-between; }
     .section-header { justify-content:space-between; margin-bottom:0.75rem; }
+    .bulk-toolbar { margin-bottom:0.75rem; }
+    .selection-toggle { display:inline-flex; align-items:center; gap:0.5rem; }
+    .bulk-result-card { margin-bottom:1rem; }
     .table-wrap { overflow:auto; }
     table { width:100%; border-collapse:collapse; }
     th, td { text-align:left; padding:0.75rem 0.5rem; border-bottom:1px solid #ece5d7; vertical-align:top; }
@@ -687,10 +760,14 @@ export class PaymentComplementBaseDocumentsPageComponent {
   protected readonly totalCount = signal(0);
   protected readonly totalPages = signal(0);
   protected readonly items = signal<InternalRepBaseDocumentItemResponse[]>([]);
+  protected readonly selectedIds = signal<number[]>([]);
   protected readonly summaryCounts = signal<RepOperationalSummaryCountsResponse>(createEmptySummaryCounts());
   protected readonly loading = signal(false);
   protected readonly errorMessage = signal<string | null>(null);
   protected readonly filtersError = signal<string | null>(null);
+  protected readonly bulkRefreshing = signal(false);
+  protected readonly bulkRefreshError = signal<string | null>(null);
+  protected readonly bulkRefreshResult = signal<RepBaseDocumentBulkRefreshResponse | null>(null);
   protected readonly showDetailModal = signal(false);
   protected readonly selectedDetail = signal<InternalRepBaseDocumentDetailResponse | null>(null);
   protected readonly loadingDetail = signal(false);
@@ -1010,6 +1087,58 @@ export class PaymentComplementBaseDocumentsPageComponent {
     return Boolean(this.alertCodeFilter || this.severityFilter || this.nextRecommendedActionFilter || this.quickViewFilter);
   }
 
+  protected isSelected(fiscalDocumentId: number): boolean {
+    return this.selectedIds().includes(fiscalDocumentId);
+  }
+
+  protected selectedCount(): number {
+    return this.selectedIds().length;
+  }
+
+  protected allVisibleSelected(): boolean {
+    const currentItems = this.items();
+    return currentItems.length > 0 && currentItems.every((item) => this.isSelected(item.fiscalDocumentId));
+  }
+
+  protected toggleSelection(fiscalDocumentId: number, checked: boolean): void {
+    if (checked) {
+      this.selectedIds.set([...new Set([...this.selectedIds(), fiscalDocumentId])]);
+      return;
+    }
+
+    this.selectedIds.set(this.selectedIds().filter((id) => id !== fiscalDocumentId));
+  }
+
+  protected toggleSelectAll(checked: boolean): void {
+    if (checked) {
+      this.selectedIds.set(this.items().map((item) => item.fiscalDocumentId));
+      return;
+    }
+
+    this.selectedIds.set([]);
+  }
+
+  protected clearBulkRefreshResult(): void {
+    this.bulkRefreshResult.set(null);
+    this.bulkRefreshError.set(null);
+  }
+
+  protected async refreshSelectedDocuments(): Promise<void> {
+    if (!this.selectedCount()) {
+      return;
+    }
+
+    await this.executeBulkRefresh('Selected');
+  }
+
+  protected async refreshFilteredDocuments(): Promise<void> {
+    if (!this.items().length) {
+      return;
+    }
+
+    await this.executeBulkRefresh('Filtered');
+  }
+
   private async handleSuccessfulPaymentRegistration(
     fiscalDocumentId: number,
     result: RegisterInternalRepBaseDocumentPaymentResponse
@@ -1103,6 +1232,7 @@ export class PaymentComplementBaseDocumentsPageComponent {
       }));
 
       this.items.set(response.items);
+      this.selectedIds.set([]);
       this.summaryCounts.set(response.summaryCounts ?? createEmptySummaryCounts());
       this.totalCount.set(response.totalCount);
       this.totalPages.set(response.totalPages);
@@ -1113,6 +1243,52 @@ export class PaymentComplementBaseDocumentsPageComponent {
       this.summaryCounts.set(createEmptySummaryCounts());
     } finally {
       this.loading.set(false);
+    }
+  }
+
+  private async executeBulkRefresh(mode: string): Promise<void> {
+    this.bulkRefreshing.set(true);
+    this.bulkRefreshError.set(null);
+
+    try {
+      const result = await firstValueFrom(this.api.bulkRefreshInternalBaseDocuments({
+        mode,
+        documents: this.selectedIds().map((sourceId) => ({ sourceType: 'Internal', sourceId })),
+        fromDate: this.fromDate || null,
+        toDate: this.toDate || null,
+        receiverRfc: this.receiverRfc || null,
+        query: this.query || null,
+        eligible: parseBooleanFilter(this.eligibleFilter),
+        blocked: parseBooleanFilter(this.blockedFilter),
+        withOutstandingBalance: parseBooleanFilter(this.outstandingFilter),
+        hasRepEmitted: parseBooleanFilter(this.repEmittedFilter),
+        alertCode: this.alertCodeFilter || null,
+        severity: this.severityFilter || null,
+        nextRecommendedAction: this.nextRecommendedActionFilter || null,
+        quickView: this.quickViewFilter || null
+      }));
+
+      this.bulkRefreshResult.set(result);
+      this.selectedIds.set([]);
+
+      const refreshedIds = new Set(result.items.filter((item) => item.attempted).map((item) => item.sourceId));
+      const detail = this.selectedDetail();
+
+      if (detail && refreshedIds.has(detail.summary.fiscalDocumentId)) {
+        await this.loadDetail(detail.summary.fiscalDocumentId, this.showRegisterPaymentForm());
+      }
+
+      await this.load();
+      this.feedbackService.show(
+        result.failedCount > 0 ? 'warning' : 'success',
+        `Refresh masivo interno ejecutado: ${result.refreshedCount} actualizados, ${result.noChangesCount} sin cambios, ${result.blockedCount} bloqueados, ${result.failedCount} fallidos.`
+      );
+    } catch (error) {
+      const message = extractApiErrorMessage(error, 'No fue posible ejecutar el refresh masivo interno.');
+      this.bulkRefreshError.set(message);
+      this.feedbackService.show('error', message);
+    } finally {
+      this.bulkRefreshing.set(false);
     }
   }
 }

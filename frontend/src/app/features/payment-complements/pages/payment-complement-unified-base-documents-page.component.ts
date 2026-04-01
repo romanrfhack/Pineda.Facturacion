@@ -8,6 +8,7 @@ import { PaymentComplementsApiService } from '../infrastructure/payment-compleme
 import {
   ExternalRepBaseDocumentDetailResponse,
   InternalRepBaseDocumentDetailResponse,
+  RepBaseDocumentBulkRefreshResponse,
   RepOperationalAlertResponse,
   RepOperationalSummaryCountsResponse,
   RepBaseDocumentItemResponse
@@ -127,10 +128,74 @@ import {
           <p class="helper">No se encontraron documentos base REP con los filtros actuales.</p>
         } @else {
           <p class="helper">Mostrando {{ items().length }} de {{ totalCount() }} documentos base.</p>
+
+          <div class="bulk-toolbar">
+            <label class="selection-toggle">
+              <input type="checkbox" [checked]="allVisibleSelected()" (change)="toggleSelectAll($any($event.target).checked)" [disabled]="bulkRefreshing()" />
+              <span>Seleccionar visibles</span>
+            </label>
+            <span class="helper">{{ selectedCount() }} seleccionados</span>
+            <button type="button" [disabled]="bulkRefreshing() || !selectedCount()" (click)="refreshSelectedDocuments()">
+              {{ bulkRefreshing() ? 'Refrescando...' : 'Refrescar seleccionados' }}
+            </button>
+            <button type="button" class="secondary" [disabled]="bulkRefreshing() || !items().length" (click)="refreshFilteredDocuments()">
+              {{ bulkRefreshing() ? 'Refrescando...' : 'Refrescar filtrados' }}
+            </button>
+            @if (bulkRefreshResult()) {
+              <button type="button" class="secondary small" [disabled]="bulkRefreshing()" (click)="clearBulkRefreshResult()">
+                Limpiar resultado
+              </button>
+            }
+          </div>
+
+          @if (bulkRefreshError()) {
+            <p class="error">{{ bulkRefreshError() }}</p>
+          }
+
+          @if (bulkRefreshResult(); as result) {
+            <section class="summary-card">
+              <h4>Resultado del refresh masivo</h4>
+              <p class="helper">
+                Modo {{ getDisplayLabel(result.mode) }} · solicitados {{ result.totalRequested }} · procesados {{ result.totalAttempted }} · actualizados {{ result.refreshedCount }} · sin cambios {{ result.noChangesCount }} · bloqueados {{ result.blockedCount }} · fallidos {{ result.failedCount }}
+              </p>
+              @if (result.items.length) {
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Origen</th>
+                        <th>Documento</th>
+                        <th>Resultado</th>
+                        <th>REP</th>
+                        <th>Estado externo</th>
+                        <th>Mensaje</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (item of result.items; track item.sourceType + '-' + item.sourceId) {
+                        <tr>
+                          <td>{{ getDisplayLabel(item.sourceType) }}</td>
+                          <td>#{{ item.sourceId }}</td>
+                          <td>{{ getDisplayLabel(item.outcome) }}</td>
+                          <td>{{ item.paymentComplementDocumentId ? ('#' + item.paymentComplementDocumentId) : '—' }}{{ item.paymentComplementStatus ? (' · ' + getDisplayLabel(item.paymentComplementStatus)) : '' }}</td>
+                          <td>{{ item.lastKnownExternalStatus || '—' }}</td>
+                          <td>{{ item.message }}</td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              }
+            </section>
+          }
+
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
+                  <th>
+                    <input type="checkbox" [checked]="allVisibleSelected()" (change)="toggleSelectAll($any($event.target).checked)" [disabled]="bulkRefreshing()" />
+                  </th>
                   <th>Origen</th>
                   <th>Emisión</th>
                   <th>Serie/Folio</th>
@@ -148,6 +213,9 @@ import {
               <tbody>
                 @for (item of items(); track item.sourceType + '-' + item.sourceId) {
                   <tr>
+                    <td>
+                      <input type="checkbox" [checked]="isSelected(item)" (change)="toggleSelection(item, $any($event.target).checked)" [disabled]="bulkRefreshing()" />
+                    </td>
                     <td><span class="source-pill" [class.source-internal]="item.sourceType === 'Internal'" [class.source-external]="item.sourceType === 'External'">{{ getDisplayLabel(item.sourceType) }}</span></td>
                     <td>{{ formatUtc(item.issuedAtUtc) }}</td>
                     <td>{{ buildSeriesFolio(item.series, item.folio) }}</td>
@@ -298,7 +366,8 @@ import {
     button { border:none; border-radius:0.8rem; padding:0.75rem 1rem; background:#182533; color:#fff; cursor:pointer; }
     button.secondary { background:#d8c49b; color:#182533; }
     button.small { padding:0.5rem 0.75rem; font-size:0.9rem; }
-    .actions { display:flex; gap:0.75rem; flex-wrap:wrap; }
+    .actions, .bulk-toolbar { display:flex; gap:0.75rem; flex-wrap:wrap; align-items:center; }
+    .selection-toggle { display:inline-flex; align-items:center; gap:0.5rem; }
     .table-wrap { overflow:auto; }
     table { width:100%; border-collapse:collapse; min-width:1120px; }
     th, td { padding:0.75rem; border-bottom:1px solid #ece5d7; vertical-align:top; text-align:left; }
@@ -342,10 +411,14 @@ export class PaymentComplementUnifiedBaseDocumentsPageComponent {
   private readonly api = inject(PaymentComplementsApiService);
 
   protected readonly items = signal<RepBaseDocumentItemResponse[]>([]);
+  protected readonly selectedKeys = signal<string[]>([]);
   protected readonly loading = signal(false);
   protected readonly errorMessage = signal<string | null>(null);
   protected readonly totalCount = signal(0);
   protected readonly summaryCounts = signal<RepOperationalSummaryCountsResponse>(createEmptySummaryCounts());
+  protected readonly bulkRefreshing = signal(false);
+  protected readonly bulkRefreshError = signal<string | null>(null);
+  protected readonly bulkRefreshResult = signal<RepBaseDocumentBulkRefreshResponse | null>(null);
   protected readonly showDetailModal = signal(false);
   protected readonly loadingDetail = signal(false);
   protected readonly detailError = signal<string | null>(null);
@@ -397,6 +470,7 @@ export class PaymentComplementUnifiedBaseDocumentsPageComponent {
       }));
 
       this.items.set(response.items);
+      this.selectedKeys.set([]);
       this.summaryCounts.set(response.summaryCounts ?? createEmptySummaryCounts());
       this.totalCount.set(response.totalCount);
     } catch (error) {
@@ -506,6 +580,104 @@ export class PaymentComplementUnifiedBaseDocumentsPageComponent {
 
   protected hasOperationalFilters(): boolean {
     return Boolean(this.alertCodeFilter || this.severityFilter || this.nextRecommendedActionFilter || this.quickViewFilter);
+  }
+
+  protected isSelected(item: RepBaseDocumentItemResponse): boolean {
+    return this.selectedKeys().includes(this.buildSelectionKey(item.sourceType, item.sourceId));
+  }
+
+  protected selectedCount(): number {
+    return this.selectedKeys().length;
+  }
+
+  protected allVisibleSelected(): boolean {
+    const currentItems = this.items();
+    return currentItems.length > 0 && currentItems.every((item) => this.isSelected(item));
+  }
+
+  protected toggleSelection(item: RepBaseDocumentItemResponse, checked: boolean): void {
+    const key = this.buildSelectionKey(item.sourceType, item.sourceId);
+
+    if (checked) {
+      this.selectedKeys.set([...new Set([...this.selectedKeys(), key])]);
+      return;
+    }
+
+    this.selectedKeys.set(this.selectedKeys().filter((value) => value !== key));
+  }
+
+  protected toggleSelectAll(checked: boolean): void {
+    if (checked) {
+      this.selectedKeys.set(this.items().map((item) => this.buildSelectionKey(item.sourceType, item.sourceId)));
+      return;
+    }
+
+    this.selectedKeys.set([]);
+  }
+
+  protected clearBulkRefreshResult(): void {
+    this.bulkRefreshResult.set(null);
+    this.bulkRefreshError.set(null);
+  }
+
+  protected async refreshSelectedDocuments(): Promise<void> {
+    if (!this.selectedCount()) {
+      return;
+    }
+
+    await this.executeBulkRefresh('Selected');
+  }
+
+  protected async refreshFilteredDocuments(): Promise<void> {
+    if (!this.items().length) {
+      return;
+    }
+
+    await this.executeBulkRefresh('Filtered');
+  }
+
+  private buildSelectionKey(sourceType: string, sourceId: number): string {
+    return `${sourceType}:${sourceId}`;
+  }
+
+  private async executeBulkRefresh(mode: string): Promise<void> {
+    this.bulkRefreshing.set(true);
+    this.bulkRefreshError.set(null);
+
+    try {
+      const result = await firstValueFrom(this.api.bulkRefreshBaseDocuments({
+        mode,
+        documents: this.items()
+          .filter((item) => this.selectedKeys().includes(this.buildSelectionKey(item.sourceType, item.sourceId)))
+          .map((item) => ({ sourceType: item.sourceType, sourceId: item.sourceId })),
+        fromDate: this.fromDate || null,
+        toDate: this.toDate || null,
+        receiverRfc: this.receiverRfc || null,
+        query: this.query || null,
+        sourceType: this.sourceType || null,
+        validationStatus: this.validationStatus || null,
+        eligible: parseBoolean(this.eligibleFilter),
+        blocked: parseBoolean(this.blockedFilter),
+        alertCode: this.alertCodeFilter || null,
+        severity: this.severityFilter || null,
+        nextRecommendedAction: this.nextRecommendedActionFilter || null,
+        quickView: this.quickViewFilter || null
+      }));
+
+      this.bulkRefreshResult.set(result);
+      this.selectedKeys.set([]);
+
+      const selected = this.selectedItem();
+      if (selected && result.items.some((item) => item.attempted && item.sourceType === selected.sourceType && item.sourceId === selected.sourceId)) {
+        await this.openDetail(selected);
+      }
+
+      await this.applyFilters();
+    } catch (error) {
+      this.bulkRefreshError.set(extractApiErrorMessage(error, 'No fue posible ejecutar el refresh masivo unificado.'));
+    } finally {
+      this.bulkRefreshing.set(false);
+    }
   }
 }
 

@@ -47,6 +47,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<SearchInternalRepBaseDocumentsService>();
         services.AddScoped<SearchExternalRepBaseDocumentsService>();
         services.AddScoped<SearchRepBaseDocumentsService>();
+        services.AddScoped<BulkRefreshInternalRepBaseDocumentsService>();
+        services.AddScoped<BulkRefreshExternalRepBaseDocumentsService>();
+        services.AddScoped<BulkRefreshRepBaseDocumentsService>();
         services.AddScoped<GetInternalRepBaseDocumentByFiscalDocumentIdService>();
         services.AddScoped<ImportExternalRepBaseDocumentFromXmlService>();
         services.AddScoped<GetExternalRepBaseDocumentByIdService>();

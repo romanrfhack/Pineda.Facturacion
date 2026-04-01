@@ -217,6 +217,65 @@ export interface RepOperationalSummaryCountsResponse {
   quickViewCounts: RepOperationalCountResponse[];
 }
 
+export interface RepBaseDocumentBulkRefreshDocumentRequest {
+  sourceType?: string | null;
+  sourceId: number;
+}
+
+export interface RepBaseDocumentBulkRefreshRequest {
+  mode: string;
+  documents?: RepBaseDocumentBulkRefreshDocumentRequest[];
+  fromDate?: string | null;
+  toDate?: string | null;
+  receiverRfc?: string | null;
+  query?: string | null;
+  sourceType?: string | null;
+  validationStatus?: string | null;
+  eligible?: boolean | null;
+  blocked?: boolean | null;
+  withOutstandingBalance?: boolean | null;
+  hasRepEmitted?: boolean | null;
+  alertCode?: string | null;
+  severity?: string | null;
+  nextRecommendedAction?: string | null;
+  quickView?: string | null;
+}
+
+export interface RepBaseDocumentBulkRefreshUpdatedStateResponse {
+  operationalStatus: string;
+  isEligible: boolean;
+  isBlocked: boolean;
+  primaryReasonMessage: string;
+  nextRecommendedAction: string;
+  alerts: RepOperationalAlertResponse[];
+}
+
+export interface RepBaseDocumentBulkRefreshItemResponse {
+  sourceType: string;
+  sourceId: number;
+  attempted: boolean;
+  outcome: string;
+  message: string;
+  paymentComplementDocumentId?: number | null;
+  paymentComplementStatus?: string | null;
+  lastKnownExternalStatus?: string | null;
+  updatedState?: RepBaseDocumentBulkRefreshUpdatedStateResponse | null;
+}
+
+export interface RepBaseDocumentBulkRefreshResponse {
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  mode: string;
+  maxDocuments: number;
+  totalRequested: number;
+  totalAttempted: number;
+  refreshedCount: number;
+  noChangesCount: number;
+  blockedCount: number;
+  failedCount: number;
+  items: RepBaseDocumentBulkRefreshItemResponse[];
+}
+
 export interface PrepareInternalRepBaseDocumentPaymentComplementRequest {
   accountsReceivablePaymentId?: number | null;
 }

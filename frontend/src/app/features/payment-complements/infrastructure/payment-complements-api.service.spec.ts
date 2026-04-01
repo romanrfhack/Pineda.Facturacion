@@ -195,6 +195,90 @@ describe('PaymentComplementsApiService', () => {
     httpTesting.verify();
   });
 
+  it('executes bulk refresh for internal, external and unified trays', () => {
+    const service = TestBed.inject(PaymentComplementsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.bulkRefreshInternalBaseDocuments({
+      mode: 'Selected',
+      documents: [{ sourceType: 'Internal', sourceId: 501 }],
+      quickView: 'PendingRefresh'
+    }).subscribe();
+    const internalReq = httpTesting.expectOne('/api/payment-complements/base-documents/internal/refresh-rep-status/bulk');
+    expect(internalReq.request.method).toBe('POST');
+    expect(internalReq.request.body).toEqual({
+      mode: 'Selected',
+      documents: [{ sourceType: 'Internal', sourceId: 501 }],
+      quickView: 'PendingRefresh'
+    });
+    internalReq.flush({
+      isSuccess: true,
+      mode: 'Selected',
+      maxDocuments: 50,
+      totalRequested: 1,
+      totalAttempted: 1,
+      refreshedCount: 1,
+      noChangesCount: 0,
+      blockedCount: 0,
+      failedCount: 0,
+      items: []
+    });
+
+    service.bulkRefreshExternalBaseDocuments({
+      mode: 'Filtered',
+      severity: 'warning'
+    }).subscribe();
+    const externalReq = httpTesting.expectOne('/api/payment-complements/base-documents/external/refresh-rep-status/bulk');
+    expect(externalReq.request.method).toBe('POST');
+    expect(externalReq.request.body).toEqual({
+      mode: 'Filtered',
+      severity: 'warning'
+    });
+    externalReq.flush({
+      isSuccess: true,
+      mode: 'Filtered',
+      maxDocuments: 50,
+      totalRequested: 2,
+      totalAttempted: 2,
+      refreshedCount: 1,
+      noChangesCount: 1,
+      blockedCount: 0,
+      failedCount: 0,
+      items: []
+    });
+
+    service.bulkRefreshBaseDocuments({
+      mode: 'Selected',
+      documents: [
+        { sourceType: 'Internal', sourceId: 501 },
+        { sourceType: 'External', sourceId: 901 }
+      ]
+    }).subscribe();
+    const unifiedReq = httpTesting.expectOne('/api/payment-complements/base-documents/refresh-rep-status/bulk');
+    expect(unifiedReq.request.method).toBe('POST');
+    expect(unifiedReq.request.body).toEqual({
+      mode: 'Selected',
+      documents: [
+        { sourceType: 'Internal', sourceId: 501 },
+        { sourceType: 'External', sourceId: 901 }
+      ]
+    });
+    unifiedReq.flush({
+      isSuccess: true,
+      mode: 'Selected',
+      maxDocuments: 50,
+      totalRequested: 2,
+      totalAttempted: 2,
+      refreshedCount: 2,
+      noChangesCount: 0,
+      blockedCount: 0,
+      failedCount: 0,
+      items: []
+    });
+
+    httpTesting.verify();
+  });
+
   it('uploads an external xml invoice as form-data', () => {
     const service = TestBed.inject(PaymentComplementsApiService);
     const httpTesting = TestBed.inject(HttpTestingController);

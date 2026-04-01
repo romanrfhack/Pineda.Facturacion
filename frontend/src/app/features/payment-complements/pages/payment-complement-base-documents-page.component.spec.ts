@@ -372,6 +372,29 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
         availableActions: ['ViewDetail'],
         alerts: []
       })),
+      bulkRefreshInternalBaseDocuments: vi.fn().mockReturnValue(of({
+        isSuccess: true,
+        mode: 'Selected',
+        maxDocuments: 50,
+        totalRequested: 1,
+        totalAttempted: 1,
+        refreshedCount: 1,
+        noChangesCount: 0,
+        blockedCount: 0,
+        failedCount: 0,
+        items: [
+          {
+            sourceType: 'Internal',
+            sourceId: 501,
+            attempted: true,
+            outcome: 'Refreshed',
+            message: 'Estatus refrescado correctamente.',
+            paymentComplementDocumentId: 7001,
+            paymentComplementStatus: 'Stamped',
+            lastKnownExternalStatus: 'VIGENTE'
+          }
+        ]
+      })),
       ...overrides
     };
   }
@@ -1268,5 +1291,46 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Todavía no hay pagos registrados relacionados');
     expect(fixture.nativeElement.textContent).toContain('Todavía no hay pagos aplicados');
     expect(fixture.nativeElement.textContent).toContain('Aún no hay REP ligados');
+  });
+
+  it('executes bulk refresh from selected internal documents', async () => {
+    const bulkRefreshInternalBaseDocuments = vi.fn().mockReturnValue(of({
+      isSuccess: true,
+      mode: 'Selected',
+      maxDocuments: 50,
+      totalRequested: 1,
+      totalAttempted: 1,
+      refreshedCount: 1,
+      noChangesCount: 0,
+      blockedCount: 0,
+      failedCount: 0,
+      items: [
+        {
+          sourceType: 'Internal',
+          sourceId: 501,
+          attempted: true,
+          outcome: 'Refreshed',
+          message: 'Estatus refrescado correctamente.',
+          paymentComplementDocumentId: 7001,
+          paymentComplementStatus: 'Stamped',
+          lastKnownExternalStatus: 'VIGENTE'
+        }
+      ]
+    }));
+
+    const fixture = await configure({
+      bulkRefreshInternalBaseDocuments
+    });
+
+    fixture.componentInstance['toggleSelection'](501, true);
+    await fixture.componentInstance['refreshSelectedDocuments']();
+    fixture.detectChanges();
+
+    expect(bulkRefreshInternalBaseDocuments).toHaveBeenCalledWith(expect.objectContaining({
+      mode: 'Selected',
+      documents: [{ sourceType: 'Internal', sourceId: 501 }]
+    }));
+    expect(fixture.nativeElement.textContent).toContain('Resultado del refresh masivo');
+    expect(fixture.nativeElement.textContent).toContain('sin cambios');
   });
 });

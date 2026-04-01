@@ -204,6 +204,29 @@ describe('PaymentComplementExternalBaseDocumentsPageComponent', () => {
               cancellationStatus: 'Cancelled',
               availableActions: ['ViewDetail'],
               alerts: []
+            })),
+            bulkRefreshExternalBaseDocuments: vi.fn().mockReturnValue(of({
+              isSuccess: true,
+              mode: 'Selected',
+              maxDocuments: 50,
+              totalRequested: 1,
+              totalAttempted: 1,
+              refreshedCount: 1,
+              noChangesCount: 0,
+              blockedCount: 0,
+              failedCount: 0,
+              items: [
+                {
+                  sourceType: 'External',
+                  sourceId: 123,
+                  attempted: true,
+                  outcome: 'Refreshed',
+                  message: 'Estatus refrescado correctamente.',
+                  paymentComplementDocumentId: 7001,
+                  paymentComplementStatus: 'Stamped',
+                  lastKnownExternalStatus: 'VIGENTE'
+                }
+              ]
             }))
           }
         }
@@ -280,5 +303,20 @@ describe('PaymentComplementExternalBaseDocumentsPageComponent', () => {
       cancellationReasonCode: '02',
       replacementUuid: null
     });
+  });
+
+  it('executes bulk refresh from selected external documents', async () => {
+    const fixture = await configure();
+    const api = TestBed.inject(PaymentComplementsApiService) as unknown as Record<string, ReturnType<typeof vi.fn>>;
+
+    fixture.componentInstance['toggleSelection'](123, true);
+    await fixture.componentInstance['refreshSelectedDocuments']();
+    fixture.detectChanges();
+
+    expect(api['bulkRefreshExternalBaseDocuments']).toHaveBeenCalledWith(expect.objectContaining({
+      mode: 'Selected',
+      documents: [{ sourceType: 'External', sourceId: 123 }]
+    }));
+    expect(fixture.nativeElement.textContent).toContain('Resultado del refresh masivo');
   });
 });
