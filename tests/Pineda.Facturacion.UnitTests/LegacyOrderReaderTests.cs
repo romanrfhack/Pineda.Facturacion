@@ -62,6 +62,24 @@ public class LegacyOrderReaderTests
     }
 
     [Fact]
+    public void BuildDetailSql_Joins_NombresArticulos_On_NomArt_Categoria_And_Grupo()
+    {
+        var schema = CreateResolvedSchema(
+            ordersTableName: "Pedidos",
+            customersTableName: "Clientes",
+            orderItemsTableName: "PedidosDet",
+            articlesTableName: "Articulos",
+            articleNamesTableName: "NombresArticulos",
+            orderDateColumnName: "FechaPedido");
+
+        var sql = LegacyOrderReader.BuildDetailSql(schema);
+
+        Assert.Contains("ON a.`cveNomArt` = n.`cveNomArt`", sql, StringComparison.Ordinal);
+        Assert.Contains("AND a.`cveCategoria` = n.`cveCategoria`", sql, StringComparison.Ordinal);
+        Assert.Contains("AND a.`cveGrupo` = n.`cveGrupo`", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildHeaderSql_Uses_Resolved_Table_Name_For_Pedidos()
     {
         var schema = CreateResolvedSchema(
@@ -163,12 +181,16 @@ public class LegacyOrderReaderTests
                 ("Articulo", "Articulo"),
                 ("Especificacion", "Especificacion"),
                 ("uniMedida", "uniMedida"),
-                ("cveNomArt", "cveNomArt")),
+                ("cveNomArt", "cveNomArt"),
+                ("cveCategoria", "cveCategoria"),
+                ("cveGrupo", "cveGrupo")),
             CreateTable(
                 "nombresarticulos",
                 articleNamesTableName,
                 ("NomArt", "NomArt"),
-                ("cveNomArt", "cveNomArt")),
+                ("cveNomArt", "cveNomArt"),
+                ("cveCategoria", "cveCategoria"),
+                ("cveGrupo", "cveGrupo")),
             orderDateColumnName);
     }
 

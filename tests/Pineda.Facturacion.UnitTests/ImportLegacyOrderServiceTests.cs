@@ -191,6 +191,80 @@ public class ImportLegacyOrderServiceTests
         Assert.Equal(174m, salesOrderRepository.Added.Total);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_Preserves_Repeated_Product_Lines_As_Independent_Items()
+    {
+        var legacyOrder = CreateLegacyOrder();
+        legacyOrder.Items =
+        [
+            new LegacyOrderItemReadModel
+            {
+                LineNumber = 1,
+                LegacyArticleId = "A-1",
+                Sku = "SKU-1",
+                Description = "Articulo demo",
+                UnitCode = "H87",
+                UnitName = "Pieza",
+                Quantity = 1m,
+                UnitPrice = 348m,
+                DiscountAmount = 0m,
+                TaxRate = 0m,
+                TaxAmount = 0m,
+                LineTotal = 348m
+            },
+            new LegacyOrderItemReadModel
+            {
+                LineNumber = 2,
+                LegacyArticleId = "A-1",
+                Sku = "SKU-1",
+                Description = "Articulo demo",
+                UnitCode = "H87",
+                UnitName = "Pieza",
+                Quantity = 1m,
+                UnitPrice = 348m,
+                DiscountAmount = 0m,
+                TaxRate = 0m,
+                TaxAmount = 0m,
+                LineTotal = 348m
+            }
+        ];
+
+        var salesOrderRepository = new FakeSalesOrderRepository();
+        var service = CreateService(
+            new FakeLegacyOrderReader { Result = legacyOrder },
+            new FakeContentHashGenerator { Hash = "hash-1" },
+            new FakeLegacyImportRecordRepository(),
+            salesOrderRepository,
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new ImportLegacyOrderCommand
+        {
+            SourceSystem = "legacy",
+            SourceTable = "orders",
+            LegacyOrderId = legacyOrder.LegacyOrderId
+        });
+
+        Assert.Equal(ImportLegacyOrderOutcome.Imported, result.Outcome);
+        var items = Assert.IsType<List<SalesOrderItem>>(salesOrderRepository.Added!.Items);
+        Assert.Equal(2, items.Count);
+        Assert.Collection(
+            items.OrderBy(x => x.LineNumber),
+            item =>
+            {
+                Assert.Equal(1, item.LineNumber);
+                Assert.Equal("A-1", item.LegacyArticleId);
+                Assert.Equal(348m, item.UnitPrice);
+                Assert.Equal(348m, item.LineTotal);
+            },
+            item =>
+            {
+                Assert.Equal(2, item.LineNumber);
+                Assert.Equal("A-1", item.LegacyArticleId);
+                Assert.Equal(348m, item.UnitPrice);
+                Assert.Equal(348m, item.LineTotal);
+            });
+    }
+
     private static ImportLegacyOrderService CreateService(
         ILegacyOrderReader legacyOrderReader,
         IContentHashGenerator contentHashGenerator,

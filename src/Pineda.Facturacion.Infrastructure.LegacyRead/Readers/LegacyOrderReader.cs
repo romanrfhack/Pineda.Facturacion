@@ -171,12 +171,12 @@ public class LegacyOrderReader : ILegacyOrderReader
         var articles = await ResolveTableAsync(
             connection,
             "articulos",
-            ["cveArticulo", "cveMarcaArticulo", "Articulo", "Especificacion", "uniMedida", "cveNomArt"],
+            ["cveArticulo", "cveMarcaArticulo", "Articulo", "Especificacion", "uniMedida", "cveNomArt", "cveCategoria", "cveGrupo"],
             cancellationToken);
         var articleNames = await ResolveTableAsync(
             connection,
             "nombresarticulos",
-            ["NomArt", "cveNomArt"],
+            ["NomArt", "cveNomArt", "cveCategoria", "cveGrupo"],
             cancellationToken);
         var orderDateColumn = await _schemaResolver.ResolveColumnAsync(
             connection,
@@ -259,6 +259,8 @@ public class LegacyOrderReader : ILegacyOrderReader
                AND d.{Q(schema.OrderItems["cveMarcaArticulo"])} = a.{Q(schema.Articles["cveMarcaArticulo"])}
             LEFT JOIN {Q(schema.ArticleNames.ActualName)} n
                 ON a.{Q(schema.Articles["cveNomArt"])} = n.{Q(schema.ArticleNames["cveNomArt"])}
+               AND a.{Q(schema.Articles["cveCategoria"])} = n.{Q(schema.ArticleNames["cveCategoria"])}
+               AND a.{Q(schema.Articles["cveGrupo"])} = n.{Q(schema.ArticleNames["cveGrupo"])}
             WHERE d.{Q(schema.OrderItems["noPedido"])} = @legacyOrderId
             ORDER BY d.{Q(schema.OrderItems["cveArticulo"])}, d.{Q(schema.OrderItems["cveMarcaArticulo"])}, d.{Q(schema.OrderItems["SuPrecio"])}, d.{Q(schema.OrderItems["Cantidad"])}, d.{Q(schema.OrderItems["uniMedida"])};
             """;
