@@ -1,6 +1,6 @@
 namespace Pineda.Facturacion.Application.UseCases.PaymentComplements;
 
-public sealed class ExternalRepBaseDocumentListItem
+public sealed class ExternalRepBaseDocumentSummaryReadModel
 {
     public long ExternalRepBaseDocumentId { get; init; }
 
@@ -34,19 +34,15 @@ public sealed class ExternalRepBaseDocumentListItem
 
     public decimal Total { get; init; }
 
-    public decimal PaidTotal { get; init; }
-
-    public decimal OutstandingBalance { get; init; }
-
     public string PaymentMethodSat { get; init; } = string.Empty;
 
     public string PaymentFormSat { get; init; } = string.Empty;
 
     public string ValidationStatus { get; init; } = string.Empty;
 
-    public string ReasonCode { get; init; } = string.Empty;
+    public string ValidationReasonCode { get; init; } = string.Empty;
 
-    public string ReasonMessage { get; init; } = string.Empty;
+    public string ValidationReasonMessage { get; init; } = string.Empty;
 
     public string SatStatus { get; init; } = string.Empty;
 
@@ -62,15 +58,21 @@ public sealed class ExternalRepBaseDocumentListItem
 
     public string? LastSatRawResponseSummaryJson { get; init; }
 
+    public string SourceFileName { get; init; } = string.Empty;
+
+    public string XmlHash { get; init; } = string.Empty;
+
     public DateTime ImportedAtUtc { get; init; }
 
     public long? ImportedByUserId { get; init; }
 
     public string? ImportedByUsername { get; init; }
 
-    public string SourceFileName { get; init; } = string.Empty;
+    public string? AccountsReceivableStatus { get; init; }
 
-    public string XmlHash { get; init; } = string.Empty;
+    public decimal PaidTotal { get; init; }
+
+    public decimal OutstandingBalance { get; init; }
 
     public int RegisteredPaymentCount { get; init; }
 
@@ -80,15 +82,5 @@ public sealed class ExternalRepBaseDocumentListItem
 
     public DateTime? LastRepIssuedAtUtc { get; init; }
 
-    public string OperationalStatus { get; init; } = string.Empty;
-
-    public bool IsEligible { get; init; }
-
-    public bool IsBlocked { get; init; }
-
-    public string PrimaryReasonCode { get; init; } = string.Empty;
-
-    public string PrimaryReasonMessage { get; init; } = string.Empty;
-
-    public IReadOnlyList<string> AvailableActions { get; init; } = [];
+    public bool HasKnownFiscalReceiver { get; init; }
 }

@@ -26,11 +26,15 @@ public class PaymentComplementRelatedDocumentConfiguration : IEntityTypeConfigur
 
         builder.Property(x => x.FiscalDocumentId)
             .HasColumnName("fiscal_document_id")
-            .IsRequired();
+            .IsRequired(false);
 
         builder.Property(x => x.FiscalStampId)
             .HasColumnName("fiscal_stamp_id")
-            .IsRequired();
+            .IsRequired(false);
+
+        builder.Property(x => x.ExternalRepBaseDocumentId)
+            .HasColumnName("external_rep_base_document_id")
+            .IsRequired(false);
 
         builder.Property(x => x.RelatedDocumentUuid)
             .HasColumnName("related_document_uuid")
@@ -69,6 +73,7 @@ public class PaymentComplementRelatedDocumentConfiguration : IEntityTypeConfigur
 
         builder.HasIndex(x => x.PaymentComplementDocumentId);
         builder.HasIndex(x => x.RelatedDocumentUuid);
+        builder.HasIndex(x => x.ExternalRepBaseDocumentId);
 
         builder.HasOne<AccountsReceivableInvoice>()
             .WithMany()
@@ -83,6 +88,11 @@ public class PaymentComplementRelatedDocumentConfiguration : IEntityTypeConfigur
         builder.HasOne<FiscalStamp>()
             .WithMany()
             .HasForeignKey(x => x.FiscalStampId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne<ExternalRepBaseDocument>()
+            .WithMany()
+            .HasForeignKey(x => x.ExternalRepBaseDocumentId)
             .OnDelete(DeleteBehavior.Restrict);
     }
 }

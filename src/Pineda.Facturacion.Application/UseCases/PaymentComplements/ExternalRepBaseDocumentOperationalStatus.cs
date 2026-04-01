@@ -3,6 +3,9 @@ namespace Pineda.Facturacion.Application.UseCases.PaymentComplements;
 public enum ExternalRepBaseDocumentOperationalStatus
 {
     Imported = 1,
-    ReadyForNextPhase = 2,
-    Blocked = 3
+    ReadyForPayment = 2,
+    ReadyForRepPreparation = 3,
+    ReadyForRepStamping = 4,
+    RepIssued = 5,
+    Blocked = 6
 }

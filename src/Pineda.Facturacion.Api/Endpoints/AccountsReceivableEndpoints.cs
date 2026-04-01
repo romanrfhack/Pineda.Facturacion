@@ -403,11 +403,11 @@ public class AccountsReceivableInvoiceResponse
 {
     public long Id { get; set; }
 
-    public long BillingDocumentId { get; set; }
+    public long? BillingDocumentId { get; set; }
 
-    public long FiscalDocumentId { get; set; }
+    public long? FiscalDocumentId { get; set; }
 
-    public long FiscalStampId { get; set; }
+    public long? FiscalStampId { get; set; }
 
     public string Status { get; set; } = string.Empty;
 

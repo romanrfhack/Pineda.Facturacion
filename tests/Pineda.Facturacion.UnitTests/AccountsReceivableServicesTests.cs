@@ -314,7 +314,7 @@ public class AccountsReceivableServicesTests
 
         var invoiceResult = await new GetAccountsReceivableInvoiceByFiscalDocumentIdService(
             new ArFakeAccountsReceivableInvoiceRepository { ExistingByFiscalDocumentId = invoice })
-            .ExecuteAsync(invoice.FiscalDocumentId);
+            .ExecuteAsync(invoice.FiscalDocumentId!.Value);
 
         var paymentResult = await new GetAccountsReceivablePaymentByIdService(
             new ArFakeAccountsReceivablePaymentRepository { ExistingById = payment })
@@ -442,6 +442,8 @@ public class AccountsReceivableServicesTests
     {
         public AccountsReceivableInvoice? ExistingByFiscalDocumentId { get; set; }
 
+        public AccountsReceivableInvoice? ExistingByExternalRepBaseDocumentId { get; set; }
+
         public Dictionary<long, AccountsReceivableInvoice> TrackedById { get; set; } = [];
 
         public AccountsReceivableInvoice? Added { get; private set; }
@@ -460,6 +462,16 @@ public class AccountsReceivableServicesTests
         public Task<AccountsReceivableInvoice?> GetTrackedByFiscalDocumentIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default)
         {
             return Task.FromResult(ExistingByFiscalDocumentId);
+        }
+
+        public Task<AccountsReceivableInvoice?> GetByExternalRepBaseDocumentIdAsync(long externalRepBaseDocumentId, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(ExistingByExternalRepBaseDocumentId);
+        }
+
+        public Task<AccountsReceivableInvoice?> GetTrackedByExternalRepBaseDocumentIdAsync(long externalRepBaseDocumentId, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(ExistingByExternalRepBaseDocumentId);
         }
 
         public Task AddAsync(AccountsReceivableInvoice accountsReceivableInvoice, CancellationToken cancellationToken = default)

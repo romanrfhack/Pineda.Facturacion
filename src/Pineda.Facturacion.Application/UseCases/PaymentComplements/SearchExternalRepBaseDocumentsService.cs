@@ -7,10 +7,14 @@ namespace Pineda.Facturacion.Application.UseCases.PaymentComplements;
 public sealed class SearchExternalRepBaseDocumentsService
 {
     private readonly IExternalRepBaseDocumentRepository _repository;
+    private readonly IIssuerProfileRepository _issuerProfileRepository;
 
-    public SearchExternalRepBaseDocumentsService(IExternalRepBaseDocumentRepository repository)
+    public SearchExternalRepBaseDocumentsService(
+        IExternalRepBaseDocumentRepository repository,
+        IIssuerProfileRepository issuerProfileRepository)
     {
         _repository = repository;
+        _issuerProfileRepository = issuerProfileRepository;
     }
 
     public async Task<SearchExternalRepBaseDocumentsResult> ExecuteAsync(
@@ -32,7 +36,7 @@ public sealed class SearchExternalRepBaseDocumentsService
             throw new ArgumentException("FromDate cannot be greater than ToDate.", nameof(filter));
         }
 
-        var documents = await _repository.SearchAsync(
+        var documents = await _repository.SearchOperationalAsync(
             new SearchExternalRepBaseDocumentsDataFilter
             {
                 FromDate = filter.FromDate,
@@ -41,9 +45,10 @@ public sealed class SearchExternalRepBaseDocumentsService
                 Query = NormalizeOptionalText(filter.Query)
             },
             cancellationToken);
+        var activeIssuerProfile = await _issuerProfileRepository.GetActiveAsync(cancellationToken);
 
         var items = documents
-            .Select(BuildListItem)
+            .Select(x => BuildListItem(x, activeIssuerProfile))
             .Where(x => MatchesFilter(x, filter))
             .OrderByDescending(x => x.IsEligible)
             .ThenByDescending(x => x.IsBlocked)
@@ -68,28 +73,53 @@ public sealed class SearchExternalRepBaseDocumentsService
         };
     }
 
-    internal static ExternalRepBaseDocumentListItem BuildListItem(ExternalRepBaseDocument document)
+    internal static ExternalRepBaseDocumentListItem BuildListItem(
+        ExternalRepBaseDocumentSummaryReadModel summary,
+        IssuerProfile? activeIssuerProfile)
     {
-        var evaluation = ExternalRepBaseDocumentOperationalEvaluator.Evaluate(document);
+        var evaluation = ExternalRepBaseDocumentOperationalEvaluator.Evaluate(summary, activeIssuerProfile);
 
         return new ExternalRepBaseDocumentListItem
         {
-            ExternalRepBaseDocumentId = document.Id,
-            Uuid = document.Uuid,
-            Series = document.Series,
-            Folio = document.Folio,
-            IssuedAtUtc = document.IssuedAtUtc,
-            IssuerRfc = document.IssuerRfc,
-            IssuerLegalName = document.IssuerLegalName,
-            ReceiverRfc = document.ReceiverRfc,
-            ReceiverLegalName = document.ReceiverLegalName,
-            CurrencyCode = document.CurrencyCode,
-            Total = document.Total,
-            PaymentMethodSat = document.PaymentMethodSat,
-            PaymentFormSat = document.PaymentFormSat,
-            ValidationStatus = document.ValidationStatus.ToString(),
-            SatStatus = document.SatStatus.ToString(),
-            ImportedAtUtc = document.ImportedAtUtc,
+            ExternalRepBaseDocumentId = summary.ExternalRepBaseDocumentId,
+            AccountsReceivableInvoiceId = summary.AccountsReceivableInvoiceId,
+            Uuid = summary.Uuid,
+            CfdiVersion = summary.CfdiVersion,
+            DocumentType = summary.DocumentType,
+            Series = summary.Series,
+            Folio = summary.Folio,
+            IssuedAtUtc = summary.IssuedAtUtc,
+            IssuerRfc = summary.IssuerRfc,
+            IssuerLegalName = summary.IssuerLegalName,
+            ReceiverRfc = summary.ReceiverRfc,
+            ReceiverLegalName = summary.ReceiverLegalName,
+            CurrencyCode = summary.CurrencyCode,
+            ExchangeRate = summary.ExchangeRate,
+            Subtotal = summary.Subtotal,
+            Total = summary.Total,
+            PaidTotal = summary.PaidTotal,
+            OutstandingBalance = summary.OutstandingBalance,
+            PaymentMethodSat = summary.PaymentMethodSat,
+            PaymentFormSat = summary.PaymentFormSat,
+            ValidationStatus = summary.ValidationStatus,
+            ReasonCode = summary.ValidationReasonCode,
+            ReasonMessage = summary.ValidationReasonMessage,
+            SatStatus = summary.SatStatus,
+            LastSatCheckAtUtc = summary.LastSatCheckAtUtc,
+            LastSatExternalStatus = summary.LastSatExternalStatus,
+            LastSatCancellationStatus = summary.LastSatCancellationStatus,
+            LastSatProviderCode = summary.LastSatProviderCode,
+            LastSatProviderMessage = summary.LastSatProviderMessage,
+            LastSatRawResponseSummaryJson = summary.LastSatRawResponseSummaryJson,
+            ImportedAtUtc = summary.ImportedAtUtc,
+            ImportedByUserId = summary.ImportedByUserId,
+            ImportedByUsername = summary.ImportedByUsername,
+            SourceFileName = summary.SourceFileName,
+            XmlHash = summary.XmlHash,
+            RegisteredPaymentCount = summary.RegisteredPaymentCount,
+            PaymentComplementCount = summary.PaymentComplementCount,
+            StampedPaymentComplementCount = summary.StampedPaymentComplementCount,
+            LastRepIssuedAtUtc = summary.LastRepIssuedAtUtc,
             OperationalStatus = evaluation.Status.ToString(),
             IsEligible = evaluation.IsEligible,
             IsBlocked = evaluation.IsBlocked,

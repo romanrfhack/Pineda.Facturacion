@@ -8,9 +8,11 @@ public class PaymentComplementRelatedDocument
 
     public long AccountsReceivableInvoiceId { get; set; }
 
-    public long FiscalDocumentId { get; set; }
+    public long? FiscalDocumentId { get; set; }
 
-    public long FiscalStampId { get; set; }
+    public long? FiscalStampId { get; set; }
+
+    public long? ExternalRepBaseDocumentId { get; set; }
 
     public string RelatedDocumentUuid { get; set; } = string.Empty;
 

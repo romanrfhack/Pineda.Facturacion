@@ -68,6 +68,7 @@ public class PaymentComplementServicesTests
                     [invoice2.Id] = invoice2
                 }
             },
+            new PcFakeExternalRepBaseDocumentRepository(),
             new PcFakeFiscalDocumentRepository
             {
                 ById =
@@ -84,6 +85,8 @@ public class PaymentComplementServicesTests
                     [302] = stamp2
                 }
             },
+            new PcFakeIssuerProfileRepository(),
+            new PcFakeFiscalReceiverRepository(),
             repository,
             new PcFakeUnitOfWork());
 
@@ -168,22 +171,25 @@ public class PaymentComplementServicesTests
                     [invoice2.Id] = invoice2
                 }
             },
+            new PcFakeExternalRepBaseDocumentRepository(),
             new PcFakeFiscalDocumentRepository
             {
                 ById =
                 {
-                    [invoice1.FiscalDocumentId] = CreateFiscalDocument(id: invoice1.FiscalDocumentId, receiverRfc: "AAA010101AAA"),
-                    [invoice2.FiscalDocumentId] = CreateFiscalDocument(id: invoice2.FiscalDocumentId, receiverRfc: "CCC010101CCC")
+                    [invoice1.FiscalDocumentId!.Value] = CreateFiscalDocument(id: invoice1.FiscalDocumentId.Value, receiverRfc: "AAA010101AAA"),
+                    [invoice2.FiscalDocumentId!.Value] = CreateFiscalDocument(id: invoice2.FiscalDocumentId.Value, receiverRfc: "CCC010101CCC")
                 }
             },
             new PcFakeFiscalStampRepository
             {
                 ByFiscalDocumentId =
                 {
-                    [invoice1.FiscalDocumentId] = CreateFiscalStamp(id: 401, fiscalDocumentId: invoice1.FiscalDocumentId, uuid: "UUID-1"),
-                    [invoice2.FiscalDocumentId] = CreateFiscalStamp(id: 402, fiscalDocumentId: invoice2.FiscalDocumentId, uuid: "UUID-2")
+                    [invoice1.FiscalDocumentId!.Value] = CreateFiscalStamp(id: 401, fiscalDocumentId: invoice1.FiscalDocumentId.Value, uuid: "UUID-1"),
+                    [invoice2.FiscalDocumentId!.Value] = CreateFiscalStamp(id: 402, fiscalDocumentId: invoice2.FiscalDocumentId.Value, uuid: "UUID-2")
                 }
             },
+            new PcFakeIssuerProfileRepository(),
+            new PcFakeFiscalReceiverRepository(),
             new PcFakePaymentComplementDocumentRepository(),
             new PcFakeUnitOfWork());
 
@@ -447,7 +453,16 @@ public class PaymentComplementServicesTests
 
         var service = new PrepareInternalRepBaseDocumentPaymentComplementService(
             detailRepository,
-            new PreparePaymentComplementService(paymentRepository, invoiceRepository, fiscalDocumentRepository, fiscalStampRepository, paymentComplementRepository, new PcFakeUnitOfWork()),
+            new PreparePaymentComplementService(
+                paymentRepository,
+                invoiceRepository,
+                new PcFakeExternalRepBaseDocumentRepository(),
+                fiscalDocumentRepository,
+                fiscalStampRepository,
+                new PcFakeIssuerProfileRepository(),
+                new PcFakeFiscalReceiverRepository(),
+                paymentComplementRepository,
+                new PcFakeUnitOfWork()),
             new GetPaymentComplementByPaymentIdService(paymentComplementRepository),
             new GetInternalRepBaseDocumentByFiscalDocumentIdService(detailRepository, new PcFakeInternalRepBaseDocumentStateRepository(), new PcFakeUnitOfWork()));
 
@@ -845,20 +860,23 @@ public class PaymentComplementServicesTests
                     [invoice.Id] = invoice
                 }
             },
+            new PcFakeExternalRepBaseDocumentRepository(),
             new PcFakeFiscalDocumentRepository
             {
                 ById =
                 {
-                    [invoice.FiscalDocumentId] = fiscalDocument
+                    [invoice.FiscalDocumentId!.Value] = fiscalDocument
                 }
             },
             new PcFakeFiscalStampRepository
             {
                 ByFiscalDocumentId =
                 {
-                    [invoice.FiscalDocumentId] = fiscalStamp
+                    [invoice.FiscalDocumentId!.Value] = fiscalStamp
                 }
             },
+            new PcFakeIssuerProfileRepository(),
+            new PcFakeFiscalReceiverRepository(),
             paymentComplementRepository,
             new PcFakeUnitOfWork());
     }
@@ -1164,6 +1182,9 @@ public class PaymentComplementServicesTests
         public Task<AccountsReceivableInvoice?> GetByFiscalDocumentIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default)
             => Task.FromResult(TrackedById.Values.FirstOrDefault(x => x.FiscalDocumentId == fiscalDocumentId));
 
+        public Task<AccountsReceivableInvoice?> GetByExternalRepBaseDocumentIdAsync(long externalRepBaseDocumentId, CancellationToken cancellationToken = default)
+            => Task.FromResult(TrackedById.Values.FirstOrDefault(x => x.ExternalRepBaseDocumentId == externalRepBaseDocumentId));
+
         public Task<AccountsReceivableInvoice?> GetTrackedByIdAsync(long accountsReceivableInvoiceId, CancellationToken cancellationToken = default)
         {
             TrackedById.TryGetValue(accountsReceivableInvoiceId, out var invoice);
@@ -1172,6 +1193,9 @@ public class PaymentComplementServicesTests
 
         public Task<AccountsReceivableInvoice?> GetTrackedByFiscalDocumentIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default)
             => Task.FromResult(TrackedById.Values.FirstOrDefault(x => x.FiscalDocumentId == fiscalDocumentId));
+
+        public Task<AccountsReceivableInvoice?> GetTrackedByExternalRepBaseDocumentIdAsync(long externalRepBaseDocumentId, CancellationToken cancellationToken = default)
+            => Task.FromResult(TrackedById.Values.FirstOrDefault(x => x.ExternalRepBaseDocumentId == externalRepBaseDocumentId));
 
         public Task AddAsync(AccountsReceivableInvoice accountsReceivableInvoice, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
@@ -1221,6 +1245,89 @@ public class PaymentComplementServicesTests
             => Task.FromResult<FiscalStamp?>(null);
 
         public Task AddAsync(FiscalStamp fiscalStamp, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class PcFakeExternalRepBaseDocumentRepository : IExternalRepBaseDocumentRepository
+    {
+        public Dictionary<long, ExternalRepBaseDocument> ById { get; set; } = [];
+
+        public Task<ExternalRepBaseDocument?> GetByIdAsync(long id, CancellationToken cancellationToken = default)
+        {
+            ById.TryGetValue(id, out var document);
+            return Task.FromResult(document);
+        }
+
+        public Task<ExternalRepBaseDocument?> GetTrackedByIdAsync(long id, CancellationToken cancellationToken = default)
+            => GetByIdAsync(id, cancellationToken);
+
+        public Task<ExternalRepBaseDocument?> GetByUuidAsync(string uuid, CancellationToken cancellationToken = default)
+            => Task.FromResult(ById.Values.FirstOrDefault(x => x.Uuid == uuid));
+
+        public Task<IReadOnlyList<ExternalRepBaseDocument>> SearchAsync(SearchExternalRepBaseDocumentsDataFilter filter, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<ExternalRepBaseDocument>>(ById.Values.ToList());
+
+        public Task<IReadOnlyList<ExternalRepBaseDocumentSummaryReadModel>> SearchOperationalAsync(SearchExternalRepBaseDocumentsDataFilter filter, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<ExternalRepBaseDocumentSummaryReadModel>>([]);
+
+        public Task<ExternalRepBaseDocumentDetailReadModel?> GetOperationalByIdAsync(long externalRepBaseDocumentId, CancellationToken cancellationToken = default)
+            => Task.FromResult<ExternalRepBaseDocumentDetailReadModel?>(null);
+
+        public Task AddAsync(ExternalRepBaseDocument document, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class PcFakeIssuerProfileRepository : IIssuerProfileRepository
+    {
+        public IssuerProfile? Active { get; set; } = new()
+        {
+            Id = 1,
+            Rfc = "AAA010101AAA",
+            LegalName = "Emisor",
+            FiscalRegimeCode = "601",
+            PostalCode = "64000",
+            CfdiVersion = "4.0",
+            CertificateReference = "cert",
+            PrivateKeyReference = "key",
+            PrivateKeyPasswordReference = "pwd",
+            PacEnvironment = "test",
+            IsActive = true
+        };
+
+        public Task<IssuerProfile?> GetActiveAsync(CancellationToken cancellationToken = default) => Task.FromResult(Active);
+
+        public Task<IssuerProfile?> GetTrackedActiveAsync(CancellationToken cancellationToken = default) => Task.FromResult(Active);
+
+        public Task<IssuerProfile?> GetByIdAsync(long issuerProfileId, CancellationToken cancellationToken = default) => Task.FromResult(Active);
+
+        public Task<bool> TryAdvanceNextFiscalFolioAsync(long issuerProfileId, int expectedNextFiscalFolio, int newNextFiscalFolio, CancellationToken cancellationToken = default)
+            => Task.FromResult(true);
+
+        public Task AddAsync(IssuerProfile issuerProfile, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task UpdateAsync(IssuerProfile issuerProfile, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class PcFakeFiscalReceiverRepository : IFiscalReceiverRepository
+    {
+        public Dictionary<string, FiscalReceiver> ByRfc { get; set; } = [];
+
+        public Task<IReadOnlyList<FiscalReceiver>> SearchAsync(string query, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<FiscalReceiver>>(ByRfc.Values.ToList());
+
+        public Task<FiscalReceiver?> GetByRfcAsync(string normalizedRfc, CancellationToken cancellationToken = default)
+        {
+            ByRfc.TryGetValue(normalizedRfc, out var receiver);
+            return Task.FromResult(receiver);
+        }
+
+        public Task<FiscalReceiver?> GetByIdAsync(long fiscalReceiverId, CancellationToken cancellationToken = default)
+            => Task.FromResult(ByRfc.Values.FirstOrDefault(x => x.Id == fiscalReceiverId));
+
+        public Task<IReadOnlyList<FiscalReceiverSpecialFieldDefinition>> GetActiveSpecialFieldDefinitionsAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<FiscalReceiverSpecialFieldDefinition>>([]);
+
+        public Task AddAsync(FiscalReceiver fiscalReceiver, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task UpdateAsync(FiscalReceiver fiscalReceiver, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     private sealed class PcFakeAccountsReceivablePaymentApplicationRepository : IAccountsReceivablePaymentApplicationRepository

@@ -13,10 +13,16 @@ import {
   InternalRepBaseDocumentListResponse,
   PrepareInternalRepBaseDocumentPaymentComplementRequest,
   PrepareInternalRepBaseDocumentPaymentComplementResponse,
+  PrepareExternalRepBaseDocumentPaymentComplementRequest,
+  PrepareExternalRepBaseDocumentPaymentComplementResponse,
+  RegisterExternalRepBaseDocumentPaymentRequest,
+  RegisterExternalRepBaseDocumentPaymentResponse,
   RegisterInternalRepBaseDocumentPaymentRequest,
   RegisterInternalRepBaseDocumentPaymentResponse,
   RepBaseDocumentFilters,
   RepBaseDocumentListResponse,
+  StampExternalRepBaseDocumentPaymentComplementRequest,
+  StampExternalRepBaseDocumentPaymentComplementResponse,
   StampInternalRepBaseDocumentPaymentComplementRequest,
   StampInternalRepBaseDocumentPaymentComplementResponse,
   PaymentComplementCancellationResponse,
@@ -114,6 +120,36 @@ export class PaymentComplementsApiService {
   ): Observable<StampInternalRepBaseDocumentPaymentComplementResponse> {
     return this.http.post<StampInternalRepBaseDocumentPaymentComplementResponse>(
       buildApiUrl(`/payment-complements/base-documents/internal/${fiscalDocumentId}/stamp`),
+      request
+    );
+  }
+
+  registerExternalBaseDocumentPayment(
+    externalRepBaseDocumentId: number,
+    request: RegisterExternalRepBaseDocumentPaymentRequest
+  ): Observable<RegisterExternalRepBaseDocumentPaymentResponse> {
+    return this.http.post<RegisterExternalRepBaseDocumentPaymentResponse>(
+      buildApiUrl(`/payment-complements/base-documents/external/${externalRepBaseDocumentId}/payments`),
+      request
+    );
+  }
+
+  prepareExternalBaseDocumentPaymentComplement(
+    externalRepBaseDocumentId: number,
+    request: PrepareExternalRepBaseDocumentPaymentComplementRequest
+  ): Observable<PrepareExternalRepBaseDocumentPaymentComplementResponse> {
+    return this.http.post<PrepareExternalRepBaseDocumentPaymentComplementResponse>(
+      buildApiUrl(`/payment-complements/base-documents/external/${externalRepBaseDocumentId}/prepare`),
+      request
+    );
+  }
+
+  stampExternalBaseDocumentPaymentComplement(
+    externalRepBaseDocumentId: number,
+    request: StampExternalRepBaseDocumentPaymentComplementRequest
+  ): Observable<StampExternalRepBaseDocumentPaymentComplementResponse> {
+    return this.http.post<StampExternalRepBaseDocumentPaymentComplementResponse>(
+      buildApiUrl(`/payment-complements/base-documents/external/${externalRepBaseDocumentId}/stamp`),
       request
     );
   }

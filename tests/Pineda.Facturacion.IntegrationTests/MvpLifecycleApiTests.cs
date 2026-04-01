@@ -1545,6 +1545,7 @@ public class MvpLifecycleApiTests
     {
         await using var factory = new MvpApiFactory();
         var client = await factory.CreateAuthenticatedClientAsync();
+        await factory.SeedStandardFiscalMasterDataAsync();
 
         factory.FiscalStatusQueryGateway.ResponseFactory = _ => new FiscalStatusQueryGatewayResult
         {
@@ -1571,10 +1572,16 @@ public class MvpLifecycleApiTests
         Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
 
         using var detailJson = await JsonDocument.ParseAsync(await detailResponse.Content.ReadAsStreamAsync());
-        Assert.Equal("UUID-EXT-2001", detailJson.RootElement.GetProperty("uuid").GetString());
-        Assert.Equal("Accepted", detailJson.RootElement.GetProperty("validationStatus").GetString());
-        Assert.Equal("Active", detailJson.RootElement.GetProperty("satStatus").GetString());
-        Assert.Equal("MXN", detailJson.RootElement.GetProperty("currencyCode").GetString());
+        var summary = detailJson.RootElement.GetProperty("summary");
+        Assert.Equal("UUID-EXT-2001", summary.GetProperty("uuid").GetString());
+        Assert.Equal("Accepted", summary.GetProperty("validationStatus").GetString());
+        Assert.Equal("Active", summary.GetProperty("satStatus").GetString());
+        Assert.Equal("MXN", summary.GetProperty("currencyCode").GetString());
+        Assert.Equal("ReadyForPayment", summary.GetProperty("operationalStatus").GetString());
+        Assert.True(summary.GetProperty("isEligible").GetBoolean());
+        Assert.Empty(detailJson.RootElement.GetProperty("paymentHistory").EnumerateArray());
+        Assert.Empty(detailJson.RootElement.GetProperty("paymentApplications").EnumerateArray());
+        Assert.Empty(detailJson.RootElement.GetProperty("issuedReps").EnumerateArray());
     }
 
     [Fact]
@@ -1634,6 +1641,7 @@ public class MvpLifecycleApiTests
     {
         await using var factory = new MvpApiFactory();
         var client = await factory.CreateAuthenticatedClientAsync();
+        await factory.SeedStandardFiscalMasterDataAsync();
 
         factory.FiscalStatusQueryGateway.ResponseFactory = _ => new FiscalStatusQueryGatewayResult
         {
@@ -1658,7 +1666,7 @@ public class MvpLifecycleApiTests
         Assert.Equal(1, listJson.RootElement.GetProperty("totalCount").GetInt32());
         var item = Assert.Single(listJson.RootElement.GetProperty("items").EnumerateArray().ToList());
         Assert.Equal("UUID-EXT-LIST-1", item.GetProperty("uuid").GetString());
-        Assert.Equal("ReadyForNextPhase", item.GetProperty("operationalStatus").GetString());
+        Assert.Equal("ReadyForPayment", item.GetProperty("operationalStatus").GetString());
         Assert.Equal("Accepted", item.GetProperty("validationStatus").GetString());
     }
 
@@ -1695,6 +1703,121 @@ public class MvpLifecycleApiTests
         var items = listJson.RootElement.GetProperty("items").EnumerateArray().ToList();
         Assert.Contains(items, x => x.GetProperty("sourceType").GetString() == "Internal");
         Assert.Contains(items, x => x.GetProperty("sourceType").GetString() == "External");
+    }
+
+    [Fact]
+    public async Task ExternalRepBaseDocuments_OperateRepLifecycle_FromImportedDocumentContext_UpdatesDetailAndUnifiedTray()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        await factory.SeedStandardFiscalMasterDataAsync();
+
+        factory.FiscalStatusQueryGateway.ResponseFactory = _ => new FiscalStatusQueryGatewayResult
+        {
+            Outcome = FiscalStatusQueryGatewayOutcome.Refreshed,
+            ExternalStatus = "Vigente",
+            CheckedAtUtc = new DateTime(2026, 04, 06, 10, 0, 0, DateTimeKind.Utc)
+        };
+        factory.PaymentComplementStampingGateway.ResponseFactory = _ => new PaymentComplementStampingGatewayResult
+        {
+            Outcome = PaymentComplementStampingGatewayOutcome.Stamped,
+            ProviderName = "FacturaloPlus",
+            ProviderOperation = "payment-complement-stamp",
+            ProviderTrackingId = "TRACK-PC-EXT-4-1001",
+            Uuid = "UUID-PC-EXT-4-1001",
+            StampedAtUtc = new DateTime(2026, 04, 07, 13, 0, 0, DateTimeKind.Utc),
+            XmlContent = "<cfdi:Comprobante Version=\"4.0\"><pago20:Pagos /></cfdi:Comprobante>",
+            XmlHash = "XML-HASH-PC-EXT-4-1001",
+            OriginalString = "||1.1|UUID-PC-EXT-4-1001||"
+        };
+
+        long externalId;
+        using (var content = new MultipartFormDataContent())
+        {
+            var file = new ByteArrayContent(Encoding.UTF8.GetBytes(CreateExternalRepXmlContent(
+                uuid: "UUID-EXT-4-1001",
+                receiverRfc: "BBB010101BBB")));
+            file.Headers.ContentType = new MediaTypeHeaderValue("application/xml");
+            content.Add(file, "file", "external-lifecycle.xml");
+            var importResponse = await client.PostAsync("/api/payment-complements/external-base-documents/import-xml", content);
+            Assert.Equal(HttpStatusCode.OK, importResponse.StatusCode);
+            using var importJson = await JsonDocument.ParseAsync(await importResponse.Content.ReadAsStreamAsync());
+            externalId = importJson.RootElement.GetProperty("externalRepBaseDocumentId").GetInt64();
+        }
+
+        var registerPaymentResponse = await client.PostAsJsonAsync(
+            $"/api/payment-complements/base-documents/external/{externalId}/payments",
+            new RegisterExternalRepBaseDocumentPaymentRequest
+            {
+                PaymentDate = new DateOnly(2026, 04, 07),
+                PaymentFormSat = "03",
+                Amount = 116m,
+                Reference = "TRANS-EXT-4-1001",
+                Notes = "Pago total sobre CFDI externo"
+            });
+        Assert.Equal(HttpStatusCode.OK, registerPaymentResponse.StatusCode);
+        using var registerPaymentJson = await JsonDocument.ParseAsync(await registerPaymentResponse.Content.ReadAsStreamAsync());
+        var paymentId = registerPaymentJson.RootElement.GetProperty("accountsReceivablePaymentId").GetInt64();
+        Assert.Equal("RegisteredAndApplied", registerPaymentJson.RootElement.GetProperty("outcome").GetString());
+        Assert.Equal(0m, registerPaymentJson.RootElement.GetProperty("remainingBalance").GetDecimal());
+        Assert.Equal("ReadyForRepPreparation", registerPaymentJson.RootElement.GetProperty("repOperationalStatus").GetString());
+
+        var prepareResponse = await client.PostAsJsonAsync(
+            $"/api/payment-complements/base-documents/external/{externalId}/prepare",
+            new PrepareExternalRepBaseDocumentPaymentComplementRequest
+            {
+                AccountsReceivablePaymentId = paymentId
+            });
+        Assert.Equal(HttpStatusCode.OK, prepareResponse.StatusCode);
+        using var prepareJson = await JsonDocument.ParseAsync(await prepareResponse.Content.ReadAsStreamAsync());
+        var paymentComplementId = prepareJson.RootElement.GetProperty("paymentComplementDocumentId").GetInt64();
+        Assert.Equal("Prepared", prepareJson.RootElement.GetProperty("outcome").GetString());
+        Assert.Equal("ReadyForStamping", prepareJson.RootElement.GetProperty("status").GetString());
+        Assert.Equal("ReadyForRepStamping", prepareJson.RootElement.GetProperty("repOperationalStatus").GetString());
+
+        var stampResponse = await client.PostAsJsonAsync(
+            $"/api/payment-complements/base-documents/external/{externalId}/stamp",
+            new StampExternalRepBaseDocumentPaymentComplementRequest
+            {
+                PaymentComplementDocumentId = paymentComplementId
+            });
+        Assert.Equal(HttpStatusCode.OK, stampResponse.StatusCode);
+        using var stampJson = await JsonDocument.ParseAsync(await stampResponse.Content.ReadAsStreamAsync());
+        Assert.Equal("Stamped", stampJson.RootElement.GetProperty("outcome").GetString());
+        Assert.Equal("Stamped", stampJson.RootElement.GetProperty("status").GetString());
+        Assert.Equal("UUID-PC-EXT-4-1001", stampJson.RootElement.GetProperty("stampUuid").GetString());
+        Assert.True(stampJson.RootElement.GetProperty("xmlAvailable").GetBoolean());
+        Assert.Equal("RepIssued", stampJson.RootElement.GetProperty("repOperationalStatus").GetString());
+
+        var detailResponse = await client.GetAsync($"/api/payment-complements/external-base-documents/{externalId}");
+        Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
+        using var detailJson = await JsonDocument.ParseAsync(await detailResponse.Content.ReadAsStreamAsync());
+        var detailRoot = detailJson.RootElement;
+        var summary = detailRoot.GetProperty("summary");
+        var paymentHistoryItem = Assert.Single(detailRoot.GetProperty("paymentHistory").EnumerateArray().ToList());
+        var paymentApplicationItem = Assert.Single(detailRoot.GetProperty("paymentApplications").EnumerateArray().ToList());
+        var issuedRep = Assert.Single(detailRoot.GetProperty("issuedReps").EnumerateArray().ToList());
+
+        Assert.Equal(116m, summary.GetProperty("paidTotal").GetDecimal());
+        Assert.Equal(0m, summary.GetProperty("outstandingBalance").GetDecimal());
+        Assert.Equal(1, summary.GetProperty("registeredPaymentCount").GetInt32());
+        Assert.Equal(1, summary.GetProperty("paymentComplementCount").GetInt32());
+        Assert.Equal(1, summary.GetProperty("stampedPaymentComplementCount").GetInt32());
+        Assert.Equal("RepIssued", summary.GetProperty("operationalStatus").GetString());
+        Assert.Equal("UUID-PC-EXT-4-1001", paymentHistoryItem.GetProperty("paymentComplementUuid").GetString());
+        Assert.Equal("Stamped", paymentHistoryItem.GetProperty("paymentComplementStatus").GetString());
+        Assert.Equal(116m, paymentApplicationItem.GetProperty("appliedAmount").GetDecimal());
+        Assert.Equal("Stamped", issuedRep.GetProperty("status").GetString());
+        Assert.Equal("UUID-PC-EXT-4-1001", issuedRep.GetProperty("uuid").GetString());
+
+        var unifiedResponse = await client.GetAsync("/api/payment-complements/base-documents?page=1&pageSize=25&query=UUID-EXT-4-1001");
+        Assert.Equal(HttpStatusCode.OK, unifiedResponse.StatusCode);
+        using var unifiedJson = await JsonDocument.ParseAsync(await unifiedResponse.Content.ReadAsStreamAsync());
+        var unifiedItem = Assert.Single(unifiedJson.RootElement.GetProperty("items").EnumerateArray().ToList());
+        Assert.Equal("External", unifiedItem.GetProperty("sourceType").GetString());
+        Assert.Equal("RepIssued", unifiedItem.GetProperty("operationalStatus").GetString());
+        Assert.Equal(0m, unifiedItem.GetProperty("outstandingBalance").GetDecimal());
+        Assert.Equal(1, unifiedItem.GetProperty("repCount").GetInt32());
     }
 
     [Fact]

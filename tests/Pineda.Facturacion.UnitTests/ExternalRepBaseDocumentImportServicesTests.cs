@@ -6,6 +6,7 @@ using Pineda.Facturacion.Application.Contracts.Pac;
 using Pineda.Facturacion.Application.Security;
 using Pineda.Facturacion.Application.UseCases.PaymentComplements;
 using Pineda.Facturacion.Domain.Entities;
+using Pineda.Facturacion.Domain.Enums;
 
 namespace Pineda.Facturacion.UnitTests;
 
@@ -243,14 +244,39 @@ public class ExternalRepBaseDocumentImportServicesTests
             {
                 Id = 77,
                 Uuid = "UUID-EXT-77"
+            },
+            ExistingOperationalById = new ExternalRepBaseDocumentDetailReadModel
+            {
+                Summary = new ExternalRepBaseDocumentSummaryReadModel
+                {
+                    ExternalRepBaseDocumentId = 77,
+                    Uuid = "UUID-EXT-77",
+                    CfdiVersion = "4.0",
+                    DocumentType = "I",
+                    Series = "EXT",
+                    Folio = "77",
+                    IssuedAtUtc = DateTime.UtcNow,
+                    IssuerRfc = "AAA010101AAA",
+                    ReceiverRfc = "BBB010101BBB",
+                    CurrencyCode = "MXN",
+                    Total = 116m,
+                    PaymentMethodSat = "PPD",
+                    PaymentFormSat = "99",
+                    ValidationStatus = ExternalRepBaseDocumentValidationStatus.Accepted.ToString(),
+                    ValidationReasonCode = "Accepted",
+                    ValidationReasonMessage = "Aceptado",
+                    SatStatus = ExternalRepBaseDocumentSatStatus.Active.ToString(),
+                    ImportedAtUtc = DateTime.UtcNow,
+                    HasKnownFiscalReceiver = true
+                }
             }
         };
-        var service = new GetExternalRepBaseDocumentByIdService(repository);
+        var service = new GetExternalRepBaseDocumentByIdService(repository, new FakeIssuerProfileRepository());
 
         var result = await service.ExecuteAsync(77);
 
         Assert.Equal(GetExternalRepBaseDocumentByIdOutcome.Found, result.Outcome);
-        Assert.Equal("UUID-EXT-77", result.Document!.Uuid);
+        Assert.Equal("UUID-EXT-77", result.Document!.Summary.Uuid);
     }
 
     private static ImportExternalRepBaseDocumentFromXmlService CreateService(
@@ -301,11 +327,16 @@ public class ExternalRepBaseDocumentImportServicesTests
     {
         public ExternalRepBaseDocument? ExistingById { get; set; }
 
+        public ExternalRepBaseDocumentDetailReadModel? ExistingOperationalById { get; set; }
+
         public ExternalRepBaseDocument? ExistingByUuid { get; set; }
 
         public ExternalRepBaseDocument? Added { get; private set; }
 
         public Task<ExternalRepBaseDocument?> GetByIdAsync(long id, CancellationToken cancellationToken = default)
+            => Task.FromResult(ExistingById);
+
+        public Task<ExternalRepBaseDocument?> GetTrackedByIdAsync(long id, CancellationToken cancellationToken = default)
             => Task.FromResult(ExistingById);
 
         public Task<ExternalRepBaseDocument?> GetByUuidAsync(string uuid, CancellationToken cancellationToken = default)
@@ -320,6 +351,16 @@ public class ExternalRepBaseDocumentImportServicesTests
                 : [ExistingById];
             return Task.FromResult(results);
         }
+
+        public Task<IReadOnlyList<ExternalRepBaseDocumentSummaryReadModel>> SearchOperationalAsync(
+            SearchExternalRepBaseDocumentsDataFilter filter,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<ExternalRepBaseDocumentSummaryReadModel>>([]);
+
+        public Task<ExternalRepBaseDocumentDetailReadModel?> GetOperationalByIdAsync(
+            long externalRepBaseDocumentId,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(ExistingOperationalById);
 
         public Task AddAsync(ExternalRepBaseDocument document, CancellationToken cancellationToken = default)
         {
@@ -364,5 +405,35 @@ public class ExternalRepBaseDocumentImportServicesTests
     private sealed class FakeUnitOfWork : IUnitOfWork
     {
         public Task SaveChangesAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private sealed class FakeIssuerProfileRepository : IIssuerProfileRepository
+    {
+        public Task<IssuerProfile?> GetActiveAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IssuerProfile?>(new IssuerProfile
+            {
+                Id = 1,
+                Rfc = "AAA010101AAA",
+                LegalName = "Emisor",
+                FiscalRegimeCode = "601",
+                PostalCode = "64000",
+                CfdiVersion = "4.0",
+                CertificateReference = "cert",
+                PrivateKeyReference = "key",
+                PrivateKeyPasswordReference = "pwd",
+                PacEnvironment = "test",
+                IsActive = true
+            });
+
+        public Task<IssuerProfile?> GetTrackedActiveAsync(CancellationToken cancellationToken = default) => GetActiveAsync(cancellationToken);
+
+        public Task<IssuerProfile?> GetByIdAsync(long issuerProfileId, CancellationToken cancellationToken = default) => GetActiveAsync(cancellationToken);
+
+        public Task<bool> TryAdvanceNextFiscalFolioAsync(long issuerProfileId, int expectedNextFiscalFolio, int newNextFiscalFolio, CancellationToken cancellationToken = default)
+            => Task.FromResult(true);
+
+        public Task AddAsync(IssuerProfile issuerProfile, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task UpdateAsync(IssuerProfile issuerProfile, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 }

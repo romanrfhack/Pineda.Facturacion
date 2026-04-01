@@ -6,11 +6,13 @@ public class AccountsReceivableInvoice
 {
     public long Id { get; set; }
 
-    public long BillingDocumentId { get; set; }
+    public long? BillingDocumentId { get; set; }
 
-    public long FiscalDocumentId { get; set; }
+    public long? FiscalDocumentId { get; set; }
 
-    public long FiscalStampId { get; set; }
+    public long? FiscalStampId { get; set; }
+
+    public long? ExternalRepBaseDocumentId { get; set; }
 
     public AccountsReceivableInvoiceStatus Status { get; set; }
 

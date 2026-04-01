@@ -117,6 +117,34 @@ public static class PaymentComplementsEndpoints
             .Produces<StampInternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status409Conflict)
             .Produces<StampInternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status503ServiceUnavailable);
 
+        group.MapPost("/base-documents/external/{externalRepBaseDocumentId:long}/payments", RegisterExternalRepBaseDocumentPaymentAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.OperatorOrAbove)
+            .WithName("RegisterExternalRepBaseDocumentPayment")
+            .WithSummary("Register and apply a payment from the external REP base-document context")
+            .Produces<RegisterExternalRepBaseDocumentPaymentResponse>(StatusCodes.Status200OK)
+            .Produces<RegisterExternalRepBaseDocumentPaymentResponse>(StatusCodes.Status400BadRequest)
+            .Produces<RegisterExternalRepBaseDocumentPaymentResponse>(StatusCodes.Status404NotFound)
+            .Produces<RegisterExternalRepBaseDocumentPaymentResponse>(StatusCodes.Status409Conflict);
+
+        group.MapPost("/base-documents/external/{externalRepBaseDocumentId:long}/prepare", PrepareExternalRepBaseDocumentPaymentComplementAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.OperatorOrAbove)
+            .WithName("PrepareExternalRepBaseDocumentPaymentComplement")
+            .WithSummary("Prepare a payment complement from the external REP base-document context")
+            .Produces<PrepareExternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status200OK)
+            .Produces<PrepareExternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status400BadRequest)
+            .Produces<PrepareExternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status404NotFound)
+            .Produces<PrepareExternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status409Conflict);
+
+        group.MapPost("/base-documents/external/{externalRepBaseDocumentId:long}/stamp", StampExternalRepBaseDocumentPaymentComplementAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
+            .WithName("StampExternalRepBaseDocumentPaymentComplement")
+            .WithSummary("Stamp a prepared payment complement from the external REP base-document context")
+            .Produces<StampExternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status200OK)
+            .Produces<StampExternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status400BadRequest)
+            .Produces<StampExternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status404NotFound)
+            .Produces<StampExternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status409Conflict)
+            .Produces<StampExternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status503ServiceUnavailable);
+
         group.MapPost("/external-base-documents/import-xml", ImportExternalRepBaseDocumentXmlAsync)
             .RequireAuthorization(AuthorizationPolicyNames.OperatorOrAbove)
             .DisableAntiforgery()
@@ -526,6 +554,189 @@ public static class PaymentComplementsEndpoints
         };
     }
 
+    private static async Task<Results<Ok<RegisterExternalRepBaseDocumentPaymentResponse>, BadRequest<RegisterExternalRepBaseDocumentPaymentResponse>, NotFound<RegisterExternalRepBaseDocumentPaymentResponse>, Conflict<RegisterExternalRepBaseDocumentPaymentResponse>>> RegisterExternalRepBaseDocumentPaymentAsync(
+        long externalRepBaseDocumentId,
+        RegisterExternalRepBaseDocumentPaymentRequest request,
+        RegisterExternalRepBaseDocumentPaymentService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var paymentDateUtc = DateTime.SpecifyKind(request.PaymentDate.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
+        var result = await service.ExecuteAsync(
+            new RegisterExternalRepBaseDocumentPaymentCommand
+            {
+                ExternalRepBaseDocumentId = externalRepBaseDocumentId,
+                PaymentDateUtc = paymentDateUtc,
+                PaymentFormSat = request.PaymentFormSat,
+                Amount = request.Amount,
+                Reference = request.Reference,
+                Notes = request.Notes
+            },
+            cancellationToken);
+
+        var response = new RegisterExternalRepBaseDocumentPaymentResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            WarningMessages = result.WarningMessages,
+            ExternalRepBaseDocumentId = result.ExternalRepBaseDocumentId,
+            AccountsReceivableInvoiceId = result.AccountsReceivableInvoiceId,
+            AccountsReceivablePaymentId = result.AccountsReceivablePaymentId,
+            AppliedAmount = result.AppliedAmount,
+            RemainingBalance = result.RemainingBalance,
+            RemainingPaymentAmount = result.RemainingPaymentAmount,
+            RepOperationalStatus = result.UpdatedSummary?.OperationalStatus,
+            IsEligible = result.UpdatedSummary?.IsEligible,
+            IsBlocked = result.UpdatedSummary?.IsBlocked,
+            EligibilityReason = result.UpdatedSummary?.PrimaryReasonMessage,
+            Applications = result.Applications
+                .OrderBy(x => x.ApplicationSequence)
+                .Select(x => new RegisterExternalRepBaseDocumentPaymentApplicationResponse
+                {
+                    ApplicationId = x.Id,
+                    AccountsReceivablePaymentId = x.AccountsReceivablePaymentId,
+                    AccountsReceivableInvoiceId = x.AccountsReceivableInvoiceId,
+                    ApplicationSequence = x.ApplicationSequence,
+                    AppliedAmount = x.AppliedAmount,
+                    PreviousBalance = x.PreviousBalance,
+                    NewBalance = x.NewBalance
+                })
+                .ToList()
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "ExternalRepBaseDocumentPayment.RegisterAndApply",
+            "ExternalRepBaseDocument",
+            externalRepBaseDocumentId.ToString(),
+            result.Outcome.ToString(),
+            new { externalRepBaseDocumentId, request.PaymentDate, request.PaymentFormSat, request.Amount, request.Reference },
+            new { result.AccountsReceivableInvoiceId, result.AccountsReceivablePaymentId, result.AppliedAmount, result.RemainingBalance, result.RemainingPaymentAmount, result.UpdatedSummary?.OperationalStatus },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            RegisterExternalRepBaseDocumentPaymentOutcome.RegisteredAndApplied => TypedResults.Ok(response),
+            RegisterExternalRepBaseDocumentPaymentOutcome.NotFound => TypedResults.NotFound(response),
+            RegisterExternalRepBaseDocumentPaymentOutcome.Conflict => TypedResults.Conflict(response),
+            _ => TypedResults.BadRequest(response)
+        };
+    }
+
+    private static async Task<Results<Ok<PrepareExternalRepBaseDocumentPaymentComplementResponse>, BadRequest<PrepareExternalRepBaseDocumentPaymentComplementResponse>, NotFound<PrepareExternalRepBaseDocumentPaymentComplementResponse>, Conflict<PrepareExternalRepBaseDocumentPaymentComplementResponse>>> PrepareExternalRepBaseDocumentPaymentComplementAsync(
+        long externalRepBaseDocumentId,
+        PrepareExternalRepBaseDocumentPaymentComplementRequest? request,
+        PrepareExternalRepBaseDocumentPaymentComplementService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(
+            new PrepareExternalRepBaseDocumentPaymentComplementCommand
+            {
+                ExternalRepBaseDocumentId = externalRepBaseDocumentId,
+                AccountsReceivablePaymentId = request?.AccountsReceivablePaymentId
+            },
+            cancellationToken);
+
+        var response = new PrepareExternalRepBaseDocumentPaymentComplementResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            WarningMessages = result.WarningMessages,
+            ExternalRepBaseDocumentId = result.ExternalRepBaseDocumentId,
+            AccountsReceivablePaymentId = result.AccountsReceivablePaymentId,
+            PaymentComplementDocumentId = result.PaymentComplementDocumentId,
+            Status = result.Status,
+            RelatedDocumentCount = result.RelatedDocumentCount,
+            RepOperationalStatus = result.UpdatedSummary?.OperationalStatus,
+            IsEligible = result.UpdatedSummary?.IsEligible,
+            IsBlocked = result.UpdatedSummary?.IsBlocked,
+            EligibilityReason = result.UpdatedSummary?.PrimaryReasonMessage
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "ExternalRepBaseDocumentPaymentComplement.Prepare",
+            "ExternalRepBaseDocument",
+            externalRepBaseDocumentId.ToString(),
+            result.Outcome.ToString(),
+            new { externalRepBaseDocumentId, request?.AccountsReceivablePaymentId },
+            new { result.AccountsReceivablePaymentId, result.PaymentComplementDocumentId, result.Status, result.RelatedDocumentCount, result.UpdatedSummary?.OperationalStatus },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            PrepareExternalRepBaseDocumentPaymentComplementOutcome.Prepared => TypedResults.Ok(response),
+            PrepareExternalRepBaseDocumentPaymentComplementOutcome.AlreadyPrepared => TypedResults.Ok(response),
+            PrepareExternalRepBaseDocumentPaymentComplementOutcome.NotFound => TypedResults.NotFound(response),
+            PrepareExternalRepBaseDocumentPaymentComplementOutcome.Conflict => TypedResults.Conflict(response),
+            _ => TypedResults.BadRequest(response)
+        };
+    }
+
+    private static async Task<Results<Ok<StampExternalRepBaseDocumentPaymentComplementResponse>, BadRequest<StampExternalRepBaseDocumentPaymentComplementResponse>, NotFound<StampExternalRepBaseDocumentPaymentComplementResponse>, Conflict<StampExternalRepBaseDocumentPaymentComplementResponse>, JsonHttpResult<StampExternalRepBaseDocumentPaymentComplementResponse>>> StampExternalRepBaseDocumentPaymentComplementAsync(
+        long externalRepBaseDocumentId,
+        StampExternalRepBaseDocumentPaymentComplementRequest? request,
+        StampExternalRepBaseDocumentPaymentComplementService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(
+            new StampExternalRepBaseDocumentPaymentComplementCommand
+            {
+                ExternalRepBaseDocumentId = externalRepBaseDocumentId,
+                PaymentComplementDocumentId = request?.PaymentComplementDocumentId,
+                RetryRejected = request?.RetryRejected ?? false
+            },
+            cancellationToken);
+
+        var response = new StampExternalRepBaseDocumentPaymentComplementResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            WarningMessages = result.WarningMessages,
+            ExternalRepBaseDocumentId = result.ExternalRepBaseDocumentId,
+            AccountsReceivablePaymentId = result.AccountsReceivablePaymentId,
+            PaymentComplementDocumentId = result.PaymentComplementDocumentId,
+            Status = result.Status,
+            PaymentComplementStampId = result.PaymentComplementStampId,
+            StampUuid = result.StampUuid,
+            StampedAtUtc = result.StampedAtUtc,
+            XmlAvailable = result.XmlAvailable,
+            RepOperationalStatus = result.UpdatedSummary?.OperationalStatus,
+            IsEligible = result.UpdatedSummary?.IsEligible,
+            IsBlocked = result.UpdatedSummary?.IsBlocked,
+            EligibilityReason = result.UpdatedSummary?.PrimaryReasonMessage
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "ExternalRepBaseDocumentPaymentComplement.Stamp",
+            "ExternalRepBaseDocument",
+            externalRepBaseDocumentId.ToString(),
+            result.Outcome.ToString(),
+            new { externalRepBaseDocumentId, request?.PaymentComplementDocumentId, request?.RetryRejected },
+            new { result.AccountsReceivablePaymentId, result.PaymentComplementDocumentId, result.Status, result.StampUuid, result.StampedAtUtc, result.UpdatedSummary?.OperationalStatus },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            StampExternalRepBaseDocumentPaymentComplementOutcome.Stamped => TypedResults.Ok(response),
+            StampExternalRepBaseDocumentPaymentComplementOutcome.AlreadyStamped => TypedResults.Ok(response),
+            StampExternalRepBaseDocumentPaymentComplementOutcome.NotFound => TypedResults.NotFound(response),
+            StampExternalRepBaseDocumentPaymentComplementOutcome.Conflict => TypedResults.Conflict(response),
+            StampExternalRepBaseDocumentPaymentComplementOutcome.ProviderRejected => TypedResults.Conflict(response),
+            StampExternalRepBaseDocumentPaymentComplementOutcome.ProviderUnavailable => TypedResults.Json(response, statusCode: StatusCodes.Status503ServiceUnavailable),
+            _ => TypedResults.BadRequest(response)
+        };
+    }
+
     private static async Task<Results<Ok<ExternalRepBaseDocumentImportResponse>, BadRequest<ExternalRepBaseDocumentImportResponse>, Conflict<ExternalRepBaseDocumentImportResponse>>> ImportExternalRepBaseDocumentXmlAsync(
         IFormFile? file,
         ImportExternalRepBaseDocumentFromXmlService service,
@@ -858,6 +1069,7 @@ public static class PaymentComplementsEndpoints
                     AccountsReceivableInvoiceId = x.AccountsReceivableInvoiceId,
                     FiscalDocumentId = x.FiscalDocumentId,
                     FiscalStampId = x.FiscalStampId,
+                    ExternalRepBaseDocumentId = x.ExternalRepBaseDocumentId,
                     RelatedDocumentUuid = x.RelatedDocumentUuid,
                     InstallmentNumber = x.InstallmentNumber,
                     PreviousBalance = x.PreviousBalance,
@@ -961,50 +1173,63 @@ public static class PaymentComplementsEndpoints
         };
     }
 
-    public static ExternalRepBaseDocumentDetailResponse MapExternalRepBaseDocument(ExternalRepBaseDocument document)
+    public static ExternalRepBaseDocumentDetailResponse MapExternalRepBaseDocument(ExternalRepBaseDocumentDetail document)
     {
-        var evaluation = ExternalRepBaseDocumentOperationalEvaluator.Evaluate(document);
-
         return new ExternalRepBaseDocumentDetailResponse
         {
-            Id = document.Id,
-            Uuid = document.Uuid,
-            CfdiVersion = document.CfdiVersion,
-            DocumentType = document.DocumentType,
-            Series = document.Series,
-            Folio = document.Folio,
-            IssuedAtUtc = document.IssuedAtUtc,
-            IssuerRfc = document.IssuerRfc,
-            IssuerLegalName = document.IssuerLegalName,
-            ReceiverRfc = document.ReceiverRfc,
-            ReceiverLegalName = document.ReceiverLegalName,
-            CurrencyCode = document.CurrencyCode,
-            ExchangeRate = document.ExchangeRate,
-            Subtotal = document.Subtotal,
-            Total = document.Total,
-            PaymentMethodSat = document.PaymentMethodSat,
-            PaymentFormSat = document.PaymentFormSat,
-            ValidationStatus = document.ValidationStatus.ToString(),
-            ReasonCode = document.ValidationReasonCode,
-            ReasonMessage = document.ValidationReasonMessage,
-            SatStatus = document.SatStatus.ToString(),
-            LastSatCheckAtUtc = document.LastSatCheckAtUtc,
-            LastSatExternalStatus = document.LastSatExternalStatus,
-            LastSatCancellationStatus = document.LastSatCancellationStatus,
-            LastSatProviderCode = document.LastSatProviderCode,
-            LastSatProviderMessage = document.LastSatProviderMessage,
-            LastSatRawResponseSummaryJson = document.LastSatRawResponseSummaryJson,
-            SourceFileName = document.SourceFileName,
-            XmlHash = document.XmlHash,
-            ImportedAtUtc = document.ImportedAtUtc,
-            ImportedByUserId = document.ImportedByUserId,
-            ImportedByUsername = document.ImportedByUsername,
-            OperationalStatus = evaluation.Status.ToString(),
-            IsEligible = evaluation.IsEligible,
-            IsBlocked = evaluation.IsBlocked,
-            PrimaryReasonCode = evaluation.PrimaryReasonCode,
-            PrimaryReasonMessage = evaluation.PrimaryReasonMessage,
-            AvailableActions = evaluation.AvailableActions.ToList()
+            Summary = MapExternalRepBaseDocumentListItem(document.Summary),
+            PaymentHistory = document.PaymentHistory
+                .Select(x => new ExternalRepBaseDocumentPaymentHistoryResponse
+                {
+                    AccountsReceivablePaymentId = x.AccountsReceivablePaymentId,
+                    PaymentDateUtc = x.PaymentDateUtc,
+                    PaymentFormSat = x.PaymentFormSat,
+                    PaymentAmount = x.PaymentAmount,
+                    AmountAppliedToDocument = x.AmountAppliedToDocument,
+                    RemainingPaymentAmount = x.RemainingPaymentAmount,
+                    Reference = x.Reference,
+                    Notes = x.Notes,
+                    PaymentComplementId = x.PaymentComplementId,
+                    PaymentComplementStatus = x.PaymentComplementStatus,
+                    PaymentComplementUuid = x.PaymentComplementUuid,
+                    CreatedAtUtc = x.CreatedAtUtc
+                })
+                .ToList(),
+            PaymentApplications = document.PaymentApplications
+                .Select(x => new ExternalRepBaseDocumentPaymentApplicationResponse
+                {
+                    AccountsReceivablePaymentId = x.AccountsReceivablePaymentId,
+                    ApplicationSequence = x.ApplicationSequence,
+                    PaymentDateUtc = x.PaymentDateUtc,
+                    PaymentFormSat = x.PaymentFormSat,
+                    AppliedAmount = x.AppliedAmount,
+                    PreviousBalance = x.PreviousBalance,
+                    NewBalance = x.NewBalance,
+                    Reference = x.Reference,
+                    Notes = x.Notes,
+                    PaymentAmount = x.PaymentAmount,
+                    RemainingPaymentAmount = x.RemainingPaymentAmount,
+                    CreatedAtUtc = x.CreatedAtUtc
+                })
+                .ToList(),
+            IssuedReps = document.PaymentComplements
+                .Select(x => new ExternalRepBaseDocumentPaymentComplementResponse
+                {
+                    PaymentComplementId = x.PaymentComplementId,
+                    AccountsReceivablePaymentId = x.AccountsReceivablePaymentId,
+                    Status = x.Status,
+                    Uuid = x.Uuid,
+                    PaymentDateUtc = x.PaymentDateUtc,
+                    IssuedAtUtc = x.IssuedAtUtc,
+                    StampedAtUtc = x.StampedAtUtc,
+                    CancelledAtUtc = x.CancelledAtUtc,
+                    ProviderName = x.ProviderName,
+                    InstallmentNumber = x.InstallmentNumber,
+                    PreviousBalance = x.PreviousBalance,
+                    PaidAmount = x.PaidAmount,
+                    RemainingBalance = x.RemainingBalance
+                })
+                .ToList()
         };
     }
 
@@ -1013,7 +1238,10 @@ public static class PaymentComplementsEndpoints
         return new ExternalRepBaseDocumentItemResponse
         {
             ExternalRepBaseDocumentId = item.ExternalRepBaseDocumentId,
+            AccountsReceivableInvoiceId = item.AccountsReceivableInvoiceId,
             Uuid = item.Uuid,
+            CfdiVersion = item.CfdiVersion,
+            DocumentType = item.DocumentType,
             Series = item.Series,
             Folio = item.Folio,
             IssuedAtUtc = item.IssuedAtUtc,
@@ -1022,12 +1250,32 @@ public static class PaymentComplementsEndpoints
             ReceiverRfc = item.ReceiverRfc,
             ReceiverLegalName = item.ReceiverLegalName,
             CurrencyCode = item.CurrencyCode,
+            ExchangeRate = item.ExchangeRate,
+            Subtotal = item.Subtotal,
             Total = item.Total,
+            PaidTotal = item.PaidTotal,
+            OutstandingBalance = item.OutstandingBalance,
             PaymentMethodSat = item.PaymentMethodSat,
             PaymentFormSat = item.PaymentFormSat,
             ValidationStatus = item.ValidationStatus,
+            ReasonCode = item.ReasonCode,
+            ReasonMessage = item.ReasonMessage,
             SatStatus = item.SatStatus,
             ImportedAtUtc = item.ImportedAtUtc,
+            LastSatCheckAtUtc = item.LastSatCheckAtUtc,
+            LastSatExternalStatus = item.LastSatExternalStatus,
+            LastSatCancellationStatus = item.LastSatCancellationStatus,
+            LastSatProviderCode = item.LastSatProviderCode,
+            LastSatProviderMessage = item.LastSatProviderMessage,
+            LastSatRawResponseSummaryJson = item.LastSatRawResponseSummaryJson,
+            ImportedByUserId = item.ImportedByUserId,
+            ImportedByUsername = item.ImportedByUsername,
+            SourceFileName = item.SourceFileName,
+            XmlHash = item.XmlHash,
+            RegisteredPaymentCount = item.RegisteredPaymentCount,
+            PaymentComplementCount = item.PaymentComplementCount,
+            StampedPaymentComplementCount = item.StampedPaymentComplementCount,
+            LastRepIssuedAtUtc = item.LastRepIssuedAtUtc,
             OperationalStatus = item.OperationalStatus,
             IsEligible = item.IsEligible,
             IsBlocked = item.IsBlocked,
@@ -1303,9 +1551,11 @@ public class PaymentComplementRelatedDocumentResponse
 
     public long AccountsReceivableInvoiceId { get; set; }
 
-    public long FiscalDocumentId { get; set; }
+    public long? FiscalDocumentId { get; set; }
 
-    public long FiscalStampId { get; set; }
+    public long? FiscalStampId { get; set; }
+
+    public long? ExternalRepBaseDocumentId { get; set; }
 
     public string RelatedDocumentUuid { get; set; } = string.Empty;
 
@@ -1822,6 +2072,145 @@ public sealed class StampInternalRepBaseDocumentPaymentComplementResponse
     public InternalRepBaseDocumentOperationalStateResponse? OperationalState { get; set; }
 }
 
+public sealed class RegisterExternalRepBaseDocumentPaymentRequest
+{
+    public DateOnly PaymentDate { get; set; }
+
+    public string PaymentFormSat { get; set; } = string.Empty;
+
+    public decimal Amount { get; set; }
+
+    public string? Reference { get; set; }
+
+    public string? Notes { get; set; }
+}
+
+public sealed class RegisterExternalRepBaseDocumentPaymentResponse
+{
+    public string Outcome { get; set; } = string.Empty;
+
+    public bool IsSuccess { get; set; }
+
+    public string? ErrorMessage { get; set; }
+
+    public List<string> WarningMessages { get; set; } = [];
+
+    public long ExternalRepBaseDocumentId { get; set; }
+
+    public long? AccountsReceivableInvoiceId { get; set; }
+
+    public long? AccountsReceivablePaymentId { get; set; }
+
+    public decimal AppliedAmount { get; set; }
+
+    public decimal RemainingBalance { get; set; }
+
+    public decimal RemainingPaymentAmount { get; set; }
+
+    public string? RepOperationalStatus { get; set; }
+
+    public bool? IsEligible { get; set; }
+
+    public bool? IsBlocked { get; set; }
+
+    public string? EligibilityReason { get; set; }
+
+    public List<RegisterExternalRepBaseDocumentPaymentApplicationResponse> Applications { get; set; } = [];
+}
+
+public sealed class RegisterExternalRepBaseDocumentPaymentApplicationResponse
+{
+    public long ApplicationId { get; set; }
+
+    public long AccountsReceivablePaymentId { get; set; }
+
+    public long AccountsReceivableInvoiceId { get; set; }
+
+    public int ApplicationSequence { get; set; }
+
+    public decimal AppliedAmount { get; set; }
+
+    public decimal PreviousBalance { get; set; }
+
+    public decimal NewBalance { get; set; }
+}
+
+public sealed class PrepareExternalRepBaseDocumentPaymentComplementRequest
+{
+    public long? AccountsReceivablePaymentId { get; set; }
+}
+
+public sealed class PrepareExternalRepBaseDocumentPaymentComplementResponse
+{
+    public string Outcome { get; set; } = string.Empty;
+
+    public bool IsSuccess { get; set; }
+
+    public string? ErrorMessage { get; set; }
+
+    public List<string> WarningMessages { get; set; } = [];
+
+    public long ExternalRepBaseDocumentId { get; set; }
+
+    public long? AccountsReceivablePaymentId { get; set; }
+
+    public long? PaymentComplementDocumentId { get; set; }
+
+    public string? Status { get; set; }
+
+    public int RelatedDocumentCount { get; set; }
+
+    public string? RepOperationalStatus { get; set; }
+
+    public bool? IsEligible { get; set; }
+
+    public bool? IsBlocked { get; set; }
+
+    public string? EligibilityReason { get; set; }
+}
+
+public sealed class StampExternalRepBaseDocumentPaymentComplementRequest
+{
+    public long? PaymentComplementDocumentId { get; set; }
+
+    public bool RetryRejected { get; set; }
+}
+
+public sealed class StampExternalRepBaseDocumentPaymentComplementResponse
+{
+    public string Outcome { get; set; } = string.Empty;
+
+    public bool IsSuccess { get; set; }
+
+    public string? ErrorMessage { get; set; }
+
+    public List<string> WarningMessages { get; set; } = [];
+
+    public long ExternalRepBaseDocumentId { get; set; }
+
+    public long? AccountsReceivablePaymentId { get; set; }
+
+    public long? PaymentComplementDocumentId { get; set; }
+
+    public string? Status { get; set; }
+
+    public long? PaymentComplementStampId { get; set; }
+
+    public string? StampUuid { get; set; }
+
+    public DateTime? StampedAtUtc { get; set; }
+
+    public bool XmlAvailable { get; set; }
+
+    public string? RepOperationalStatus { get; set; }
+
+    public bool? IsEligible { get; set; }
+
+    public bool? IsBlocked { get; set; }
+
+    public string? EligibilityReason { get; set; }
+}
+
 public sealed class ExternalRepBaseDocumentImportResponse
 {
     public string Outcome { get; set; } = string.Empty;
@@ -1857,7 +2246,33 @@ public sealed class ExternalRepBaseDocumentImportResponse
 
 public sealed class ExternalRepBaseDocumentDetailResponse
 {
-    public long Id { get; set; }
+    public ExternalRepBaseDocumentItemResponse Summary { get; set; } = new();
+
+    public List<ExternalRepBaseDocumentPaymentHistoryResponse> PaymentHistory { get; set; } = [];
+
+    public List<ExternalRepBaseDocumentPaymentApplicationResponse> PaymentApplications { get; set; } = [];
+
+    public List<ExternalRepBaseDocumentPaymentComplementResponse> IssuedReps { get; set; } = [];
+}
+
+public sealed class ExternalRepBaseDocumentListResponse
+{
+    public int Page { get; set; }
+
+    public int PageSize { get; set; }
+
+    public int TotalCount { get; set; }
+
+    public int TotalPages { get; set; }
+
+    public List<ExternalRepBaseDocumentItemResponse> Items { get; set; } = [];
+}
+
+public sealed class ExternalRepBaseDocumentItemResponse
+{
+    public long ExternalRepBaseDocumentId { get; set; }
+
+    public long? AccountsReceivableInvoiceId { get; set; }
 
     public string Uuid { get; set; } = string.Empty;
 
@@ -1887,6 +2302,10 @@ public sealed class ExternalRepBaseDocumentDetailResponse
 
     public decimal Total { get; set; }
 
+    public decimal PaidTotal { get; set; }
+
+    public decimal OutstandingBalance { get; set; }
+
     public string PaymentMethodSat { get; set; } = string.Empty;
 
     public string PaymentFormSat { get; set; } = string.Empty;
@@ -1911,16 +2330,24 @@ public sealed class ExternalRepBaseDocumentDetailResponse
 
     public string? LastSatRawResponseSummaryJson { get; set; }
 
-    public string SourceFileName { get; set; } = string.Empty;
-
-    public string XmlHash { get; set; } = string.Empty;
-
     public DateTime ImportedAtUtc { get; set; }
 
     public long? ImportedByUserId { get; set; }
 
     public string? ImportedByUsername { get; set; }
 
+    public string SourceFileName { get; set; } = string.Empty;
+
+    public string XmlHash { get; set; } = string.Empty;
+
+    public int RegisteredPaymentCount { get; set; }
+
+    public int PaymentComplementCount { get; set; }
+
+    public int StampedPaymentComplementCount { get; set; }
+
+    public DateTime? LastRepIssuedAtUtc { get; set; }
+
     public string OperationalStatus { get; set; } = string.Empty;
 
     public bool IsEligible { get; set; }
@@ -1934,64 +2361,87 @@ public sealed class ExternalRepBaseDocumentDetailResponse
     public List<string> AvailableActions { get; set; } = [];
 }
 
-public sealed class ExternalRepBaseDocumentListResponse
+public sealed class ExternalRepBaseDocumentPaymentHistoryResponse
 {
-    public int Page { get; set; }
+    public long AccountsReceivablePaymentId { get; set; }
 
-    public int PageSize { get; set; }
-
-    public int TotalCount { get; set; }
-
-    public int TotalPages { get; set; }
-
-    public List<ExternalRepBaseDocumentItemResponse> Items { get; set; } = [];
-}
-
-public sealed class ExternalRepBaseDocumentItemResponse
-{
-    public long ExternalRepBaseDocumentId { get; set; }
-
-    public string Uuid { get; set; } = string.Empty;
-
-    public string Series { get; set; } = string.Empty;
-
-    public string Folio { get; set; } = string.Empty;
-
-    public DateTime IssuedAtUtc { get; set; }
-
-    public string IssuerRfc { get; set; } = string.Empty;
-
-    public string? IssuerLegalName { get; set; }
-
-    public string ReceiverRfc { get; set; } = string.Empty;
-
-    public string? ReceiverLegalName { get; set; }
-
-    public string CurrencyCode { get; set; } = string.Empty;
-
-    public decimal Total { get; set; }
-
-    public string PaymentMethodSat { get; set; } = string.Empty;
+    public DateTime PaymentDateUtc { get; set; }
 
     public string PaymentFormSat { get; set; } = string.Empty;
 
-    public string ValidationStatus { get; set; } = string.Empty;
+    public decimal PaymentAmount { get; set; }
 
-    public string SatStatus { get; set; } = string.Empty;
+    public decimal AmountAppliedToDocument { get; set; }
 
-    public DateTime ImportedAtUtc { get; set; }
+    public decimal RemainingPaymentAmount { get; set; }
 
-    public string OperationalStatus { get; set; } = string.Empty;
+    public string? Reference { get; set; }
 
-    public bool IsEligible { get; set; }
+    public string? Notes { get; set; }
 
-    public bool IsBlocked { get; set; }
+    public long? PaymentComplementId { get; set; }
 
-    public string PrimaryReasonCode { get; set; } = string.Empty;
+    public string? PaymentComplementStatus { get; set; }
 
-    public string PrimaryReasonMessage { get; set; } = string.Empty;
+    public string? PaymentComplementUuid { get; set; }
 
-    public List<string> AvailableActions { get; set; } = [];
+    public DateTime CreatedAtUtc { get; set; }
+}
+
+public sealed class ExternalRepBaseDocumentPaymentApplicationResponse
+{
+    public long AccountsReceivablePaymentId { get; set; }
+
+    public int ApplicationSequence { get; set; }
+
+    public DateTime PaymentDateUtc { get; set; }
+
+    public string PaymentFormSat { get; set; } = string.Empty;
+
+    public decimal AppliedAmount { get; set; }
+
+    public decimal PreviousBalance { get; set; }
+
+    public decimal NewBalance { get; set; }
+
+    public string? Reference { get; set; }
+
+    public string? Notes { get; set; }
+
+    public decimal PaymentAmount { get; set; }
+
+    public decimal RemainingPaymentAmount { get; set; }
+
+    public DateTime CreatedAtUtc { get; set; }
+}
+
+public sealed class ExternalRepBaseDocumentPaymentComplementResponse
+{
+    public long PaymentComplementId { get; set; }
+
+    public long AccountsReceivablePaymentId { get; set; }
+
+    public string Status { get; set; } = string.Empty;
+
+    public string? Uuid { get; set; }
+
+    public DateTime PaymentDateUtc { get; set; }
+
+    public DateTime? IssuedAtUtc { get; set; }
+
+    public DateTime? StampedAtUtc { get; set; }
+
+    public DateTime? CancelledAtUtc { get; set; }
+
+    public string? ProviderName { get; set; }
+
+    public int InstallmentNumber { get; set; }
+
+    public decimal PreviousBalance { get; set; }
+
+    public decimal PaidAmount { get; set; }
+
+    public decimal RemainingBalance { get; set; }
 }
 
 public sealed class RepBaseDocumentListResponse

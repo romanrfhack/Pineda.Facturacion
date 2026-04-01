@@ -1,8 +1,9 @@
 export interface PaymentComplementRelatedDocumentResponse {
   id: number;
   accountsReceivableInvoiceId: number;
-  fiscalDocumentId: number;
-  fiscalStampId: number;
+  fiscalDocumentId?: number | null;
+  fiscalStampId?: number | null;
+  externalRepBaseDocumentId?: number | null;
   relatedDocumentUuid: string;
   installmentNumber: number;
   previousBalance: number;
@@ -247,44 +248,10 @@ export interface ExternalRepBaseDocumentImportResponse {
 }
 
 export interface ExternalRepBaseDocumentDetailResponse {
-  id: number;
-  uuid: string;
-  cfdiVersion: string;
-  documentType: string;
-  series: string;
-  folio: string;
-  issuedAtUtc: string;
-  issuerRfc: string;
-  issuerLegalName?: string | null;
-  receiverRfc: string;
-  receiverLegalName?: string | null;
-  currencyCode: string;
-  exchangeRate: number;
-  subtotal: number;
-  total: number;
-  paymentMethodSat: string;
-  paymentFormSat: string;
-  validationStatus: string;
-  reasonCode: string;
-  reasonMessage: string;
-  satStatus: string;
-  lastSatCheckAtUtc?: string | null;
-  lastSatExternalStatus?: string | null;
-  lastSatCancellationStatus?: string | null;
-  lastSatProviderCode?: string | null;
-  lastSatProviderMessage?: string | null;
-  lastSatRawResponseSummaryJson?: string | null;
-  sourceFileName: string;
-  xmlHash: string;
-  importedAtUtc: string;
-  importedByUserId?: number | null;
-  importedByUsername?: string | null;
-  operationalStatus: string;
-  isEligible: boolean;
-  isBlocked: boolean;
-  primaryReasonCode: string;
-  primaryReasonMessage: string;
-  availableActions: string[];
+  summary: ExternalRepBaseDocumentItemResponse;
+  paymentHistory: ExternalRepBaseDocumentPaymentHistoryResponse[];
+  paymentApplications: ExternalRepBaseDocumentPaymentApplicationResponse[];
+  issuedReps: ExternalRepBaseDocumentPaymentComplementResponse[];
 }
 
 export interface ExternalRepBaseDocumentFilters {
@@ -301,7 +268,10 @@ export interface ExternalRepBaseDocumentFilters {
 
 export interface ExternalRepBaseDocumentItemResponse {
   externalRepBaseDocumentId: number;
+  accountsReceivableInvoiceId?: number | null;
   uuid: string;
+  cfdiVersion: string;
+  documentType: string;
   series: string;
   folio: string;
   issuedAtUtc: string;
@@ -310,18 +280,164 @@ export interface ExternalRepBaseDocumentItemResponse {
   receiverRfc: string;
   receiverLegalName?: string | null;
   currencyCode: string;
+  exchangeRate: number;
+  subtotal: number;
   total: number;
+  paidTotal: number;
+  outstandingBalance: number;
   paymentMethodSat: string;
   paymentFormSat: string;
   validationStatus: string;
+  reasonCode: string;
+  reasonMessage: string;
   satStatus: string;
+  lastSatCheckAtUtc?: string | null;
+  lastSatExternalStatus?: string | null;
+  lastSatCancellationStatus?: string | null;
+  lastSatProviderCode?: string | null;
+  lastSatProviderMessage?: string | null;
+  lastSatRawResponseSummaryJson?: string | null;
   importedAtUtc: string;
+  importedByUserId?: number | null;
+  importedByUsername?: string | null;
+  sourceFileName: string;
+  xmlHash: string;
+  registeredPaymentCount: number;
+  paymentComplementCount: number;
+  stampedPaymentComplementCount: number;
+  lastRepIssuedAtUtc?: string | null;
   operationalStatus: string;
   isEligible: boolean;
   isBlocked: boolean;
   primaryReasonCode: string;
   primaryReasonMessage: string;
   availableActions: string[];
+}
+
+export interface ExternalRepBaseDocumentPaymentHistoryResponse {
+  accountsReceivablePaymentId: number;
+  paymentDateUtc: string;
+  paymentFormSat: string;
+  paymentAmount: number;
+  amountAppliedToDocument: number;
+  remainingPaymentAmount: number;
+  reference?: string | null;
+  notes?: string | null;
+  paymentComplementId?: number | null;
+  paymentComplementStatus?: string | null;
+  paymentComplementUuid?: string | null;
+  createdAtUtc: string;
+}
+
+export interface ExternalRepBaseDocumentPaymentApplicationResponse {
+  accountsReceivablePaymentId: number;
+  applicationSequence: number;
+  paymentDateUtc: string;
+  paymentFormSat: string;
+  appliedAmount: number;
+  previousBalance: number;
+  newBalance: number;
+  reference?: string | null;
+  notes?: string | null;
+  paymentAmount: number;
+  remainingPaymentAmount: number;
+  createdAtUtc: string;
+}
+
+export interface ExternalRepBaseDocumentPaymentComplementResponse {
+  paymentComplementId: number;
+  accountsReceivablePaymentId: number;
+  status: string;
+  uuid?: string | null;
+  paymentDateUtc: string;
+  issuedAtUtc?: string | null;
+  stampedAtUtc?: string | null;
+  cancelledAtUtc?: string | null;
+  providerName?: string | null;
+  installmentNumber: number;
+  previousBalance: number;
+  paidAmount: number;
+  remainingBalance: number;
+}
+
+export interface RegisterExternalRepBaseDocumentPaymentRequest {
+  paymentDate: string;
+  paymentFormSat: string;
+  amount: number;
+  reference?: string | null;
+  notes?: string | null;
+}
+
+export interface RegisterExternalRepBaseDocumentPaymentApplicationResponse {
+  applicationId: number;
+  accountsReceivablePaymentId: number;
+  accountsReceivableInvoiceId: number;
+  applicationSequence: number;
+  appliedAmount: number;
+  previousBalance: number;
+  newBalance: number;
+}
+
+export interface RegisterExternalRepBaseDocumentPaymentResponse {
+  outcome: string;
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  warningMessages: string[];
+  externalRepBaseDocumentId: number;
+  accountsReceivableInvoiceId?: number | null;
+  accountsReceivablePaymentId?: number | null;
+  appliedAmount: number;
+  remainingBalance: number;
+  remainingPaymentAmount: number;
+  repOperationalStatus?: string | null;
+  isEligible?: boolean | null;
+  isBlocked?: boolean | null;
+  eligibilityReason?: string | null;
+  applications: RegisterExternalRepBaseDocumentPaymentApplicationResponse[];
+}
+
+export interface PrepareExternalRepBaseDocumentPaymentComplementRequest {
+  accountsReceivablePaymentId?: number | null;
+}
+
+export interface PrepareExternalRepBaseDocumentPaymentComplementResponse {
+  outcome: string;
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  warningMessages: string[];
+  externalRepBaseDocumentId: number;
+  accountsReceivablePaymentId?: number | null;
+  paymentComplementDocumentId?: number | null;
+  status?: string | null;
+  relatedDocumentCount: number;
+  repOperationalStatus?: string | null;
+  isEligible?: boolean | null;
+  isBlocked?: boolean | null;
+  eligibilityReason?: string | null;
+}
+
+export interface StampExternalRepBaseDocumentPaymentComplementRequest {
+  paymentComplementDocumentId?: number | null;
+  retryRejected?: boolean;
+}
+
+export interface StampExternalRepBaseDocumentPaymentComplementResponse {
+  outcome: string;
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  warningMessages: string[];
+  externalRepBaseDocumentId: number;
+  accountsReceivablePaymentId?: number | null;
+  paymentComplementDocumentId?: number | null;
+  status?: string | null;
+  paymentComplementStampId?: number | null;
+  stampUuid?: string | null;
+  stampedAtUtc?: string | null;
+  xmlAvailable: boolean;
+  repOperationalStatus?: string | null;
+  isEligible?: boolean | null;
+  isBlocked?: boolean | null;
+  eligibilityReason?: string | null;
 }
 
 export interface ExternalRepBaseDocumentListResponse {

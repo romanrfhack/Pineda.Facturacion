@@ -591,7 +591,7 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
     {
         public long AccountsReceivableInvoiceId { get; set; }
 
-        public long FiscalDocumentId { get; set; }
+        public long? FiscalDocumentId { get; set; }
 
         public string RelatedDocumentUuid { get; set; } = string.Empty;
 

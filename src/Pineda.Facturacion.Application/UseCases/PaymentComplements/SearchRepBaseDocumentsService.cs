@@ -1,6 +1,5 @@
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Common;
-using Pineda.Facturacion.Domain.Entities;
 
 namespace Pineda.Facturacion.Application.UseCases.PaymentComplements;
 
@@ -8,17 +7,20 @@ public sealed class SearchRepBaseDocumentsService
 {
     private readonly IRepBaseDocumentRepository _internalRepository;
     private readonly IExternalRepBaseDocumentRepository _externalRepository;
+    private readonly IIssuerProfileRepository _issuerProfileRepository;
     private readonly IInternalRepBaseDocumentStateRepository _stateRepository;
     private readonly IUnitOfWork _unitOfWork;
 
     public SearchRepBaseDocumentsService(
         IRepBaseDocumentRepository internalRepository,
         IExternalRepBaseDocumentRepository externalRepository,
+        IIssuerProfileRepository issuerProfileRepository,
         IInternalRepBaseDocumentStateRepository stateRepository,
         IUnitOfWork unitOfWork)
     {
         _internalRepository = internalRepository;
         _externalRepository = externalRepository;
+        _issuerProfileRepository = issuerProfileRepository;
         _stateRepository = stateRepository;
         _unitOfWork = unitOfWork;
     }
@@ -50,6 +52,9 @@ public sealed class SearchRepBaseDocumentsService
 
         var items = new List<RepBaseDocumentUnifiedListItem>();
         var internalItems = new List<InternalRepBaseDocumentListItem>();
+        var activeIssuerProfile = includeExternal
+            ? await _issuerProfileRepository.GetActiveAsync(cancellationToken)
+            : null;
 
         var baseFilter = new SearchExternalRepBaseDocumentsDataFilter
         {
@@ -81,9 +86,9 @@ public sealed class SearchRepBaseDocumentsService
 
         if (includeExternal)
         {
-            var externalDocuments = await _externalRepository.SearchAsync(baseFilter, cancellationToken);
+            var externalDocuments = await _externalRepository.SearchOperationalAsync(baseFilter, cancellationToken);
             var externalItems = externalDocuments
-                .Select(SearchExternalRepBaseDocumentsService.BuildListItem)
+                .Select(x => SearchExternalRepBaseDocumentsService.BuildListItem(x, activeIssuerProfile))
                 .Where(x => MatchesExternalFilter(x, filter))
                 .Select(MapExternal);
 
@@ -243,6 +248,8 @@ public sealed class SearchRepBaseDocumentsService
             OperationalStatus = item.OperationalStatus,
             ValidationStatus = item.ValidationStatus,
             SatStatus = item.SatStatus,
+            OutstandingBalance = item.OutstandingBalance,
+            RepCount = item.StampedPaymentComplementCount,
             IsEligible = item.IsEligible,
             IsBlocked = item.IsBlocked,
             PrimaryReasonCode = item.PrimaryReasonCode,

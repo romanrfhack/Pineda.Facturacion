@@ -1,5 +1,3 @@
-using Pineda.Facturacion.Domain.Entities;
-
 namespace Pineda.Facturacion.Application.UseCases.PaymentComplements;
 
 public sealed class GetExternalRepBaseDocumentByIdResult
@@ -10,5 +8,5 @@ public sealed class GetExternalRepBaseDocumentByIdResult
 
     public long ExternalRepBaseDocumentId { get; init; }
 
-    public ExternalRepBaseDocument? Document { get; init; }
+    public ExternalRepBaseDocumentDetail? Document { get; init; }
 }

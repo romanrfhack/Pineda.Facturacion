@@ -31,7 +31,7 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
 
-                    b.Property<long>("BillingDocumentId")
+                    b.Property<long?>("BillingDocumentId")
                         .HasColumnType("bigint")
                         .HasColumnName("billing_document_id");
 
@@ -53,11 +53,15 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
                         .HasColumnType("datetime(6)")
                         .HasColumnName("due_at_utc");
 
-                    b.Property<long>("FiscalDocumentId")
+                    b.Property<long?>("ExternalRepBaseDocumentId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("external_rep_base_document_id");
+
+                    b.Property<long?>("FiscalDocumentId")
                         .HasColumnType("bigint")
                         .HasColumnName("fiscal_document_id");
 
-                    b.Property<long>("FiscalStampId")
+                    b.Property<long?>("FiscalStampId")
                         .HasColumnType("bigint")
                         .HasColumnName("fiscal_stamp_id");
 
@@ -107,6 +111,9 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("BillingDocumentId");
+
+                    b.HasIndex("ExternalRepBaseDocumentId")
+                        .IsUnique();
 
                     b.HasIndex("FiscalDocumentId")
                         .IsUnique();
@@ -1166,11 +1173,15 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
                         .HasColumnType("varchar(1000)")
                         .HasColumnName("error_message");
 
-                    b.Property<long>("FiscalDocumentId")
+                    b.Property<long?>("ExternalRepBaseDocumentId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("external_rep_base_document_id");
+
+                    b.Property<long?>("FiscalDocumentId")
                         .HasColumnType("bigint")
                         .HasColumnName("fiscal_document_id");
 
-                    b.Property<long>("FiscalStampId")
+                    b.Property<long?>("FiscalStampId")
                         .HasColumnType("bigint")
                         .HasColumnName("fiscal_stamp_id");
 
@@ -2848,6 +2859,8 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
 
                     b.HasIndex("AccountsReceivableInvoiceId");
 
+                    b.HasIndex("ExternalRepBaseDocumentId");
+
                     b.HasIndex("FiscalDocumentId");
 
                     b.HasIndex("FiscalStampId");
@@ -3458,20 +3471,22 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
                     b.HasOne("Pineda.Facturacion.Domain.Entities.BillingDocument", null)
                         .WithMany()
                         .HasForeignKey("BillingDocumentId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Pineda.Facturacion.Domain.Entities.ExternalRepBaseDocument", null)
+                        .WithMany()
+                        .HasForeignKey("ExternalRepBaseDocumentId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("Pineda.Facturacion.Domain.Entities.FiscalDocument", null)
                         .WithMany()
                         .HasForeignKey("FiscalDocumentId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("Pineda.Facturacion.Domain.Entities.FiscalStamp", null)
                         .WithMany()
                         .HasForeignKey("FiscalStampId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("Pineda.Facturacion.Domain.Entities.AccountsReceivablePayment", b =>
@@ -3753,17 +3768,20 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("Pineda.Facturacion.Domain.Entities.ExternalRepBaseDocument", null)
+                        .WithMany()
+                        .HasForeignKey("ExternalRepBaseDocumentId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Pineda.Facturacion.Domain.Entities.FiscalDocument", null)
                         .WithMany()
                         .HasForeignKey("FiscalDocumentId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("Pineda.Facturacion.Domain.Entities.FiscalStamp", null)
                         .WithMany()
                         .HasForeignKey("FiscalStampId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("Pineda.Facturacion.Domain.Entities.PaymentComplementDocument", null)
                         .WithMany("RelatedDocuments")

@@ -143,26 +143,26 @@ import {
                 <article class="summary-card">
                   <h4>Resumen fiscal externo</h4>
                   <dl>
-                    <div><dt>UUID</dt><dd>{{ externalDetail.uuid }}</dd></div>
-                    <div><dt>Serie/Folio</dt><dd>{{ buildSeriesFolio(externalDetail.series, externalDetail.folio) }}</dd></div>
-                    <div><dt>Emisión</dt><dd>{{ formatUtc(externalDetail.issuedAtUtc) }}</dd></div>
-                    <div><dt>Emisor</dt><dd>{{ externalDetail.issuerRfc }}</dd></div>
-                    <div><dt>Receptor</dt><dd>{{ externalDetail.receiverRfc }}</dd></div>
-                    <div><dt>Total</dt><dd>{{ externalDetail.total | number:'1.2-2' }}</dd></div>
-                    <div><dt>Método/Forma</dt><dd>{{ externalDetail.paymentMethodSat }} / {{ externalDetail.paymentFormSat }}</dd></div>
+                    <div><dt>UUID</dt><dd>{{ externalDetail.summary.uuid }}</dd></div>
+                    <div><dt>Serie/Folio</dt><dd>{{ buildSeriesFolio(externalDetail.summary.series, externalDetail.summary.folio) }}</dd></div>
+                    <div><dt>Emisión</dt><dd>{{ formatUtc(externalDetail.summary.issuedAtUtc) }}</dd></div>
+                    <div><dt>Emisor</dt><dd>{{ externalDetail.summary.issuerRfc }}</dd></div>
+                    <div><dt>Receptor</dt><dd>{{ externalDetail.summary.receiverRfc }}</dd></div>
+                    <div><dt>Total</dt><dd>{{ externalDetail.summary.total | number:'1.2-2' }}</dd></div>
+                    <div><dt>Método/Forma</dt><dd>{{ externalDetail.summary.paymentMethodSat }} / {{ externalDetail.summary.paymentFormSat }}</dd></div>
                   </dl>
                 </article>
 
                 <article class="summary-card">
                   <h4>Estado externo</h4>
                   <dl>
-                    <div><dt>Validación</dt><dd>{{ getDisplayLabel(externalDetail.validationStatus) }}</dd></div>
-                    <div><dt>SAT</dt><dd>{{ getDisplayLabel(externalDetail.satStatus) }}</dd></div>
-                    <div><dt>Operativo</dt><dd>{{ getDisplayLabel(externalDetail.operationalStatus) }}</dd></div>
-                    <div><dt>Motivo</dt><dd>{{ externalDetail.primaryReasonMessage }}</dd></div>
-                    <div><dt>Importado</dt><dd>{{ formatUtc(externalDetail.importedAtUtc) }}</dd></div>
+                    <div><dt>Validación</dt><dd>{{ getDisplayLabel(externalDetail.summary.validationStatus) }}</dd></div>
+                    <div><dt>SAT</dt><dd>{{ getDisplayLabel(externalDetail.summary.satStatus) }}</dd></div>
+                    <div><dt>Operativo</dt><dd>{{ getDisplayLabel(externalDetail.summary.operationalStatus) }}</dd></div>
+                    <div><dt>Motivo</dt><dd>{{ externalDetail.summary.primaryReasonMessage }}</dd></div>
+                    <div><dt>Importado</dt><dd>{{ formatUtc(externalDetail.summary.importedAtUtc) }}</dd></div>
                   </dl>
-                  <p class="helper">En la bandeja unificada los externos sólo están disponibles para administración y seguimiento. La operación REP se habilita en Fase 4.</p>
+                  <p class="helper">La operación REP externa vive en la pestaña Externos; esta vista unificada conserva un contexto común de seguimiento.</p>
                 </article>
               </section>
             } @else if (selectedItem()?.sourceType === 'Internal' && selectedInternalDetail(); as internalDetail) {

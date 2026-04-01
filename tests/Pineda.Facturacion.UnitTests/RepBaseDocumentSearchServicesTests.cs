@@ -12,12 +12,14 @@ public class RepBaseDocumentSearchServicesTests
     {
         var repository = new FakeExternalRepository
         {
-            Documents =
+            OperationalItems =
             [
-                new ExternalRepBaseDocument
+                new ExternalRepBaseDocumentSummaryReadModel
                 {
-                    Id = 11,
+                    ExternalRepBaseDocumentId = 11,
                     Uuid = "UUID-EXT-11",
+                    CfdiVersion = "4.0",
+                    DocumentType = "I",
                     Series = "EXT",
                     Folio = "11",
                     IssuedAtUtc = new DateTime(2026, 4, 1, 10, 0, 0, DateTimeKind.Utc),
@@ -25,19 +27,25 @@ public class RepBaseDocumentSearchServicesTests
                     ReceiverRfc = "BBB010101BBB",
                     ReceiverLegalName = "Receptor Uno",
                     CurrencyCode = "MXN",
+                    ExchangeRate = 1m,
+                    Subtotal = 100m,
                     Total = 116m,
+                    OutstandingBalance = 116m,
                     PaymentMethodSat = "PPD",
                     PaymentFormSat = "99",
-                    ValidationStatus = ExternalRepBaseDocumentValidationStatus.Accepted,
+                    ValidationStatus = ExternalRepBaseDocumentValidationStatus.Accepted.ToString(),
                     ValidationReasonCode = "Accepted",
                     ValidationReasonMessage = "Aceptado",
-                    SatStatus = ExternalRepBaseDocumentSatStatus.Active,
-                    ImportedAtUtc = new DateTime(2026, 4, 2, 10, 0, 0, DateTimeKind.Utc)
+                    SatStatus = ExternalRepBaseDocumentSatStatus.Active.ToString(),
+                    ImportedAtUtc = new DateTime(2026, 4, 2, 10, 0, 0, DateTimeKind.Utc),
+                    HasKnownFiscalReceiver = true
                 },
-                new ExternalRepBaseDocument
+                new ExternalRepBaseDocumentSummaryReadModel
                 {
-                    Id = 12,
+                    ExternalRepBaseDocumentId = 12,
                     Uuid = "UUID-EXT-12",
+                    CfdiVersion = "4.0",
+                    DocumentType = "I",
                     Series = "EXT",
                     Folio = "12",
                     IssuedAtUtc = new DateTime(2026, 4, 1, 11, 0, 0, DateTimeKind.Utc),
@@ -45,19 +53,72 @@ public class RepBaseDocumentSearchServicesTests
                     ReceiverRfc = "CCC010101CCC",
                     ReceiverLegalName = "Receptor Dos",
                     CurrencyCode = "MXN",
+                    ExchangeRate = 1m,
+                    Subtotal = 200m,
                     Total = 232m,
                     PaymentMethodSat = "PPD",
                     PaymentFormSat = "99",
-                    ValidationStatus = ExternalRepBaseDocumentValidationStatus.Blocked,
+                    ValidationStatus = ExternalRepBaseDocumentValidationStatus.Blocked.ToString(),
                     ValidationReasonCode = "ValidationUnavailable",
                     ValidationReasonMessage = "SAT no disponible",
-                    SatStatus = ExternalRepBaseDocumentSatStatus.Unavailable,
+                    SatStatus = ExternalRepBaseDocumentSatStatus.Unavailable.ToString(),
                     ImportedAtUtc = new DateTime(2026, 4, 2, 11, 0, 0, DateTimeKind.Utc)
                 }
             ]
         };
 
-        var service = new SearchExternalRepBaseDocumentsService(repository);
+        var service = new SearchExternalRepBaseDocumentsService(repository, new FakeIssuerProfileRepository());
+        var result = await service.ExecuteAsync(new SearchExternalRepBaseDocumentsFilter
+        {
+            Page = 1,
+            PageSize = 25,
+            Blocked = true
+        });
+
+        var item = Assert.Single(result.Items);
+        Assert.Equal(12, item.ExternalRepBaseDocumentId);
+        Assert.Equal("Blocked", item.OperationalStatus);
+        Assert.False(item.IsEligible);
+        Assert.True(item.IsBlocked);
+    }
+
+    [Fact]
+    public async Task SearchExternalRepBaseDocuments_Returns_ReadyForPayment_ForAcceptedActiveExternal()
+    {
+        var repository = new FakeExternalRepository
+        {
+            OperationalItems =
+            [
+                new ExternalRepBaseDocumentSummaryReadModel
+                {
+                    ExternalRepBaseDocumentId = 21,
+                    Uuid = "UUID-EXT-21",
+                    CfdiVersion = "4.0",
+                    DocumentType = "I",
+                    Series = "EXT",
+                    Folio = "21",
+                    IssuedAtUtc = new DateTime(2026, 4, 1, 10, 0, 0, DateTimeKind.Utc),
+                    IssuerRfc = "AAA010101AAA",
+                    ReceiverRfc = "BBB010101BBB",
+                    ReceiverLegalName = "Receptor Uno",
+                    CurrencyCode = "MXN",
+                    ExchangeRate = 1m,
+                    Subtotal = 100m,
+                    Total = 116m,
+                    OutstandingBalance = 116m,
+                    ValidationStatus = ExternalRepBaseDocumentValidationStatus.Accepted.ToString(),
+                    ValidationReasonCode = "Accepted",
+                    ValidationReasonMessage = "Aceptado",
+                    SatStatus = ExternalRepBaseDocumentSatStatus.Active.ToString(),
+                    PaymentMethodSat = "PPD",
+                    PaymentFormSat = "99",
+                    ImportedAtUtc = new DateTime(2026, 4, 2, 10, 0, 0, DateTimeKind.Utc),
+                    HasKnownFiscalReceiver = true
+                }
+            ]
+        };
+
+        var service = new SearchExternalRepBaseDocumentsService(repository, new FakeIssuerProfileRepository());
         var result = await service.ExecuteAsync(new SearchExternalRepBaseDocumentsFilter
         {
             Page = 1,
@@ -66,8 +127,8 @@ public class RepBaseDocumentSearchServicesTests
         });
 
         var item = Assert.Single(result.Items);
-        Assert.Equal(11, item.ExternalRepBaseDocumentId);
-        Assert.Equal("ReadyForNextPhase", item.OperationalStatus);
+        Assert.Equal(21, item.ExternalRepBaseDocumentId);
+        Assert.Equal("ReadyForPayment", item.OperationalStatus);
         Assert.True(item.IsEligible);
         Assert.False(item.IsBlocked);
     }
@@ -106,12 +167,14 @@ public class RepBaseDocumentSearchServicesTests
         };
         var externalRepository = new FakeExternalRepository
         {
-            Documents =
+            OperationalItems =
             [
-                new ExternalRepBaseDocument
+                new ExternalRepBaseDocumentSummaryReadModel
                 {
-                    Id = 901,
+                    ExternalRepBaseDocumentId = 901,
                     Uuid = "UUID-EXT-901",
+                    CfdiVersion = "4.0",
+                    DocumentType = "I",
                     Series = "EXT",
                     Folio = "901",
                     IssuedAtUtc = new DateTime(2026, 4, 1, 8, 0, 0, DateTimeKind.Utc),
@@ -119,14 +182,18 @@ public class RepBaseDocumentSearchServicesTests
                     ReceiverRfc = "CCC010101CCC",
                     ReceiverLegalName = "Cliente Externo",
                     CurrencyCode = "MXN",
+                    ExchangeRate = 1m,
+                    Subtotal = 200m,
                     Total = 232m,
                     PaymentMethodSat = "PPD",
                     PaymentFormSat = "99",
-                    ValidationStatus = ExternalRepBaseDocumentValidationStatus.Accepted,
+                    ValidationStatus = ExternalRepBaseDocumentValidationStatus.Accepted.ToString(),
                     ValidationReasonCode = "Accepted",
                     ValidationReasonMessage = "Aceptado",
-                    SatStatus = ExternalRepBaseDocumentSatStatus.Active,
-                    ImportedAtUtc = new DateTime(2026, 4, 2, 10, 0, 0, DateTimeKind.Utc)
+                    SatStatus = ExternalRepBaseDocumentSatStatus.Active.ToString(),
+                    ImportedAtUtc = new DateTime(2026, 4, 2, 10, 0, 0, DateTimeKind.Utc),
+                    OutstandingBalance = 232m,
+                    HasKnownFiscalReceiver = true
                 }
             ]
         };
@@ -134,6 +201,7 @@ public class RepBaseDocumentSearchServicesTests
         var service = new SearchRepBaseDocumentsService(
             internalRepository,
             externalRepository,
+            new FakeIssuerProfileRepository(),
             new FakeInternalStateRepository(),
             new FakeUnitOfWork());
 
@@ -167,7 +235,12 @@ public class RepBaseDocumentSearchServicesTests
     {
         public IReadOnlyList<ExternalRepBaseDocument> Documents { get; set; } = [];
 
+        public IReadOnlyList<ExternalRepBaseDocumentSummaryReadModel> OperationalItems { get; set; } = [];
+
         public Task<ExternalRepBaseDocument?> GetByIdAsync(long id, CancellationToken cancellationToken = default)
+            => Task.FromResult(Documents.FirstOrDefault(x => x.Id == id));
+
+        public Task<ExternalRepBaseDocument?> GetTrackedByIdAsync(long id, CancellationToken cancellationToken = default)
             => Task.FromResult(Documents.FirstOrDefault(x => x.Id == id));
 
         public Task<ExternalRepBaseDocument?> GetByUuidAsync(string uuid, CancellationToken cancellationToken = default)
@@ -177,6 +250,16 @@ public class RepBaseDocumentSearchServicesTests
             SearchExternalRepBaseDocumentsDataFilter filter,
             CancellationToken cancellationToken = default)
             => Task.FromResult(Documents);
+
+        public Task<IReadOnlyList<ExternalRepBaseDocumentSummaryReadModel>> SearchOperationalAsync(
+            SearchExternalRepBaseDocumentsDataFilter filter,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(OperationalItems);
+
+        public Task<ExternalRepBaseDocumentDetailReadModel?> GetOperationalByIdAsync(
+            long externalRepBaseDocumentId,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<ExternalRepBaseDocumentDetailReadModel?>(null);
 
         public Task AddAsync(ExternalRepBaseDocument document, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
@@ -199,5 +282,37 @@ public class RepBaseDocumentSearchServicesTests
     private sealed class FakeUnitOfWork : IUnitOfWork
     {
         public Task SaveChangesAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private sealed class FakeIssuerProfileRepository : IIssuerProfileRepository
+    {
+        public Task<IssuerProfile?> GetActiveAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IssuerProfile?>(new IssuerProfile
+            {
+                Id = 1,
+                Rfc = "AAA010101AAA",
+                LegalName = "Emisor",
+                FiscalRegimeCode = "601",
+                PostalCode = "64000",
+                CfdiVersion = "4.0",
+                CertificateReference = "cert",
+                PrivateKeyReference = "key",
+                PrivateKeyPasswordReference = "pwd",
+                PacEnvironment = "test",
+                IsActive = true
+            });
+
+        public Task<IssuerProfile?> GetTrackedActiveAsync(CancellationToken cancellationToken = default)
+            => GetActiveAsync(cancellationToken);
+
+        public Task<IssuerProfile?> GetByIdAsync(long issuerProfileId, CancellationToken cancellationToken = default)
+            => GetActiveAsync(cancellationToken);
+
+        public Task<bool> TryAdvanceNextFiscalFolioAsync(long issuerProfileId, int expectedNextFiscalFolio, int newNextFiscalFolio, CancellationToken cancellationToken = default)
+            => Task.FromResult(true);
+
+        public Task AddAsync(IssuerProfile issuerProfile, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task UpdateAsync(IssuerProfile issuerProfile, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 }

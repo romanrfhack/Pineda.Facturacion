@@ -21,6 +21,14 @@ public class AccountsReceivableInvoiceRepository : IAccountsReceivableInvoiceRep
             .FirstOrDefaultAsync(x => x.FiscalDocumentId == fiscalDocumentId, cancellationToken);
     }
 
+    public Task<AccountsReceivableInvoice?> GetByExternalRepBaseDocumentIdAsync(long externalRepBaseDocumentId, CancellationToken cancellationToken = default)
+    {
+        return _dbContext.AccountsReceivableInvoices
+            .AsNoTracking()
+            .Include(x => x.Applications)
+            .FirstOrDefaultAsync(x => x.ExternalRepBaseDocumentId == externalRepBaseDocumentId, cancellationToken);
+    }
+
     public Task<AccountsReceivableInvoice?> GetTrackedByIdAsync(long accountsReceivableInvoiceId, CancellationToken cancellationToken = default)
     {
         return _dbContext.AccountsReceivableInvoices
@@ -33,6 +41,13 @@ public class AccountsReceivableInvoiceRepository : IAccountsReceivableInvoiceRep
         return _dbContext.AccountsReceivableInvoices
             .Include(x => x.Applications)
             .FirstOrDefaultAsync(x => x.FiscalDocumentId == fiscalDocumentId, cancellationToken);
+    }
+
+    public Task<AccountsReceivableInvoice?> GetTrackedByExternalRepBaseDocumentIdAsync(long externalRepBaseDocumentId, CancellationToken cancellationToken = default)
+    {
+        return _dbContext.AccountsReceivableInvoices
+            .Include(x => x.Applications)
+            .FirstOrDefaultAsync(x => x.ExternalRepBaseDocumentId == externalRepBaseDocumentId, cancellationToken);
     }
 
     public async Task AddAsync(AccountsReceivableInvoice accountsReceivableInvoice, CancellationToken cancellationToken = default)
