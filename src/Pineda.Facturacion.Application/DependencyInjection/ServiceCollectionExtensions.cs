@@ -24,6 +24,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ImportLegacyOrderService>();
         services.AddScoped<ReimportLegacyOrderService>();
         services.AddScoped<PreviewLegacyOrderImportService>();
+        services.AddScoped<LegacyImportRevisionRecorder>();
+        services.AddScoped<ListLegacyImportRevisionsService>();
         services.AddScoped<SearchLegacyOrdersService>();
         services.AddScoped<ListAuditEventsService>();
         services.AddScoped<LoginService>();

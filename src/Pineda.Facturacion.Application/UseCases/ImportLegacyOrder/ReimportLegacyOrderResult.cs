@@ -49,6 +49,8 @@ public sealed class ReimportLegacyOrderResult
 
     public string NewSourceHash { get; set; } = string.Empty;
 
+    public int CurrentRevisionNumber { get; set; }
+
     public bool ReimportApplied { get; set; }
 
     public string ReimportMode { get; set; } = ReplaceExistingImportConfirmationMode;

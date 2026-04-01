@@ -32,6 +32,7 @@ public static class ServiceCollectionExtensions
         });
 
         services.AddScoped<ILegacyImportRecordRepository, LegacyImportRecordRepository>();
+        services.AddScoped<ILegacyImportRevisionRepository, LegacyImportRevisionRepository>();
         services.AddScoped<ISalesOrderRepository, SalesOrderRepository>();
         services.AddScoped<ISalesOrderSnapshotRepository, SalesOrderRepository>();
         services.AddScoped<IAppUserRepository, AppUserRepository>();

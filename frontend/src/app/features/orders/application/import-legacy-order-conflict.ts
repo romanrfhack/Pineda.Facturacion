@@ -17,6 +17,7 @@ export interface ImportLegacyOrderConflictViewModel {
   readonly importedAtUtc: string | null;
   readonly existingSourceHash: string | null;
   readonly currentSourceHash: string | null;
+  readonly currentRevisionNumber: number | null;
   readonly allowedActions: ImportLegacyOrderAllowedAction[];
 }
 
@@ -47,6 +48,7 @@ export function adaptImportLegacyOrderConflict(payload: Partial<ImportLegacyOrde
     importedAtUtc: payload.importedAtUtc ?? null,
     existingSourceHash: payload.existingSourceHash ?? null,
     currentSourceHash: payload.currentSourceHash ?? payload.sourceHash ?? null,
+    currentRevisionNumber: payload.currentRevisionNumber ?? null,
     allowedActions: payload.allowedActions ?? []
   };
 }

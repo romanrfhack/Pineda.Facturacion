@@ -13,6 +13,8 @@ public class BillingDbContext : DbContext, IUnitOfWork
 
     public DbSet<LegacyImportRecord> LegacyImportRecords => Set<LegacyImportRecord>();
 
+    public DbSet<LegacyImportRevision> LegacyImportRevisions => Set<LegacyImportRevision>();
+
     public DbSet<SalesOrder> SalesOrders => Set<SalesOrder>();
 
     public DbSet<SalesOrderItem> SalesOrderItems => Set<SalesOrderItem>();

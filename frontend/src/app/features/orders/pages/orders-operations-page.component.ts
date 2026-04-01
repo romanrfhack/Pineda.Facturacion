@@ -10,6 +10,7 @@ import {
   ImportLegacyOrderResponse,
   ImportLegacyOrderAllowedAction,
   ImportLegacyOrderPreviewResponse,
+  ImportLegacyOrderRevisionHistoryResponse,
   LegacyOrderListItem,
   ReimportLegacyOrderResponse,
   SearchLegacyOrdersResponse
@@ -226,6 +227,7 @@ type QuickRange = 'today' | 'yesterday' | 'last7' | 'custom';
             <dl class="conflict-grid">
               <div><dt>Hash importado</dt><dd class="mono">{{ conflict.existingSourceHash ?? 'N/D' }}</dd></div>
               <div><dt>Hash actual</dt><dd class="mono">{{ conflict.currentSourceHash ?? 'N/D' }}</dd></div>
+              <div><dt>Revisión actual</dt><dd>{{ conflict.currentRevisionNumber ?? 'N/D' }}</dd></div>
             </dl>
 
             <div class="actions">
@@ -238,6 +240,14 @@ type QuickRange = 'today' | 'yesterday' | 'last7' | 'custom';
                   {{ loadingPreview() ? 'Generando preview...' : 'Ver preview de cambios' }}
                 </button>
               }
+
+              <button
+                type="button"
+                class="secondary"
+                (click)="loadRevisionHistory(conflict.legacyOrderId)"
+                [disabled]="loadingRevisions()">
+                {{ loadingRevisions() ? 'Cargando historial...' : 'Ver historial de revisiones' }}
+              </button>
 
               @if (hasAllowedAction(conflict, 'view_existing_sales_order') && conflict.existingSalesOrderId) {
                 <button type="button" class="secondary" (click)="openExistingSalesOrderConflict(conflict)">
@@ -275,6 +285,8 @@ type QuickRange = 'today' | 'yesterday' | 'last7' | 'custom';
                     [label]="preview.eligibilityStatus"
                     [tone]="preview.eligibilityStatus === 'Allowed' ? 'success' : preview.eligibilityStatus === 'NotNeededNoChanges' ? 'neutral' : 'warning'" />
                 </div>
+
+                <p class="helper">Comparando contra la revisión actual {{ preview.currentRevisionNumber }}.</p>
 
                 @if (!preview.hasChanges) {
                   <p class="helper">No se detectaron cambios entre el snapshot existente y el estado actual de Legacy.</p>
@@ -348,6 +360,69 @@ type QuickRange = 'today' | 'yesterday' | 'last7' | 'custom';
         }
       </section>
 
+      @if (selectedLegacyOrderId()) {
+        <section class="card">
+          <div class="section-header">
+            <div>
+              <p class="eyebrow">Revisiones</p>
+              <h3>Historial de importaciones Legacy</h3>
+            </div>
+            <div class="actions">
+              <span class="helper">Revisión actual: {{ currentRevisionNumber() ?? 'N/D' }}</span>
+              <button
+                type="button"
+                class="secondary"
+                (click)="loadRevisionHistory(selectedLegacyOrderId()!)"
+                [disabled]="loadingRevisions()">
+                {{ loadingRevisions() ? 'Cargando...' : 'Actualizar historial' }}
+              </button>
+            </div>
+          </div>
+
+          @if (revisionsError(); as revisionsError) {
+            <p class="error">{{ revisionsError }}</p>
+          }
+
+          @if (revisionHistory(); as history) {
+            <div class="preview-lines">
+              @for (revision of history.revisions; track revision.revisionNumber) {
+                <article class="preview-line-card">
+                  <div class="section-header">
+                    <div>
+                      <p class="eyebrow">{{ revision.actionType }}</p>
+                      <h3>Revisión {{ revision.revisionNumber }}</h3>
+                    </div>
+                    <app-status-badge [label]="revision.isCurrent ? 'Actual' : 'Histórica'" [tone]="revision.isCurrent ? 'success' : 'neutral'" />
+                  </div>
+
+                  <dl class="conflict-grid">
+                    <div><dt>Aplicada</dt><dd>{{ revision.appliedAtUtc | date:'dd/MM/yyyy HH:mm' }}</dd></div>
+                    <div><dt>Hash</dt><dd class="mono">{{ revision.sourceHash }}</dd></div>
+                    <div><dt>Hash previo</dt><dd class="mono">{{ revision.previousSourceHash ?? 'N/D' }}</dd></div>
+                    <div><dt>Sales order</dt><dd>{{ revision.salesOrderId ?? 'N/D' }}</dd></div>
+                    <div><dt>Billing document</dt><dd>{{ revision.billingDocumentId ?? 'N/D' }}</dd></div>
+                    <div><dt>Fiscal document</dt><dd>{{ revision.fiscalDocumentId ?? 'N/D' }}</dd></div>
+                  </dl>
+
+                  <dl class="conflict-grid">
+                    <div><dt>Agregadas</dt><dd>{{ revision.changeSummary.addedLines }}</dd></div>
+                    <div><dt>Eliminadas</dt><dd>{{ revision.changeSummary.removedLines }}</dd></div>
+                    <div><dt>Modificadas</dt><dd>{{ revision.changeSummary.modifiedLines }}</dd></div>
+                    <div><dt>Sin cambio</dt><dd>{{ revision.changeSummary.unchangedLines }}</dd></div>
+                    <div><dt>Total anterior</dt><dd>{{ revision.changeSummary.oldTotal | currency:'MXN':'symbol':'1.2-2' }}</dd></div>
+                    <div><dt>Total nuevo</dt><dd>{{ revision.changeSummary.newTotal | currency:'MXN':'symbol':'1.2-2' }}</dd></div>
+                  </dl>
+
+                  <p class="helper">{{ revision.eligibilityStatus }}. {{ revision.eligibilityReasonMessage }}</p>
+                </article>
+              }
+            </div>
+          } @else {
+            <p class="helper">Carga el historial para ver qué revisión quedó activa y qué cambió en cada reimportación.</p>
+          }
+        </section>
+      }
+
       @if (importedOrder(); as importedOrder) {
         <app-billing-document-card [imported]="importedOrder" [billing]="billingDocument()" />
       }
@@ -406,13 +481,16 @@ export class OrdersOperationsPageComponent implements OnInit {
   protected readonly loadingBilling = signal(false);
   protected readonly loadingPreview = signal(false);
   protected readonly loadingReimport = signal(false);
+  protected readonly loadingRevisions = signal(false);
   protected readonly ordersError = signal<string | null>(null);
   protected readonly localError = signal<string | null>(null);
   protected readonly previewError = signal<string | null>(null);
+  protected readonly revisionsError = signal<string | null>(null);
   protected readonly ordersPage = signal<SearchLegacyOrdersResponse | null>(null);
   protected readonly importedOrder = signal<ImportLegacyOrderResponse | null>(null);
   protected readonly importConflict = signal<ImportLegacyOrderConflictViewModel | null>(null);
   protected readonly importPreview = signal<ImportLegacyOrderPreviewViewModel | null>(null);
+  protected readonly revisionHistory = signal<ImportLegacyOrderRevisionHistoryResponse | null>(null);
   protected readonly billingDocument = signal<CreateBillingDocumentResponse | null>(null);
   protected readonly selectedLegacyOrderId = signal<string | null>(null);
   protected readonly billingButtonLabel = computed(() =>
@@ -424,6 +502,12 @@ export class OrdersOperationsPageComponent implements OnInit {
 
     return validateCustomRange(this.fromDate(), this.toDate(), this.today());
   });
+  protected readonly currentRevisionNumber = computed(() =>
+    this.revisionHistory()?.currentRevisionNumber
+      ?? this.importPreview()?.currentRevisionNumber
+      ?? this.importedOrder()?.currentRevisionNumber
+      ?? this.importConflict()?.currentRevisionNumber
+      ?? null);
 
   ngOnInit(): void {
     this.applyQuickRange('today');
@@ -485,6 +569,8 @@ export class OrdersOperationsPageComponent implements OnInit {
     this.importConflict.set(null);
     this.importPreview.set(null);
     this.previewError.set(null);
+    this.revisionHistory.set(null);
+    this.revisionsError.set(null);
     this.selectedLegacyOrderId.set(order.legacyOrderId);
     this.legacyOrderId = order.legacyOrderId;
     this.importedOrder.set(toImportedOrder(order));
@@ -583,6 +669,8 @@ export class OrdersOperationsPageComponent implements OnInit {
     this.importConflict.set(null);
     this.importPreview.set(null);
     this.previewError.set(null);
+    this.revisionHistory.set(null);
+    this.revisionsError.set(null);
     this.billingDocument.set(null);
     this.loadingImportOrderId.set(loadingKey);
 
@@ -655,6 +743,7 @@ export class OrdersOperationsPageComponent implements OnInit {
         confirmationMode: 'ReplaceExistingImport'
       }));
       this.applyReimportSuccess(response);
+      await this.loadRevisionHistory(legacyOrderId);
     } catch (error) {
       this.previewError.set(extractErrorMessage(error));
     } finally {
@@ -698,6 +787,20 @@ export class OrdersOperationsPageComponent implements OnInit {
     this.feedbackService.show('success', 'La importación existente fue reemplazada con el estado actual de Legacy.');
   }
 
+  protected async loadRevisionHistory(legacyOrderId: string): Promise<void> {
+    this.revisionsError.set(null);
+    this.loadingRevisions.set(true);
+
+    try {
+      const response = await firstValueFrom(this.ordersApi.listLegacyOrderImportRevisions(legacyOrderId));
+      this.revisionHistory.set(response);
+    } catch (error) {
+      this.revisionsError.set(extractErrorMessage(error));
+    } finally {
+      this.loadingRevisions.set(false);
+    }
+  }
+
   protected openExistingSalesOrderConflict(conflict: ImportLegacyOrderConflictViewModel): void {
     this.importedOrder.set({
       outcome: 'Conflict',
@@ -721,6 +824,7 @@ export class OrdersOperationsPageComponent implements OnInit {
       importedAtUtc: conflict.importedAtUtc,
       existingSourceHash: conflict.existingSourceHash,
       currentSourceHash: conflict.currentSourceHash,
+      currentRevisionNumber: conflict.currentRevisionNumber ?? undefined,
       allowedActions: conflict.allowedActions
     });
 
@@ -837,6 +941,7 @@ function toReimportedOrder(response: ReimportLegacyOrderResponse): ImportLegacyO
     legacyImportRecordId: response.legacyImportRecordId ?? null,
     salesOrderId: response.salesOrderId ?? null,
     importStatus: 'Imported',
+    currentRevisionNumber: response.currentRevisionNumber,
     existingSalesOrderId: response.salesOrderId ?? null,
     existingSalesOrderStatus: response.salesOrderStatus ?? null,
     existingBillingDocumentId: response.billingDocumentId ?? null,
@@ -886,6 +991,7 @@ function toImportedOrder(order: LegacyOrderListItem): ImportLegacyOrderResponse 
     sourceHash: '',
     salesOrderId: order.salesOrderId ?? null,
     importStatus: order.importStatus ?? 'Imported',
+    currentRevisionNumber: undefined,
     allowedActions: []
   };
 }

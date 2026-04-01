@@ -9,6 +9,7 @@ When the legacy order was already imported and the newly read snapshot produces 
 Conflict payload fields:
 - `errorCode = LegacyOrderAlreadyImportedWithDifferentSourceHash`
 - `legacyOrderId`
+- `currentRevisionNumber`
 - `existingSalesOrderId`
 - `existingSalesOrderStatus`
 - `existingBillingDocumentId`
@@ -44,6 +45,7 @@ Response includes:
 - existing linked entities (`sales_order`, `billing_document`, `fiscal_document`)
 - `existingSourceHash`
 - `currentSourceHash`
+- `currentRevisionNumber`
 - `hasChanges`
 - `changedOrderFields`
 - `changeSummary`
@@ -86,6 +88,7 @@ Successful response includes:
 - `fiscalDocumentStatus`
 - `previousSourceHash`
 - `newSourceHash`
+- `currentRevisionNumber`
 - `reimportApplied`
 - `reimportMode`
 - `reimportEligibility`
@@ -106,7 +109,39 @@ Current 2B replace strategy:
 - preserve the existing ids and relationships instead of creating versioned replacements
 - update the existing `legacy_import_record` hash and timestamps
 
-Out of scope for this phase:
-- full version history/revisions
+## GET `/api/orders/{legacyOrderId}/import-revisions`
+
+This endpoint exposes the formal revision history for a previously imported legacy order.
+
+Response includes:
+- `legacyOrderId`
+- `currentRevisionNumber`
+- `revisions[]`
+
+Each revision currently persists:
+- `revisionNumber`
+- `previousRevisionNumber`
+- `actionType`: `Imported` or `Reimported`
+- `outcome`
+- `sourceHash`
+- `previousSourceHash`
+- `appliedAtUtc`
+- `isCurrent`
+- actor metadata when available (`actorUserId`, `actorUsername`)
+- impacted entities (`salesOrderId`, `billingDocumentId`, `fiscalDocumentId`)
+- `eligibilityStatus`, `eligibilityReasonCode`, `eligibilityReasonMessage`
+- `changeSummary`
+- `snapshotJson`
+- `diffJson`
+
+Phase 3 revision model:
+- keep operational entities (`sales_order`, `billing_document`, `fiscal_document`) in place
+- persist a formal `legacy_import_revision` history row on initial import and every successful reimport
+- mark exactly one revision as current per `legacy_import_record`
+- preserve previous revisions for audit and operator traceability
+- if an older imported record has no persisted revision rows yet, the history endpoint synthesizes a compatibility `revision 1` view instead of failing
+
+Still out of scope after this phase:
+- rollback/revert execution from a historical revision
+- deep entity snapshot/version branching beyond the revision payload
 - overwrite of stamped or protected fiscal states
-- aggressive reconciliation heuristics beyond the existing replace-in-place strategy

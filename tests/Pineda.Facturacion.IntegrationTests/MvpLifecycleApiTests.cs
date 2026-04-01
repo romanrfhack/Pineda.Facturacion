@@ -239,6 +239,8 @@ public class MvpLifecycleApiTests
         Assert.Null(body.ExistingBillingDocumentId);
         Assert.Null(body.ExistingFiscalDocumentId);
         Assert.NotNull(body.ImportedAtUtc);
+        Assert.NotNull(body.ExistingSourceHash);
+        Assert.NotNull(body.CurrentSourceHash);
         Assert.NotEmpty(body.ExistingSourceHash);
         Assert.NotEmpty(body.CurrentSourceHash);
         Assert.Contains("view_existing_sales_order", body.AllowedActions);
@@ -362,6 +364,7 @@ public class MvpLifecycleApiTests
         var importBody = await (await client.PostAsync("/api/orders/LEG-REIMPORT-1001/import", null))
             .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
         var salesOrderId = importBody!.SalesOrderId!.Value;
+        Assert.Equal(1, importBody.CurrentRevisionNumber);
 
         var billingBody = await (await client.PostAsJsonAsync($"/api/sales-orders/{salesOrderId}/billing-documents", new SalesOrdersEndpoints.CreateBillingDocumentRequest
         {
@@ -397,6 +400,7 @@ public class MvpLifecycleApiTests
         Assert.NotNull(reimportBody);
         Assert.True(reimportBody!.ReimportApplied);
         Assert.Equal("Reimported", reimportBody.Outcome);
+        Assert.Equal(2, reimportBody.CurrentRevisionNumber);
 
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
@@ -413,6 +417,17 @@ public class MvpLifecycleApiTests
         Assert.Equal(174m, fiscalDocument.Total);
         Assert.Equal(FiscalDocumentStatus.ReadyForStamping, fiscalDocument.Status);
         Assert.Equal(previewBody.CurrentSourceHash, importRecord.SourceHash);
+
+        var historyResponse = await client.GetAsync("/api/orders/LEG-REIMPORT-1001/import-revisions");
+        Assert.Equal(HttpStatusCode.OK, historyResponse.StatusCode);
+        var historyBody = await historyResponse.Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderRevisionHistoryResponse>();
+        Assert.NotNull(historyBody);
+        Assert.Equal(2, historyBody!.CurrentRevisionNumber);
+        Assert.Equal(2, historyBody.Revisions.Count);
+        Assert.Equal(2, historyBody.Revisions[0].RevisionNumber);
+        Assert.True(historyBody.Revisions[0].IsCurrent);
+        Assert.Equal("Reimported", historyBody.Revisions[0].ActionType);
+        Assert.Equal("Imported", historyBody.Revisions[1].ActionType);
     }
 
     [Fact]
@@ -467,6 +482,15 @@ public class MvpLifecycleApiTests
         Assert.NotNull(body);
         Assert.Equal("ReimportBlockedByStampedFiscalDocument", body!.ErrorCode);
         Assert.False(body.ReimportApplied);
+
+        var historyResponse = await client.GetAsync("/api/orders/LEG-REIMPORT-STAMPED/import-revisions");
+        Assert.Equal(HttpStatusCode.OK, historyResponse.StatusCode);
+        var historyBody = await historyResponse.Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderRevisionHistoryResponse>();
+        Assert.NotNull(historyBody);
+        Assert.Equal(1, historyBody!.CurrentRevisionNumber);
+        var currentRevision = Assert.Single(historyBody.Revisions);
+        Assert.True(currentRevision.IsCurrent);
+        Assert.Equal(1, currentRevision.RevisionNumber);
     }
 
     [Fact]

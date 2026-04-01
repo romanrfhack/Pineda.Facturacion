@@ -15,6 +15,7 @@ public sealed class PreviewLegacyOrderImportService
     private readonly IImportedLegacyOrderLookupRepository _importedLegacyOrderLookupRepository;
     private readonly ILegacyImportRecordRepository _legacyImportRecordRepository;
     private readonly ILegacyOrderReader _legacyOrderReader;
+    private readonly LegacyImportRevisionRecorder _legacyImportRevisionRecorder;
     private readonly ISalesOrderSnapshotRepository _salesOrderSnapshotRepository;
 
     public PreviewLegacyOrderImportService(
@@ -22,13 +23,15 @@ public sealed class PreviewLegacyOrderImportService
         ILegacyImportRecordRepository legacyImportRecordRepository,
         IImportedLegacyOrderLookupRepository importedLegacyOrderLookupRepository,
         ISalesOrderSnapshotRepository salesOrderSnapshotRepository,
-        IContentHashGenerator contentHashGenerator)
+        IContentHashGenerator contentHashGenerator,
+        LegacyImportRevisionRecorder legacyImportRevisionRecorder)
     {
         _legacyOrderReader = legacyOrderReader;
         _legacyImportRecordRepository = legacyImportRecordRepository;
         _importedLegacyOrderLookupRepository = importedLegacyOrderLookupRepository;
         _salesOrderSnapshotRepository = salesOrderSnapshotRepository;
         _contentHashGenerator = contentHashGenerator;
+        _legacyImportRevisionRecorder = legacyImportRevisionRecorder;
     }
 
     public async Task<PreviewLegacyOrderImportResult> ExecuteAsync(string legacyOrderId, CancellationToken cancellationToken = default)
@@ -73,6 +76,7 @@ public sealed class PreviewLegacyOrderImportService
         var currentSnapshot = LegacyOrderSnapshotMapper.MapToSalesOrder(currentLegacyOrder, existingSnapshot.LegacyImportRecordId);
         var lineDiff = BuildLineDiff(existingSnapshot, currentSnapshot);
         var changedOrderFields = BuildChangedOrderFields(existingSnapshot, currentSnapshot);
+        var currentRevisionNumber = await _legacyImportRevisionRecorder.ResolveCurrentRevisionNumberAsync(importRecord, cancellationToken);
         var hasChanges = !string.Equals(importRecord.SourceHash, currentSourceHash, StringComparison.Ordinal)
             || lineDiff.LineChanges.Count > 0
             || changedOrderFields.Count > 0;
@@ -92,6 +96,7 @@ public sealed class PreviewLegacyOrderImportService
             FiscalUuid = existingOrder.FiscalUuid,
             ExistingSourceHash = importRecord.SourceHash,
             CurrentSourceHash = currentSourceHash,
+            CurrentRevisionNumber = currentRevisionNumber,
             HasChanges = hasChanges,
             ChangedOrderFields = changedOrderFields,
             ChangeSummary = new PreviewLegacyOrderImportChangeSummary

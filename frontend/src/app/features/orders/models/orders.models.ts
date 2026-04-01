@@ -45,6 +45,7 @@ export interface ImportLegacyOrderResponse {
   importedAtUtc?: string | null;
   existingSourceHash?: string | null;
   currentSourceHash?: string | null;
+  currentRevisionNumber?: number;
   allowedActions?: ImportLegacyOrderAllowedAction[];
 }
 
@@ -107,6 +108,7 @@ export interface ImportLegacyOrderPreviewResponse {
   fiscalUuid?: string | null;
   existingSourceHash: string;
   currentSourceHash: string;
+  currentRevisionNumber: number;
   hasChanges: boolean;
   changedOrderFields: string[];
   changeSummary: ImportLegacyOrderPreviewChangeSummary;
@@ -176,9 +178,52 @@ export interface ReimportLegacyOrderResponse {
   fiscalUuid?: string | null;
   previousSourceHash: string;
   newSourceHash: string;
+  currentRevisionNumber: number;
   reimportApplied: boolean;
   reimportMode: string;
   reimportEligibility: ImportLegacyOrderPreviewEligibility;
   allowedActions: ImportLegacyOrderAllowedAction[];
   warnings: string[];
+}
+
+export interface ImportLegacyOrderRevisionHistoryResponse {
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  legacyOrderId: string;
+  currentRevisionNumber: number;
+  revisions: ImportLegacyOrderRevision[];
+}
+
+export interface ImportLegacyOrderRevision {
+  legacyOrderId: string;
+  revisionNumber: number;
+  previousRevisionNumber?: number | null;
+  actionType: string;
+  outcome: string;
+  sourceHash: string;
+  previousSourceHash?: string | null;
+  appliedAtUtc: string;
+  isCurrent: boolean;
+  actorUserId?: number | null;
+  actorUsername?: string | null;
+  salesOrderId?: number | null;
+  billingDocumentId?: number | null;
+  fiscalDocumentId?: number | null;
+  eligibilityStatus: string;
+  eligibilityReasonCode: string;
+  eligibilityReasonMessage: string;
+  changeSummary: ImportLegacyOrderRevisionChangeSummary;
+  snapshotJson?: string | null;
+  diffJson?: string | null;
+}
+
+export interface ImportLegacyOrderRevisionChangeSummary {
+  addedLines: number;
+  removedLines: number;
+  modifiedLines: number;
+  unchangedLines: number;
+  oldSubtotal: number;
+  newSubtotal: number;
+  oldTotal: number;
+  newTotal: number;
 }

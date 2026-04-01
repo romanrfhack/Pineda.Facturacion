@@ -4,6 +4,7 @@ export interface ImportLegacyOrderPreviewViewModel {
   readonly legacyOrderId: string;
   readonly existingSourceHash: string;
   readonly currentSourceHash: string;
+  readonly currentRevisionNumber: number;
   readonly hasChanges: boolean;
   readonly changedOrderFields: string[];
   readonly addedLines: number;
@@ -26,6 +27,7 @@ export function adaptImportLegacyOrderPreview(response: ImportLegacyOrderPreview
     legacyOrderId: response.legacyOrderId,
     existingSourceHash: response.existingSourceHash,
     currentSourceHash: response.currentSourceHash,
+    currentRevisionNumber: response.currentRevisionNumber,
     hasChanges: response.hasChanges,
     changedOrderFields: response.changedOrderFields,
     addedLines: response.changeSummary.addedLines,

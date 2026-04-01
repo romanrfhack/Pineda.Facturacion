@@ -6,6 +6,7 @@ import {
   CreateBillingDocumentRequest,
   CreateBillingDocumentResponse,
   ImportLegacyOrderPreviewResponse,
+  ImportLegacyOrderRevisionHistoryResponse,
   ImportLegacyOrderResponse,
   ReimportLegacyOrderRequest,
   ReimportLegacyOrderResponse,
@@ -40,6 +41,10 @@ export class OrdersApiService {
 
   previewLegacyOrderImport(legacyOrderId: string): Observable<ImportLegacyOrderPreviewResponse> {
     return this.http.get<ImportLegacyOrderPreviewResponse>(buildApiUrl(`/orders/${legacyOrderId}/import-preview`));
+  }
+
+  listLegacyOrderImportRevisions(legacyOrderId: string): Observable<ImportLegacyOrderRevisionHistoryResponse> {
+    return this.http.get<ImportLegacyOrderRevisionHistoryResponse>(buildApiUrl(`/orders/${legacyOrderId}/import-revisions`));
   }
 
   reimportLegacyOrder(legacyOrderId: string, request: ReimportLegacyOrderRequest): Observable<ReimportLegacyOrderResponse> {

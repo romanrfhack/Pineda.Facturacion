@@ -53,7 +53,46 @@ describe('OrdersOperationsPageComponent', () => {
         sourceHash: 'hash',
         legacyImportRecordId: 10,
         salesOrderId: 20,
-        importStatus: 'Imported'
+        importStatus: 'Imported',
+        currentRevisionNumber: 1
+      })),
+      listLegacyOrderImportRevisions: vi.fn().mockReturnValue(of({
+        isSuccess: true,
+        legacyOrderId: 'LEG-1001',
+        currentRevisionNumber: 1,
+        revisions: [
+          {
+            legacyOrderId: 'LEG-1001',
+            revisionNumber: 1,
+            previousRevisionNumber: null,
+            actionType: 'Imported',
+            outcome: 'Imported',
+            sourceHash: 'hash',
+            previousSourceHash: null,
+            appliedAtUtc: '2026-03-23T10:00:00Z',
+            isCurrent: true,
+            actorUserId: 99,
+            actorUsername: 'tester',
+            salesOrderId: 20,
+            billingDocumentId: null,
+            fiscalDocumentId: null,
+            eligibilityStatus: 'Allowed',
+            eligibilityReasonCode: 'None',
+            eligibilityReasonMessage: 'Initial legacy import created the first tracked revision.',
+            changeSummary: {
+              addedLines: 1,
+              removedLines: 0,
+              modifiedLines: 0,
+              unchangedLines: 0,
+              oldSubtotal: 0,
+              newSubtotal: 100,
+              oldTotal: 0,
+              newTotal: 116
+            },
+            snapshotJson: '{}',
+            diffJson: '{}'
+          }
+        ]
       })),
       previewLegacyOrderImport: vi.fn().mockReturnValue(of({
         isSuccess: true,
@@ -67,6 +106,7 @@ describe('OrdersOperationsPageComponent', () => {
         fiscalUuid: null,
         existingSourceHash: 'old-hash',
         currentSourceHash: 'new-hash',
+        currentRevisionNumber: 1,
         hasChanges: true,
         changedOrderFields: [],
         changeSummary: {
@@ -133,6 +173,7 @@ describe('OrdersOperationsPageComponent', () => {
         fiscalUuid: null,
         previousSourceHash: 'old-hash',
         newSourceHash: 'new-hash',
+        currentRevisionNumber: 2,
         reimportApplied: true,
         reimportMode: 'ReplaceExistingImport',
         reimportEligibility: {
@@ -435,6 +476,19 @@ describe('OrdersOperationsPageComponent', () => {
     expect(api.importLegacyOrder).toHaveBeenCalledTimes(1);
   });
 
+  it('renders the revision history and marks the current revision', async () => {
+    const { fixture, api } = await configure();
+
+    fixture.componentInstance['selectedLegacyOrderId'].set('LEG-1001');
+    await fixture.componentInstance['loadRevisionHistory']('LEG-1001');
+    fixture.detectChanges();
+
+    expect(api.listLegacyOrderImportRevisions).toHaveBeenCalledWith('LEG-1001');
+    expect(fixture.nativeElement.textContent).toContain('Historial de importaciones Legacy');
+    expect(fixture.nativeElement.textContent).toContain('Revisión 1');
+    expect(fixture.nativeElement.textContent).toContain('Actual');
+  });
+
   it('renders blocked preview eligibility clearly', async () => {
     const { fixture } = await configure({
       importLegacyOrder: vi.fn().mockReturnValue(throwError(() =>
@@ -458,6 +512,7 @@ describe('OrdersOperationsPageComponent', () => {
         legacyOrderId: 'LEG-1001',
         existingSourceHash: 'old-hash',
         currentSourceHash: 'new-hash',
+        currentRevisionNumber: 2,
         hasChanges: true,
         changedOrderFields: [],
         changeSummary: {
@@ -513,6 +568,7 @@ describe('OrdersOperationsPageComponent', () => {
         legacyOrderId: 'LEG-1001',
         existingSourceHash: 'same-hash',
         currentSourceHash: 'same-hash',
+        currentRevisionNumber: 2,
         hasChanges: false,
         changedOrderFields: [],
         changeSummary: {

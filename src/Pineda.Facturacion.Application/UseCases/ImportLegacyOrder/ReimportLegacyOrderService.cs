@@ -18,6 +18,7 @@ public sealed class ReimportLegacyOrderService
     private readonly ILegacyOrderReader _legacyOrderReader;
     private readonly IContentHashGenerator _contentHashGenerator;
     private readonly ILegacyImportRecordRepository _legacyImportRecordRepository;
+    private readonly LegacyImportRevisionRecorder _legacyImportRevisionRecorder;
     private readonly ISalesOrderRepository _salesOrderRepository;
     private readonly IBillingDocumentRepository _billingDocumentRepository;
     private readonly IFiscalDocumentRepository _fiscalDocumentRepository;
@@ -29,6 +30,7 @@ public sealed class ReimportLegacyOrderService
         ILegacyOrderReader legacyOrderReader,
         IContentHashGenerator contentHashGenerator,
         ILegacyImportRecordRepository legacyImportRecordRepository,
+        LegacyImportRevisionRecorder legacyImportRevisionRecorder,
         ISalesOrderRepository salesOrderRepository,
         IBillingDocumentRepository billingDocumentRepository,
         IFiscalDocumentRepository fiscalDocumentRepository,
@@ -39,6 +41,7 @@ public sealed class ReimportLegacyOrderService
         _legacyOrderReader = legacyOrderReader;
         _contentHashGenerator = contentHashGenerator;
         _legacyImportRecordRepository = legacyImportRecordRepository;
+        _legacyImportRevisionRecorder = legacyImportRevisionRecorder;
         _salesOrderRepository = salesOrderRepository;
         _billingDocumentRepository = billingDocumentRepository;
         _fiscalDocumentRepository = fiscalDocumentRepository;
@@ -217,9 +220,7 @@ public sealed class ReimportLegacyOrderService
             importRecord.BillingDocumentId = billingDocument?.Id ?? importRecord.BillingDocumentId;
             await _legacyImportRecordRepository.UpdateAsync(importRecord, cancellationToken);
 
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-            return new ReimportLegacyOrderResult
+            var revisionDraft = new ReimportLegacyOrderResult
             {
                 Outcome = ReimportLegacyOrderOutcome.Reimported,
                 IsSuccess = true,
@@ -249,6 +250,18 @@ public sealed class ReimportLegacyOrderService
                     ExistingSourceHash = applyHash
                 })
             };
+
+            var currentRevisionNumber = await _legacyImportRevisionRecorder.RecordReimportedAsync(
+                importRecord,
+                preview,
+                revisionDraft,
+                currentLegacyOrder,
+                cancellationToken);
+
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            revisionDraft.CurrentRevisionNumber = currentRevisionNumber;
+            return revisionDraft;
         }
         catch (InvalidOperationException exception)
         {

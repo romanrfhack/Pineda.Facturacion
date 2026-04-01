@@ -214,7 +214,18 @@ Current 2B operator rules:
 - reimport stays disabled unless preview eligibility is `Allowed`
 - stamped or protected fiscal states remain blocked
 - stale previews must be regenerated before retrying
-- full version history is still deferred to Phase 3
+
+## Legacy import revisions
+The Orders screen now exposes a compact revision-history panel for imported legacy orders.
+
+Current Phase 3 UI behavior:
+- shows the current revision number in conflict/preview context when available
+- lets the operator fetch `GET /api/orders/{legacyOrderId}/import-revisions`
+- lists preserved revisions with a clear `Actual` marker for the current one
+- shows the per-revision summary that matters operationally: action, hashes, apply date, impacted entities, and change totals
+- keeps the UX read-only; no rollback or destructive history actions are introduced in this phase
+
+Phase 3 intentionally keeps the operational replace-in-place flow from 2B, but adds formal history for audit and operator traceability.
 
 ## Destructive-action confirmations
 The UI requires explicit confirmation before:

@@ -19,6 +19,7 @@ describe('import-legacy-order-conflict', () => {
       importedAtUtc: '2026-04-01T12:00:00Z',
       existingSourceHash: 'abc',
       currentSourceHash: 'xyz',
+      currentRevisionNumber: 2,
       allowedActions: ['view_existing_sales_order', 'view_existing_billing_document', 'view_existing_fiscal_document', 'reimport_not_available']
     });
 
@@ -36,6 +37,7 @@ describe('import-legacy-order-conflict', () => {
       importedAtUtc: '2026-04-01T12:00:00Z',
       existingSourceHash: 'abc',
       currentSourceHash: 'xyz',
+      currentRevisionNumber: 2,
       allowedActions: ['view_existing_sales_order', 'view_existing_billing_document', 'view_existing_fiscal_document', 'reimport_not_available']
     });
   });

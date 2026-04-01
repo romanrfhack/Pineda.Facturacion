@@ -13,6 +13,7 @@ public class ImportLegacyOrderService
     private readonly IImportedLegacyOrderLookupRepository _importedLegacyOrderLookupRepository;
     private readonly ILegacyImportRecordRepository _legacyImportRecordRepository;
     private readonly ILegacyOrderReader _legacyOrderReader;
+    private readonly LegacyImportRevisionRecorder _legacyImportRevisionRecorder;
     private readonly ISalesOrderRepository _salesOrderRepository;
     private readonly IUnitOfWork _unitOfWork;
 
@@ -22,7 +23,8 @@ public class ImportLegacyOrderService
         IImportedLegacyOrderLookupRepository importedLegacyOrderLookupRepository,
         ISalesOrderRepository salesOrderRepository,
         IUnitOfWork unitOfWork,
-        IContentHashGenerator contentHashGenerator)
+        IContentHashGenerator contentHashGenerator,
+        LegacyImportRevisionRecorder legacyImportRevisionRecorder)
     {
         _legacyOrderReader = legacyOrderReader;
         _legacyImportRecordRepository = legacyImportRecordRepository;
@@ -30,6 +32,7 @@ public class ImportLegacyOrderService
         _salesOrderRepository = salesOrderRepository;
         _unitOfWork = unitOfWork;
         _contentHashGenerator = contentHashGenerator;
+        _legacyImportRevisionRecorder = legacyImportRevisionRecorder;
     }
 
     public async Task<ImportLegacyOrderResult> ExecuteAsync(
@@ -98,6 +101,8 @@ public class ImportLegacyOrderService
 
         await _legacyImportRecordRepository.UpdateAsync(importRecord, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        var currentRevisionNumber = await _legacyImportRevisionRecorder.RecordImportedAsync(importRecord, legacyOrder, salesOrder, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return new ImportLegacyOrderResult
         {
@@ -109,7 +114,8 @@ public class ImportLegacyOrderService
             SourceHash = sourceHash,
             LegacyImportRecordId = importRecord.Id,
             SalesOrderId = salesOrder.Id,
-            ImportStatus = importRecord.ImportStatus
+            ImportStatus = importRecord.ImportStatus,
+            CurrentRevisionNumber = currentRevisionNumber
         };
     }
 
@@ -149,6 +155,7 @@ public class ImportLegacyOrderService
                 ImportedAtUtc = importedOrder?.ImportedAtUtc ?? existingImportRecord.ImportedAtUtc,
                 ExistingSourceHash = importedOrder?.ExistingSourceHash ?? existingImportRecord.SourceHash,
                 CurrentSourceHash = sourceHash,
+                CurrentRevisionNumber = await _legacyImportRevisionRecorder.ResolveCurrentRevisionNumberAsync(existingImportRecord, cancellationToken),
                 AllowedActions = BuildAllowedActions(importedOrder)
             };
         }
@@ -168,7 +175,8 @@ public class ImportLegacyOrderService
             SourceHash = sourceHash,
             LegacyImportRecordId = existingImportRecord.Id,
             SalesOrderId = existingSalesOrder?.Id,
-            ImportStatus = existingImportRecord.ImportStatus
+            ImportStatus = existingImportRecord.ImportStatus,
+            CurrentRevisionNumber = await _legacyImportRevisionRecorder.ResolveCurrentRevisionNumberAsync(existingImportRecord, cancellationToken)
         };
     }
 

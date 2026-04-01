@@ -2,6 +2,7 @@ using Pineda.Facturacion.Application.Abstractions.Hashing;
 using Pineda.Facturacion.Application.Abstractions.Legacy;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Models.Legacy;
+using Pineda.Facturacion.Application.Security;
 using Pineda.Facturacion.Application.UseCases.ImportLegacyOrder;
 using Pineda.Facturacion.Application.UseCases.ImportLegacyOrderPreview;
 using Pineda.Facturacion.Domain.Entities;
@@ -34,6 +35,7 @@ public class ReimportLegacyOrderServiceTests
         Assert.Equal(ReimportLegacyOrderOutcome.Reimported, result.Outcome);
         Assert.Equal("old-hash", result.PreviousSourceHash);
         Assert.Equal("new-hash", result.NewSourceHash);
+        Assert.Equal(2, result.CurrentRevisionNumber);
         Assert.True(result.ReimportApplied);
         Assert.Equal(150m, salesOrder.Subtotal);
         Assert.Equal(24m, salesOrder.TaxTotal);
@@ -51,6 +53,9 @@ public class ReimportLegacyOrderServiceTests
         Assert.Single(fiscalDocument.Items);
         Assert.Equal(2m, fiscalDocument.Items[0].Quantity);
         Assert.Equal(1, repositories.UnitOfWork.SaveChangesCallCount);
+        Assert.Equal(2, repositories.LegacyImportRevisionRepository.Revisions.Count);
+        var currentRevision = Assert.Single(repositories.LegacyImportRevisionRepository.Revisions, x => x.IsCurrent);
+        Assert.Equal(2, currentRevision.RevisionNumber);
     }
 
     [Fact]
@@ -148,18 +153,23 @@ public class ReimportLegacyOrderServiceTests
     {
         var legacyReader = new FakeLegacyOrderReader { Result = currentLegacyOrder };
         var hashGenerator = new FakeContentHashGenerator { Hash = currentSourceHash };
+        var revisionRecorder = new LegacyImportRevisionRecorder(
+            repositories.LegacyImportRevisionRepository,
+            new FakeCurrentUserAccessor());
         var previewService = new PreviewLegacyOrderImportService(
             legacyReader,
             repositories.LegacyImportRecordRepository,
             repositories.ImportedLookupRepository,
             repositories.SalesOrderRepository,
-            hashGenerator);
+            hashGenerator,
+            revisionRecorder);
 
         return new ReimportLegacyOrderService(
             previewService,
             legacyReader,
             hashGenerator,
             repositories.LegacyImportRecordRepository,
+            revisionRecorder,
             repositories.SalesOrderRepository,
             repositories.BillingDocumentRepository,
             repositories.FiscalDocumentRepository,
@@ -190,6 +200,24 @@ public class ReimportLegacyOrderServiceTests
         return new TestRepositories
         {
             LegacyImportRecordRepository = new FakeLegacyImportRecordRepository { Existing = importRecord },
+            LegacyImportRevisionRepository = new FakeLegacyImportRevisionRepository
+            {
+                Revisions =
+                {
+                    new LegacyImportRevision
+                    {
+                        Id = 1,
+                        LegacyImportRecordId = importRecord.Id,
+                        LegacyOrderId = currentLegacyOrder.LegacyOrderId,
+                        RevisionNumber = 1,
+                        ActionType = "Imported",
+                        Outcome = "Imported",
+                        SourceHash = importRecord.SourceHash,
+                        AppliedAtUtc = importRecord.ImportedAtUtc ?? DateTime.UtcNow,
+                        IsCurrent = true
+                    }
+                }
+            },
             ImportedLookupRepository = importedLookupRepository,
             SalesOrderRepository = salesOrderRepository,
             BillingDocumentRepository = new FakeBillingDocumentRepository { Existing = billingDocument },
@@ -412,12 +440,42 @@ public class ReimportLegacyOrderServiceTests
     private sealed class TestRepositories
     {
         public required FakeLegacyImportRecordRepository LegacyImportRecordRepository { get; init; }
+        public required FakeLegacyImportRevisionRepository LegacyImportRevisionRepository { get; init; }
         public required FakeImportedLegacyOrderLookupRepository ImportedLookupRepository { get; init; }
         public required FakeSalesOrderRepository SalesOrderRepository { get; init; }
         public required FakeBillingDocumentRepository BillingDocumentRepository { get; init; }
         public required FakeFiscalDocumentRepository FiscalDocumentRepository { get; init; }
         public required FakeProductFiscalProfileRepository ProductFiscalProfileRepository { get; init; }
         public required FakeUnitOfWork UnitOfWork { get; init; }
+    }
+
+    private sealed class FakeLegacyImportRevisionRepository : ILegacyImportRevisionRepository
+    {
+        public List<LegacyImportRevision> Revisions { get; } = [];
+
+        public Task<LegacyImportRevision?> GetCurrentByLegacyImportRecordIdAsync(long legacyImportRecordId, CancellationToken cancellationToken = default)
+            => Task.FromResult(Revisions.Where(x => x.LegacyImportRecordId == legacyImportRecordId && x.IsCurrent).OrderByDescending(x => x.RevisionNumber).FirstOrDefault());
+
+        public Task<LegacyImportRevision?> GetTrackedCurrentByLegacyImportRecordIdAsync(long legacyImportRecordId, CancellationToken cancellationToken = default)
+            => GetCurrentByLegacyImportRecordIdAsync(legacyImportRecordId, cancellationToken);
+
+        public Task<IReadOnlyList<LegacyImportRevision>> ListByLegacyImportRecordIdAsync(long legacyImportRecordId, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<LegacyImportRevision>>(Revisions.Where(x => x.LegacyImportRecordId == legacyImportRecordId).OrderByDescending(x => x.RevisionNumber).ToArray());
+
+        public Task<int> GetNextRevisionNumberAsync(long legacyImportRecordId, CancellationToken cancellationToken = default)
+            => Task.FromResult(Revisions.Where(x => x.LegacyImportRecordId == legacyImportRecordId).Select(x => x.RevisionNumber).DefaultIfEmpty(0).Max() + 1);
+
+        public Task AddAsync(LegacyImportRevision revision, CancellationToken cancellationToken = default)
+        {
+            revision.Id = Revisions.Count + 1;
+            Revisions.Add(revision);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FakeCurrentUserAccessor : Pineda.Facturacion.Application.Abstractions.Security.ICurrentUserAccessor
+    {
+        public CurrentUserContext GetCurrentUser() => new() { IsAuthenticated = true, UserId = 99, Username = "tester" };
     }
 
     private sealed class FakeLegacyOrderReader : ILegacyOrderReader

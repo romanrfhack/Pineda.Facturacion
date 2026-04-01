@@ -7,6 +7,7 @@ describe('import-legacy-order-preview', () => {
       legacyOrderId: '1173481',
       existingSourceHash: 'abc',
       currentSourceHash: 'xyz',
+      currentRevisionNumber: 3,
       hasChanges: true,
       changedOrderFields: ['paymentCondition'],
       changeSummary: {
@@ -31,6 +32,7 @@ describe('import-legacy-order-preview', () => {
     expect(viewModel.legacyOrderId).toBe('1173481');
     expect(viewModel.existingSourceHash).toBe('abc');
     expect(viewModel.currentSourceHash).toBe('xyz');
+    expect(viewModel.currentRevisionNumber).toBe(3);
     expect(viewModel.hasChanges).toBe(true);
     expect(viewModel.addedLines).toBe(1);
     expect(viewModel.oldTotal).toBe(696);

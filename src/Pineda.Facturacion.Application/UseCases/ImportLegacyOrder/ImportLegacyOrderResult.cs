@@ -56,5 +56,7 @@ public class ImportLegacyOrderResult
 
     public string? CurrentSourceHash { get; set; }
 
+    public int CurrentRevisionNumber { get; set; }
+
     public IReadOnlyList<string> AllowedActions { get; set; } = [];
 }

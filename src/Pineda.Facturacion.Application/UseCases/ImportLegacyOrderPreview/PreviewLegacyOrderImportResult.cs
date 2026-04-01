@@ -26,6 +26,8 @@ public sealed class PreviewLegacyOrderImportResult
 
     public string CurrentSourceHash { get; set; } = string.Empty;
 
+    public int CurrentRevisionNumber { get; set; }
+
     public bool HasChanges { get; set; }
 
     public IReadOnlyList<string> ChangedOrderFields { get; set; } = [];

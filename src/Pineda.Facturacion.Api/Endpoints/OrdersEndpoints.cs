@@ -43,6 +43,14 @@ public static class OrdersEndpoints
             .Produces<ImportLegacyOrderPreviewResponse>(StatusCodes.Status200OK)
             .Produces<ImportLegacyOrderPreviewResponse>(StatusCodes.Status404NotFound);
 
+        group.MapGet("/{legacyOrderId}/import-revisions", ListImportRevisionsAsync)
+            .WithName("ListLegacyOrderImportRevisions")
+            .WithSummary("List tracked import revisions for a legacy order")
+            .WithDescription("Returns the current tracked revision and preserved revision history for an imported legacy order.")
+            .Produces<ImportLegacyOrderRevisionHistoryResponse>(StatusCodes.Status200OK)
+            .Produces<ImportLegacyOrderRevisionHistoryResponse>(StatusCodes.Status400BadRequest)
+            .Produces<ImportLegacyOrderRevisionHistoryResponse>(StatusCodes.Status404NotFound);
+
         group.MapPost("/{legacyOrderId}/reimport", ReimportOrderAsync)
             .WithName("ReimportLegacyOrder")
             .WithSummary("Apply a controlled reimport for an existing legacy snapshot")
@@ -169,6 +177,7 @@ public static class OrdersEndpoints
             ImportedAtUtc = result.ImportedAtUtc,
             ExistingSourceHash = result.ExistingSourceHash,
             CurrentSourceHash = result.CurrentSourceHash,
+            CurrentRevisionNumber = result.CurrentRevisionNumber,
             AllowedActions = result.AllowedActions
         };
 
@@ -213,6 +222,7 @@ public static class OrdersEndpoints
             FiscalUuid = result.FiscalUuid,
             ExistingSourceHash = result.ExistingSourceHash,
             CurrentSourceHash = result.CurrentSourceHash,
+            CurrentRevisionNumber = result.CurrentRevisionNumber,
             HasChanges = result.HasChanges,
             ChangedOrderFields = result.ChangedOrderFields,
             ChangeSummary = new ImportLegacyOrderPreviewChangeSummaryResponse
@@ -248,6 +258,63 @@ public static class OrdersEndpoints
             : TypedResults.NotFound(response);
     }
 
+    private static async Task<Results<Ok<ImportLegacyOrderRevisionHistoryResponse>, BadRequest<ImportLegacyOrderRevisionHistoryResponse>, NotFound<ImportLegacyOrderRevisionHistoryResponse>>> ListImportRevisionsAsync(
+        string legacyOrderId,
+        ListLegacyImportRevisionsService service,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(legacyOrderId, cancellationToken);
+        var response = new ImportLegacyOrderRevisionHistoryResponse
+        {
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            LegacyOrderId = result.LegacyOrderId,
+            CurrentRevisionNumber = result.CurrentRevisionNumber,
+            Revisions = result.Revisions.Select(revision => new ImportLegacyOrderRevisionResponse
+            {
+                LegacyOrderId = revision.LegacyOrderId,
+                RevisionNumber = revision.RevisionNumber,
+                PreviousRevisionNumber = revision.PreviousRevisionNumber,
+                ActionType = revision.ActionType,
+                Outcome = revision.Outcome,
+                SourceHash = revision.SourceHash,
+                PreviousSourceHash = revision.PreviousSourceHash,
+                AppliedAtUtc = revision.AppliedAtUtc,
+                IsCurrent = revision.IsCurrent,
+                ActorUserId = revision.ActorUserId,
+                ActorUsername = revision.ActorUsername,
+                SalesOrderId = revision.SalesOrderId,
+                BillingDocumentId = revision.BillingDocumentId,
+                FiscalDocumentId = revision.FiscalDocumentId,
+                EligibilityStatus = revision.EligibilityStatus,
+                EligibilityReasonCode = revision.EligibilityReasonCode,
+                EligibilityReasonMessage = revision.EligibilityReasonMessage,
+                ChangeSummary = new ImportLegacyOrderRevisionChangeSummaryResponse
+                {
+                    AddedLines = revision.ChangeSummary.AddedLines,
+                    RemovedLines = revision.ChangeSummary.RemovedLines,
+                    ModifiedLines = revision.ChangeSummary.ModifiedLines,
+                    UnchangedLines = revision.ChangeSummary.UnchangedLines,
+                    OldSubtotal = revision.ChangeSummary.OldSubtotal,
+                    NewSubtotal = revision.ChangeSummary.NewSubtotal,
+                    OldTotal = revision.ChangeSummary.OldTotal,
+                    NewTotal = revision.ChangeSummary.NewTotal
+                },
+                SnapshotJson = revision.SnapshotJson,
+                DiffJson = revision.DiffJson
+            }).ToArray()
+        };
+
+        if (result.IsSuccess)
+        {
+            return TypedResults.Ok(response);
+        }
+
+        return string.IsNullOrWhiteSpace(legacyOrderId)
+            ? TypedResults.BadRequest(response)
+            : TypedResults.NotFound(response);
+    }
+
     private static async Task<Results<Ok<ReimportLegacyOrderResponse>, BadRequest<ReimportLegacyOrderResponse>, NotFound<ReimportLegacyOrderResponse>, Conflict<ReimportLegacyOrderResponse>>> ReimportOrderAsync(
         string legacyOrderId,
         ReimportLegacyOrderRequest request,
@@ -280,6 +347,7 @@ public static class OrdersEndpoints
             FiscalUuid = result.FiscalUuid,
             PreviousSourceHash = result.PreviousSourceHash,
             NewSourceHash = result.NewSourceHash,
+            CurrentRevisionNumber = result.CurrentRevisionNumber,
             ReimportApplied = result.ReimportApplied,
             ReimportMode = result.ReimportMode,
             ReimportEligibility = new ImportLegacyOrderPreviewEligibilityResponse
@@ -374,6 +442,8 @@ public static class OrdersEndpoints
 
         public string? CurrentSourceHash { get; init; }
 
+        public int CurrentRevisionNumber { get; init; }
+
         public IReadOnlyList<string> AllowedActions { get; init; } = [];
     }
 
@@ -460,6 +530,8 @@ public static class OrdersEndpoints
         public string ExistingSourceHash { get; init; } = string.Empty;
 
         public string CurrentSourceHash { get; init; } = string.Empty;
+
+        public int CurrentRevisionNumber { get; init; }
 
         public bool HasChanges { get; init; }
 
@@ -581,6 +653,8 @@ public static class OrdersEndpoints
 
         public string NewSourceHash { get; init; } = string.Empty;
 
+        public int CurrentRevisionNumber { get; init; }
+
         public bool ReimportApplied { get; init; }
 
         public string ReimportMode { get; init; } = string.Empty;
@@ -590,6 +664,81 @@ public static class OrdersEndpoints
         public IReadOnlyList<string> AllowedActions { get; init; } = [];
 
         public IReadOnlyList<string> Warnings { get; init; } = [];
+    }
+
+    public sealed class ImportLegacyOrderRevisionHistoryResponse
+    {
+        public bool IsSuccess { get; init; }
+
+        public string? ErrorMessage { get; init; }
+
+        public string LegacyOrderId { get; init; } = string.Empty;
+
+        public int CurrentRevisionNumber { get; init; }
+
+        public IReadOnlyList<ImportLegacyOrderRevisionResponse> Revisions { get; init; } = [];
+    }
+
+    public sealed class ImportLegacyOrderRevisionResponse
+    {
+        public string LegacyOrderId { get; init; } = string.Empty;
+
+        public int RevisionNumber { get; init; }
+
+        public int? PreviousRevisionNumber { get; init; }
+
+        public string ActionType { get; init; } = string.Empty;
+
+        public string Outcome { get; init; } = string.Empty;
+
+        public string SourceHash { get; init; } = string.Empty;
+
+        public string? PreviousSourceHash { get; init; }
+
+        public DateTime AppliedAtUtc { get; init; }
+
+        public bool IsCurrent { get; init; }
+
+        public long? ActorUserId { get; init; }
+
+        public string? ActorUsername { get; init; }
+
+        public long? SalesOrderId { get; init; }
+
+        public long? BillingDocumentId { get; init; }
+
+        public long? FiscalDocumentId { get; init; }
+
+        public string EligibilityStatus { get; init; } = string.Empty;
+
+        public string EligibilityReasonCode { get; init; } = string.Empty;
+
+        public string EligibilityReasonMessage { get; init; } = string.Empty;
+
+        public ImportLegacyOrderRevisionChangeSummaryResponse ChangeSummary { get; init; } = new();
+
+        public string? SnapshotJson { get; init; }
+
+        public string? DiffJson { get; init; }
+    }
+
+    public sealed class ImportLegacyOrderRevisionChangeSummaryResponse
+    {
+        public int AddedLines { get; init; }
+
+        public int RemovedLines { get; init; }
+
+        public int ModifiedLines { get; init; }
+
+        public int UnchangedLines { get; init; }
+
+        public decimal OldSubtotal { get; init; }
+
+        public decimal NewSubtotal { get; init; }
+
+        public decimal OldTotal { get; init; }
+
+        public decimal NewTotal { get; init; }
     }
 
     private static ImportLegacyOrderPreviewLineResponse? MapLine(PreviewLegacyOrderLineSnapshot? line)

@@ -2,6 +2,7 @@ using Pineda.Facturacion.Application.Abstractions.Hashing;
 using Pineda.Facturacion.Application.Abstractions.Legacy;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Models.Legacy;
+using Pineda.Facturacion.Application.Security;
 using Pineda.Facturacion.Application.UseCases.ImportLegacyOrder;
 using Pineda.Facturacion.Application.UseCases.ImportLegacyOrderPreview;
 using Pineda.Facturacion.Domain.Entities;
@@ -33,6 +34,7 @@ public class PreviewLegacyOrderImportServiceTests
         Assert.True(result.IsSuccess);
         Assert.False(result.HasChanges);
         Assert.Empty(result.LineChanges);
+        Assert.Equal(1, result.CurrentRevisionNumber);
         Assert.Equal(PreviewLegacyOrderReimportEligibilityStatus.NotNeededNoChanges, result.ReimportEligibility.Status);
         Assert.Equal(PreviewLegacyOrderReimportReasonCode.NoChangesDetected, result.ReimportEligibility.ReasonCode);
     }
@@ -219,7 +221,10 @@ public class PreviewLegacyOrderImportServiceTests
             },
             new FakeImportedLegacyOrderLookupRepository(existingOrderLookup),
             new FakeSalesOrderSnapshotRepository(existingSnapshot),
-            new FakeContentHashGenerator { Hash = currentSourceHash });
+            new FakeContentHashGenerator { Hash = currentSourceHash },
+            new LegacyImportRevisionRecorder(
+                new FakeLegacyImportRevisionRepository(),
+                new FakeCurrentUserAccessor()));
     }
 
     private static LegacyOrderReadModel CreateLegacyOrder()
@@ -329,6 +334,29 @@ public class PreviewLegacyOrderImportServiceTests
         public Task AddAsync(LegacyImportRecord legacyImportRecord, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
         public Task UpdateAsync(LegacyImportRecord legacyImportRecord, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class FakeLegacyImportRevisionRepository : ILegacyImportRevisionRepository
+    {
+        public Task<LegacyImportRevision?> GetCurrentByLegacyImportRecordIdAsync(long legacyImportRecordId, CancellationToken cancellationToken = default)
+            => Task.FromResult<LegacyImportRevision?>(null);
+
+        public Task<LegacyImportRevision?> GetTrackedCurrentByLegacyImportRecordIdAsync(long legacyImportRecordId, CancellationToken cancellationToken = default)
+            => Task.FromResult<LegacyImportRevision?>(null);
+
+        public Task<IReadOnlyList<LegacyImportRevision>> ListByLegacyImportRecordIdAsync(long legacyImportRecordId, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<LegacyImportRevision>>([]);
+
+        public Task<int> GetNextRevisionNumberAsync(long legacyImportRecordId, CancellationToken cancellationToken = default)
+            => Task.FromResult(1);
+
+        public Task AddAsync(LegacyImportRevision revision, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+    }
+
+    private sealed class FakeCurrentUserAccessor : Pineda.Facturacion.Application.Abstractions.Security.ICurrentUserAccessor
+    {
+        public CurrentUserContext GetCurrentUser() => new() { IsAuthenticated = true, UserId = 99, Username = "tester" };
     }
 
     private sealed class FakeImportedLegacyOrderLookupRepository : IImportedLegacyOrderLookupRepository
