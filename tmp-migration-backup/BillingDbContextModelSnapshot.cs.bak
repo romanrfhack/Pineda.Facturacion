@@ -1173,11 +1173,15 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
                         .HasColumnType("varchar(1000)")
                         .HasColumnName("error_message");
 
-                    b.Property<long>("FiscalDocumentId")
+                    b.Property<long?>("ExternalRepBaseDocumentId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("external_rep_base_document_id");
+
+                    b.Property<long?>("FiscalDocumentId")
                         .HasColumnType("bigint")
                         .HasColumnName("fiscal_document_id");
 
-                    b.Property<long>("FiscalStampId")
+                    b.Property<long?>("FiscalStampId")
                         .HasColumnType("bigint")
                         .HasColumnName("fiscal_stamp_id");
 
@@ -2814,15 +2818,11 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
                         .HasColumnType("char(3)")
                         .HasColumnName("currency_code");
 
-                    b.Property<long?>("ExternalRepBaseDocumentId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("external_rep_base_document_id");
-
-                    b.Property<long?>("FiscalDocumentId")
+                    b.Property<long>("FiscalDocumentId")
                         .HasColumnType("bigint")
                         .HasColumnName("fiscal_document_id");
 
-                    b.Property<long?>("FiscalStampId")
+                    b.Property<long>("FiscalStampId")
                         .HasColumnType("bigint")
                         .HasColumnName("fiscal_stamp_id");
 
