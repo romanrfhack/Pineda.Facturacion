@@ -4,6 +4,8 @@ import { Observable } from 'rxjs';
 import { buildApiUrl } from '../../../core/config/api-url';
 import {
   CancelPaymentComplementResponse,
+  ExternalRepBaseDocumentDetailResponse,
+  ExternalRepBaseDocumentImportResponse,
   InternalRepBaseDocumentDetailResponse,
   InternalRepBaseDocumentFilters,
   InternalRepBaseDocumentListResponse,
@@ -76,6 +78,21 @@ export class PaymentComplementsApiService {
     return this.http.post<StampInternalRepBaseDocumentPaymentComplementResponse>(
       buildApiUrl(`/payment-complements/base-documents/internal/${fiscalDocumentId}/stamp`),
       request
+    );
+  }
+
+  importExternalBaseDocumentXml(file: File): Observable<ExternalRepBaseDocumentImportResponse> {
+    const form = new FormData();
+    form.append('file', file, file.name);
+    return this.http.post<ExternalRepBaseDocumentImportResponse>(
+      buildApiUrl('/payment-complements/external-base-documents/import-xml'),
+      form
+    );
+  }
+
+  getExternalBaseDocumentById(externalRepBaseDocumentId: number): Observable<ExternalRepBaseDocumentDetailResponse> {
+    return this.http.get<ExternalRepBaseDocumentDetailResponse>(
+      buildApiUrl(`/payment-complements/external-base-documents/${externalRepBaseDocumentId}`)
     );
   }
 

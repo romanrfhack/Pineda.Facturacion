@@ -228,6 +228,59 @@ export interface StampInternalRepBaseDocumentPaymentComplementResponse {
   operationalState?: InternalRepBaseDocumentOperationalStateResponse | null;
 }
 
+export interface ExternalRepBaseDocumentImportResponse {
+  outcome: string;
+  isSuccess: boolean;
+  externalRepBaseDocumentId?: number | null;
+  validationStatus: string;
+  reasonCode: string;
+  reasonMessage: string;
+  errorMessage?: string | null;
+  uuid?: string | null;
+  issuerRfc?: string | null;
+  receiverRfc?: string | null;
+  paymentMethodSat?: string | null;
+  paymentFormSat?: string | null;
+  currencyCode?: string | null;
+  total?: number | null;
+  isDuplicate: boolean;
+}
+
+export interface ExternalRepBaseDocumentDetailResponse {
+  id: number;
+  uuid: string;
+  cfdiVersion: string;
+  documentType: string;
+  series: string;
+  folio: string;
+  issuedAtUtc: string;
+  issuerRfc: string;
+  issuerLegalName?: string | null;
+  receiverRfc: string;
+  receiverLegalName?: string | null;
+  currencyCode: string;
+  exchangeRate: number;
+  subtotal: number;
+  total: number;
+  paymentMethodSat: string;
+  paymentFormSat: string;
+  validationStatus: string;
+  reasonCode: string;
+  reasonMessage: string;
+  satStatus: string;
+  lastSatCheckAtUtc?: string | null;
+  lastSatExternalStatus?: string | null;
+  lastSatCancellationStatus?: string | null;
+  lastSatProviderCode?: string | null;
+  lastSatProviderMessage?: string | null;
+  lastSatRawResponseSummaryJson?: string | null;
+  sourceFileName: string;
+  xmlHash: string;
+  importedAtUtc: string;
+  importedByUserId?: number | null;
+  importedByUsername?: string | null;
+}
+
 export interface InternalRepBaseDocumentItemResponse {
   fiscalDocumentId: number;
   billingDocumentId?: number | null;

@@ -51,6 +51,8 @@ public class BillingDbContext : DbContext, IUnitOfWork
 
     public DbSet<InternalRepBaseDocumentState> InternalRepBaseDocumentStates => Set<InternalRepBaseDocumentState>();
 
+    public DbSet<ExternalRepBaseDocument> ExternalRepBaseDocuments => Set<ExternalRepBaseDocument>();
+
     public DbSet<AppUser> AppUsers => Set<AppUser>();
 
     public DbSet<AppRole> AppRoles => Set<AppRole>();

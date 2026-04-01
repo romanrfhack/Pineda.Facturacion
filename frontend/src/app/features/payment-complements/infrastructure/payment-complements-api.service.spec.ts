@@ -135,4 +135,60 @@ describe('PaymentComplementsApiService', () => {
     });
     httpTesting.verify();
   });
+
+  it('uploads an external xml invoice as form-data', () => {
+    const service = TestBed.inject(PaymentComplementsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+    const file = new File(['<cfdi:Comprobante />'], 'external.xml', { type: 'application/xml' });
+
+    service.importExternalBaseDocumentXml(file).subscribe();
+
+    const req = httpTesting.expectOne('/api/payment-complements/external-base-documents/import-xml');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body instanceof FormData).toBe(true);
+    req.flush({
+      outcome: 'Accepted',
+      isSuccess: true,
+      externalRepBaseDocumentId: 123,
+      validationStatus: 'Accepted',
+      reasonCode: 'Accepted',
+      reasonMessage: 'Factura importada.'
+    });
+    httpTesting.verify();
+  });
+
+  it('gets imported external rep base document detail', () => {
+    const service = TestBed.inject(PaymentComplementsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.getExternalBaseDocumentById(123).subscribe();
+
+    const req = httpTesting.expectOne('/api/payment-complements/external-base-documents/123');
+    expect(req.request.method).toBe('GET');
+    req.flush({
+      id: 123,
+      uuid: 'UUID-EXT-1',
+      cfdiVersion: '4.0',
+      documentType: 'I',
+      series: 'EXT',
+      folio: '1001',
+      issuedAtUtc: '2026-04-01T10:00:00Z',
+      issuerRfc: 'AAA010101AAA',
+      receiverRfc: 'BBB010101BBB',
+      currencyCode: 'MXN',
+      exchangeRate: 1,
+      subtotal: 100,
+      total: 116,
+      paymentMethodSat: 'PPD',
+      paymentFormSat: '99',
+      validationStatus: 'Accepted',
+      reasonCode: 'Accepted',
+      reasonMessage: 'Factura importada.',
+      satStatus: 'Active',
+      sourceFileName: 'external.xml',
+      xmlHash: 'HASH-1',
+      importedAtUtc: '2026-04-01T11:00:00Z'
+    });
+    httpTesting.verify();
+  });
 });

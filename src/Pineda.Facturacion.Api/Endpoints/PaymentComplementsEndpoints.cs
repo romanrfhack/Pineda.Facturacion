@@ -4,6 +4,7 @@ using Pineda.Facturacion.Application.Abstractions.Security;
 using Pineda.Facturacion.Application.Security;
 using Pineda.Facturacion.Application.UseCases.PaymentComplements;
 using Pineda.Facturacion.Domain.Entities;
+using Pineda.Facturacion.Domain.Enums;
 
 namespace Pineda.Facturacion.Api.Endpoints;
 
@@ -103,6 +104,22 @@ public static class PaymentComplementsEndpoints
             .Produces<StampInternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status404NotFound)
             .Produces<StampInternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status409Conflict)
             .Produces<StampInternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status503ServiceUnavailable);
+
+        group.MapPost("/external-base-documents/import-xml", ImportExternalRepBaseDocumentXmlAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.OperatorOrAbove)
+            .DisableAntiforgery()
+            .WithName("ImportExternalRepBaseDocumentXml")
+            .WithSummary("Import and validate an external CFDI XML for future REP administration")
+            .Accepts<IFormFile>("multipart/form-data")
+            .Produces<ExternalRepBaseDocumentImportResponse>(StatusCodes.Status200OK)
+            .Produces<ExternalRepBaseDocumentImportResponse>(StatusCodes.Status400BadRequest)
+            .Produces<ExternalRepBaseDocumentImportResponse>(StatusCodes.Status409Conflict);
+
+        group.MapGet("/external-base-documents/{externalRepBaseDocumentId:long}", GetExternalRepBaseDocumentByIdAsync)
+            .WithName("GetExternalRepBaseDocumentById")
+            .WithSummary("Get imported external CFDI base document detail")
+            .Produces<ExternalRepBaseDocumentDetailResponse>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
 
         return endpoints;
     }
@@ -401,6 +418,89 @@ public static class PaymentComplementsEndpoints
             StampInternalRepBaseDocumentPaymentComplementOutcome.ProviderUnavailable => TypedResults.Json(response, statusCode: StatusCodes.Status503ServiceUnavailable),
             _ => TypedResults.BadRequest(response)
         };
+    }
+
+    private static async Task<Results<Ok<ExternalRepBaseDocumentImportResponse>, BadRequest<ExternalRepBaseDocumentImportResponse>, Conflict<ExternalRepBaseDocumentImportResponse>>> ImportExternalRepBaseDocumentXmlAsync(
+        IFormFile? file,
+        ImportExternalRepBaseDocumentFromXmlService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        if (file is null)
+        {
+            return TypedResults.BadRequest(new ExternalRepBaseDocumentImportResponse
+            {
+                Outcome = ImportExternalRepBaseDocumentFromXmlOutcome.Rejected.ToString(),
+                IsSuccess = false,
+                ValidationStatus = "Rejected",
+                ReasonCode = ExternalRepBaseDocumentImportReasonCode.InvalidXml.ToString(),
+                ReasonMessage = "El archivo XML es obligatorio."
+            });
+        }
+
+        await using var stream = file.OpenReadStream();
+        using var buffer = new MemoryStream();
+        await stream.CopyToAsync(buffer, cancellationToken);
+
+        var result = await service.ExecuteAsync(
+            new ImportExternalRepBaseDocumentFromXmlCommand
+            {
+                SourceFileName = file.FileName,
+                FileContent = buffer.ToArray()
+            },
+            cancellationToken);
+
+        var response = new ExternalRepBaseDocumentImportResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ExternalRepBaseDocumentId = result.ExternalRepBaseDocumentId,
+            ValidationStatus = result.ValidationStatus,
+            ReasonCode = result.ReasonCode,
+            ReasonMessage = result.ReasonMessage,
+            ErrorMessage = result.ErrorMessage,
+            Uuid = result.Uuid,
+            IssuerRfc = result.IssuerRfc,
+            ReceiverRfc = result.ReceiverRfc,
+            PaymentMethodSat = result.PaymentMethodSat,
+            PaymentFormSat = result.PaymentFormSat,
+            CurrencyCode = result.CurrencyCode,
+            Total = result.Total,
+            IsDuplicate = result.IsDuplicate
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "ExternalRepBaseDocument.ImportXml",
+            "ExternalRepBaseDocument",
+            result.ExternalRepBaseDocumentId?.ToString(),
+            result.Outcome.ToString(),
+            new { file.FileName, file.Length, file.ContentType },
+            new { result.ExternalRepBaseDocumentId, result.Uuid, result.ReasonCode, result.ValidationStatus, result.IsDuplicate },
+            result.ErrorMessage ?? result.ReasonMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            ImportExternalRepBaseDocumentFromXmlOutcome.Accepted => TypedResults.Ok(response),
+            ImportExternalRepBaseDocumentFromXmlOutcome.Blocked => TypedResults.Ok(response),
+            ImportExternalRepBaseDocumentFromXmlOutcome.Duplicate => TypedResults.Conflict(response),
+            _ => TypedResults.BadRequest(response)
+        };
+    }
+
+    private static async Task<Results<Ok<ExternalRepBaseDocumentDetailResponse>, NotFound>> GetExternalRepBaseDocumentByIdAsync(
+        long externalRepBaseDocumentId,
+        GetExternalRepBaseDocumentByIdService service,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(externalRepBaseDocumentId, cancellationToken);
+        if (result.Outcome == GetExternalRepBaseDocumentByIdOutcome.NotFound || result.Document is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        return TypedResults.Ok(MapExternalRepBaseDocument(result.Document));
     }
 
     private static async Task<Results<Ok<StampPaymentComplementResponse>, BadRequest<StampPaymentComplementResponse>, NotFound<StampPaymentComplementResponse>, Conflict<StampPaymentComplementResponse>, JsonHttpResult<StampPaymentComplementResponse>>> StampPaymentComplementAsync(
@@ -752,6 +852,45 @@ public static class PaymentComplementsEndpoints
             StampedPaymentComplementCount = item.StampedPaymentComplementCount,
             LastRepIssuedAtUtc = item.LastRepIssuedAtUtc,
             OperationalState = item.OperationalState is null ? null : MapInternalRepOperationalState(item.OperationalState)
+        };
+    }
+
+    public static ExternalRepBaseDocumentDetailResponse MapExternalRepBaseDocument(ExternalRepBaseDocument document)
+    {
+        return new ExternalRepBaseDocumentDetailResponse
+        {
+            Id = document.Id,
+            Uuid = document.Uuid,
+            CfdiVersion = document.CfdiVersion,
+            DocumentType = document.DocumentType,
+            Series = document.Series,
+            Folio = document.Folio,
+            IssuedAtUtc = document.IssuedAtUtc,
+            IssuerRfc = document.IssuerRfc,
+            IssuerLegalName = document.IssuerLegalName,
+            ReceiverRfc = document.ReceiverRfc,
+            ReceiverLegalName = document.ReceiverLegalName,
+            CurrencyCode = document.CurrencyCode,
+            ExchangeRate = document.ExchangeRate,
+            Subtotal = document.Subtotal,
+            Total = document.Total,
+            PaymentMethodSat = document.PaymentMethodSat,
+            PaymentFormSat = document.PaymentFormSat,
+            ValidationStatus = document.ValidationStatus.ToString(),
+            ReasonCode = document.ValidationReasonCode,
+            ReasonMessage = document.ValidationReasonMessage,
+            SatStatus = document.SatStatus.ToString(),
+            LastSatCheckAtUtc = document.LastSatCheckAtUtc,
+            LastSatExternalStatus = document.LastSatExternalStatus,
+            LastSatCancellationStatus = document.LastSatCancellationStatus,
+            LastSatProviderCode = document.LastSatProviderCode,
+            LastSatProviderMessage = document.LastSatProviderMessage,
+            LastSatRawResponseSummaryJson = document.LastSatRawResponseSummaryJson,
+            SourceFileName = document.SourceFileName,
+            XmlHash = document.XmlHash,
+            ImportedAtUtc = document.ImportedAtUtc,
+            ImportedByUserId = document.ImportedByUserId,
+            ImportedByUsername = document.ImportedByUsername
         };
     }
 
@@ -1503,4 +1642,104 @@ public sealed class StampInternalRepBaseDocumentPaymentComplementResponse
     public bool XmlAvailable { get; set; }
 
     public InternalRepBaseDocumentOperationalStateResponse? OperationalState { get; set; }
+}
+
+public sealed class ExternalRepBaseDocumentImportResponse
+{
+    public string Outcome { get; set; } = string.Empty;
+
+    public bool IsSuccess { get; set; }
+
+    public long? ExternalRepBaseDocumentId { get; set; }
+
+    public string ValidationStatus { get; set; } = string.Empty;
+
+    public string ReasonCode { get; set; } = string.Empty;
+
+    public string ReasonMessage { get; set; } = string.Empty;
+
+    public string? ErrorMessage { get; set; }
+
+    public string? Uuid { get; set; }
+
+    public string? IssuerRfc { get; set; }
+
+    public string? ReceiverRfc { get; set; }
+
+    public string? PaymentMethodSat { get; set; }
+
+    public string? PaymentFormSat { get; set; }
+
+    public string? CurrencyCode { get; set; }
+
+    public decimal? Total { get; set; }
+
+    public bool IsDuplicate { get; set; }
+}
+
+public sealed class ExternalRepBaseDocumentDetailResponse
+{
+    public long Id { get; set; }
+
+    public string Uuid { get; set; } = string.Empty;
+
+    public string CfdiVersion { get; set; } = string.Empty;
+
+    public string DocumentType { get; set; } = string.Empty;
+
+    public string Series { get; set; } = string.Empty;
+
+    public string Folio { get; set; } = string.Empty;
+
+    public DateTime IssuedAtUtc { get; set; }
+
+    public string IssuerRfc { get; set; } = string.Empty;
+
+    public string? IssuerLegalName { get; set; }
+
+    public string ReceiverRfc { get; set; } = string.Empty;
+
+    public string? ReceiverLegalName { get; set; }
+
+    public string CurrencyCode { get; set; } = string.Empty;
+
+    public decimal ExchangeRate { get; set; }
+
+    public decimal Subtotal { get; set; }
+
+    public decimal Total { get; set; }
+
+    public string PaymentMethodSat { get; set; } = string.Empty;
+
+    public string PaymentFormSat { get; set; } = string.Empty;
+
+    public string ValidationStatus { get; set; } = string.Empty;
+
+    public string ReasonCode { get; set; } = string.Empty;
+
+    public string ReasonMessage { get; set; } = string.Empty;
+
+    public string SatStatus { get; set; } = string.Empty;
+
+    public DateTime? LastSatCheckAtUtc { get; set; }
+
+    public string? LastSatExternalStatus { get; set; }
+
+    public string? LastSatCancellationStatus { get; set; }
+
+    public string? LastSatProviderCode { get; set; }
+
+    public string? LastSatProviderMessage { get; set; }
+
+    public string? LastSatRawResponseSummaryJson { get; set; }
+
+    public string SourceFileName { get; set; } = string.Empty;
+
+    public string XmlHash { get; set; } = string.Empty;
+
+    public DateTime ImportedAtUtc { get; set; }
+
+    public long? ImportedByUserId { get; set; }
+
+    public string? ImportedByUsername { get; set; }
 }
