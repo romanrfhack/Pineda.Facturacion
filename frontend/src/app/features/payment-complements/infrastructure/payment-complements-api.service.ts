@@ -3,6 +3,10 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { buildApiUrl } from '../../../core/config/api-url';
 import {
+  CancelExternalRepBaseDocumentPaymentComplementRequest,
+  CancelExternalRepBaseDocumentPaymentComplementResponse,
+  CancelInternalRepBaseDocumentPaymentComplementRequest,
+  CancelInternalRepBaseDocumentPaymentComplementResponse,
   CancelPaymentComplementResponse,
   ExternalRepBaseDocumentFilters,
   ExternalRepBaseDocumentDetailResponse,
@@ -28,6 +32,10 @@ import {
   PaymentComplementCancellationResponse,
   PaymentComplementDocumentResponse,
   PaymentComplementStampResponse,
+  RefreshExternalRepBaseDocumentPaymentComplementStatusRequest,
+  RefreshExternalRepBaseDocumentPaymentComplementStatusResponse,
+  RefreshInternalRepBaseDocumentPaymentComplementStatusRequest,
+  RefreshInternalRepBaseDocumentPaymentComplementStatusResponse,
   RefreshPaymentComplementStatusResponse,
   StampPaymentComplementResponse
 } from '../models/payment-complements.models';
@@ -124,6 +132,26 @@ export class PaymentComplementsApiService {
     );
   }
 
+  refreshInternalBaseDocumentPaymentComplementStatus(
+    fiscalDocumentId: number,
+    request: RefreshInternalRepBaseDocumentPaymentComplementStatusRequest
+  ): Observable<RefreshInternalRepBaseDocumentPaymentComplementStatusResponse> {
+    return this.http.post<RefreshInternalRepBaseDocumentPaymentComplementStatusResponse>(
+      buildApiUrl(`/payment-complements/base-documents/internal/${fiscalDocumentId}/refresh-rep-status`),
+      request
+    );
+  }
+
+  cancelInternalBaseDocumentPaymentComplement(
+    fiscalDocumentId: number,
+    request: CancelInternalRepBaseDocumentPaymentComplementRequest
+  ): Observable<CancelInternalRepBaseDocumentPaymentComplementResponse> {
+    return this.http.post<CancelInternalRepBaseDocumentPaymentComplementResponse>(
+      buildApiUrl(`/payment-complements/base-documents/internal/${fiscalDocumentId}/cancel-rep`),
+      request
+    );
+  }
+
   registerExternalBaseDocumentPayment(
     externalRepBaseDocumentId: number,
     request: RegisterExternalRepBaseDocumentPaymentRequest
@@ -150,6 +178,26 @@ export class PaymentComplementsApiService {
   ): Observable<StampExternalRepBaseDocumentPaymentComplementResponse> {
     return this.http.post<StampExternalRepBaseDocumentPaymentComplementResponse>(
       buildApiUrl(`/payment-complements/base-documents/external/${externalRepBaseDocumentId}/stamp`),
+      request
+    );
+  }
+
+  refreshExternalBaseDocumentPaymentComplementStatus(
+    externalRepBaseDocumentId: number,
+    request: RefreshExternalRepBaseDocumentPaymentComplementStatusRequest
+  ): Observable<RefreshExternalRepBaseDocumentPaymentComplementStatusResponse> {
+    return this.http.post<RefreshExternalRepBaseDocumentPaymentComplementStatusResponse>(
+      buildApiUrl(`/payment-complements/base-documents/external/${externalRepBaseDocumentId}/refresh-rep-status`),
+      request
+    );
+  }
+
+  cancelExternalBaseDocumentPaymentComplement(
+    externalRepBaseDocumentId: number,
+    request: CancelExternalRepBaseDocumentPaymentComplementRequest
+  ): Observable<CancelExternalRepBaseDocumentPaymentComplementResponse> {
+    return this.http.post<CancelExternalRepBaseDocumentPaymentComplementResponse>(
+      buildApiUrl(`/payment-complements/base-documents/external/${externalRepBaseDocumentId}/cancel-rep`),
       request
     );
   }

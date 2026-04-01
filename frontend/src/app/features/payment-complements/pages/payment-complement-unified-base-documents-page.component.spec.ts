@@ -38,7 +38,15 @@ describe('PaymentComplementUnifiedBaseDocumentsPageComponent', () => {
                   isBlocked: false,
                   primaryReasonCode: 'EligibleOpenBalance',
                   primaryReasonMessage: 'CFDI interno listo para operación.',
-                  availableActions: ['ViewDetail', 'OpenInternalWorkflow']
+                  hasAppliedPaymentsWithoutStampedRep: true,
+                  hasPreparedRepPendingStamp: false,
+                  hasRepWithError: false,
+                  hasBlockedOperation: false,
+                  nextRecommendedAction: 'PrepareRep',
+                  availableActions: ['ViewDetail', 'OpenInternalWorkflow'],
+                  alerts: [
+                    { code: 'AppliedPaymentsWithoutStampedRep', severity: 'warning', message: 'Hay pagos aplicados sin REP timbrado en este CFDI.' }
+                  ]
                 },
                 {
                   sourceType: 'External',
@@ -65,6 +73,12 @@ describe('PaymentComplementUnifiedBaseDocumentsPageComponent', () => {
                   primaryReasonCode: 'ReadyForPayment',
                   primaryReasonMessage: 'Listo para registrar pago.',
                   availableActions: ['ViewDetail', 'RegisterPayment'],
+                  hasAppliedPaymentsWithoutStampedRep: false,
+                  hasPreparedRepPendingStamp: false,
+                  hasRepWithError: false,
+                  hasBlockedOperation: false,
+                  nextRecommendedAction: 'RegisterPayment',
+                  alerts: [],
                   importedAtUtc: '2026-04-01T11:00:00Z'
                 }
               ]
@@ -103,7 +117,9 @@ describe('PaymentComplementUnifiedBaseDocumentsPageComponent', () => {
                 isBlocked: false,
                 primaryReasonCode: 'ReadyForPayment',
                 primaryReasonMessage: 'Listo para registrar pago.',
-                availableActions: ['ViewDetail', 'RegisterPayment']
+                nextRecommendedAction: 'RegisterPayment',
+                availableActions: ['ViewDetail', 'RegisterPayment'],
+                alerts: []
               },
               paymentHistory: [],
               paymentApplications: [],
@@ -138,7 +154,12 @@ describe('PaymentComplementUnifiedBaseDocumentsPageComponent', () => {
                 },
                 registeredPaymentCount: 0,
                 paymentComplementCount: 0,
-                stampedPaymentComplementCount: 0
+                stampedPaymentComplementCount: 0,
+                nextRecommendedAction: 'PrepareRep',
+                availableActions: ['ViewDetail', 'OpenInternalWorkflow'],
+                alerts: [
+                  { code: 'AppliedPaymentsWithoutStampedRep', severity: 'warning', message: 'Hay pagos aplicados sin REP timbrado en este CFDI.' }
+                ]
               },
               operationalState: {
                 lastEligibilityEvaluatedAtUtc: '2026-04-01T10:00:00Z',
@@ -182,5 +203,12 @@ describe('PaymentComplementUnifiedBaseDocumentsPageComponent', () => {
 
     expect(fixture.nativeElement.textContent).toContain('Detalle operativo del documento base');
     expect(fixture.nativeElement.textContent).toContain('pestaña Externos');
+  });
+
+  it('renders next recommended action and operational alert badges in the unified tray', async () => {
+    const fixture = await configure();
+
+    expect(fixture.nativeElement.textContent).toContain('Siguiente: Preparar REP');
+    expect(fixture.nativeElement.textContent).toContain('Pago aplicado sin REP timbrado');
   });
 });

@@ -222,7 +222,13 @@ public sealed class SearchRepBaseDocumentsService
             IsBlocked = item.IsBlocked,
             PrimaryReasonCode = item.Eligibility.PrimaryReasonCode,
             PrimaryReasonMessage = item.Eligibility.PrimaryReasonMessage,
-            AvailableActions = BuildInternalAvailableActions(item)
+            HasAppliedPaymentsWithoutStampedRep = item.HasAppliedPaymentsWithoutStampedRep,
+            HasPreparedRepPendingStamp = item.HasPreparedRepPendingStamp,
+            HasRepWithError = item.HasRepWithError,
+            HasBlockedOperation = item.HasBlockedOperation,
+            NextRecommendedAction = item.NextRecommendedAction,
+            AvailableActions = item.AvailableActions,
+            Alerts = item.Alerts
         };
     }
 
@@ -254,20 +260,15 @@ public sealed class SearchRepBaseDocumentsService
             IsBlocked = item.IsBlocked,
             PrimaryReasonCode = item.PrimaryReasonCode,
             PrimaryReasonMessage = item.PrimaryReasonMessage,
+            HasAppliedPaymentsWithoutStampedRep = item.HasAppliedPaymentsWithoutStampedRep,
+            HasPreparedRepPendingStamp = item.HasPreparedRepPendingStamp,
+            HasRepWithError = item.HasRepWithError,
+            HasBlockedOperation = item.HasBlockedOperation,
+            NextRecommendedAction = item.NextRecommendedAction,
             AvailableActions = item.AvailableActions,
+            Alerts = item.Alerts,
             ImportedAtUtc = item.ImportedAtUtc
         };
-    }
-
-    private static IReadOnlyList<string> BuildInternalAvailableActions(InternalRepBaseDocumentListItem item)
-    {
-        var actions = new List<string> { RepBaseDocumentAvailableAction.ViewDetail.ToString() };
-        if (item.IsEligible)
-        {
-            actions.Add(RepBaseDocumentAvailableAction.OpenInternalWorkflow.ToString());
-        }
-
-        return actions;
     }
 
     private static string? NormalizeOptionalText(string? value)

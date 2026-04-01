@@ -6,5 +6,7 @@ public enum RepBaseDocumentAvailableAction
     OpenInternalWorkflow = 2,
     RegisterPayment = 3,
     PrepareRep = 4,
-    StampRep = 5
+    StampRep = 5,
+    RefreshRepStatus = 6,
+    CancelRep = 7
 }

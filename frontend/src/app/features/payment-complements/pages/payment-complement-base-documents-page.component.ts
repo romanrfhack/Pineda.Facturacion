@@ -12,6 +12,7 @@ import {
   InternalRepBaseDocumentPaymentComplementResponse,
   InternalRepBaseDocumentPaymentHistoryResponse,
   PrepareInternalRepBaseDocumentPaymentComplementResponse,
+  RepOperationalAlertResponse,
   RegisterInternalRepBaseDocumentPaymentResponse,
   StampInternalRepBaseDocumentPaymentComplementResponse
 } from '../models/payment-complements.models';
@@ -133,6 +134,16 @@ import {
                         {{ getDisplayLabel(item.repOperationalStatus) }}
                       </span>
                       <small class="row-reason">{{ item.eligibility.primaryReasonMessage }}</small>
+                      <small class="row-reason">Siguiente: {{ getRecommendedActionLabel(item.nextRecommendedAction) }}</small>
+                      @if (getAlerts(item).length) {
+                        <div class="alert-chip-list">
+                          @for (alert of visibleAlerts(getAlerts(item)); track alert.code + '-' + alert.message) {
+                            <span class="alert-chip" [class.alert-critical]="alert.severity === 'critical'" [class.alert-warning]="alert.severity === 'warning'" [class.alert-info]="alert.severity === 'info'">
+                              {{ getDisplayLabel(alert.code) }}
+                            </span>
+                          }
+                        </div>
+                      }
                     </td>
                     <td>{{ item.registeredPaymentCount }}</td>
                     <td>{{ item.stampedPaymentComplementCount }}</td>
@@ -255,6 +266,30 @@ import {
                     </dl>
                   } @else {
                     <p class="helper">Todavía no existe snapshot operativo persistido para este CFDI.</p>
+                  }
+                </article>
+
+                <article class="summary-card">
+                  <h4>Seguimiento operativo</h4>
+                  <dl>
+                    <div><dt>Acción recomendada</dt><dd>{{ getRecommendedActionLabel(detail.summary.nextRecommendedAction) }}</dd></div>
+                    <div><dt>Operación bloqueada</dt><dd>{{ detail.summary.hasBlockedOperation ? 'Sí' : 'No' }}</dd></div>
+                    <div><dt>Pago sin REP timbrado</dt><dd>{{ detail.summary.hasAppliedPaymentsWithoutStampedRep ? 'Sí' : 'No' }}</dd></div>
+                    <div><dt>REP pendiente de timbrar</dt><dd>{{ detail.summary.hasPreparedRepPendingStamp ? 'Sí' : 'No' }}</dd></div>
+                    <div><dt>REP con error</dt><dd>{{ detail.summary.hasRepWithError ? 'Sí' : 'No' }}</dd></div>
+                  </dl>
+
+                  @if (getAlerts(detail.summary).length) {
+                    <ul class="alert-list">
+                      @for (alert of getAlerts(detail.summary); track alert.code + '-' + alert.message) {
+                        <li class="alert-item" [class.alert-critical]="alert.severity === 'critical'" [class.alert-warning]="alert.severity === 'warning'" [class.alert-info]="alert.severity === 'info'">
+                          <strong>{{ getDisplayLabel(alert.code) }}</strong>
+                          <p>{{ alert.message }}</p>
+                        </li>
+                      }
+                    </ul>
+                  } @else {
+                    <p class="helper">No hay alertas operativas activas para este CFDI.</p>
                   }
                 </article>
               </section>
@@ -457,17 +492,38 @@ import {
                             <td>{{ complement.paidAmount | number:'1.2-2' }}</td>
                             <td>{{ complement.remainingBalance | number:'1.2-2' }}</td>
                             <td>
-                              @if (canStampComplement(complement)) {
-                                <button
-                                  type="button"
-                                  class="small"
-                                  [disabled]="stampingComplement() || preparingComplement()"
-                                  (click)="stampPaymentComplement(complement)">
-                                  {{ stampingComplement() === complement.paymentComplementId ? (complement.status === 'StampingRejected' ? 'Reintentando...' : 'Timbrando...') : (complement.status === 'StampingRejected' ? 'Reintentar timbrado' : 'Timbrar REP') }}
-                                </button>
-                              } @else {
-                                <span class="helper">—</span>
-                              }
+                              <div class="row-actions">
+                                @if (canStampComplement(complement)) {
+                                  <button
+                                    type="button"
+                                    class="small"
+                                    [disabled]="stampingComplement() !== null || preparingComplement() !== null || refreshingComplement() !== null || cancellingComplement() !== null"
+                                    (click)="stampPaymentComplement(complement)">
+                                    {{ stampingComplement() === complement.paymentComplementId ? (complement.status === 'StampingRejected' ? 'Reintentando...' : 'Timbrando...') : (complement.status === 'StampingRejected' ? 'Reintentar timbrado' : 'Timbrar REP') }}
+                                  </button>
+                                }
+                                @if (canRefreshComplement(complement)) {
+                                  <button
+                                    type="button"
+                                    class="secondary small"
+                                    [disabled]="stampingComplement() !== null || preparingComplement() !== null || refreshingComplement() !== null || cancellingComplement() !== null"
+                                    (click)="refreshPaymentComplement(complement)">
+                                    {{ refreshingComplement() === complement.paymentComplementId ? 'Refrescando...' : 'Refrescar' }}
+                                  </button>
+                                }
+                                @if (canCancelComplement(complement)) {
+                                  <button
+                                    type="button"
+                                    class="secondary small"
+                                    [disabled]="stampingComplement() !== null || preparingComplement() !== null || refreshingComplement() !== null || cancellingComplement() !== null"
+                                    (click)="cancelPaymentComplement(complement)">
+                                    {{ cancellingComplement() === complement.paymentComplementId ? 'Cancelando...' : 'Cancelar' }}
+                                  </button>
+                                }
+                                @if (!canStampComplement(complement) && !canRefreshComplement(complement) && !canCancelComplement(complement)) {
+                                  <span class="helper">—</span>
+                                }
+                              </div>
                             </td>
                           </tr>
                         }
@@ -516,6 +572,15 @@ import {
     .signal-positive { background:#e5f6eb; color:#1b6b3a; }
     .signal-warning { background:#fff1d6; color:#8a5a00; }
     .signal-blocking { background:#fdeaea; color:#8a1f1f; }
+    .alert-chip-list { display:flex; flex-wrap:wrap; gap:0.35rem; margin-top:0.45rem; }
+    .alert-chip, .alert-item { border-radius:0.8rem; }
+    .alert-chip { display:inline-flex; align-items:center; padding:0.2rem 0.55rem; font-size:0.75rem; font-weight:700; }
+    .alert-list { list-style:none; padding:0; margin:0; display:grid; gap:0.65rem; }
+    .alert-item { padding:0.7rem 0.8rem; border:1px solid #ece5d7; }
+    .alert-item p { margin:0.2rem 0 0; color:#425466; }
+    .alert-warning { background:#fff3dd; color:#8a5a00; }
+    .alert-critical { background:#fdeaea; color:#8a1f1f; }
+    .alert-info { background:#eef1f4; color:#425466; }
     .row-reason { display:block; margin-top:0.35rem; color:#5f6b76; }
     .modal-backdrop { position:fixed; inset:0; background:rgba(24, 37, 51, 0.42); display:grid; place-items:center; padding:1rem; z-index:50; }
     .modal-card { width:min(1180px, 100%); max-height:calc(100vh - 2rem); overflow:auto; border:1px solid #d8d1c2; border-radius:1rem; background:#fff; padding:1rem; display:grid; gap:1rem; box-shadow:0 24px 60px rgba(24, 37, 51, 0.24); }
@@ -564,6 +629,8 @@ export class PaymentComplementBaseDocumentsPageComponent {
   protected readonly paymentError = signal<string | null>(null);
   protected readonly preparingComplement = signal<number | null>(null);
   protected readonly stampingComplement = signal<number | null>(null);
+  protected readonly refreshingComplement = signal<number | null>(null);
+  protected readonly cancellingComplement = signal<number | null>(null);
   protected readonly repActionError = signal<string | null>(null);
   protected paymentDate = todayInputValue();
   protected paymentFormSat = '03';
@@ -695,6 +762,14 @@ export class PaymentComplementBaseDocumentsPageComponent {
     return complement.status === 'ReadyForStamping' || complement.status === 'StampingRejected';
   }
 
+  protected canRefreshComplement(complement: InternalRepBaseDocumentPaymentComplementResponse): boolean {
+    return ['Stamped', 'CancellationRequested', 'CancellationRejected', 'Cancelled'].includes(complement.status);
+  }
+
+  protected canCancelComplement(complement: InternalRepBaseDocumentPaymentComplementResponse): boolean {
+    return complement.status === 'Stamped' || complement.status === 'CancellationRejected';
+  }
+
   protected async preparePaymentComplement(payment: InternalRepBaseDocumentPaymentHistoryResponse): Promise<void> {
     const detail = this.selectedDetail();
     if (!detail) {
@@ -742,6 +817,62 @@ export class PaymentComplementBaseDocumentsPageComponent {
     }
   }
 
+  protected async refreshPaymentComplement(complement: InternalRepBaseDocumentPaymentComplementResponse): Promise<void> {
+    const detail = this.selectedDetail();
+    if (!detail) {
+      return;
+    }
+
+    this.repActionError.set(null);
+    this.refreshingComplement.set(complement.paymentComplementId);
+
+    try {
+      const result = await firstValueFrom(this.api.refreshInternalBaseDocumentPaymentComplementStatus(detail.summary.fiscalDocumentId, {
+        paymentComplementDocumentId: complement.paymentComplementId
+      }));
+
+      const suffix = result.lastKnownExternalStatus ? ` Estado externo: ${result.lastKnownExternalStatus}.` : '.';
+      this.feedbackService.show('success', `REP ${result.paymentComplementDocumentId ?? complement.paymentComplementId} actualizado.${suffix}`);
+      await this.loadDetail(detail.summary.fiscalDocumentId);
+      await this.load();
+    } catch (error) {
+      const message = extractApiErrorMessage(error, 'No fue posible refrescar el estatus del REP desde el CFDI base.');
+      this.repActionError.set(message);
+      this.feedbackService.show('error', message);
+    } finally {
+      this.refreshingComplement.set(null);
+    }
+  }
+
+  protected async cancelPaymentComplement(complement: InternalRepBaseDocumentPaymentComplementResponse): Promise<void> {
+    const detail = this.selectedDetail();
+    if (!detail) {
+      return;
+    }
+
+    this.repActionError.set(null);
+    this.cancellingComplement.set(complement.paymentComplementId);
+
+    try {
+      const result = await firstValueFrom(this.api.cancelInternalBaseDocumentPaymentComplement(detail.summary.fiscalDocumentId, {
+        paymentComplementDocumentId: complement.paymentComplementId,
+        cancellationReasonCode: '02',
+        replacementUuid: null
+      }));
+
+      const suffix = result.cancellationStatus ? ` Estatus: ${getDisplayLabel(result.cancellationStatus)}.` : '.';
+      this.feedbackService.show('success', `REP ${result.paymentComplementDocumentId ?? complement.paymentComplementId} cancelado.${suffix}`);
+      await this.loadDetail(detail.summary.fiscalDocumentId);
+      await this.load();
+    } catch (error) {
+      const message = extractApiErrorMessage(error, 'No fue posible cancelar el REP desde el CFDI base.');
+      this.repActionError.set(message);
+      this.feedbackService.show('error', message);
+    } finally {
+      this.cancellingComplement.set(null);
+    }
+  }
+
   protected buildSeriesFolio(item: InternalRepBaseDocumentItemResponse): string {
     const series = item.series?.trim();
     const folio = item.folio?.trim();
@@ -763,6 +894,18 @@ export class PaymentComplementBaseDocumentsPageComponent {
 
   protected formatOptionalUtc(value?: string | null): string {
     return value ? this.formatUtc(value) : '—';
+  }
+
+  protected visibleAlerts(alerts: RepOperationalAlertResponse[]): RepOperationalAlertResponse[] {
+    return alerts.slice(0, 3);
+  }
+
+  protected getAlerts(source: { alerts?: RepOperationalAlertResponse[] | null }): RepOperationalAlertResponse[] {
+    return source.alerts ?? [];
+  }
+
+  protected getRecommendedActionLabel(action?: string | null): string {
+    return action ? getDisplayLabel(action) : 'Sin acción disponible';
   }
 
   private async handleSuccessfulPaymentRegistration(

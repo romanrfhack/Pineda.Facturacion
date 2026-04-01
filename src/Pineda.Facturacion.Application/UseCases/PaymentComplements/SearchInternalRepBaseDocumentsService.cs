@@ -93,6 +93,7 @@ public sealed class SearchInternalRepBaseDocumentsService
             OutstandingBalance = source.OutstandingBalance
         });
         var evaluatedAtUtc = DateTime.UtcNow;
+        var operationalInsight = InternalRepOperationalInsightBuilder.Build(source, evaluation);
 
         return new InternalRepBaseDocumentListItem
         {
@@ -123,6 +124,13 @@ public sealed class SearchInternalRepBaseDocumentsService
             PaymentComplementCount = source.PaymentComplementCount,
             StampedPaymentComplementCount = source.StampedPaymentComplementCount,
             LastRepIssuedAtUtc = source.LastRepIssuedAtUtc,
+            HasAppliedPaymentsWithoutStampedRep = operationalInsight.HasAppliedPaymentsWithoutStampedRep,
+            HasPreparedRepPendingStamp = operationalInsight.HasPreparedRepPendingStamp,
+            HasRepWithError = operationalInsight.HasRepWithError,
+            HasBlockedOperation = operationalInsight.HasBlockedOperation,
+            NextRecommendedAction = operationalInsight.NextRecommendedAction,
+            AvailableActions = operationalInsight.AvailableActions,
+            Alerts = operationalInsight.Alerts,
             Eligibility = new InternalRepBaseDocumentEligibilityExplanation
             {
                 Status = evaluation.Status.ToString(),

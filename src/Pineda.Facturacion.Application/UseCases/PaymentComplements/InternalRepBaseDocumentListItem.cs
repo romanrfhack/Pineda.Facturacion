@@ -56,6 +56,20 @@ public sealed class InternalRepBaseDocumentListItem
 
     public DateTime? LastRepIssuedAtUtc { get; init; }
 
+    public bool HasAppliedPaymentsWithoutStampedRep { get; init; }
+
+    public bool HasPreparedRepPendingStamp { get; init; }
+
+    public bool HasRepWithError { get; init; }
+
+    public bool HasBlockedOperation { get; init; }
+
+    public string? NextRecommendedAction { get; init; }
+
+    public IReadOnlyList<string> AvailableActions { get; init; } = [];
+
+    public IReadOnlyList<RepOperationalAlert> Alerts { get; init; } = [];
+
     public InternalRepBaseDocumentEligibilityExplanation Eligibility { get; init; } = new();
 
     public InternalRepBaseDocumentOperationalSnapshot? OperationalState { get; init; }

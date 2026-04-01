@@ -8,6 +8,7 @@ import { PaymentComplementsApiService } from '../infrastructure/payment-compleme
 import {
   ExternalRepBaseDocumentDetailResponse,
   InternalRepBaseDocumentDetailResponse,
+  RepOperationalAlertResponse,
   RepBaseDocumentItemResponse
 } from '../models/payment-complements.models';
 
@@ -113,6 +114,16 @@ import {
                         {{ getDisplayLabel(item.operationalStatus) }}
                       </span>
                       <small class="row-reason">{{ item.primaryReasonMessage }}</small>
+                      <small class="row-reason">Siguiente: {{ getRecommendedActionLabel(item.nextRecommendedAction) }}</small>
+                      @if (getAlerts(item).length) {
+                        <div class="alert-chip-list">
+                          @for (alert of visibleAlerts(getAlerts(item)); track alert.code + '-' + alert.message) {
+                            <span class="alert-chip" [class.alert-critical]="alert.severity === 'critical'" [class.alert-warning]="alert.severity === 'warning'" [class.alert-info]="alert.severity === 'info'">
+                              {{ getDisplayLabel(alert.code) }}
+                            </span>
+                          }
+                        </div>
+                      }
                     </td>
                     <td><button type="button" class="secondary small" (click)="openDetail(item)">Ver detalle</button></td>
                   </tr>
@@ -160,8 +171,19 @@ import {
                     <div><dt>SAT</dt><dd>{{ getDisplayLabel(externalDetail.summary.satStatus) }}</dd></div>
                     <div><dt>Operativo</dt><dd>{{ getDisplayLabel(externalDetail.summary.operationalStatus) }}</dd></div>
                     <div><dt>Motivo</dt><dd>{{ externalDetail.summary.primaryReasonMessage }}</dd></div>
+                    <div><dt>Acción recomendada</dt><dd>{{ getRecommendedActionLabel(externalDetail.summary.nextRecommendedAction) }}</dd></div>
                     <div><dt>Importado</dt><dd>{{ formatUtc(externalDetail.summary.importedAtUtc) }}</dd></div>
                   </dl>
+                  @if (getAlerts(externalDetail.summary).length) {
+                    <ul class="alert-list">
+                      @for (alert of getAlerts(externalDetail.summary); track alert.code + '-' + alert.message) {
+                        <li class="alert-item" [class.alert-critical]="alert.severity === 'critical'" [class.alert-warning]="alert.severity === 'warning'" [class.alert-info]="alert.severity === 'info'">
+                          <strong>{{ getDisplayLabel(alert.code) }}</strong>
+                          <p>{{ alert.message }}</p>
+                        </li>
+                      }
+                    </ul>
+                  }
                   <p class="helper">La operación REP externa vive en la pestaña Externos; esta vista unificada conserva un contexto común de seguimiento.</p>
                 </article>
               </section>
@@ -186,10 +208,21 @@ import {
                   <dl>
                     <div><dt>REP</dt><dd>{{ getDisplayLabel(internalDetail.summary.repOperationalStatus) }}</dd></div>
                     <div><dt>Motivo</dt><dd>{{ internalDetail.summary.eligibility.primaryReasonMessage }}</dd></div>
+                    <div><dt>Acción recomendada</dt><dd>{{ getRecommendedActionLabel(internalDetail.summary.nextRecommendedAction) }}</dd></div>
                     <div><dt>Pagos</dt><dd>{{ internalDetail.summary.registeredPaymentCount }}</dd></div>
                     <div><dt>REP emitidos</dt><dd>{{ internalDetail.summary.stampedPaymentComplementCount }}</dd></div>
                     <div><dt>REP pendiente</dt><dd>{{ internalDetail.operationalState?.repPendingFlag ? 'Sí' : 'No' }}</dd></div>
                   </dl>
+                  @if (getAlerts(internalDetail.summary).length) {
+                    <ul class="alert-list">
+                      @for (alert of getAlerts(internalDetail.summary); track alert.code + '-' + alert.message) {
+                        <li class="alert-item" [class.alert-critical]="alert.severity === 'critical'" [class.alert-warning]="alert.severity === 'warning'" [class.alert-info]="alert.severity === 'info'">
+                          <strong>{{ getDisplayLabel(alert.code) }}</strong>
+                          <p>{{ alert.message }}</p>
+                        </li>
+                      }
+                    </ul>
+                  }
                   <p class="helper">Para operar pagos y REP internos usa la pestaña Internos, que conserva el flujo completo de operación.</p>
                 </article>
               </section>
@@ -221,6 +254,11 @@ import {
     .status-eligible { background:#eef8f1; color:#24573a; }
     .status-blocked { background:#fff6e5; color:#8a5a00; }
     .status-neutral { background:#eef1f4; color:#425466; }
+    .alert-chip-list { display:flex; flex-wrap:wrap; gap:0.35rem; margin-top:0.45rem; }
+    .alert-chip { display:inline-flex; align-items:center; padding:0.2rem 0.55rem; border-radius:0.8rem; font-size:0.75rem; font-weight:700; }
+    .alert-warning { background:#fff3dd; color:#8a5a00; }
+    .alert-critical { background:#fdeaea; color:#8a1f1f; }
+    .alert-info { background:#eef1f4; color:#425466; }
     .row-reason { display:block; color:#5f6b76; margin-top:0.35rem; }
     .error { margin:0; color:#7a2020; }
     .modal-backdrop { position:fixed; inset:0; background:rgba(8, 15, 25, 0.4); display:grid; place-items:center; padding:1rem; z-index:20; }
@@ -228,6 +266,9 @@ import {
     .modal-header { display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; }
     .summary-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:1rem; }
     .summary-card { border:1px solid #ece5d7; border-radius:0.9rem; padding:1rem; display:grid; gap:0.75rem; }
+    .alert-list { list-style:none; padding:0; margin:0; display:grid; gap:0.65rem; }
+    .alert-item { border:1px solid #ece5d7; border-radius:0.8rem; padding:0.75rem; }
+    .alert-item p { margin:0.2rem 0 0; color:#425466; }
     dl { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:0.75rem; margin:0; }
     dt { font-size:0.8rem; color:#5f6b76; }
     dd { margin:0.15rem 0 0; font-weight:600; color:#182533; }
@@ -346,6 +387,18 @@ export class PaymentComplementUnifiedBaseDocumentsPageComponent {
 
   protected buildSeriesFolio(series: string | null | undefined, folio: string | null | undefined): string {
     return [series, folio].filter(Boolean).join('-') || '—';
+  }
+
+  protected visibleAlerts(alerts: RepOperationalAlertResponse[]): RepOperationalAlertResponse[] {
+    return alerts.slice(0, 3);
+  }
+
+  protected getAlerts(source: { alerts?: RepOperationalAlertResponse[] | null }): RepOperationalAlertResponse[] {
+    return source.alerts ?? [];
+  }
+
+  protected getRecommendedActionLabel(action?: string | null): string {
+    return action ? getDisplayLabel(action) : 'Sin acción disponible';
   }
 }
 

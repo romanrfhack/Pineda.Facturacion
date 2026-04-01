@@ -191,6 +191,12 @@ export interface RegisterInternalRepBaseDocumentPaymentResponse {
   applications: RegisterInternalRepBaseDocumentPaymentApplicationResponse[];
 }
 
+export interface RepOperationalAlertResponse {
+  code: string;
+  severity: string;
+  message: string;
+}
+
 export interface PrepareInternalRepBaseDocumentPaymentComplementRequest {
   accountsReceivablePaymentId?: number | null;
 }
@@ -226,6 +232,67 @@ export interface StampInternalRepBaseDocumentPaymentComplementResponse {
   stampUuid?: string | null;
   stampedAtUtc?: string | null;
   xmlAvailable: boolean;
+  operationalState?: InternalRepBaseDocumentOperationalStateResponse | null;
+}
+
+export interface RefreshInternalRepBaseDocumentPaymentComplementStatusRequest {
+  paymentComplementDocumentId?: number | null;
+}
+
+export interface RefreshInternalRepBaseDocumentPaymentComplementStatusResponse {
+  outcome: string;
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  fiscalDocumentId: number;
+  paymentComplementDocumentId?: number | null;
+  paymentComplementStatus?: string | null;
+  uuid?: string | null;
+  lastKnownExternalStatus?: string | null;
+  providerCode?: string | null;
+  providerMessage?: string | null;
+  checkedAtUtc?: string | null;
+  supportMessage?: string | null;
+  rawResponseSummaryJson?: string | null;
+  repOperationalStatus?: string | null;
+  isEligible?: boolean | null;
+  isBlocked?: boolean | null;
+  eligibilityReason?: string | null;
+  nextRecommendedAction?: string | null;
+  availableActions: string[];
+  alerts: RepOperationalAlertResponse[];
+  operationalState?: InternalRepBaseDocumentOperationalStateResponse | null;
+}
+
+export interface CancelInternalRepBaseDocumentPaymentComplementRequest {
+  paymentComplementDocumentId?: number | null;
+  cancellationReasonCode?: string;
+  replacementUuid?: string | null;
+}
+
+export interface CancelInternalRepBaseDocumentPaymentComplementResponse {
+  outcome: string;
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  fiscalDocumentId: number;
+  paymentComplementDocumentId?: number | null;
+  paymentComplementStatus?: string | null;
+  paymentComplementCancellationId?: number | null;
+  cancellationStatus?: string | null;
+  cancelledAtUtc?: string | null;
+  providerName?: string | null;
+  providerTrackingId?: string | null;
+  providerCode?: string | null;
+  providerMessage?: string | null;
+  errorCode?: string | null;
+  supportMessage?: string | null;
+  rawResponseSummaryJson?: string | null;
+  repOperationalStatus?: string | null;
+  isEligible?: boolean | null;
+  isBlocked?: boolean | null;
+  eligibilityReason?: string | null;
+  nextRecommendedAction?: string | null;
+  availableActions: string[];
+  alerts: RepOperationalAlertResponse[];
   operationalState?: InternalRepBaseDocumentOperationalStateResponse | null;
 }
 
@@ -311,7 +378,13 @@ export interface ExternalRepBaseDocumentItemResponse {
   isBlocked: boolean;
   primaryReasonCode: string;
   primaryReasonMessage: string;
+  hasAppliedPaymentsWithoutStampedRep: boolean;
+  hasPreparedRepPendingStamp: boolean;
+  hasRepWithError: boolean;
+  hasBlockedOperation: boolean;
+  nextRecommendedAction?: string | null;
   availableActions: string[];
+  alerts: RepOperationalAlertResponse[];
 }
 
 export interface ExternalRepBaseDocumentPaymentHistoryResponse {
@@ -440,6 +513,65 @@ export interface StampExternalRepBaseDocumentPaymentComplementResponse {
   eligibilityReason?: string | null;
 }
 
+export interface RefreshExternalRepBaseDocumentPaymentComplementStatusRequest {
+  paymentComplementDocumentId?: number | null;
+}
+
+export interface RefreshExternalRepBaseDocumentPaymentComplementStatusResponse {
+  outcome: string;
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  externalRepBaseDocumentId: number;
+  paymentComplementDocumentId?: number | null;
+  paymentComplementStatus?: string | null;
+  uuid?: string | null;
+  lastKnownExternalStatus?: string | null;
+  providerCode?: string | null;
+  providerMessage?: string | null;
+  checkedAtUtc?: string | null;
+  supportMessage?: string | null;
+  rawResponseSummaryJson?: string | null;
+  operationalStatus?: string | null;
+  isEligible?: boolean | null;
+  isBlocked?: boolean | null;
+  primaryReasonMessage?: string | null;
+  nextRecommendedAction?: string | null;
+  availableActions: string[];
+  alerts: RepOperationalAlertResponse[];
+}
+
+export interface CancelExternalRepBaseDocumentPaymentComplementRequest {
+  paymentComplementDocumentId?: number | null;
+  cancellationReasonCode?: string;
+  replacementUuid?: string | null;
+}
+
+export interface CancelExternalRepBaseDocumentPaymentComplementResponse {
+  outcome: string;
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  externalRepBaseDocumentId: number;
+  paymentComplementDocumentId?: number | null;
+  paymentComplementStatus?: string | null;
+  paymentComplementCancellationId?: number | null;
+  cancellationStatus?: string | null;
+  cancelledAtUtc?: string | null;
+  providerName?: string | null;
+  providerTrackingId?: string | null;
+  providerCode?: string | null;
+  providerMessage?: string | null;
+  errorCode?: string | null;
+  supportMessage?: string | null;
+  rawResponseSummaryJson?: string | null;
+  operationalStatus?: string | null;
+  isEligible?: boolean | null;
+  isBlocked?: boolean | null;
+  primaryReasonMessage?: string | null;
+  nextRecommendedAction?: string | null;
+  availableActions: string[];
+  alerts: RepOperationalAlertResponse[];
+}
+
 export interface ExternalRepBaseDocumentListResponse {
   page: number;
   pageSize: number;
@@ -488,7 +620,13 @@ export interface RepBaseDocumentItemResponse {
   isBlocked: boolean;
   primaryReasonCode: string;
   primaryReasonMessage: string;
+  hasAppliedPaymentsWithoutStampedRep: boolean;
+  hasPreparedRepPendingStamp: boolean;
+  hasRepWithError: boolean;
+  hasBlockedOperation: boolean;
+  nextRecommendedAction?: string | null;
   availableActions: string[];
+  alerts: RepOperationalAlertResponse[];
   importedAtUtc?: string | null;
 }
 
@@ -529,6 +667,13 @@ export interface InternalRepBaseDocumentItemResponse {
   paymentComplementCount: number;
   stampedPaymentComplementCount: number;
   lastRepIssuedAtUtc?: string | null;
+  hasAppliedPaymentsWithoutStampedRep: boolean;
+  hasPreparedRepPendingStamp: boolean;
+  hasRepWithError: boolean;
+  hasBlockedOperation: boolean;
+  nextRecommendedAction?: string | null;
+  availableActions: string[];
+  alerts: RepOperationalAlertResponse[];
   operationalState?: InternalRepBaseDocumentOperationalStateResponse | null;
 }
 

@@ -134,6 +134,56 @@ public class RepBaseDocumentSearchServicesTests
     }
 
     [Fact]
+    public async Task SearchInternalRepBaseDocuments_Returns_PreparedRepPendingStamp_Alert()
+    {
+        var repository = new FakeInternalRepository
+        {
+            Items =
+            [
+                new InternalRepBaseDocumentSummaryReadModel
+                {
+                    FiscalDocumentId = 601,
+                    BillingDocumentId = 401,
+                    DocumentType = "I",
+                    FiscalStatus = FiscalDocumentStatus.Stamped.ToString(),
+                    AccountsReceivableStatus = AccountsReceivableInvoiceStatus.PartiallyPaid.ToString(),
+                    Uuid = "UUID-INT-601",
+                    Series = "INT",
+                    Folio = "601",
+                    ReceiverRfc = "BBB010101BBB",
+                    ReceiverLegalName = "Cliente Interno",
+                    IssuedAtUtc = new DateTime(2026, 4, 1, 9, 0, 0, DateTimeKind.Utc),
+                    PaymentMethodSat = "PPD",
+                    PaymentFormSat = "99",
+                    CurrencyCode = "MXN",
+                    Total = 116m,
+                    PaidTotal = 116m,
+                    OutstandingBalance = 0m,
+                    RegisteredPaymentCount = 1,
+                    PaymentComplementCount = 1,
+                    StampedPaymentComplementCount = 0,
+                    PreparedPendingStampCount = 1
+                }
+            ]
+        };
+
+        var service = new SearchInternalRepBaseDocumentsService(
+            repository,
+            new FakeInternalStateRepository(),
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new SearchInternalRepBaseDocumentsFilter
+        {
+            Page = 1,
+            PageSize = 25
+        });
+
+        var item = Assert.Single(result.Items);
+        Assert.True(item.HasPreparedRepPendingStamp);
+        Assert.Contains(item.Alerts, x => x.Code == "PreparedRepPendingStamp");
+    }
+
+    [Fact]
     public async Task SearchRepBaseDocuments_Returns_InternalAndExternalSources()
     {
         var internalRepository = new FakeInternalRepository
@@ -214,6 +264,63 @@ public class RepBaseDocumentSearchServicesTests
         Assert.Equal(2, result.Items.Count);
         Assert.Contains(result.Items, x => x.SourceType == "Internal" && x.FiscalDocumentId == 501);
         Assert.Contains(result.Items, x => x.SourceType == "External" && x.ExternalRepBaseDocumentId == 901);
+    }
+
+    [Fact]
+    public async Task SearchRepBaseDocuments_Returns_BlockingAlert_ForBlockedExternalRow()
+    {
+        var internalRepository = new FakeInternalRepository();
+        var externalRepository = new FakeExternalRepository
+        {
+            OperationalItems =
+            [
+                new ExternalRepBaseDocumentSummaryReadModel
+                {
+                    ExternalRepBaseDocumentId = 990,
+                    Uuid = "UUID-EXT-990",
+                    CfdiVersion = "4.0",
+                    DocumentType = "I",
+                    Series = "EXT",
+                    Folio = "990",
+                    IssuedAtUtc = new DateTime(2026, 4, 1, 8, 0, 0, DateTimeKind.Utc),
+                    IssuerRfc = "AAA010101AAA",
+                    ReceiverRfc = "CCC010101CCC",
+                    ReceiverLegalName = "Cliente Externo",
+                    CurrencyCode = "MXN",
+                    ExchangeRate = 1m,
+                    Subtotal = 200m,
+                    Total = 232m,
+                    PaymentMethodSat = "PPD",
+                    PaymentFormSat = "99",
+                    ValidationStatus = ExternalRepBaseDocumentValidationStatus.Blocked.ToString(),
+                    ValidationReasonCode = "CancelledExternalInvoice",
+                    ValidationReasonMessage = "El CFDI externo fue reportado como cancelado.",
+                    SatStatus = ExternalRepBaseDocumentSatStatus.Cancelled.ToString(),
+                    ImportedAtUtc = new DateTime(2026, 4, 2, 10, 0, 0, DateTimeKind.Utc),
+                    OutstandingBalance = 232m,
+                    HasKnownFiscalReceiver = true
+                }
+            ]
+        };
+
+        var service = new SearchRepBaseDocumentsService(
+            internalRepository,
+            externalRepository,
+            new FakeIssuerProfileRepository(),
+            new FakeInternalStateRepository(),
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new SearchRepBaseDocumentsFilter
+        {
+            Page = 1,
+            PageSize = 25,
+            SourceType = "External"
+        });
+
+        var item = Assert.Single(result.Items);
+        Assert.True(item.HasBlockedOperation);
+        Assert.Null(item.NextRecommendedAction);
+        Assert.Contains(item.Alerts, x => x.Code == "BlockedOperation");
     }
 
     private sealed class FakeInternalRepository : IRepBaseDocumentRepository

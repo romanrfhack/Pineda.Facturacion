@@ -277,6 +277,44 @@ public sealed class RepBaseDocumentRepository : IRepBaseDocumentRepository
                     .Select(x => x.PaymentComplementDocumentId)
                     .Distinct()
                     .Count(),
+                PreparedPendingStampCount = (
+                    from related in _dbContext.PaymentComplementRelatedDocuments.AsNoTracking()
+                    join document in _dbContext.PaymentComplementDocuments.AsNoTracking()
+                        on related.PaymentComplementDocumentId equals document.Id
+                    where related.FiscalDocumentId == fiscalDocument.Id
+                        && (document.Status == PaymentComplementDocumentStatus.ReadyForStamping
+                            || document.Status == PaymentComplementDocumentStatus.StampingRequested)
+                    select document.Id)
+                    .Distinct()
+                    .Count(),
+                StampingRejectedPaymentComplementCount = (
+                    from related in _dbContext.PaymentComplementRelatedDocuments.AsNoTracking()
+                    join document in _dbContext.PaymentComplementDocuments.AsNoTracking()
+                        on related.PaymentComplementDocumentId equals document.Id
+                    where related.FiscalDocumentId == fiscalDocument.Id
+                        && document.Status == PaymentComplementDocumentStatus.StampingRejected
+                    select document.Id)
+                    .Distinct()
+                    .Count(),
+                CancellationRejectedPaymentComplementCount = (
+                    from related in _dbContext.PaymentComplementRelatedDocuments.AsNoTracking()
+                    join document in _dbContext.PaymentComplementDocuments.AsNoTracking()
+                        on related.PaymentComplementDocumentId equals document.Id
+                    where related.FiscalDocumentId == fiscalDocument.Id
+                        && document.Status == PaymentComplementDocumentStatus.CancellationRejected
+                    select document.Id)
+                    .Distinct()
+                    .Count(),
+                CancelablePaymentComplementCount = (
+                    from related in _dbContext.PaymentComplementRelatedDocuments.AsNoTracking()
+                    join document in _dbContext.PaymentComplementDocuments.AsNoTracking()
+                        on related.PaymentComplementDocumentId equals document.Id
+                    where related.FiscalDocumentId == fiscalDocument.Id
+                        && (document.Status == PaymentComplementDocumentStatus.Stamped
+                            || document.Status == PaymentComplementDocumentStatus.CancellationRejected)
+                    select document.Id)
+                    .Distinct()
+                    .Count(),
                 StampedPaymentComplementCount = (
                     from related in _dbContext.PaymentComplementRelatedDocuments.AsNoTracking()
                     join document in _dbContext.PaymentComplementDocuments.AsNoTracking()

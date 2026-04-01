@@ -117,6 +117,26 @@ public static class PaymentComplementsEndpoints
             .Produces<StampInternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status409Conflict)
             .Produces<StampInternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status503ServiceUnavailable);
 
+        group.MapPost("/base-documents/internal/{fiscalDocumentId:long}/refresh-rep-status", RefreshInternalRepBaseDocumentPaymentComplementStatusAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.OperatorOrAbove)
+            .WithName("RefreshInternalRepBaseDocumentPaymentComplementStatus")
+            .WithSummary("Refresh the current payment complement status from the internal REP base-document context")
+            .Produces<RefreshInternalRepBaseDocumentPaymentComplementStatusResponse>(StatusCodes.Status200OK)
+            .Produces<RefreshInternalRepBaseDocumentPaymentComplementStatusResponse>(StatusCodes.Status400BadRequest)
+            .Produces<RefreshInternalRepBaseDocumentPaymentComplementStatusResponse>(StatusCodes.Status404NotFound)
+            .Produces<RefreshInternalRepBaseDocumentPaymentComplementStatusResponse>(StatusCodes.Status409Conflict)
+            .Produces<RefreshInternalRepBaseDocumentPaymentComplementStatusResponse>(StatusCodes.Status503ServiceUnavailable);
+
+        group.MapPost("/base-documents/internal/{fiscalDocumentId:long}/cancel-rep", CancelInternalRepBaseDocumentPaymentComplementAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
+            .WithName("CancelInternalRepBaseDocumentPaymentComplement")
+            .WithSummary("Cancel the current payment complement from the internal REP base-document context")
+            .Produces<CancelInternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status200OK)
+            .Produces<CancelInternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status400BadRequest)
+            .Produces<CancelInternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status404NotFound)
+            .Produces<CancelInternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status409Conflict)
+            .Produces<CancelInternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status503ServiceUnavailable);
+
         group.MapPost("/base-documents/external/{externalRepBaseDocumentId:long}/payments", RegisterExternalRepBaseDocumentPaymentAsync)
             .RequireAuthorization(AuthorizationPolicyNames.OperatorOrAbove)
             .WithName("RegisterExternalRepBaseDocumentPayment")
@@ -144,6 +164,26 @@ public static class PaymentComplementsEndpoints
             .Produces<StampExternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status404NotFound)
             .Produces<StampExternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status409Conflict)
             .Produces<StampExternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status503ServiceUnavailable);
+
+        group.MapPost("/base-documents/external/{externalRepBaseDocumentId:long}/refresh-rep-status", RefreshExternalRepBaseDocumentPaymentComplementStatusAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.OperatorOrAbove)
+            .WithName("RefreshExternalRepBaseDocumentPaymentComplementStatus")
+            .WithSummary("Refresh the current payment complement status from the external REP base-document context")
+            .Produces<RefreshExternalRepBaseDocumentPaymentComplementStatusResponse>(StatusCodes.Status200OK)
+            .Produces<RefreshExternalRepBaseDocumentPaymentComplementStatusResponse>(StatusCodes.Status400BadRequest)
+            .Produces<RefreshExternalRepBaseDocumentPaymentComplementStatusResponse>(StatusCodes.Status404NotFound)
+            .Produces<RefreshExternalRepBaseDocumentPaymentComplementStatusResponse>(StatusCodes.Status409Conflict)
+            .Produces<RefreshExternalRepBaseDocumentPaymentComplementStatusResponse>(StatusCodes.Status503ServiceUnavailable);
+
+        group.MapPost("/base-documents/external/{externalRepBaseDocumentId:long}/cancel-rep", CancelExternalRepBaseDocumentPaymentComplementAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
+            .WithName("CancelExternalRepBaseDocumentPaymentComplement")
+            .WithSummary("Cancel the current payment complement from the external REP base-document context")
+            .Produces<CancelExternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status200OK)
+            .Produces<CancelExternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status400BadRequest)
+            .Produces<CancelExternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status404NotFound)
+            .Produces<CancelExternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status409Conflict)
+            .Produces<CancelExternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status503ServiceUnavailable);
 
         group.MapPost("/external-base-documents/import-xml", ImportExternalRepBaseDocumentXmlAsync)
             .RequireAuthorization(AuthorizationPolicyNames.OperatorOrAbove)
@@ -737,6 +777,260 @@ public static class PaymentComplementsEndpoints
         };
     }
 
+    private static async Task<Results<Ok<RefreshInternalRepBaseDocumentPaymentComplementStatusResponse>, BadRequest<RefreshInternalRepBaseDocumentPaymentComplementStatusResponse>, NotFound<RefreshInternalRepBaseDocumentPaymentComplementStatusResponse>, Conflict<RefreshInternalRepBaseDocumentPaymentComplementStatusResponse>, JsonHttpResult<RefreshInternalRepBaseDocumentPaymentComplementStatusResponse>>> RefreshInternalRepBaseDocumentPaymentComplementStatusAsync(
+        long fiscalDocumentId,
+        RefreshInternalRepBaseDocumentPaymentComplementStatusRequest? request,
+        RefreshInternalRepBaseDocumentPaymentComplementStatusService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(
+            new RefreshInternalRepBaseDocumentPaymentComplementStatusCommand
+            {
+                FiscalDocumentId = fiscalDocumentId,
+                PaymentComplementDocumentId = request?.PaymentComplementDocumentId
+            },
+            cancellationToken);
+
+        var response = new RefreshInternalRepBaseDocumentPaymentComplementStatusResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            FiscalDocumentId = result.FiscalDocumentId,
+            PaymentComplementDocumentId = result.PaymentComplementDocumentId,
+            PaymentComplementStatus = result.PaymentComplementStatus,
+            Uuid = result.Uuid,
+            LastKnownExternalStatus = result.LastKnownExternalStatus,
+            ProviderCode = result.ProviderCode,
+            ProviderMessage = result.ProviderMessage,
+            CheckedAtUtc = result.CheckedAtUtc,
+            SupportMessage = result.SupportMessage,
+            RawResponseSummaryJson = result.RawResponseSummaryJson,
+            RepOperationalStatus = result.UpdatedSummary?.RepOperationalStatus,
+            IsEligible = result.UpdatedSummary?.IsEligible,
+            IsBlocked = result.UpdatedSummary?.IsBlocked,
+            EligibilityReason = result.UpdatedSummary?.Eligibility.PrimaryReasonMessage,
+            NextRecommendedAction = result.UpdatedSummary?.NextRecommendedAction,
+            AvailableActions = result.UpdatedSummary?.AvailableActions.ToList() ?? [],
+            Alerts = result.UpdatedSummary?.Alerts.Select(MapOperationalAlert).ToList() ?? [],
+            OperationalState = result.OperationalState is null ? null : MapInternalRepOperationalState(result.OperationalState)
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "InternalRepBaseDocumentPaymentComplement.RefreshStatus",
+            "FiscalDocument",
+            fiscalDocumentId.ToString(),
+            result.Outcome.ToString(),
+            new { fiscalDocumentId, request?.PaymentComplementDocumentId },
+            new { result.PaymentComplementDocumentId, result.PaymentComplementStatus, result.LastKnownExternalStatus, result.CheckedAtUtc, result.UpdatedSummary?.RepOperationalStatus },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            RefreshInternalRepBaseDocumentPaymentComplementStatusOutcome.Refreshed => TypedResults.Ok(response),
+            RefreshInternalRepBaseDocumentPaymentComplementStatusOutcome.NotFound => TypedResults.NotFound(response),
+            RefreshInternalRepBaseDocumentPaymentComplementStatusOutcome.ProviderUnavailable => TypedResults.Json(response, statusCode: StatusCodes.Status503ServiceUnavailable),
+            RefreshInternalRepBaseDocumentPaymentComplementStatusOutcome.Conflict => TypedResults.Conflict(response),
+            _ => TypedResults.BadRequest(response)
+        };
+    }
+
+    private static async Task<Results<Ok<CancelInternalRepBaseDocumentPaymentComplementResponse>, BadRequest<CancelInternalRepBaseDocumentPaymentComplementResponse>, NotFound<CancelInternalRepBaseDocumentPaymentComplementResponse>, Conflict<CancelInternalRepBaseDocumentPaymentComplementResponse>, JsonHttpResult<CancelInternalRepBaseDocumentPaymentComplementResponse>>> CancelInternalRepBaseDocumentPaymentComplementAsync(
+        long fiscalDocumentId,
+        CancelInternalRepBaseDocumentPaymentComplementRequest? request,
+        CancelInternalRepBaseDocumentPaymentComplementService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(
+            new CancelInternalRepBaseDocumentPaymentComplementCommand
+            {
+                FiscalDocumentId = fiscalDocumentId,
+                PaymentComplementDocumentId = request?.PaymentComplementDocumentId,
+                CancellationReasonCode = request?.CancellationReasonCode ?? "02",
+                ReplacementUuid = request?.ReplacementUuid
+            },
+            cancellationToken);
+
+        var response = new CancelInternalRepBaseDocumentPaymentComplementResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            FiscalDocumentId = result.FiscalDocumentId,
+            PaymentComplementDocumentId = result.PaymentComplementDocumentId,
+            PaymentComplementStatus = result.PaymentComplementStatus,
+            PaymentComplementCancellationId = result.PaymentComplementCancellationId,
+            CancellationStatus = result.CancellationStatus,
+            CancelledAtUtc = result.CancelledAtUtc,
+            ProviderName = result.ProviderName,
+            ProviderTrackingId = result.ProviderTrackingId,
+            ProviderCode = result.ProviderCode,
+            ProviderMessage = result.ProviderMessage,
+            ErrorCode = result.ErrorCode,
+            SupportMessage = result.SupportMessage,
+            RawResponseSummaryJson = result.RawResponseSummaryJson,
+            RepOperationalStatus = result.UpdatedSummary?.RepOperationalStatus,
+            IsEligible = result.UpdatedSummary?.IsEligible,
+            IsBlocked = result.UpdatedSummary?.IsBlocked,
+            EligibilityReason = result.UpdatedSummary?.Eligibility.PrimaryReasonMessage,
+            NextRecommendedAction = result.UpdatedSummary?.NextRecommendedAction,
+            AvailableActions = result.UpdatedSummary?.AvailableActions.ToList() ?? [],
+            Alerts = result.UpdatedSummary?.Alerts.Select(MapOperationalAlert).ToList() ?? [],
+            OperationalState = result.OperationalState is null ? null : MapInternalRepOperationalState(result.OperationalState)
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "InternalRepBaseDocumentPaymentComplement.Cancel",
+            "FiscalDocument",
+            fiscalDocumentId.ToString(),
+            result.Outcome.ToString(),
+            new { fiscalDocumentId, request?.PaymentComplementDocumentId, request?.CancellationReasonCode, request?.ReplacementUuid },
+            new { result.PaymentComplementDocumentId, result.PaymentComplementStatus, result.CancellationStatus, result.CancelledAtUtc, result.UpdatedSummary?.RepOperationalStatus },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            CancelInternalRepBaseDocumentPaymentComplementOutcome.Cancelled => TypedResults.Ok(response),
+            CancelInternalRepBaseDocumentPaymentComplementOutcome.NotFound => TypedResults.NotFound(response),
+            CancelInternalRepBaseDocumentPaymentComplementOutcome.ProviderUnavailable => TypedResults.Json(response, statusCode: StatusCodes.Status503ServiceUnavailable),
+            CancelInternalRepBaseDocumentPaymentComplementOutcome.ProviderRejected => TypedResults.Conflict(response),
+            CancelInternalRepBaseDocumentPaymentComplementOutcome.Conflict => TypedResults.Conflict(response),
+            _ => TypedResults.BadRequest(response)
+        };
+    }
+
+    private static async Task<Results<Ok<RefreshExternalRepBaseDocumentPaymentComplementStatusResponse>, BadRequest<RefreshExternalRepBaseDocumentPaymentComplementStatusResponse>, NotFound<RefreshExternalRepBaseDocumentPaymentComplementStatusResponse>, Conflict<RefreshExternalRepBaseDocumentPaymentComplementStatusResponse>, JsonHttpResult<RefreshExternalRepBaseDocumentPaymentComplementStatusResponse>>> RefreshExternalRepBaseDocumentPaymentComplementStatusAsync(
+        long externalRepBaseDocumentId,
+        RefreshExternalRepBaseDocumentPaymentComplementStatusRequest? request,
+        RefreshExternalRepBaseDocumentPaymentComplementStatusService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(
+            new RefreshExternalRepBaseDocumentPaymentComplementStatusCommand
+            {
+                ExternalRepBaseDocumentId = externalRepBaseDocumentId,
+                PaymentComplementDocumentId = request?.PaymentComplementDocumentId
+            },
+            cancellationToken);
+
+        var response = new RefreshExternalRepBaseDocumentPaymentComplementStatusResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            ExternalRepBaseDocumentId = result.ExternalRepBaseDocumentId,
+            PaymentComplementDocumentId = result.PaymentComplementDocumentId,
+            PaymentComplementStatus = result.PaymentComplementStatus,
+            Uuid = result.Uuid,
+            LastKnownExternalStatus = result.LastKnownExternalStatus,
+            ProviderCode = result.ProviderCode,
+            ProviderMessage = result.ProviderMessage,
+            CheckedAtUtc = result.CheckedAtUtc,
+            SupportMessage = result.SupportMessage,
+            RawResponseSummaryJson = result.RawResponseSummaryJson,
+            OperationalStatus = result.UpdatedSummary?.OperationalStatus,
+            IsEligible = result.UpdatedSummary?.IsEligible,
+            IsBlocked = result.UpdatedSummary?.IsBlocked,
+            PrimaryReasonMessage = result.UpdatedSummary?.PrimaryReasonMessage,
+            NextRecommendedAction = result.UpdatedSummary?.NextRecommendedAction,
+            AvailableActions = result.UpdatedSummary?.AvailableActions.ToList() ?? [],
+            Alerts = result.UpdatedSummary?.Alerts.Select(MapOperationalAlert).ToList() ?? []
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "ExternalRepBaseDocumentPaymentComplement.RefreshStatus",
+            "ExternalRepBaseDocument",
+            externalRepBaseDocumentId.ToString(),
+            result.Outcome.ToString(),
+            new { externalRepBaseDocumentId, request?.PaymentComplementDocumentId },
+            new { result.PaymentComplementDocumentId, result.PaymentComplementStatus, result.LastKnownExternalStatus, result.CheckedAtUtc, result.UpdatedSummary?.OperationalStatus },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            RefreshExternalRepBaseDocumentPaymentComplementStatusOutcome.Refreshed => TypedResults.Ok(response),
+            RefreshExternalRepBaseDocumentPaymentComplementStatusOutcome.NotFound => TypedResults.NotFound(response),
+            RefreshExternalRepBaseDocumentPaymentComplementStatusOutcome.ProviderUnavailable => TypedResults.Json(response, statusCode: StatusCodes.Status503ServiceUnavailable),
+            RefreshExternalRepBaseDocumentPaymentComplementStatusOutcome.Conflict => TypedResults.Conflict(response),
+            _ => TypedResults.BadRequest(response)
+        };
+    }
+
+    private static async Task<Results<Ok<CancelExternalRepBaseDocumentPaymentComplementResponse>, BadRequest<CancelExternalRepBaseDocumentPaymentComplementResponse>, NotFound<CancelExternalRepBaseDocumentPaymentComplementResponse>, Conflict<CancelExternalRepBaseDocumentPaymentComplementResponse>, JsonHttpResult<CancelExternalRepBaseDocumentPaymentComplementResponse>>> CancelExternalRepBaseDocumentPaymentComplementAsync(
+        long externalRepBaseDocumentId,
+        CancelExternalRepBaseDocumentPaymentComplementRequest? request,
+        CancelExternalRepBaseDocumentPaymentComplementService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(
+            new CancelExternalRepBaseDocumentPaymentComplementCommand
+            {
+                ExternalRepBaseDocumentId = externalRepBaseDocumentId,
+                PaymentComplementDocumentId = request?.PaymentComplementDocumentId,
+                CancellationReasonCode = request?.CancellationReasonCode ?? "02",
+                ReplacementUuid = request?.ReplacementUuid
+            },
+            cancellationToken);
+
+        var response = new CancelExternalRepBaseDocumentPaymentComplementResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            ExternalRepBaseDocumentId = result.ExternalRepBaseDocumentId,
+            PaymentComplementDocumentId = result.PaymentComplementDocumentId,
+            PaymentComplementStatus = result.PaymentComplementStatus,
+            PaymentComplementCancellationId = result.PaymentComplementCancellationId,
+            CancellationStatus = result.CancellationStatus,
+            CancelledAtUtc = result.CancelledAtUtc,
+            ProviderName = result.ProviderName,
+            ProviderTrackingId = result.ProviderTrackingId,
+            ProviderCode = result.ProviderCode,
+            ProviderMessage = result.ProviderMessage,
+            ErrorCode = result.ErrorCode,
+            SupportMessage = result.SupportMessage,
+            RawResponseSummaryJson = result.RawResponseSummaryJson,
+            OperationalStatus = result.UpdatedSummary?.OperationalStatus,
+            IsEligible = result.UpdatedSummary?.IsEligible,
+            IsBlocked = result.UpdatedSummary?.IsBlocked,
+            PrimaryReasonMessage = result.UpdatedSummary?.PrimaryReasonMessage,
+            NextRecommendedAction = result.UpdatedSummary?.NextRecommendedAction,
+            AvailableActions = result.UpdatedSummary?.AvailableActions.ToList() ?? [],
+            Alerts = result.UpdatedSummary?.Alerts.Select(MapOperationalAlert).ToList() ?? []
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "ExternalRepBaseDocumentPaymentComplement.Cancel",
+            "ExternalRepBaseDocument",
+            externalRepBaseDocumentId.ToString(),
+            result.Outcome.ToString(),
+            new { externalRepBaseDocumentId, request?.PaymentComplementDocumentId, request?.CancellationReasonCode, request?.ReplacementUuid },
+            new { result.PaymentComplementDocumentId, result.PaymentComplementStatus, result.CancellationStatus, result.CancelledAtUtc, result.UpdatedSummary?.OperationalStatus },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            CancelExternalRepBaseDocumentPaymentComplementOutcome.Cancelled => TypedResults.Ok(response),
+            CancelExternalRepBaseDocumentPaymentComplementOutcome.NotFound => TypedResults.NotFound(response),
+            CancelExternalRepBaseDocumentPaymentComplementOutcome.ProviderUnavailable => TypedResults.Json(response, statusCode: StatusCodes.Status503ServiceUnavailable),
+            CancelExternalRepBaseDocumentPaymentComplementOutcome.ProviderRejected => TypedResults.Conflict(response),
+            CancelExternalRepBaseDocumentPaymentComplementOutcome.Conflict => TypedResults.Conflict(response),
+            _ => TypedResults.BadRequest(response)
+        };
+    }
+
     private static async Task<Results<Ok<ExternalRepBaseDocumentImportResponse>, BadRequest<ExternalRepBaseDocumentImportResponse>, Conflict<ExternalRepBaseDocumentImportResponse>>> ImportExternalRepBaseDocumentXmlAsync(
         IFormFile? file,
         ImportExternalRepBaseDocumentFromXmlService service,
@@ -1169,6 +1463,13 @@ public static class PaymentComplementsEndpoints
             PaymentComplementCount = item.PaymentComplementCount,
             StampedPaymentComplementCount = item.StampedPaymentComplementCount,
             LastRepIssuedAtUtc = item.LastRepIssuedAtUtc,
+            HasAppliedPaymentsWithoutStampedRep = item.HasAppliedPaymentsWithoutStampedRep,
+            HasPreparedRepPendingStamp = item.HasPreparedRepPendingStamp,
+            HasRepWithError = item.HasRepWithError,
+            HasBlockedOperation = item.HasBlockedOperation,
+            NextRecommendedAction = item.NextRecommendedAction,
+            AvailableActions = item.AvailableActions.ToList(),
+            Alerts = item.Alerts.Select(MapOperationalAlert).ToList(),
             OperationalState = item.OperationalState is null ? null : MapInternalRepOperationalState(item.OperationalState)
         };
     }
@@ -1281,7 +1582,13 @@ public static class PaymentComplementsEndpoints
             IsBlocked = item.IsBlocked,
             PrimaryReasonCode = item.PrimaryReasonCode,
             PrimaryReasonMessage = item.PrimaryReasonMessage,
-            AvailableActions = item.AvailableActions.ToList()
+            HasAppliedPaymentsWithoutStampedRep = item.HasAppliedPaymentsWithoutStampedRep,
+            HasPreparedRepPendingStamp = item.HasPreparedRepPendingStamp,
+            HasRepWithError = item.HasRepWithError,
+            HasBlockedOperation = item.HasBlockedOperation,
+            NextRecommendedAction = item.NextRecommendedAction,
+            AvailableActions = item.AvailableActions.ToList(),
+            Alerts = item.Alerts.Select(MapOperationalAlert).ToList()
         };
     }
 
@@ -1316,7 +1623,23 @@ public static class PaymentComplementsEndpoints
             PrimaryReasonCode = item.PrimaryReasonCode,
             PrimaryReasonMessage = item.PrimaryReasonMessage,
             AvailableActions = item.AvailableActions.ToList(),
+            HasAppliedPaymentsWithoutStampedRep = item.HasAppliedPaymentsWithoutStampedRep,
+            HasPreparedRepPendingStamp = item.HasPreparedRepPendingStamp,
+            HasRepWithError = item.HasRepWithError,
+            HasBlockedOperation = item.HasBlockedOperation,
+            NextRecommendedAction = item.NextRecommendedAction,
+            Alerts = item.Alerts.Select(MapOperationalAlert).ToList(),
             ImportedAtUtc = item.ImportedAtUtc
+        };
+    }
+
+    private static RepOperationalAlertResponse MapOperationalAlert(RepOperationalAlert alert)
+    {
+        return new RepOperationalAlertResponse
+        {
+            Code = alert.Code,
+            Severity = alert.Severity,
+            Message = alert.Message
         };
     }
 
@@ -1803,7 +2126,30 @@ public sealed class InternalRepBaseDocumentItemResponse
 
     public DateTime? LastRepIssuedAtUtc { get; set; }
 
+    public bool HasAppliedPaymentsWithoutStampedRep { get; set; }
+
+    public bool HasPreparedRepPendingStamp { get; set; }
+
+    public bool HasRepWithError { get; set; }
+
+    public bool HasBlockedOperation { get; set; }
+
+    public string? NextRecommendedAction { get; set; }
+
+    public List<string> AvailableActions { get; set; } = [];
+
+    public List<RepOperationalAlertResponse> Alerts { get; set; } = [];
+
     public InternalRepBaseDocumentOperationalStateResponse? OperationalState { get; set; }
+}
+
+public sealed class RepOperationalAlertResponse
+{
+    public string Code { get; set; } = string.Empty;
+
+    public string Severity { get; set; } = string.Empty;
+
+    public string Message { get; set; } = string.Empty;
 }
 
 public sealed class InternalRepBaseDocumentDetailResponse
@@ -2072,6 +2418,116 @@ public sealed class StampInternalRepBaseDocumentPaymentComplementResponse
     public InternalRepBaseDocumentOperationalStateResponse? OperationalState { get; set; }
 }
 
+public sealed class RefreshInternalRepBaseDocumentPaymentComplementStatusRequest
+{
+    public long? PaymentComplementDocumentId { get; set; }
+}
+
+public sealed class RefreshInternalRepBaseDocumentPaymentComplementStatusResponse
+{
+    public string Outcome { get; set; } = string.Empty;
+
+    public bool IsSuccess { get; set; }
+
+    public string? ErrorMessage { get; set; }
+
+    public long FiscalDocumentId { get; set; }
+
+    public long? PaymentComplementDocumentId { get; set; }
+
+    public string? PaymentComplementStatus { get; set; }
+
+    public string? Uuid { get; set; }
+
+    public string? LastKnownExternalStatus { get; set; }
+
+    public string? ProviderCode { get; set; }
+
+    public string? ProviderMessage { get; set; }
+
+    public DateTime? CheckedAtUtc { get; set; }
+
+    public string? SupportMessage { get; set; }
+
+    public string? RawResponseSummaryJson { get; set; }
+
+    public string? RepOperationalStatus { get; set; }
+
+    public bool? IsEligible { get; set; }
+
+    public bool? IsBlocked { get; set; }
+
+    public string? EligibilityReason { get; set; }
+
+    public string? NextRecommendedAction { get; set; }
+
+    public List<string> AvailableActions { get; set; } = [];
+
+    public List<RepOperationalAlertResponse> Alerts { get; set; } = [];
+
+    public InternalRepBaseDocumentOperationalStateResponse? OperationalState { get; set; }
+}
+
+public sealed class CancelInternalRepBaseDocumentPaymentComplementRequest
+{
+    public long? PaymentComplementDocumentId { get; set; }
+
+    public string CancellationReasonCode { get; set; } = "02";
+
+    public string? ReplacementUuid { get; set; }
+}
+
+public sealed class CancelInternalRepBaseDocumentPaymentComplementResponse
+{
+    public string Outcome { get; set; } = string.Empty;
+
+    public bool IsSuccess { get; set; }
+
+    public string? ErrorMessage { get; set; }
+
+    public long FiscalDocumentId { get; set; }
+
+    public long? PaymentComplementDocumentId { get; set; }
+
+    public string? PaymentComplementStatus { get; set; }
+
+    public long? PaymentComplementCancellationId { get; set; }
+
+    public string? CancellationStatus { get; set; }
+
+    public DateTime? CancelledAtUtc { get; set; }
+
+    public string? ProviderName { get; set; }
+
+    public string? ProviderTrackingId { get; set; }
+
+    public string? ProviderCode { get; set; }
+
+    public string? ProviderMessage { get; set; }
+
+    public string? ErrorCode { get; set; }
+
+    public string? SupportMessage { get; set; }
+
+    public string? RawResponseSummaryJson { get; set; }
+
+    public string? RepOperationalStatus { get; set; }
+
+    public bool? IsEligible { get; set; }
+
+    public bool? IsBlocked { get; set; }
+
+    public string? EligibilityReason { get; set; }
+
+    public string? NextRecommendedAction { get; set; }
+
+    public List<string> AvailableActions { get; set; } = [];
+
+    public List<RepOperationalAlertResponse> Alerts { get; set; } = [];
+
+    public InternalRepBaseDocumentOperationalStateResponse? OperationalState { get; set; }
+}
+
 public sealed class RegisterExternalRepBaseDocumentPaymentRequest
 {
     public DateOnly PaymentDate { get; set; }
@@ -2209,6 +2665,112 @@ public sealed class StampExternalRepBaseDocumentPaymentComplementResponse
     public bool? IsBlocked { get; set; }
 
     public string? EligibilityReason { get; set; }
+}
+
+public sealed class RefreshExternalRepBaseDocumentPaymentComplementStatusRequest
+{
+    public long? PaymentComplementDocumentId { get; set; }
+}
+
+public sealed class RefreshExternalRepBaseDocumentPaymentComplementStatusResponse
+{
+    public string Outcome { get; set; } = string.Empty;
+
+    public bool IsSuccess { get; set; }
+
+    public string? ErrorMessage { get; set; }
+
+    public long ExternalRepBaseDocumentId { get; set; }
+
+    public long? PaymentComplementDocumentId { get; set; }
+
+    public string? PaymentComplementStatus { get; set; }
+
+    public string? Uuid { get; set; }
+
+    public string? LastKnownExternalStatus { get; set; }
+
+    public string? ProviderCode { get; set; }
+
+    public string? ProviderMessage { get; set; }
+
+    public DateTime? CheckedAtUtc { get; set; }
+
+    public string? SupportMessage { get; set; }
+
+    public string? RawResponseSummaryJson { get; set; }
+
+    public string? OperationalStatus { get; set; }
+
+    public bool? IsEligible { get; set; }
+
+    public bool? IsBlocked { get; set; }
+
+    public string? PrimaryReasonMessage { get; set; }
+
+    public string? NextRecommendedAction { get; set; }
+
+    public List<string> AvailableActions { get; set; } = [];
+
+    public List<RepOperationalAlertResponse> Alerts { get; set; } = [];
+}
+
+public sealed class CancelExternalRepBaseDocumentPaymentComplementRequest
+{
+    public long? PaymentComplementDocumentId { get; set; }
+
+    public string CancellationReasonCode { get; set; } = "02";
+
+    public string? ReplacementUuid { get; set; }
+}
+
+public sealed class CancelExternalRepBaseDocumentPaymentComplementResponse
+{
+    public string Outcome { get; set; } = string.Empty;
+
+    public bool IsSuccess { get; set; }
+
+    public string? ErrorMessage { get; set; }
+
+    public long ExternalRepBaseDocumentId { get; set; }
+
+    public long? PaymentComplementDocumentId { get; set; }
+
+    public string? PaymentComplementStatus { get; set; }
+
+    public long? PaymentComplementCancellationId { get; set; }
+
+    public string? CancellationStatus { get; set; }
+
+    public DateTime? CancelledAtUtc { get; set; }
+
+    public string? ProviderName { get; set; }
+
+    public string? ProviderTrackingId { get; set; }
+
+    public string? ProviderCode { get; set; }
+
+    public string? ProviderMessage { get; set; }
+
+    public string? ErrorCode { get; set; }
+
+    public string? SupportMessage { get; set; }
+
+    public string? RawResponseSummaryJson { get; set; }
+
+    public string? OperationalStatus { get; set; }
+
+    public bool? IsEligible { get; set; }
+
+    public bool? IsBlocked { get; set; }
+
+    public string? PrimaryReasonMessage { get; set; }
+
+    public string? NextRecommendedAction { get; set; }
+
+    public List<string> AvailableActions { get; set; } = [];
+
+    public List<RepOperationalAlertResponse> Alerts { get; set; } = [];
 }
 
 public sealed class ExternalRepBaseDocumentImportResponse
@@ -2358,7 +2920,19 @@ public sealed class ExternalRepBaseDocumentItemResponse
 
     public string PrimaryReasonMessage { get; set; } = string.Empty;
 
+    public bool HasAppliedPaymentsWithoutStampedRep { get; set; }
+
+    public bool HasPreparedRepPendingStamp { get; set; }
+
+    public bool HasRepWithError { get; set; }
+
+    public bool HasBlockedOperation { get; set; }
+
+    public string? NextRecommendedAction { get; set; }
+
     public List<string> AvailableActions { get; set; } = [];
+
+    public List<RepOperationalAlertResponse> Alerts { get; set; } = [];
 }
 
 public sealed class ExternalRepBaseDocumentPaymentHistoryResponse
@@ -2511,7 +3085,19 @@ public sealed class RepBaseDocumentItemResponse
 
     public string PrimaryReasonMessage { get; set; } = string.Empty;
 
+    public bool HasAppliedPaymentsWithoutStampedRep { get; set; }
+
+    public bool HasPreparedRepPendingStamp { get; set; }
+
+    public bool HasRepWithError { get; set; }
+
+    public bool HasBlockedOperation { get; set; }
+
+    public string? NextRecommendedAction { get; set; }
+
     public List<string> AvailableActions { get; set; } = [];
+
+    public List<RepOperationalAlertResponse> Alerts { get; set; } = [];
 
     public DateTime? ImportedAtUtc { get; set; }
 }

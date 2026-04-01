@@ -78,6 +78,7 @@ public sealed class SearchExternalRepBaseDocumentsService
         IssuerProfile? activeIssuerProfile)
     {
         var evaluation = ExternalRepBaseDocumentOperationalEvaluator.Evaluate(summary, activeIssuerProfile);
+        var operationalInsight = ExternalRepOperationalInsightBuilder.Build(summary, evaluation);
 
         return new ExternalRepBaseDocumentListItem
         {
@@ -125,7 +126,13 @@ public sealed class SearchExternalRepBaseDocumentsService
             IsBlocked = evaluation.IsBlocked,
             PrimaryReasonCode = evaluation.PrimaryReasonCode,
             PrimaryReasonMessage = evaluation.PrimaryReasonMessage,
-            AvailableActions = evaluation.AvailableActions
+            HasAppliedPaymentsWithoutStampedRep = operationalInsight.HasAppliedPaymentsWithoutStampedRep,
+            HasPreparedRepPendingStamp = operationalInsight.HasPreparedRepPendingStamp,
+            HasRepWithError = operationalInsight.HasRepWithError,
+            HasBlockedOperation = operationalInsight.HasBlockedOperation,
+            NextRecommendedAction = operationalInsight.NextRecommendedAction,
+            AvailableActions = operationalInsight.AvailableActions,
+            Alerts = operationalInsight.Alerts
         };
     }
 

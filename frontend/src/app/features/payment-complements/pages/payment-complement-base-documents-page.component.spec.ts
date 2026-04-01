@@ -50,6 +50,15 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
             paymentComplementCount: 0,
             stampedPaymentComplementCount: 0,
             lastRepIssuedAtUtc: null,
+            hasAppliedPaymentsWithoutStampedRep: true,
+            hasPreparedRepPendingStamp: false,
+            hasRepWithError: false,
+            hasBlockedOperation: false,
+            nextRecommendedAction: 'PrepareRep',
+            availableActions: ['ViewDetail', 'RegisterPayment', 'PrepareRep'],
+            alerts: [
+              { code: 'AppliedPaymentsWithoutStampedRep', severity: 'warning', message: 'Hay pagos aplicados sin REP timbrado en este CFDI.' }
+            ],
             operationalState: {
               lastEligibilityEvaluatedAtUtc: '2026-04-03T08:00:00Z',
               lastEligibilityStatus: 'Eligible',
@@ -98,6 +107,15 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
             paymentComplementCount: 0,
             stampedPaymentComplementCount: 0,
             lastRepIssuedAtUtc: null,
+            hasAppliedPaymentsWithoutStampedRep: false,
+            hasPreparedRepPendingStamp: false,
+            hasRepWithError: false,
+            hasBlockedOperation: true,
+            nextRecommendedAction: null,
+            availableActions: ['ViewDetail'],
+            alerts: [
+              { code: 'BlockedOperation', severity: 'critical', message: 'El CFDI está cancelado.' }
+            ],
             operationalState: {
               lastEligibilityEvaluatedAtUtc: '2026-04-03T08:05:00Z',
               lastEligibilityStatus: 'Blocked',
@@ -150,6 +168,15 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
           paymentComplementCount: 1,
           stampedPaymentComplementCount: 1,
           lastRepIssuedAtUtc: '2026-04-02T12:05:00Z',
+          hasAppliedPaymentsWithoutStampedRep: false,
+          hasPreparedRepPendingStamp: false,
+          hasRepWithError: false,
+          hasBlockedOperation: false,
+          nextRecommendedAction: 'RefreshRepStatus',
+          availableActions: ['ViewDetail', 'RefreshRepStatus', 'CancelRep'],
+          alerts: [
+            { code: 'StampedRepAvailable', severity: 'info', message: 'El CFDI ya cuenta con REP timbrado y sólo requiere seguimiento o refresh de estatus.' }
+          ],
           operationalState: {
             lastEligibilityEvaluatedAtUtc: '2026-04-03T08:00:00Z',
             lastEligibilityStatus: 'Eligible',
@@ -302,6 +329,30 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
           totalPaidApplied: 76
         }
       })),
+      refreshInternalBaseDocumentPaymentComplementStatus: vi.fn().mockReturnValue(of({
+        outcome: 'Refreshed',
+        isSuccess: true,
+        fiscalDocumentId: 501,
+        paymentComplementDocumentId: 7001,
+        paymentComplementStatus: 'Stamped',
+        lastKnownExternalStatus: 'VIGENTE',
+        checkedAtUtc: '2026-04-03T10:00:00Z',
+        nextRecommendedAction: 'RefreshRepStatus',
+        availableActions: ['ViewDetail', 'RefreshRepStatus', 'CancelRep'],
+        alerts: [{ code: 'StampedRepAvailable', severity: 'info', message: 'El CFDI ya cuenta con REP timbrado y sólo requiere seguimiento o refresh de estatus.' }]
+      })),
+      cancelInternalBaseDocumentPaymentComplement: vi.fn().mockReturnValue(of({
+        outcome: 'Cancelled',
+        isSuccess: true,
+        fiscalDocumentId: 501,
+        paymentComplementDocumentId: 7001,
+        paymentComplementStatus: 'Cancelled',
+        paymentComplementCancellationId: 7101,
+        cancellationStatus: 'Cancelled',
+        nextRecommendedAction: null,
+        availableActions: ['ViewDetail'],
+        alerts: []
+      })),
       ...overrides
     };
   }
@@ -373,6 +424,54 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('UUID-PC-1');
     expect(fixture.nativeElement.textContent).toContain('EligibleInternalRep');
     expect(fixture.nativeElement.textContent).toContain('FacturaloPlus');
+  });
+
+  it('renders operational alerts and refresh/cancel actions in detail', async () => {
+    const refreshInternalBaseDocumentPaymentComplementStatus = vi.fn().mockReturnValue(of({
+      outcome: 'Refreshed',
+      isSuccess: true,
+      fiscalDocumentId: 501,
+      paymentComplementDocumentId: 7001,
+      paymentComplementStatus: 'Stamped',
+      lastKnownExternalStatus: 'VIGENTE',
+      nextRecommendedAction: 'RefreshRepStatus',
+      availableActions: ['ViewDetail', 'RefreshRepStatus', 'CancelRep'],
+      alerts: []
+    }));
+    const cancelInternalBaseDocumentPaymentComplement = vi.fn().mockReturnValue(of({
+      outcome: 'Cancelled',
+      isSuccess: true,
+      fiscalDocumentId: 501,
+      paymentComplementDocumentId: 7001,
+      paymentComplementStatus: 'Cancelled',
+      cancellationStatus: 'Cancelled',
+      availableActions: ['ViewDetail'],
+      alerts: []
+    }));
+
+    const fixture = await configure({
+      refreshInternalBaseDocumentPaymentComplementStatus,
+      cancelInternalBaseDocumentPaymentComplement
+    });
+
+    await fixture.componentInstance['openDetailModal'](fixture.componentInstance['items']()[0]);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Seguimiento operativo');
+    expect(fixture.nativeElement.textContent).toContain('REP timbrado disponible');
+    expect(fixture.nativeElement.textContent).toContain('Refrescar');
+    expect(fixture.nativeElement.textContent).toContain('Cancelar');
+
+    const complement = fixture.componentInstance['selectedDetail']()!.issuedReps[0];
+    await fixture.componentInstance['refreshPaymentComplement'](complement);
+    await fixture.componentInstance['cancelPaymentComplement'](complement);
+
+    expect(refreshInternalBaseDocumentPaymentComplementStatus).toHaveBeenCalledWith(501, { paymentComplementDocumentId: 7001 });
+    expect(cancelInternalBaseDocumentPaymentComplement).toHaveBeenCalledWith(501, {
+      paymentComplementDocumentId: 7001,
+      cancellationReasonCode: '02',
+      replacementUuid: null
+    });
   });
 
   it('renders the payment form from the base-document context and submits successfully', async () => {

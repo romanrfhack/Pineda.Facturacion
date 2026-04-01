@@ -61,7 +61,13 @@ describe('PaymentComplementExternalBaseDocumentsPageComponent', () => {
                 isBlocked: false,
                 primaryReasonCode: 'ReadyForPayment',
                 primaryReasonMessage: 'Listo para registrar pago.',
-                availableActions: ['ViewDetail', 'RegisterPayment']
+                hasAppliedPaymentsWithoutStampedRep: false,
+                hasPreparedRepPendingStamp: false,
+                hasRepWithError: false,
+                hasBlockedOperation: false,
+                nextRecommendedAction: 'RegisterPayment',
+                availableActions: ['ViewDetail', 'RegisterPayment'],
+                alerts: []
               }]
             })),
             getExternalBaseDocumentById: vi.fn().mockReturnValue(of({
@@ -101,11 +107,35 @@ describe('PaymentComplementExternalBaseDocumentsPageComponent', () => {
                 isBlocked: false,
                 primaryReasonCode: 'ReadyForPayment',
                 primaryReasonMessage: 'Listo para registrar pago.',
-                availableActions: ['ViewDetail', 'RegisterPayment']
+                hasAppliedPaymentsWithoutStampedRep: false,
+                hasPreparedRepPendingStamp: false,
+                hasRepWithError: false,
+                hasBlockedOperation: false,
+                nextRecommendedAction: 'RefreshRepStatus',
+                availableActions: ['ViewDetail', 'RegisterPayment', 'RefreshRepStatus', 'CancelRep'],
+                alerts: [
+                  { code: 'StampedRepAvailable', severity: 'info', message: 'El CFDI externo ya cuenta con REP timbrado y sólo requiere seguimiento o refresh de estatus.' }
+                ]
               },
               paymentHistory: [],
               paymentApplications: [],
-              issuedReps: []
+              issuedReps: [
+                {
+                  paymentComplementId: 7001,
+                  accountsReceivablePaymentId: 9001,
+                  status: 'Stamped',
+                  uuid: 'UUID-REP-1',
+                  paymentDateUtc: '2026-04-01T12:00:00Z',
+                  issuedAtUtc: '2026-04-01T12:10:00Z',
+                  stampedAtUtc: '2026-04-01T12:12:00Z',
+                  cancelledAtUtc: null,
+                  providerName: 'FacturaloPlus',
+                  installmentNumber: 1,
+                  previousBalance: 116,
+                  paidAmount: 40,
+                  remainingBalance: 76
+                }
+              ]
             })),
             registerExternalBaseDocumentPayment: vi.fn().mockReturnValue(of({
               outcome: 'RegisteredAndApplied',
@@ -140,6 +170,27 @@ describe('PaymentComplementExternalBaseDocumentsPageComponent', () => {
               stampUuid: 'UUID-REP-1',
               stampedAtUtc: '2026-04-01T13:00:00Z',
               xmlAvailable: true
+            })),
+            refreshExternalBaseDocumentPaymentComplementStatus: vi.fn().mockReturnValue(of({
+              outcome: 'Refreshed',
+              isSuccess: true,
+              externalRepBaseDocumentId: 123,
+              paymentComplementDocumentId: 7001,
+              paymentComplementStatus: 'Stamped',
+              lastKnownExternalStatus: 'VIGENTE',
+              nextRecommendedAction: 'RefreshRepStatus',
+              availableActions: ['ViewDetail', 'RefreshRepStatus', 'CancelRep'],
+              alerts: []
+            })),
+            cancelExternalBaseDocumentPaymentComplement: vi.fn().mockReturnValue(of({
+              outcome: 'Cancelled',
+              isSuccess: true,
+              externalRepBaseDocumentId: 123,
+              paymentComplementDocumentId: 7001,
+              paymentComplementStatus: 'Cancelled',
+              cancellationStatus: 'Cancelled',
+              availableActions: ['ViewDetail'],
+              alerts: []
             }))
           }
         }
@@ -178,5 +229,30 @@ describe('PaymentComplementExternalBaseDocumentsPageComponent', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).toContain('Registrar pago');
+  });
+
+  it('renders operational alerts and uses refresh/cancel from external detail', async () => {
+    const fixture = await configure();
+
+    await fixture.componentInstance['openDetail'](123);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Seguimiento operativo');
+    expect(fixture.nativeElement.textContent).toContain('REP timbrado disponible');
+    expect(fixture.nativeElement.textContent).toContain('Refrescar');
+    expect(fixture.nativeElement.textContent).toContain('Cancelar');
+
+    const api = TestBed.inject(PaymentComplementsApiService) as unknown as Record<string, ReturnType<typeof vi.fn>>;
+    const complement = fixture.componentInstance['selectedDetail']()!.issuedReps[0];
+
+    await fixture.componentInstance['refreshRep'](complement);
+    await fixture.componentInstance['cancelRep'](complement);
+
+    expect(api['refreshExternalBaseDocumentPaymentComplementStatus']).toHaveBeenCalledWith(123, { paymentComplementDocumentId: 7001 });
+    expect(api['cancelExternalBaseDocumentPaymentComplement']).toHaveBeenCalledWith(123, {
+      paymentComplementDocumentId: 7001,
+      cancellationReasonCode: '02',
+      replacementUuid: null
+    });
   });
 });

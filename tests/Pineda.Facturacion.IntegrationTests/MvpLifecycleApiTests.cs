@@ -1499,6 +1499,91 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
+    public async Task InternalRepBaseDocuments_RefreshAndCancelRep_FromBaseDocumentContext_UpdatesDetail()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-REP-5-INT-1001", uuid: "UUID-REP-5-INT-1001");
+
+        factory.PaymentComplementStampingGateway.ResponseFactory = _ => new PaymentComplementStampingGatewayResult
+        {
+            Outcome = PaymentComplementStampingGatewayOutcome.Stamped,
+            ProviderName = "FacturaloPlus",
+            ProviderOperation = "payment-complement-stamp",
+            ProviderTrackingId = "TRACK-PC-5-INT-1001",
+            Uuid = "UUID-PC-5-INT-1001",
+            StampedAtUtc = new DateTime(2026, 04, 08, 12, 0, 0, DateTimeKind.Utc),
+            XmlContent = "<cfdi:Comprobante Version=\"4.0\"><pago20:Pagos /></cfdi:Comprobante>",
+            XmlHash = "XML-HASH-PC-5-INT-1001",
+            OriginalString = "||1.1|UUID-PC-5-INT-1001||"
+        };
+        factory.PaymentComplementStatusQueryGateway.ResponseFactory = _ => new PaymentComplementStatusQueryGatewayResult
+        {
+            Outcome = PaymentComplementStatusQueryGatewayOutcome.Refreshed,
+            ProviderName = "FacturaloPlus",
+            ProviderOperation = "payment-complement-status-query",
+            ExternalStatus = "VIGENTE",
+            CheckedAtUtc = new DateTime(2026, 04, 08, 12, 30, 0, DateTimeKind.Utc)
+        };
+
+        var createArResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest());
+        Assert.Equal(HttpStatusCode.OK, createArResponse.StatusCode);
+
+        var registerPaymentResponse = await client.PostAsJsonAsync($"/api/payment-complements/base-documents/internal/{fiscalDocumentId}/payments", new RegisterInternalRepBaseDocumentPaymentRequest
+        {
+            PaymentDate = new DateOnly(2026, 04, 08),
+            PaymentFormSat = "03",
+            Amount = 100m,
+            Reference = "TRANS-5-INT-1001"
+        });
+        Assert.Equal(HttpStatusCode.OK, registerPaymentResponse.StatusCode);
+        using var registerPaymentJson = await JsonDocument.ParseAsync(await registerPaymentResponse.Content.ReadAsStreamAsync());
+        var paymentId = registerPaymentJson.RootElement.GetProperty("accountsReceivablePaymentId").GetInt64();
+
+        var prepareResponse = await client.PostAsJsonAsync($"/api/payment-complements/base-documents/internal/{fiscalDocumentId}/prepare", new PrepareInternalRepBaseDocumentPaymentComplementRequest
+        {
+            AccountsReceivablePaymentId = paymentId
+        });
+        Assert.Equal(HttpStatusCode.OK, prepareResponse.StatusCode);
+        using var prepareJson = await JsonDocument.ParseAsync(await prepareResponse.Content.ReadAsStreamAsync());
+        var paymentComplementId = prepareJson.RootElement.GetProperty("paymentComplementDocumentId").GetInt64();
+
+        var stampResponse = await client.PostAsJsonAsync($"/api/payment-complements/base-documents/internal/{fiscalDocumentId}/stamp", new StampInternalRepBaseDocumentPaymentComplementRequest
+        {
+            PaymentComplementDocumentId = paymentComplementId
+        });
+        Assert.Equal(HttpStatusCode.OK, stampResponse.StatusCode);
+
+        var refreshResponse = await client.PostAsJsonAsync($"/api/payment-complements/base-documents/internal/{fiscalDocumentId}/refresh-rep-status", new RefreshInternalRepBaseDocumentPaymentComplementStatusRequest
+        {
+            PaymentComplementDocumentId = paymentComplementId
+        });
+        Assert.Equal(HttpStatusCode.OK, refreshResponse.StatusCode);
+        using var refreshJson = await JsonDocument.ParseAsync(await refreshResponse.Content.ReadAsStreamAsync());
+        Assert.Equal("VIGENTE", refreshJson.RootElement.GetProperty("lastKnownExternalStatus").GetString());
+        Assert.Equal("RegisterPayment", refreshJson.RootElement.GetProperty("nextRecommendedAction").GetString());
+        Assert.Contains(
+            refreshJson.RootElement.GetProperty("availableActions").EnumerateArray().Select(x => x.GetString()).ToList(),
+            x => x == "RefreshRepStatus");
+
+        var cancelResponse = await client.PostAsJsonAsync($"/api/payment-complements/base-documents/internal/{fiscalDocumentId}/cancel-rep", new CancelInternalRepBaseDocumentPaymentComplementRequest
+        {
+            PaymentComplementDocumentId = paymentComplementId,
+            CancellationReasonCode = "02"
+        });
+        Assert.Equal(HttpStatusCode.OK, cancelResponse.StatusCode);
+        using var cancelJson = await JsonDocument.ParseAsync(await cancelResponse.Content.ReadAsStreamAsync());
+        Assert.Equal("Cancelled", cancelJson.RootElement.GetProperty("cancellationStatus").GetString());
+
+        var detailResponse = await client.GetAsync($"/api/payment-complements/base-documents/internal/{fiscalDocumentId}");
+        Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
+        using var detailJson = await JsonDocument.ParseAsync(await detailResponse.Content.ReadAsStreamAsync());
+        var issuedRep = Assert.Single(detailJson.RootElement.GetProperty("issuedReps").EnumerateArray().ToList());
+        Assert.Equal("Cancelled", issuedRep.GetProperty("status").GetString());
+    }
+
+    [Fact]
     public async Task InternalRepBaseDocuments_PrepareRep_BlocksWhenNoAppliedPaymentExists()
     {
         await using var factory = new MvpApiFactory();
@@ -1818,6 +1903,132 @@ public class MvpLifecycleApiTests
         Assert.Equal("RepIssued", unifiedItem.GetProperty("operationalStatus").GetString());
         Assert.Equal(0m, unifiedItem.GetProperty("outstandingBalance").GetDecimal());
         Assert.Equal(1, unifiedItem.GetProperty("repCount").GetInt32());
+    }
+
+    [Fact]
+    public async Task ExternalRepBaseDocuments_RefreshAndCancelRep_FromBaseDocumentContext_UpdatesDetail()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        await factory.SeedStandardFiscalMasterDataAsync();
+
+        factory.FiscalStatusQueryGateway.ResponseFactory = _ => new FiscalStatusQueryGatewayResult
+        {
+            Outcome = FiscalStatusQueryGatewayOutcome.Refreshed,
+            ExternalStatus = "Vigente",
+            CheckedAtUtc = new DateTime(2026, 04, 06, 10, 0, 0, DateTimeKind.Utc)
+        };
+        factory.PaymentComplementStampingGateway.ResponseFactory = _ => new PaymentComplementStampingGatewayResult
+        {
+            Outcome = PaymentComplementStampingGatewayOutcome.Stamped,
+            ProviderName = "FacturaloPlus",
+            ProviderOperation = "payment-complement-stamp",
+            ProviderTrackingId = "TRACK-PC-EXT-5-1001",
+            Uuid = "UUID-PC-EXT-5-1001",
+            StampedAtUtc = new DateTime(2026, 04, 08, 14, 0, 0, DateTimeKind.Utc),
+            XmlContent = "<cfdi:Comprobante Version=\"4.0\"><pago20:Pagos /></cfdi:Comprobante>",
+            XmlHash = "XML-HASH-PC-EXT-5-1001",
+            OriginalString = "||1.1|UUID-PC-EXT-5-1001||"
+        };
+        factory.PaymentComplementStatusQueryGateway.ResponseFactory = _ => new PaymentComplementStatusQueryGatewayResult
+        {
+            Outcome = PaymentComplementStatusQueryGatewayOutcome.Refreshed,
+            ProviderName = "FacturaloPlus",
+            ProviderOperation = "payment-complement-status-query",
+            ExternalStatus = "VIGENTE",
+            CheckedAtUtc = new DateTime(2026, 04, 08, 14, 30, 0, DateTimeKind.Utc)
+        };
+
+        long externalId;
+        using (var content = new MultipartFormDataContent())
+        {
+            var file = new ByteArrayContent(Encoding.UTF8.GetBytes(CreateExternalRepXmlContent(
+                uuid: "UUID-EXT-5-1001",
+                receiverRfc: "BBB010101BBB")));
+            file.Headers.ContentType = new MediaTypeHeaderValue("application/xml");
+            content.Add(file, "file", "external-refresh-cancel.xml");
+            var importResponse = await client.PostAsync("/api/payment-complements/external-base-documents/import-xml", content);
+            Assert.Equal(HttpStatusCode.OK, importResponse.StatusCode);
+            using var importJson = await JsonDocument.ParseAsync(await importResponse.Content.ReadAsStreamAsync());
+            externalId = importJson.RootElement.GetProperty("externalRepBaseDocumentId").GetInt64();
+        }
+
+        var registerPaymentResponse = await client.PostAsJsonAsync(
+            $"/api/payment-complements/base-documents/external/{externalId}/payments",
+            new RegisterExternalRepBaseDocumentPaymentRequest
+            {
+                PaymentDate = new DateOnly(2026, 04, 08),
+                PaymentFormSat = "03",
+                Amount = 116m
+            });
+        Assert.Equal(HttpStatusCode.OK, registerPaymentResponse.StatusCode);
+        using var registerPaymentJson = await JsonDocument.ParseAsync(await registerPaymentResponse.Content.ReadAsStreamAsync());
+        var paymentId = registerPaymentJson.RootElement.GetProperty("accountsReceivablePaymentId").GetInt64();
+
+        var prepareResponse = await client.PostAsJsonAsync(
+            $"/api/payment-complements/base-documents/external/{externalId}/prepare",
+            new PrepareExternalRepBaseDocumentPaymentComplementRequest
+            {
+                AccountsReceivablePaymentId = paymentId
+            });
+        Assert.Equal(HttpStatusCode.OK, prepareResponse.StatusCode);
+        using var prepareJson = await JsonDocument.ParseAsync(await prepareResponse.Content.ReadAsStreamAsync());
+        var paymentComplementId = prepareJson.RootElement.GetProperty("paymentComplementDocumentId").GetInt64();
+
+        var stampResponse = await client.PostAsJsonAsync(
+            $"/api/payment-complements/base-documents/external/{externalId}/stamp",
+            new StampExternalRepBaseDocumentPaymentComplementRequest
+            {
+                PaymentComplementDocumentId = paymentComplementId
+            });
+        Assert.Equal(HttpStatusCode.OK, stampResponse.StatusCode);
+
+        var refreshResponse = await client.PostAsJsonAsync(
+            $"/api/payment-complements/base-documents/external/{externalId}/refresh-rep-status",
+            new RefreshExternalRepBaseDocumentPaymentComplementStatusRequest
+            {
+                PaymentComplementDocumentId = paymentComplementId
+            });
+        Assert.Equal(HttpStatusCode.OK, refreshResponse.StatusCode);
+        using var refreshJson = await JsonDocument.ParseAsync(await refreshResponse.Content.ReadAsStreamAsync());
+        Assert.Equal("VIGENTE", refreshJson.RootElement.GetProperty("lastKnownExternalStatus").GetString());
+        Assert.Equal("RefreshRepStatus", refreshJson.RootElement.GetProperty("nextRecommendedAction").GetString());
+
+        var cancelResponse = await client.PostAsJsonAsync(
+            $"/api/payment-complements/base-documents/external/{externalId}/cancel-rep",
+            new CancelExternalRepBaseDocumentPaymentComplementRequest
+            {
+                PaymentComplementDocumentId = paymentComplementId,
+                CancellationReasonCode = "02"
+            });
+        Assert.Equal(HttpStatusCode.OK, cancelResponse.StatusCode);
+        using var cancelJson = await JsonDocument.ParseAsync(await cancelResponse.Content.ReadAsStreamAsync());
+        Assert.Equal("Cancelled", cancelJson.RootElement.GetProperty("cancellationStatus").GetString());
+
+        factory.PaymentComplementStatusQueryGateway.ResponseFactory = _ => new PaymentComplementStatusQueryGatewayResult
+        {
+            Outcome = PaymentComplementStatusQueryGatewayOutcome.Refreshed,
+            ProviderName = "FacturaloPlus",
+            ProviderOperation = "payment-complement-status-query",
+            ExternalStatus = "CANCELLED",
+            CheckedAtUtc = new DateTime(2026, 04, 08, 15, 0, 0, DateTimeKind.Utc)
+        };
+
+        var postCancelRefreshResponse = await client.PostAsJsonAsync(
+            $"/api/payment-complements/base-documents/external/{externalId}/refresh-rep-status",
+            new RefreshExternalRepBaseDocumentPaymentComplementStatusRequest
+            {
+                PaymentComplementDocumentId = paymentComplementId
+            });
+        Assert.Equal(HttpStatusCode.OK, postCancelRefreshResponse.StatusCode);
+        using var postCancelRefreshJson = await JsonDocument.ParseAsync(await postCancelRefreshResponse.Content.ReadAsStreamAsync());
+        Assert.Equal("CANCELLED", postCancelRefreshJson.RootElement.GetProperty("lastKnownExternalStatus").GetString());
+
+        var detailResponse = await client.GetAsync($"/api/payment-complements/external-base-documents/{externalId}");
+        Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
+        using var detailJson = await JsonDocument.ParseAsync(await detailResponse.Content.ReadAsStreamAsync());
+        var issuedRep = Assert.Single(detailJson.RootElement.GetProperty("issuedReps").EnumerateArray().ToList());
+        Assert.Equal("Cancelled", issuedRep.GetProperty("status").GetString());
     }
 
     [Fact]

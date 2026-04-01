@@ -136,6 +136,54 @@ describe('PaymentComplementsApiService', () => {
     httpTesting.verify();
   });
 
+  it('refreshes and cancels a payment complement from the internal base-document context', () => {
+    const service = TestBed.inject(PaymentComplementsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.refreshInternalBaseDocumentPaymentComplementStatus(501, {
+      paymentComplementDocumentId: 7002
+    }).subscribe();
+
+    const refreshReq = httpTesting.expectOne('/api/payment-complements/base-documents/internal/501/refresh-rep-status');
+    expect(refreshReq.request.method).toBe('POST');
+    expect(refreshReq.request.body).toEqual({ paymentComplementDocumentId: 7002 });
+    refreshReq.flush({
+      outcome: 'Refreshed',
+      isSuccess: true,
+      fiscalDocumentId: 501,
+      paymentComplementDocumentId: 7002,
+      paymentComplementStatus: 'Stamped',
+      lastKnownExternalStatus: 'VIGENTE',
+      availableActions: ['ViewDetail', 'RefreshRepStatus'],
+      alerts: []
+    });
+
+    service.cancelInternalBaseDocumentPaymentComplement(501, {
+      paymentComplementDocumentId: 7002,
+      cancellationReasonCode: '02',
+      replacementUuid: null
+    }).subscribe();
+
+    const cancelReq = httpTesting.expectOne('/api/payment-complements/base-documents/internal/501/cancel-rep');
+    expect(cancelReq.request.method).toBe('POST');
+    expect(cancelReq.request.body).toEqual({
+      paymentComplementDocumentId: 7002,
+      cancellationReasonCode: '02',
+      replacementUuid: null
+    });
+    cancelReq.flush({
+      outcome: 'Cancelled',
+      isSuccess: true,
+      fiscalDocumentId: 501,
+      paymentComplementDocumentId: 7002,
+      cancellationStatus: 'Cancelled',
+      availableActions: ['ViewDetail'],
+      alerts: []
+    });
+
+    httpTesting.verify();
+  });
+
   it('uploads an external xml invoice as form-data', () => {
     const service = TestBed.inject(PaymentComplementsApiService);
     const httpTesting = TestBed.inject(HttpTestingController);
@@ -279,6 +327,54 @@ describe('PaymentComplementsApiService', () => {
       stampUuid: 'UUID-REP-EXT-1',
       stampedAtUtc: '2026-04-01T13:00:00Z',
       xmlAvailable: true
+    });
+
+    httpTesting.verify();
+  });
+
+  it('refreshes and cancels a payment complement from the external base-document context', () => {
+    const service = TestBed.inject(PaymentComplementsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.refreshExternalBaseDocumentPaymentComplementStatus(123, {
+      paymentComplementDocumentId: 7001
+    }).subscribe();
+
+    const refreshReq = httpTesting.expectOne('/api/payment-complements/base-documents/external/123/refresh-rep-status');
+    expect(refreshReq.request.method).toBe('POST');
+    expect(refreshReq.request.body).toEqual({ paymentComplementDocumentId: 7001 });
+    refreshReq.flush({
+      outcome: 'Refreshed',
+      isSuccess: true,
+      externalRepBaseDocumentId: 123,
+      paymentComplementDocumentId: 7001,
+      paymentComplementStatus: 'Stamped',
+      lastKnownExternalStatus: 'VIGENTE',
+      availableActions: ['ViewDetail', 'RefreshRepStatus'],
+      alerts: []
+    });
+
+    service.cancelExternalBaseDocumentPaymentComplement(123, {
+      paymentComplementDocumentId: 7001,
+      cancellationReasonCode: '02',
+      replacementUuid: null
+    }).subscribe();
+
+    const cancelReq = httpTesting.expectOne('/api/payment-complements/base-documents/external/123/cancel-rep');
+    expect(cancelReq.request.method).toBe('POST');
+    expect(cancelReq.request.body).toEqual({
+      paymentComplementDocumentId: 7001,
+      cancellationReasonCode: '02',
+      replacementUuid: null
+    });
+    cancelReq.flush({
+      outcome: 'Cancelled',
+      isSuccess: true,
+      externalRepBaseDocumentId: 123,
+      paymentComplementDocumentId: 7001,
+      cancellationStatus: 'Cancelled',
+      availableActions: ['ViewDetail'],
+      alerts: []
     });
 
     httpTesting.verify();

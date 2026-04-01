@@ -8,7 +8,9 @@ import { ExternalRepBaseDocumentImportCardComponent } from '../components/extern
 import { PaymentComplementsApiService } from '../infrastructure/payment-complements-api.service';
 import {
   ExternalRepBaseDocumentDetailResponse,
-  ExternalRepBaseDocumentItemResponse
+  ExternalRepBaseDocumentItemResponse,
+  ExternalRepBaseDocumentPaymentComplementResponse,
+  RepOperationalAlertResponse
 } from '../models/payment-complements.models';
 
 @Component({
@@ -105,6 +107,16 @@ import {
                         {{ getDisplayLabel(item.operationalStatus) }}
                       </span>
                       <small class="row-reason">{{ item.primaryReasonMessage }}</small>
+                      <small class="row-reason">Siguiente: {{ getRecommendedActionLabel(item.nextRecommendedAction) }}</small>
+                      @if (getAlerts(item).length) {
+                        <div class="alert-chip-list">
+                          @for (alert of visibleAlerts(getAlerts(item)); track alert.code + '-' + alert.message) {
+                            <span class="alert-chip" [class.alert-critical]="alert.severity === 'critical'" [class.alert-warning]="alert.severity === 'warning'" [class.alert-alert-info]="alert.severity === 'info'">
+                              {{ getDisplayLabel(alert.code) }}
+                            </span>
+                          }
+                        </div>
+                      }
                     </td>
                     <td>
                       <button type="button" class="secondary small" (click)="openDetail(item.externalRepBaseDocumentId)">
@@ -190,6 +202,29 @@ import {
                     <div><dt>Último REP</dt><dd>{{ formatOptionalUtc(detail.summary.lastRepIssuedAtUtc) }}</dd></div>
                   </dl>
                 </article>
+
+                <article class="summary-card">
+                  <h4>Seguimiento operativo</h4>
+                  <dl>
+                    <div><dt>Acción recomendada</dt><dd>{{ getRecommendedActionLabel(detail.summary.nextRecommendedAction) }}</dd></div>
+                    <div><dt>Operación bloqueada</dt><dd>{{ detail.summary.hasBlockedOperation ? 'Sí' : 'No' }}</dd></div>
+                    <div><dt>Pago sin REP timbrado</dt><dd>{{ detail.summary.hasAppliedPaymentsWithoutStampedRep ? 'Sí' : 'No' }}</dd></div>
+                    <div><dt>REP pendiente de timbrar</dt><dd>{{ detail.summary.hasPreparedRepPendingStamp ? 'Sí' : 'No' }}</dd></div>
+                    <div><dt>REP con error</dt><dd>{{ detail.summary.hasRepWithError ? 'Sí' : 'No' }}</dd></div>
+                  </dl>
+                  @if (getAlerts(detail.summary).length) {
+                    <ul class="alert-list">
+                      @for (alert of getAlerts(detail.summary); track alert.code + '-' + alert.message) {
+                        <li class="alert-item" [class.alert-critical]="alert.severity === 'critical'" [class.alert-warning]="alert.severity === 'warning'" [class.alert-alert-info]="alert.severity === 'info'">
+                          <strong>{{ getDisplayLabel(alert.code) }}</strong>
+                          <p>{{ alert.message }}</p>
+                        </li>
+                      }
+                    </ul>
+                  } @else {
+                    <p class="helper">No hay alertas operativas activas para este CFDI externo.</p>
+                  }
+                </article>
               </section>
 
               @if (showRegisterPaymentForm()) {
@@ -264,6 +299,18 @@ import {
                           </header>
                           <p>UUID {{ item.uuid || '—' }} · pago {{ item.accountsReceivablePaymentId }} · parcialidad {{ item.installmentNumber }}</p>
                           <small>{{ formatOptionalUtc(item.stampedAtUtc || item.issuedAtUtc) }} · saldo remanente {{ item.remainingBalance | number:'1.2-2' }}</small>
+                          <div class="actions">
+                            @if (canRefreshRepItem(item)) {
+                              <button type="button" class="secondary small" [disabled]="refreshingRep() || cancellingRep() || preparingRep() || stampingRep()" (click)="refreshRep(item)">
+                                {{ refreshingRep() === item.paymentComplementId ? 'Refrescando...' : 'Refrescar' }}
+                              </button>
+                            }
+                            @if (canCancelRepItem(item)) {
+                              <button type="button" class="secondary small" [disabled]="refreshingRep() || cancellingRep() || preparingRep() || stampingRep()" (click)="cancelRep(item)">
+                                {{ cancellingRep() === item.paymentComplementId ? 'Cancelando...' : 'Cancelar' }}
+                              </button>
+                            }
+                          </div>
                         </article>
                       }
                     </div>
@@ -297,6 +344,8 @@ import {
     .status-eligible { background:#eef8f1; color:#24573a; }
     .status-blocked { background:#fff6e5; color:#8a5a00; }
     .status-neutral { background:#eef1f4; color:#425466; }
+    .alert-chip-list { display:flex; flex-wrap:wrap; gap:0.35rem; margin-top:0.45rem; }
+    .alert-chip { display:inline-flex; align-items:center; padding:0.2rem 0.55rem; border-radius:0.8rem; font-size:0.75rem; font-weight:700; }
     .row-reason { display:block; color:#5f6b76; margin-top:0.35rem; }
     .error { margin:0; color:#7a2020; }
     .success { margin:0; color:#24573a; }
@@ -309,6 +358,12 @@ import {
     dl { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:0.75rem; margin:0; }
     dt { font-size:0.8rem; color:#5f6b76; }
     dd { margin:0.15rem 0 0; font-weight:600; color:#182533; }
+    .alert-list { list-style:none; padding:0; margin:0; display:grid; gap:0.65rem; }
+    .alert-item { border:1px solid #ece5d7; border-radius:0.8rem; padding:0.75rem; }
+    .alert-item p { margin:0.2rem 0 0; color:#425466; }
+    .alert-warning { background:#fff3dd; color:#8a5a00; }
+    .alert-critical { background:#fdeaea; color:#8a1f1f; }
+    .alert-alert-info { background:#eef1f4; color:#425466; }
     .history-list { display:grid; gap:0.75rem; }
     .history-item { border:1px solid #ece5d7; border-radius:0.8rem; padding:0.75rem; display:grid; gap:0.35rem; }
     .history-item header { display:flex; justify-content:space-between; gap:1rem; }
@@ -332,6 +387,8 @@ export class PaymentComplementExternalBaseDocumentsPageComponent {
   protected readonly submittingPayment = signal(false);
   protected readonly preparingRep = signal(false);
   protected readonly stampingRep = signal(false);
+  protected readonly refreshingRep = signal<number | null>(null);
+  protected readonly cancellingRep = signal<number | null>(null);
   protected readonly operationMessage = signal<string | null>(null);
   protected readonly operationError = signal<string | null>(null);
 
@@ -513,16 +570,78 @@ export class PaymentComplementExternalBaseDocumentsPageComponent {
     }
   }
 
+  protected async refreshRep(item: ExternalRepBaseDocumentPaymentComplementResponse): Promise<void> {
+    const detail = this.selectedDetail();
+    if (!detail) {
+      return;
+    }
+
+    this.refreshingRep.set(item.paymentComplementId);
+    this.operationMessage.set(null);
+    this.operationError.set(null);
+
+    try {
+      const response = await firstValueFrom(this.api.refreshExternalBaseDocumentPaymentComplementStatus(
+        detail.summary.externalRepBaseDocumentId,
+        { paymentComplementDocumentId: item.paymentComplementId }
+      ));
+      this.operationMessage.set(`REP actualizado${response.lastKnownExternalStatus ? ` (${response.lastKnownExternalStatus})` : ''}.`);
+      await this.loadDetail(detail.summary.externalRepBaseDocumentId);
+      await this.applyFilters();
+    } catch (error) {
+      this.operationError.set(extractApiErrorMessage(error, 'No fue posible refrescar el estatus del REP externo.'));
+    } finally {
+      this.refreshingRep.set(null);
+    }
+  }
+
+  protected async cancelRep(item: ExternalRepBaseDocumentPaymentComplementResponse): Promise<void> {
+    const detail = this.selectedDetail();
+    if (!detail) {
+      return;
+    }
+
+    this.cancellingRep.set(item.paymentComplementId);
+    this.operationMessage.set(null);
+    this.operationError.set(null);
+
+    try {
+      const response = await firstValueFrom(this.api.cancelExternalBaseDocumentPaymentComplement(
+        detail.summary.externalRepBaseDocumentId,
+        {
+          paymentComplementDocumentId: item.paymentComplementId,
+          cancellationReasonCode: '02',
+          replacementUuid: null
+        }
+      ));
+      this.operationMessage.set(`REP cancelado${response.cancellationStatus ? ` (${getDisplayLabel(response.cancellationStatus)})` : ''}.`);
+      await this.loadDetail(detail.summary.externalRepBaseDocumentId);
+      await this.applyFilters();
+    } catch (error) {
+      this.operationError.set(extractApiErrorMessage(error, 'No fue posible cancelar el REP externo.'));
+    } finally {
+      this.cancellingRep.set(null);
+    }
+  }
+
   protected canRegisterPayment(detail: ExternalRepBaseDocumentDetailResponse): boolean {
-    return detail.summary.availableActions.includes('RegisterPayment');
+    return (detail.summary.availableActions ?? []).includes('RegisterPayment');
   }
 
   protected canPrepareRep(detail: ExternalRepBaseDocumentDetailResponse): boolean {
-    return detail.summary.availableActions.includes('PrepareRep');
+    return (detail.summary.availableActions ?? []).includes('PrepareRep');
   }
 
   protected canStampRep(detail: ExternalRepBaseDocumentDetailResponse): boolean {
-    return detail.summary.availableActions.includes('StampRep');
+    return (detail.summary.availableActions ?? []).includes('StampRep');
+  }
+
+  protected canRefreshRepItem(item: ExternalRepBaseDocumentPaymentComplementResponse): boolean {
+    return ['Stamped', 'CancellationRequested', 'CancellationRejected', 'Cancelled'].includes(item.status);
+  }
+
+  protected canCancelRepItem(item: ExternalRepBaseDocumentPaymentComplementResponse): boolean {
+    return item.status === 'Stamped' || item.status === 'CancellationRejected';
   }
 
   protected readonly getDisplayLabel = getDisplayLabel;
@@ -541,6 +660,18 @@ export class PaymentComplementExternalBaseDocumentsPageComponent {
 
   protected buildSeriesFolio(series: string | null | undefined, folio: string | null | undefined): string {
     return [series, folio].filter(Boolean).join('-') || '—';
+  }
+
+  protected visibleAlerts(alerts: RepOperationalAlertResponse[]): RepOperationalAlertResponse[] {
+    return alerts.slice(0, 3);
+  }
+
+  protected getAlerts(source: { alerts?: RepOperationalAlertResponse[] | null }): RepOperationalAlertResponse[] {
+    return source.alerts ?? [];
+  }
+
+  protected getRecommendedActionLabel(action?: string | null): string {
+    return action ? getDisplayLabel(action) : 'Sin acción disponible';
   }
 
   private async loadDetail(externalRepBaseDocumentId: number): Promise<void> {
