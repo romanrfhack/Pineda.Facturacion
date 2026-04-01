@@ -9,7 +9,11 @@ import { PaymentComplementsApiService } from '../infrastructure/payment-compleme
 import {
   InternalRepBaseDocumentDetailResponse,
   InternalRepBaseDocumentItemResponse,
-  RegisterInternalRepBaseDocumentPaymentResponse
+  InternalRepBaseDocumentPaymentComplementResponse,
+  InternalRepBaseDocumentPaymentHistoryResponse,
+  PrepareInternalRepBaseDocumentPaymentComplementResponse,
+  RegisterInternalRepBaseDocumentPaymentResponse,
+  StampInternalRepBaseDocumentPaymentComplementResponse
 } from '../models/payment-complements.models';
 
 @Component({
@@ -20,7 +24,7 @@ import {
       <header>
         <p class="eyebrow">Complementos de pago</p>
         <h2>Bandeja operativa de CFDI internos para REP</h2>
-        <p class="helper">La unidad operativa es el CFDI base. En esta fase la bandeja registra y aplica pagos sobre CFDI internos; el timbrado REP desde esta vista queda para la siguiente fase.</p>
+        <p class="helper">La unidad operativa es el CFDI base. Desde esta vista ya se puede registrar el pago, preparar el REP y timbrarlo sin salir del contexto del CFDI interno.</p>
       </header>
 
       <section class="card">
@@ -259,7 +263,7 @@ import {
                 <div class="section-header">
                   <div>
                     <h4>Registro de pago</h4>
-                    <p class="helper">El pago se registra y se aplica completo al CFDI base actual. Este flujo no deja remanente sin aplicar.</p>
+                    <p class="helper">El pago se registra y se aplica completo al CFDI base actual. Después puedes preparar y timbrar el REP sobre ese mismo pago desde el historial inferior.</p>
                   </div>
                   @if (!showRegisterPaymentForm()) {
                     <button
@@ -298,7 +302,17 @@ import {
               </section>
 
               <section class="nested-card">
-                <h4>Historial de pagos registrados</h4>
+                <div class="section-header">
+                  <div>
+                    <h4>Historial de pagos registrados</h4>
+                    <p class="helper">Cada pago aplicado al CFDI puede preparar un REP una sola vez. Si ya existe un complemento para el pago, se muestra como ligado.</p>
+                  </div>
+                </div>
+
+                @if (repActionError()) {
+                  <p class="error">{{ repActionError() }}</p>
+                }
+
                 @if (!detail.paymentHistory.length) {
                   <p class="helper">Todavía no hay pagos registrados relacionados con este CFDI dentro del sistema.</p>
                 } @else {
@@ -315,6 +329,7 @@ import {
                           <th>Referencia</th>
                           <th>REP ligado</th>
                           <th>Estatus REP</th>
+                          <th>Acción</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -329,6 +344,19 @@ import {
                             <td>{{ payment.reference || '—' }}</td>
                             <td>{{ payment.paymentComplementUuid || (payment.paymentComplementId ? '#' + payment.paymentComplementId : '—') }}</td>
                             <td>{{ payment.paymentComplementStatus ? getDisplayLabel(payment.paymentComplementStatus) : '—' }}</td>
+                            <td>
+                              @if (canPrepareComplement(payment)) {
+                                <button
+                                  type="button"
+                                  class="small"
+                                  [disabled]="preparingComplement() || stampingComplement()"
+                                  (click)="preparePaymentComplement(payment)">
+                                  {{ preparingComplement() === payment.accountsReceivablePaymentId ? 'Preparando...' : 'Preparar REP' }}
+                                </button>
+                              } @else {
+                                <span class="helper">—</span>
+                              }
+                            </td>
                           </tr>
                         }
                       </tbody>
@@ -382,7 +410,13 @@ import {
               </section>
 
               <section class="nested-card">
-                <h4>REP emitidos y relacionados</h4>
+                <div class="section-header">
+                  <div>
+                    <h4>REP emitidos y relacionados</h4>
+                    <p class="helper">Los complementos preparados quedan listos para timbrado desde este mismo contexto operativo.</p>
+                  </div>
+                </div>
+
                 @if (!detail.issuedReps.length) {
                   <p class="helper">Aún no hay REP ligados a este CFDI base.</p>
                 } @else {
@@ -403,6 +437,7 @@ import {
                           <th>Saldo anterior</th>
                           <th>Monto</th>
                           <th>Saldo remanente</th>
+                          <th>Acción</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -421,6 +456,19 @@ import {
                             <td>{{ complement.previousBalance | number:'1.2-2' }}</td>
                             <td>{{ complement.paidAmount | number:'1.2-2' }}</td>
                             <td>{{ complement.remainingBalance | number:'1.2-2' }}</td>
+                            <td>
+                              @if (canStampComplement(complement)) {
+                                <button
+                                  type="button"
+                                  class="small"
+                                  [disabled]="stampingComplement() || preparingComplement()"
+                                  (click)="stampPaymentComplement(complement)">
+                                  {{ stampingComplement() === complement.paymentComplementId ? (complement.status === 'StampingRejected' ? 'Reintentando...' : 'Timbrando...') : (complement.status === 'StampingRejected' ? 'Reintentar timbrado' : 'Timbrar REP') }}
+                                </button>
+                              } @else {
+                                <span class="helper">—</span>
+                              }
+                            </td>
                           </tr>
                         }
                       </tbody>
@@ -514,6 +562,9 @@ export class PaymentComplementBaseDocumentsPageComponent {
   protected readonly showRegisterPaymentForm = signal(false);
   protected readonly submittingPayment = signal(false);
   protected readonly paymentError = signal<string | null>(null);
+  protected readonly preparingComplement = signal<number | null>(null);
+  protected readonly stampingComplement = signal<number | null>(null);
+  protected readonly repActionError = signal<string | null>(null);
   protected paymentDate = todayInputValue();
   protected paymentFormSat = '03';
   protected paymentAmount: number | null = null;
@@ -575,6 +626,7 @@ export class PaymentComplementBaseDocumentsPageComponent {
     this.selectedDetail.set(null);
     this.loadingDetail.set(false);
     this.detailError.set(null);
+    this.repActionError.set(null);
     this.cancelRegisterPaymentForm();
   }
 
@@ -592,6 +644,7 @@ export class PaymentComplementBaseDocumentsPageComponent {
     this.paymentReference = '';
     this.paymentNotes = '';
     this.paymentError.set(null);
+    this.repActionError.set(null);
     this.showRegisterPaymentForm.set(true);
   }
 
@@ -634,6 +687,61 @@ export class PaymentComplementBaseDocumentsPageComponent {
     }
   }
 
+  protected canPrepareComplement(payment: InternalRepBaseDocumentPaymentHistoryResponse): boolean {
+    return !payment.paymentComplementId && payment.amountAppliedToDocument > 0;
+  }
+
+  protected canStampComplement(complement: InternalRepBaseDocumentPaymentComplementResponse): boolean {
+    return complement.status === 'ReadyForStamping' || complement.status === 'StampingRejected';
+  }
+
+  protected async preparePaymentComplement(payment: InternalRepBaseDocumentPaymentHistoryResponse): Promise<void> {
+    const detail = this.selectedDetail();
+    if (!detail) {
+      return;
+    }
+
+    this.repActionError.set(null);
+    this.preparingComplement.set(payment.accountsReceivablePaymentId);
+
+    try {
+      const result = await firstValueFrom(this.api.prepareInternalBaseDocumentPaymentComplement(detail.summary.fiscalDocumentId, {
+        accountsReceivablePaymentId: payment.accountsReceivablePaymentId
+      }));
+      await this.handleSuccessfulPrepare(detail.summary.fiscalDocumentId, result);
+    } catch (error) {
+      const message = extractApiErrorMessage(error, 'No fue posible preparar el REP desde el CFDI base.');
+      this.repActionError.set(message);
+      this.feedbackService.show('error', message);
+    } finally {
+      this.preparingComplement.set(null);
+    }
+  }
+
+  protected async stampPaymentComplement(complement: InternalRepBaseDocumentPaymentComplementResponse): Promise<void> {
+    const detail = this.selectedDetail();
+    if (!detail) {
+      return;
+    }
+
+    this.repActionError.set(null);
+    this.stampingComplement.set(complement.paymentComplementId);
+
+    try {
+      const result = await firstValueFrom(this.api.stampInternalBaseDocumentPaymentComplement(detail.summary.fiscalDocumentId, {
+        paymentComplementDocumentId: complement.paymentComplementId,
+        retryRejected: complement.status === 'StampingRejected'
+      }));
+      await this.handleSuccessfulStamp(detail.summary.fiscalDocumentId, result);
+    } catch (error) {
+      const message = extractApiErrorMessage(error, 'No fue posible timbrar el REP desde el CFDI base.');
+      this.repActionError.set(message);
+      this.feedbackService.show('error', message);
+    } finally {
+      this.stampingComplement.set(null);
+    }
+  }
+
   protected buildSeriesFolio(item: InternalRepBaseDocumentItemResponse): string {
     const series = item.series?.trim();
     const folio = item.folio?.trim();
@@ -672,11 +780,41 @@ export class PaymentComplementBaseDocumentsPageComponent {
     await this.load();
   }
 
+  private async handleSuccessfulPrepare(
+    fiscalDocumentId: number,
+    result: PrepareInternalRepBaseDocumentPaymentComplementResponse
+  ): Promise<void> {
+    const complementLabel = result.paymentComplementDocumentId ?? 'existente';
+    const statusLabel = result.status ? getDisplayLabel(result.status) : 'preparado';
+    if (result.warningMessages.length) {
+      this.feedbackService.show('warning', result.warningMessages.join(' | '));
+    }
+
+    this.feedbackService.show('success', `REP ${complementLabel} ${statusLabel.toLowerCase()}.`);
+    await this.loadDetail(fiscalDocumentId);
+    await this.load();
+  }
+
+  private async handleSuccessfulStamp(
+    fiscalDocumentId: number,
+    result: StampInternalRepBaseDocumentPaymentComplementResponse
+  ): Promise<void> {
+    if (result.warningMessages.length) {
+      this.feedbackService.show('warning', result.warningMessages.join(' | '));
+    }
+
+    const suffix = result.stampUuid ? ` UUID ${result.stampUuid}.` : '.';
+    this.feedbackService.show('success', `REP ${result.paymentComplementDocumentId ?? 'preparado'} timbrado${suffix}`);
+    await this.loadDetail(fiscalDocumentId);
+    await this.load();
+  }
+
   private async loadDetail(fiscalDocumentId: number, openRegisterPayment = false): Promise<void> {
     this.loadingDetail.set(true);
     this.detailError.set(null);
     this.selectedDetail.set(null);
     this.paymentError.set(null);
+    this.repActionError.set(null);
 
     try {
       const detail = await firstValueFrom(this.api.getInternalBaseDocumentByFiscalDocumentId(fiscalDocumentId));

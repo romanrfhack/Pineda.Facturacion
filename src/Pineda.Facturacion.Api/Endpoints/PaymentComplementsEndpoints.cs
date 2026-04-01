@@ -85,6 +85,25 @@ public static class PaymentComplementsEndpoints
             .Produces<RegisterInternalRepBaseDocumentPaymentResponse>(StatusCodes.Status404NotFound)
             .Produces<RegisterInternalRepBaseDocumentPaymentResponse>(StatusCodes.Status409Conflict);
 
+        group.MapPost("/base-documents/internal/{fiscalDocumentId:long}/prepare", PrepareInternalRepBaseDocumentPaymentComplementAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.OperatorOrAbove)
+            .WithName("PrepareInternalRepBaseDocumentPaymentComplement")
+            .WithSummary("Prepare a payment complement from the internal REP base-document context")
+            .Produces<PrepareInternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status200OK)
+            .Produces<PrepareInternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status400BadRequest)
+            .Produces<PrepareInternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status404NotFound)
+            .Produces<PrepareInternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status409Conflict);
+
+        group.MapPost("/base-documents/internal/{fiscalDocumentId:long}/stamp", StampInternalRepBaseDocumentPaymentComplementAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
+            .WithName("StampInternalRepBaseDocumentPaymentComplement")
+            .WithSummary("Stamp a prepared payment complement from the internal REP base-document context")
+            .Produces<StampInternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status200OK)
+            .Produces<StampInternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status400BadRequest)
+            .Produces<StampInternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status404NotFound)
+            .Produces<StampInternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status409Conflict)
+            .Produces<StampInternalRepBaseDocumentPaymentComplementResponse>(StatusCodes.Status503ServiceUnavailable);
+
         return endpoints;
     }
 
@@ -274,6 +293,112 @@ public static class PaymentComplementsEndpoints
             RegisterInternalRepBaseDocumentPaymentOutcome.RegisteredAndApplied => TypedResults.Ok(response),
             RegisterInternalRepBaseDocumentPaymentOutcome.NotFound => TypedResults.NotFound(response),
             RegisterInternalRepBaseDocumentPaymentOutcome.Conflict => TypedResults.Conflict(response),
+            _ => TypedResults.BadRequest(response)
+        };
+    }
+
+    private static async Task<Results<Ok<PrepareInternalRepBaseDocumentPaymentComplementResponse>, BadRequest<PrepareInternalRepBaseDocumentPaymentComplementResponse>, NotFound<PrepareInternalRepBaseDocumentPaymentComplementResponse>, Conflict<PrepareInternalRepBaseDocumentPaymentComplementResponse>>> PrepareInternalRepBaseDocumentPaymentComplementAsync(
+        long fiscalDocumentId,
+        PrepareInternalRepBaseDocumentPaymentComplementRequest? request,
+        PrepareInternalRepBaseDocumentPaymentComplementService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(
+            new PrepareInternalRepBaseDocumentPaymentComplementCommand
+            {
+                FiscalDocumentId = fiscalDocumentId,
+                AccountsReceivablePaymentId = request?.AccountsReceivablePaymentId
+            },
+            cancellationToken);
+
+        var response = new PrepareInternalRepBaseDocumentPaymentComplementResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            WarningMessages = result.WarningMessages,
+            FiscalDocumentId = result.FiscalDocumentId,
+            AccountsReceivablePaymentId = result.AccountsReceivablePaymentId,
+            PaymentComplementDocumentId = result.PaymentComplementDocumentId,
+            Status = result.Status,
+            RelatedDocumentCount = result.RelatedDocumentCount,
+            OperationalState = result.OperationalState is null ? null : MapInternalRepOperationalState(result.OperationalState)
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "InternalRepBaseDocumentPaymentComplement.Prepare",
+            "FiscalDocument",
+            fiscalDocumentId.ToString(),
+            result.Outcome.ToString(),
+            new { fiscalDocumentId, request?.AccountsReceivablePaymentId },
+            new { result.AccountsReceivablePaymentId, result.PaymentComplementDocumentId, result.Status, result.RelatedDocumentCount },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            PrepareInternalRepBaseDocumentPaymentComplementOutcome.Prepared => TypedResults.Ok(response),
+            PrepareInternalRepBaseDocumentPaymentComplementOutcome.AlreadyPrepared => TypedResults.Ok(response),
+            PrepareInternalRepBaseDocumentPaymentComplementOutcome.NotFound => TypedResults.NotFound(response),
+            PrepareInternalRepBaseDocumentPaymentComplementOutcome.Conflict => TypedResults.Conflict(response),
+            _ => TypedResults.BadRequest(response)
+        };
+    }
+
+    private static async Task<Results<Ok<StampInternalRepBaseDocumentPaymentComplementResponse>, BadRequest<StampInternalRepBaseDocumentPaymentComplementResponse>, NotFound<StampInternalRepBaseDocumentPaymentComplementResponse>, Conflict<StampInternalRepBaseDocumentPaymentComplementResponse>, JsonHttpResult<StampInternalRepBaseDocumentPaymentComplementResponse>>> StampInternalRepBaseDocumentPaymentComplementAsync(
+        long fiscalDocumentId,
+        StampInternalRepBaseDocumentPaymentComplementRequest? request,
+        StampInternalRepBaseDocumentPaymentComplementService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(
+            new StampInternalRepBaseDocumentPaymentComplementCommand
+            {
+                FiscalDocumentId = fiscalDocumentId,
+                PaymentComplementDocumentId = request?.PaymentComplementDocumentId,
+                RetryRejected = request?.RetryRejected ?? false
+            },
+            cancellationToken);
+
+        var response = new StampInternalRepBaseDocumentPaymentComplementResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            WarningMessages = result.WarningMessages,
+            FiscalDocumentId = result.FiscalDocumentId,
+            AccountsReceivablePaymentId = result.AccountsReceivablePaymentId,
+            PaymentComplementDocumentId = result.PaymentComplementDocumentId,
+            Status = result.Status,
+            PaymentComplementStampId = result.PaymentComplementStampId,
+            StampUuid = result.StampUuid,
+            StampedAtUtc = result.StampedAtUtc,
+            XmlAvailable = result.XmlAvailable,
+            OperationalState = result.OperationalState is null ? null : MapInternalRepOperationalState(result.OperationalState)
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "InternalRepBaseDocumentPaymentComplement.Stamp",
+            "FiscalDocument",
+            fiscalDocumentId.ToString(),
+            result.Outcome.ToString(),
+            new { fiscalDocumentId, request?.PaymentComplementDocumentId, request?.RetryRejected },
+            new { result.AccountsReceivablePaymentId, result.PaymentComplementDocumentId, result.Status, result.StampUuid, result.StampedAtUtc },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            StampInternalRepBaseDocumentPaymentComplementOutcome.Stamped => TypedResults.Ok(response),
+            StampInternalRepBaseDocumentPaymentComplementOutcome.AlreadyStamped => TypedResults.Ok(response),
+            StampInternalRepBaseDocumentPaymentComplementOutcome.NotFound => TypedResults.NotFound(response),
+            StampInternalRepBaseDocumentPaymentComplementOutcome.Conflict => TypedResults.Conflict(response),
+            StampInternalRepBaseDocumentPaymentComplementOutcome.ProviderRejected => TypedResults.Conflict(response),
+            StampInternalRepBaseDocumentPaymentComplementOutcome.ProviderUnavailable => TypedResults.Json(response, statusCode: StatusCodes.Status503ServiceUnavailable),
             _ => TypedResults.BadRequest(response)
         };
     }
@@ -1314,4 +1439,68 @@ public sealed class RegisterInternalRepBaseDocumentPaymentApplicationResponse
     public decimal PreviousBalance { get; set; }
 
     public decimal NewBalance { get; set; }
+}
+
+public sealed class PrepareInternalRepBaseDocumentPaymentComplementRequest
+{
+    public long? AccountsReceivablePaymentId { get; set; }
+}
+
+public sealed class PrepareInternalRepBaseDocumentPaymentComplementResponse
+{
+    public string Outcome { get; set; } = string.Empty;
+
+    public bool IsSuccess { get; set; }
+
+    public string? ErrorMessage { get; set; }
+
+    public List<string> WarningMessages { get; set; } = [];
+
+    public long FiscalDocumentId { get; set; }
+
+    public long? AccountsReceivablePaymentId { get; set; }
+
+    public long? PaymentComplementDocumentId { get; set; }
+
+    public string? Status { get; set; }
+
+    public int RelatedDocumentCount { get; set; }
+
+    public InternalRepBaseDocumentOperationalStateResponse? OperationalState { get; set; }
+}
+
+public sealed class StampInternalRepBaseDocumentPaymentComplementRequest
+{
+    public long? PaymentComplementDocumentId { get; set; }
+
+    public bool RetryRejected { get; set; }
+}
+
+public sealed class StampInternalRepBaseDocumentPaymentComplementResponse
+{
+    public string Outcome { get; set; } = string.Empty;
+
+    public bool IsSuccess { get; set; }
+
+    public string? ErrorMessage { get; set; }
+
+    public List<string> WarningMessages { get; set; } = [];
+
+    public long FiscalDocumentId { get; set; }
+
+    public long? AccountsReceivablePaymentId { get; set; }
+
+    public long? PaymentComplementDocumentId { get; set; }
+
+    public string? Status { get; set; }
+
+    public long? PaymentComplementStampId { get; set; }
+
+    public string? StampUuid { get; set; }
+
+    public DateTime? StampedAtUtc { get; set; }
+
+    public bool XmlAvailable { get; set; }
+
+    public InternalRepBaseDocumentOperationalStateResponse? OperationalState { get; set; }
 }

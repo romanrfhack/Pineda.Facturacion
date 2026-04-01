@@ -83,4 +83,56 @@ describe('PaymentComplementsApiService', () => {
     });
     httpTesting.verify();
   });
+
+  it('prepares a payment complement from the internal base-document context', () => {
+    const service = TestBed.inject(PaymentComplementsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.prepareInternalBaseDocumentPaymentComplement(501, {
+      accountsReceivablePaymentId: 9002
+    }).subscribe();
+
+    const req = httpTesting.expectOne('/api/payment-complements/base-documents/internal/501/prepare');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ accountsReceivablePaymentId: 9002 });
+    req.flush({
+      outcome: 'Prepared',
+      isSuccess: true,
+      warningMessages: [],
+      fiscalDocumentId: 501,
+      accountsReceivablePaymentId: 9002,
+      paymentComplementDocumentId: 7002,
+      status: 'ReadyForStamping',
+      relatedDocumentCount: 1
+    });
+    httpTesting.verify();
+  });
+
+  it('stamps a payment complement from the internal base-document context', () => {
+    const service = TestBed.inject(PaymentComplementsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.stampInternalBaseDocumentPaymentComplement(501, {
+      paymentComplementDocumentId: 7002,
+      retryRejected: false
+    }).subscribe();
+
+    const req = httpTesting.expectOne('/api/payment-complements/base-documents/internal/501/stamp');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ paymentComplementDocumentId: 7002, retryRejected: false });
+    req.flush({
+      outcome: 'Stamped',
+      isSuccess: true,
+      warningMessages: [],
+      fiscalDocumentId: 501,
+      accountsReceivablePaymentId: 9002,
+      paymentComplementDocumentId: 7002,
+      status: 'Stamped',
+      paymentComplementStampId: 8002,
+      stampUuid: 'UUID-PC-2',
+      stampedAtUtc: '2026-04-05T12:00:00Z',
+      xmlAvailable: true
+    });
+    httpTesting.verify();
+  });
 });

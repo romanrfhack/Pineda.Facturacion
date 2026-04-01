@@ -7,8 +7,12 @@ import {
   InternalRepBaseDocumentDetailResponse,
   InternalRepBaseDocumentFilters,
   InternalRepBaseDocumentListResponse,
+  PrepareInternalRepBaseDocumentPaymentComplementRequest,
+  PrepareInternalRepBaseDocumentPaymentComplementResponse,
   RegisterInternalRepBaseDocumentPaymentRequest,
   RegisterInternalRepBaseDocumentPaymentResponse,
+  StampInternalRepBaseDocumentPaymentComplementRequest,
+  StampInternalRepBaseDocumentPaymentComplementResponse,
   PaymentComplementCancellationResponse,
   PaymentComplementDocumentResponse,
   PaymentComplementStampResponse,
@@ -51,6 +55,26 @@ export class PaymentComplementsApiService {
   ): Observable<RegisterInternalRepBaseDocumentPaymentResponse> {
     return this.http.post<RegisterInternalRepBaseDocumentPaymentResponse>(
       buildApiUrl(`/payment-complements/base-documents/internal/${fiscalDocumentId}/payments`),
+      request
+    );
+  }
+
+  prepareInternalBaseDocumentPaymentComplement(
+    fiscalDocumentId: number,
+    request: PrepareInternalRepBaseDocumentPaymentComplementRequest
+  ): Observable<PrepareInternalRepBaseDocumentPaymentComplementResponse> {
+    return this.http.post<PrepareInternalRepBaseDocumentPaymentComplementResponse>(
+      buildApiUrl(`/payment-complements/base-documents/internal/${fiscalDocumentId}/prepare`),
+      request
+    );
+  }
+
+  stampInternalBaseDocumentPaymentComplement(
+    fiscalDocumentId: number,
+    request: StampInternalRepBaseDocumentPaymentComplementRequest
+  ): Observable<StampInternalRepBaseDocumentPaymentComplementResponse> {
+    return this.http.post<StampInternalRepBaseDocumentPaymentComplementResponse>(
+      buildApiUrl(`/payment-complements/base-documents/internal/${fiscalDocumentId}/stamp`),
       request
     );
   }

@@ -190,6 +190,44 @@ export interface RegisterInternalRepBaseDocumentPaymentResponse {
   applications: RegisterInternalRepBaseDocumentPaymentApplicationResponse[];
 }
 
+export interface PrepareInternalRepBaseDocumentPaymentComplementRequest {
+  accountsReceivablePaymentId?: number | null;
+}
+
+export interface PrepareInternalRepBaseDocumentPaymentComplementResponse {
+  outcome: string;
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  warningMessages: string[];
+  fiscalDocumentId: number;
+  accountsReceivablePaymentId?: number | null;
+  paymentComplementDocumentId?: number | null;
+  status?: string | null;
+  relatedDocumentCount: number;
+  operationalState?: InternalRepBaseDocumentOperationalStateResponse | null;
+}
+
+export interface StampInternalRepBaseDocumentPaymentComplementRequest {
+  paymentComplementDocumentId?: number | null;
+  retryRejected?: boolean;
+}
+
+export interface StampInternalRepBaseDocumentPaymentComplementResponse {
+  outcome: string;
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  warningMessages: string[];
+  fiscalDocumentId: number;
+  accountsReceivablePaymentId?: number | null;
+  paymentComplementDocumentId?: number | null;
+  status?: string | null;
+  paymentComplementStampId?: number | null;
+  stampUuid?: string | null;
+  stampedAtUtc?: string | null;
+  xmlAvailable: boolean;
+  operationalState?: InternalRepBaseDocumentOperationalStateResponse | null;
+}
+
 export interface InternalRepBaseDocumentItemResponse {
   fiscalDocumentId: number;
   billingDocumentId?: number | null;
