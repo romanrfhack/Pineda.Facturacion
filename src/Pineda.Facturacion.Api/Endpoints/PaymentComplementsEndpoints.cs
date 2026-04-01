@@ -77,6 +77,18 @@ public static class PaymentComplementsEndpoints
             .Produces<InternalRepBaseDocumentDetailResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status404NotFound);
 
+        group.MapGet("/base-documents/external", SearchExternalRepBaseDocumentsAsync)
+            .WithName("SearchExternalRepBaseDocuments")
+            .WithSummary("Search imported external CFDI base documents for REP follow-up")
+            .Produces<ExternalRepBaseDocumentListResponse>(StatusCodes.Status200OK)
+            .Produces<PaymentComplementBaseDocumentSearchErrorResponse>(StatusCodes.Status400BadRequest);
+
+        group.MapGet("/base-documents", SearchRepBaseDocumentsAsync)
+            .WithName("SearchRepBaseDocuments")
+            .WithSummary("Search unified internal and external REP base documents")
+            .Produces<RepBaseDocumentListResponse>(StatusCodes.Status200OK)
+            .Produces<PaymentComplementBaseDocumentSearchErrorResponse>(StatusCodes.Status400BadRequest);
+
         group.MapPost("/base-documents/internal/{fiscalDocumentId:long}/payments", RegisterInternalRepBaseDocumentPaymentAsync)
             .RequireAuthorization(AuthorizationPolicyNames.OperatorOrAbove)
             .WithName("RegisterInternalRepBaseDocumentPayment")
@@ -239,6 +251,100 @@ public static class PaymentComplementsEndpoints
                     RemainingBalance = x.RemainingBalance
                 })
                 .ToList()
+        });
+    }
+
+    private static async Task<Results<Ok<ExternalRepBaseDocumentListResponse>, BadRequest<PaymentComplementBaseDocumentSearchErrorResponse>>> SearchExternalRepBaseDocumentsAsync(
+        int? page,
+        int? pageSize,
+        DateOnly? fromDate,
+        DateOnly? toDate,
+        string? receiverRfc,
+        string? query,
+        string? validationStatus,
+        bool? eligible,
+        bool? blocked,
+        SearchExternalRepBaseDocumentsService service,
+        CancellationToken cancellationToken)
+    {
+        if (fromDate.HasValue && toDate.HasValue && fromDate.Value > toDate.Value)
+        {
+            return TypedResults.BadRequest(new PaymentComplementBaseDocumentSearchErrorResponse
+            {
+                ErrorMessage = "La fecha inicial no puede ser mayor a la fecha final."
+            });
+        }
+
+        var result = await service.ExecuteAsync(
+            new SearchExternalRepBaseDocumentsFilter
+            {
+                Page = page ?? 1,
+                PageSize = pageSize ?? 25,
+                FromDate = fromDate,
+                ToDate = toDate,
+                ReceiverRfc = receiverRfc,
+                Query = query,
+                ValidationStatus = validationStatus,
+                Eligible = eligible,
+                Blocked = blocked
+            },
+            cancellationToken);
+
+        return TypedResults.Ok(new ExternalRepBaseDocumentListResponse
+        {
+            Page = result.Page,
+            PageSize = result.PageSize,
+            TotalCount = result.TotalCount,
+            TotalPages = result.TotalPages,
+            Items = result.Items.Select(MapExternalRepBaseDocumentListItem).ToList()
+        });
+    }
+
+    private static async Task<Results<Ok<RepBaseDocumentListResponse>, BadRequest<PaymentComplementBaseDocumentSearchErrorResponse>>> SearchRepBaseDocumentsAsync(
+        int? page,
+        int? pageSize,
+        DateOnly? fromDate,
+        DateOnly? toDate,
+        string? receiverRfc,
+        string? query,
+        string? sourceType,
+        string? validationStatus,
+        bool? eligible,
+        bool? blocked,
+        SearchRepBaseDocumentsService service,
+        CancellationToken cancellationToken)
+    {
+        if (fromDate.HasValue && toDate.HasValue && fromDate.Value > toDate.Value)
+        {
+            return TypedResults.BadRequest(new PaymentComplementBaseDocumentSearchErrorResponse
+            {
+                ErrorMessage = "La fecha inicial no puede ser mayor a la fecha final."
+            });
+        }
+
+        var result = await service.ExecuteAsync(
+            new SearchRepBaseDocumentsFilter
+            {
+                Page = page ?? 1,
+                PageSize = pageSize ?? 25,
+                FromDate = fromDate,
+                ToDate = toDate,
+                ReceiverRfc = receiverRfc,
+                Query = query,
+                SourceType = sourceType,
+                ValidationStatus = validationStatus,
+                Eligible = eligible,
+                Blocked = blocked
+            },
+            cancellationToken);
+
+        return TypedResults.Ok(new RepBaseDocumentListResponse
+        {
+            Page = result.Page,
+            PageSize = result.PageSize,
+            TotalCount = result.TotalCount,
+            TotalPages = result.TotalPages,
+            Items = result.Items.Select(MapRepBaseDocument).ToList()
         });
     }
 
@@ -857,6 +963,8 @@ public static class PaymentComplementsEndpoints
 
     public static ExternalRepBaseDocumentDetailResponse MapExternalRepBaseDocument(ExternalRepBaseDocument document)
     {
+        var evaluation = ExternalRepBaseDocumentOperationalEvaluator.Evaluate(document);
+
         return new ExternalRepBaseDocumentDetailResponse
         {
             Id = document.Id,
@@ -890,7 +998,77 @@ public static class PaymentComplementsEndpoints
             XmlHash = document.XmlHash,
             ImportedAtUtc = document.ImportedAtUtc,
             ImportedByUserId = document.ImportedByUserId,
-            ImportedByUsername = document.ImportedByUsername
+            ImportedByUsername = document.ImportedByUsername,
+            OperationalStatus = evaluation.Status.ToString(),
+            IsEligible = evaluation.IsEligible,
+            IsBlocked = evaluation.IsBlocked,
+            PrimaryReasonCode = evaluation.PrimaryReasonCode,
+            PrimaryReasonMessage = evaluation.PrimaryReasonMessage,
+            AvailableActions = evaluation.AvailableActions.ToList()
+        };
+    }
+
+    public static ExternalRepBaseDocumentItemResponse MapExternalRepBaseDocumentListItem(ExternalRepBaseDocumentListItem item)
+    {
+        return new ExternalRepBaseDocumentItemResponse
+        {
+            ExternalRepBaseDocumentId = item.ExternalRepBaseDocumentId,
+            Uuid = item.Uuid,
+            Series = item.Series,
+            Folio = item.Folio,
+            IssuedAtUtc = item.IssuedAtUtc,
+            IssuerRfc = item.IssuerRfc,
+            IssuerLegalName = item.IssuerLegalName,
+            ReceiverRfc = item.ReceiverRfc,
+            ReceiverLegalName = item.ReceiverLegalName,
+            CurrencyCode = item.CurrencyCode,
+            Total = item.Total,
+            PaymentMethodSat = item.PaymentMethodSat,
+            PaymentFormSat = item.PaymentFormSat,
+            ValidationStatus = item.ValidationStatus,
+            SatStatus = item.SatStatus,
+            ImportedAtUtc = item.ImportedAtUtc,
+            OperationalStatus = item.OperationalStatus,
+            IsEligible = item.IsEligible,
+            IsBlocked = item.IsBlocked,
+            PrimaryReasonCode = item.PrimaryReasonCode,
+            PrimaryReasonMessage = item.PrimaryReasonMessage,
+            AvailableActions = item.AvailableActions.ToList()
+        };
+    }
+
+    public static RepBaseDocumentItemResponse MapRepBaseDocument(RepBaseDocumentUnifiedListItem item)
+    {
+        return new RepBaseDocumentItemResponse
+        {
+            SourceType = item.SourceType,
+            SourceId = item.SourceId,
+            FiscalDocumentId = item.FiscalDocumentId,
+            ExternalRepBaseDocumentId = item.ExternalRepBaseDocumentId,
+            BillingDocumentId = item.BillingDocumentId,
+            Uuid = item.Uuid,
+            Series = item.Series,
+            Folio = item.Folio,
+            IssuedAtUtc = item.IssuedAtUtc,
+            IssuerRfc = item.IssuerRfc,
+            IssuerLegalName = item.IssuerLegalName,
+            ReceiverRfc = item.ReceiverRfc,
+            ReceiverLegalName = item.ReceiverLegalName,
+            CurrencyCode = item.CurrencyCode,
+            Total = item.Total,
+            PaymentMethodSat = item.PaymentMethodSat,
+            PaymentFormSat = item.PaymentFormSat,
+            OperationalStatus = item.OperationalStatus,
+            ValidationStatus = item.ValidationStatus,
+            SatStatus = item.SatStatus,
+            OutstandingBalance = item.OutstandingBalance,
+            RepCount = item.RepCount,
+            IsEligible = item.IsEligible,
+            IsBlocked = item.IsBlocked,
+            PrimaryReasonCode = item.PrimaryReasonCode,
+            PrimaryReasonMessage = item.PrimaryReasonMessage,
+            AvailableActions = item.AvailableActions.ToList(),
+            ImportedAtUtc = item.ImportedAtUtc
         };
     }
 
@@ -1742,4 +1920,148 @@ public sealed class ExternalRepBaseDocumentDetailResponse
     public long? ImportedByUserId { get; set; }
 
     public string? ImportedByUsername { get; set; }
+
+    public string OperationalStatus { get; set; } = string.Empty;
+
+    public bool IsEligible { get; set; }
+
+    public bool IsBlocked { get; set; }
+
+    public string PrimaryReasonCode { get; set; } = string.Empty;
+
+    public string PrimaryReasonMessage { get; set; } = string.Empty;
+
+    public List<string> AvailableActions { get; set; } = [];
+}
+
+public sealed class ExternalRepBaseDocumentListResponse
+{
+    public int Page { get; set; }
+
+    public int PageSize { get; set; }
+
+    public int TotalCount { get; set; }
+
+    public int TotalPages { get; set; }
+
+    public List<ExternalRepBaseDocumentItemResponse> Items { get; set; } = [];
+}
+
+public sealed class ExternalRepBaseDocumentItemResponse
+{
+    public long ExternalRepBaseDocumentId { get; set; }
+
+    public string Uuid { get; set; } = string.Empty;
+
+    public string Series { get; set; } = string.Empty;
+
+    public string Folio { get; set; } = string.Empty;
+
+    public DateTime IssuedAtUtc { get; set; }
+
+    public string IssuerRfc { get; set; } = string.Empty;
+
+    public string? IssuerLegalName { get; set; }
+
+    public string ReceiverRfc { get; set; } = string.Empty;
+
+    public string? ReceiverLegalName { get; set; }
+
+    public string CurrencyCode { get; set; } = string.Empty;
+
+    public decimal Total { get; set; }
+
+    public string PaymentMethodSat { get; set; } = string.Empty;
+
+    public string PaymentFormSat { get; set; } = string.Empty;
+
+    public string ValidationStatus { get; set; } = string.Empty;
+
+    public string SatStatus { get; set; } = string.Empty;
+
+    public DateTime ImportedAtUtc { get; set; }
+
+    public string OperationalStatus { get; set; } = string.Empty;
+
+    public bool IsEligible { get; set; }
+
+    public bool IsBlocked { get; set; }
+
+    public string PrimaryReasonCode { get; set; } = string.Empty;
+
+    public string PrimaryReasonMessage { get; set; } = string.Empty;
+
+    public List<string> AvailableActions { get; set; } = [];
+}
+
+public sealed class RepBaseDocumentListResponse
+{
+    public int Page { get; set; }
+
+    public int PageSize { get; set; }
+
+    public int TotalCount { get; set; }
+
+    public int TotalPages { get; set; }
+
+    public List<RepBaseDocumentItemResponse> Items { get; set; } = [];
+}
+
+public sealed class RepBaseDocumentItemResponse
+{
+    public string SourceType { get; set; } = string.Empty;
+
+    public long SourceId { get; set; }
+
+    public long? FiscalDocumentId { get; set; }
+
+    public long? ExternalRepBaseDocumentId { get; set; }
+
+    public long? BillingDocumentId { get; set; }
+
+    public string? Uuid { get; set; }
+
+    public string Series { get; set; } = string.Empty;
+
+    public string Folio { get; set; } = string.Empty;
+
+    public DateTime IssuedAtUtc { get; set; }
+
+    public string? IssuerRfc { get; set; }
+
+    public string? IssuerLegalName { get; set; }
+
+    public string ReceiverRfc { get; set; } = string.Empty;
+
+    public string ReceiverLegalName { get; set; } = string.Empty;
+
+    public string CurrencyCode { get; set; } = string.Empty;
+
+    public decimal Total { get; set; }
+
+    public string PaymentMethodSat { get; set; } = string.Empty;
+
+    public string PaymentFormSat { get; set; } = string.Empty;
+
+    public string OperationalStatus { get; set; } = string.Empty;
+
+    public string? ValidationStatus { get; set; }
+
+    public string? SatStatus { get; set; }
+
+    public decimal? OutstandingBalance { get; set; }
+
+    public int? RepCount { get; set; }
+
+    public bool IsEligible { get; set; }
+
+    public bool IsBlocked { get; set; }
+
+    public string PrimaryReasonCode { get; set; } = string.Empty;
+
+    public string PrimaryReasonMessage { get; set; } = string.Empty;
+
+    public List<string> AvailableActions { get; set; } = [];
+
+    public DateTime? ImportedAtUtc { get; set; }
 }

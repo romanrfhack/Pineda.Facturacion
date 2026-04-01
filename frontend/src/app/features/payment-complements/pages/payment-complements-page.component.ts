@@ -1,25 +1,18 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
-import { ExternalRepBaseDocumentImportCardComponent } from '../components/external-rep-base-document-import-card.component';
-import { PaymentComplementBaseDocumentsPageComponent } from './payment-complement-base-documents-page.component';
+import { PaymentComplementBaseDocumentsHubPageComponent } from './payment-complement-base-documents-hub-page.component';
 import { PaymentComplementOperationsPageComponent } from './payment-complement-operations-page.component';
 
 @Component({
   selector: 'app-payment-complements-page',
-  imports: [ExternalRepBaseDocumentImportCardComponent, PaymentComplementBaseDocumentsPageComponent, PaymentComplementOperationsPageComponent],
+  imports: [PaymentComplementBaseDocumentsHubPageComponent, PaymentComplementOperationsPageComponent],
   template: `
     @if (paymentId()) {
       <app-payment-complement-operations-page />
     } @else {
-      <section class="page">
-        <app-external-rep-base-document-import-card />
-        <app-payment-complement-base-documents-page />
-      </section>
+      <app-payment-complement-base-documents-hub-page />
     }
   `,
-  styles: [`
-    .page { display:grid; gap:1rem; }
-  `],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class PaymentComplementsPageComponent {

@@ -1630,6 +1630,74 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
+    public async Task ExternalRepBaseDocuments_List_ReturnsImportedExternalDocuments()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        factory.FiscalStatusQueryGateway.ResponseFactory = _ => new FiscalStatusQueryGatewayResult
+        {
+            Outcome = FiscalStatusQueryGatewayOutcome.Refreshed,
+            ExternalStatus = "Vigente",
+            CheckedAtUtc = DateTime.UtcNow
+        };
+
+        using (var content = new MultipartFormDataContent())
+        {
+            var file = new ByteArrayContent(Encoding.UTF8.GetBytes(CreateExternalRepXmlContent(uuid: "UUID-EXT-LIST-1")));
+            file.Headers.ContentType = new MediaTypeHeaderValue("application/xml");
+            content.Add(file, "file", "external-list.xml");
+            var importResponse = await client.PostAsync("/api/payment-complements/external-base-documents/import-xml", content);
+            Assert.Equal(HttpStatusCode.OK, importResponse.StatusCode);
+        }
+
+        var listResponse = await client.GetAsync("/api/payment-complements/base-documents/external?page=1&pageSize=25&query=UUID-EXT-LIST-1");
+        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+
+        using var listJson = await JsonDocument.ParseAsync(await listResponse.Content.ReadAsStreamAsync());
+        Assert.Equal(1, listJson.RootElement.GetProperty("totalCount").GetInt32());
+        var item = Assert.Single(listJson.RootElement.GetProperty("items").EnumerateArray().ToList());
+        Assert.Equal("UUID-EXT-LIST-1", item.GetProperty("uuid").GetString());
+        Assert.Equal("ReadyForNextPhase", item.GetProperty("operationalStatus").GetString());
+        Assert.Equal("Accepted", item.GetProperty("validationStatus").GetString());
+    }
+
+    [Fact]
+    public async Task RepBaseDocuments_UnifiedList_ReturnsInternalAndExternalRows()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-REP-3B-1001", uuid: "UUID-REP-3B-INT-1");
+        var createArResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest());
+        Assert.Equal(HttpStatusCode.OK, createArResponse.StatusCode);
+
+        factory.FiscalStatusQueryGateway.ResponseFactory = _ => new FiscalStatusQueryGatewayResult
+        {
+            Outcome = FiscalStatusQueryGatewayOutcome.Refreshed,
+            ExternalStatus = "Vigente",
+            CheckedAtUtc = DateTime.UtcNow
+        };
+
+        using (var content = new MultipartFormDataContent())
+        {
+            var file = new ByteArrayContent(Encoding.UTF8.GetBytes(CreateExternalRepXmlContent(uuid: "UUID-REP-3B-EXT-1", receiverRfc: "BBB010101BBB")));
+            file.Headers.ContentType = new MediaTypeHeaderValue("application/xml");
+            content.Add(file, "file", "external-unified.xml");
+            var importResponse = await client.PostAsync("/api/payment-complements/external-base-documents/import-xml", content);
+            Assert.Equal(HttpStatusCode.OK, importResponse.StatusCode);
+        }
+
+        var listResponse = await client.GetAsync("/api/payment-complements/base-documents?page=1&pageSize=25&receiverRfc=BBB010101BBB");
+        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+
+        using var listJson = await JsonDocument.ParseAsync(await listResponse.Content.ReadAsStreamAsync());
+        var items = listJson.RootElement.GetProperty("items").EnumerateArray().ToList();
+        Assert.Contains(items, x => x.GetProperty("sourceType").GetString() == "Internal");
+        Assert.Contains(items, x => x.GetProperty("sourceType").GetString() == "External");
+    }
+
+    [Fact]
     public async Task Prepare_Stamp_Cancel_AndRefreshPaymentComplement_HappyPath()
     {
         await using var factory = new MvpApiFactory();
@@ -1823,13 +1891,14 @@ public class MvpLifecycleApiTests
         string uuid = "UUID-EXT-2001",
         string paymentMethod = "PPD",
         string paymentForm = "99",
-        string currency = "MXN")
+        string currency = "MXN",
+        string receiverRfc = "BBB010101BBB")
     {
         return $$"""
             <?xml version="1.0" encoding="utf-8"?>
             <cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" Version="4.0" Serie="EXT" Folio="2001" Fecha="2026-04-06T10:00:00" SubTotal="100.00" Total="116.00" Moneda="{{currency}}" MetodoPago="{{paymentMethod}}" FormaPago="{{paymentForm}}" TipoDeComprobante="I">
               <cfdi:Emisor Rfc="AAA010101AAA" Nombre="Emisor Externo" />
-              <cfdi:Receptor Rfc="BBB010101BBB" Nombre="Receptor Externo" />
+              <cfdi:Receptor Rfc="{{receiverRfc}}" Nombre="Receptor Externo" />
               <cfdi:Complemento>
                 <tfd:TimbreFiscalDigital Version="1.1" UUID="{{uuid}}" FechaTimbrado="2026-04-06T10:05:00" />
               </cfdi:Complemento>

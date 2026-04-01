@@ -279,6 +279,109 @@ export interface ExternalRepBaseDocumentDetailResponse {
   importedAtUtc: string;
   importedByUserId?: number | null;
   importedByUsername?: string | null;
+  operationalStatus: string;
+  isEligible: boolean;
+  isBlocked: boolean;
+  primaryReasonCode: string;
+  primaryReasonMessage: string;
+  availableActions: string[];
+}
+
+export interface ExternalRepBaseDocumentFilters {
+  page: number;
+  pageSize: number;
+  fromDate?: string | null;
+  toDate?: string | null;
+  receiverRfc?: string | null;
+  query?: string | null;
+  validationStatus?: string | null;
+  eligible?: boolean | null;
+  blocked?: boolean | null;
+}
+
+export interface ExternalRepBaseDocumentItemResponse {
+  externalRepBaseDocumentId: number;
+  uuid: string;
+  series: string;
+  folio: string;
+  issuedAtUtc: string;
+  issuerRfc: string;
+  issuerLegalName?: string | null;
+  receiverRfc: string;
+  receiverLegalName?: string | null;
+  currencyCode: string;
+  total: number;
+  paymentMethodSat: string;
+  paymentFormSat: string;
+  validationStatus: string;
+  satStatus: string;
+  importedAtUtc: string;
+  operationalStatus: string;
+  isEligible: boolean;
+  isBlocked: boolean;
+  primaryReasonCode: string;
+  primaryReasonMessage: string;
+  availableActions: string[];
+}
+
+export interface ExternalRepBaseDocumentListResponse {
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+  items: ExternalRepBaseDocumentItemResponse[];
+}
+
+export interface RepBaseDocumentFilters {
+  page: number;
+  pageSize: number;
+  fromDate?: string | null;
+  toDate?: string | null;
+  receiverRfc?: string | null;
+  query?: string | null;
+  sourceType?: string | null;
+  validationStatus?: string | null;
+  eligible?: boolean | null;
+  blocked?: boolean | null;
+}
+
+export interface RepBaseDocumentItemResponse {
+  sourceType: string;
+  sourceId: number;
+  fiscalDocumentId?: number | null;
+  externalRepBaseDocumentId?: number | null;
+  billingDocumentId?: number | null;
+  uuid?: string | null;
+  series: string;
+  folio: string;
+  issuedAtUtc: string;
+  issuerRfc?: string | null;
+  issuerLegalName?: string | null;
+  receiverRfc: string;
+  receiverLegalName: string;
+  currencyCode: string;
+  total: number;
+  paymentMethodSat: string;
+  paymentFormSat: string;
+  operationalStatus: string;
+  validationStatus?: string | null;
+  satStatus?: string | null;
+  outstandingBalance?: number | null;
+  repCount?: number | null;
+  isEligible: boolean;
+  isBlocked: boolean;
+  primaryReasonCode: string;
+  primaryReasonMessage: string;
+  availableActions: string[];
+  importedAtUtc?: string | null;
+}
+
+export interface RepBaseDocumentListResponse {
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+  items: RepBaseDocumentItemResponse[];
 }
 
 export interface InternalRepBaseDocumentItemResponse {

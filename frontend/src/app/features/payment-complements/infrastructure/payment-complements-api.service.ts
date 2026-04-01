@@ -4,8 +4,10 @@ import { Observable } from 'rxjs';
 import { buildApiUrl } from '../../../core/config/api-url';
 import {
   CancelPaymentComplementResponse,
+  ExternalRepBaseDocumentFilters,
   ExternalRepBaseDocumentDetailResponse,
   ExternalRepBaseDocumentImportResponse,
+  ExternalRepBaseDocumentListResponse,
   InternalRepBaseDocumentDetailResponse,
   InternalRepBaseDocumentFilters,
   InternalRepBaseDocumentListResponse,
@@ -13,6 +15,8 @@ import {
   PrepareInternalRepBaseDocumentPaymentComplementResponse,
   RegisterInternalRepBaseDocumentPaymentRequest,
   RegisterInternalRepBaseDocumentPaymentResponse,
+  RepBaseDocumentFilters,
+  RepBaseDocumentListResponse,
   StampInternalRepBaseDocumentPaymentComplementRequest,
   StampInternalRepBaseDocumentPaymentComplementResponse,
   PaymentComplementCancellationResponse,
@@ -49,6 +53,39 @@ export class PaymentComplementsApiService {
 
   getInternalBaseDocumentByFiscalDocumentId(fiscalDocumentId: number): Observable<InternalRepBaseDocumentDetailResponse> {
     return this.http.get<InternalRepBaseDocumentDetailResponse>(buildApiUrl(`/payment-complements/base-documents/internal/${fiscalDocumentId}`));
+  }
+
+  searchExternalBaseDocuments(filters: ExternalRepBaseDocumentFilters): Observable<ExternalRepBaseDocumentListResponse> {
+    const query = new URLSearchParams();
+    query.set('page', `${filters.page}`);
+    query.set('pageSize', `${filters.pageSize}`);
+
+    setOptionalQuery(query, 'fromDate', filters.fromDate);
+    setOptionalQuery(query, 'toDate', filters.toDate);
+    setOptionalQuery(query, 'receiverRfc', filters.receiverRfc);
+    setOptionalQuery(query, 'query', filters.query);
+    setOptionalQuery(query, 'validationStatus', filters.validationStatus);
+    setOptionalBooleanQuery(query, 'eligible', filters.eligible);
+    setOptionalBooleanQuery(query, 'blocked', filters.blocked);
+
+    return this.http.get<ExternalRepBaseDocumentListResponse>(buildApiUrl(`/payment-complements/base-documents/external?${query.toString()}`));
+  }
+
+  searchBaseDocuments(filters: RepBaseDocumentFilters): Observable<RepBaseDocumentListResponse> {
+    const query = new URLSearchParams();
+    query.set('page', `${filters.page}`);
+    query.set('pageSize', `${filters.pageSize}`);
+
+    setOptionalQuery(query, 'fromDate', filters.fromDate);
+    setOptionalQuery(query, 'toDate', filters.toDate);
+    setOptionalQuery(query, 'receiverRfc', filters.receiverRfc);
+    setOptionalQuery(query, 'query', filters.query);
+    setOptionalQuery(query, 'sourceType', filters.sourceType);
+    setOptionalQuery(query, 'validationStatus', filters.validationStatus);
+    setOptionalBooleanQuery(query, 'eligible', filters.eligible);
+    setOptionalBooleanQuery(query, 'blocked', filters.blocked);
+
+    return this.http.get<RepBaseDocumentListResponse>(buildApiUrl(`/payment-complements/base-documents?${query.toString()}`));
   }
 
   registerInternalBaseDocumentPayment(

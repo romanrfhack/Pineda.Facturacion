@@ -45,6 +45,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<PreparePaymentComplementService>();
         services.AddScoped<GetPaymentComplementByPaymentIdService>();
         services.AddScoped<SearchInternalRepBaseDocumentsService>();
+        services.AddScoped<SearchExternalRepBaseDocumentsService>();
+        services.AddScoped<SearchRepBaseDocumentsService>();
         services.AddScoped<GetInternalRepBaseDocumentByFiscalDocumentIdService>();
         services.AddScoped<ImportExternalRepBaseDocumentFromXmlService>();
         services.AddScoped<GetExternalRepBaseDocumentByIdService>();

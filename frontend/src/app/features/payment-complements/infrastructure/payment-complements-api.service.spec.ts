@@ -187,8 +187,59 @@ describe('PaymentComplementsApiService', () => {
       satStatus: 'Active',
       sourceFileName: 'external.xml',
       xmlHash: 'HASH-1',
-      importedAtUtc: '2026-04-01T11:00:00Z'
+      importedAtUtc: '2026-04-01T11:00:00Z',
+      operationalStatus: 'ReadyForNextPhase',
+      isEligible: true,
+      isBlocked: false,
+      primaryReasonCode: 'Accepted',
+      primaryReasonMessage: 'Lista para la siguiente fase.',
+      availableActions: ['ViewDetail']
     });
+    httpTesting.verify();
+  });
+
+  it('searches external rep base documents with filters', () => {
+    const service = TestBed.inject(PaymentComplementsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.searchExternalBaseDocuments({
+      page: 1,
+      pageSize: 25,
+      fromDate: '2026-04-01',
+      toDate: '2026-04-30',
+      receiverRfc: 'BBB010101BBB',
+      query: 'UUID-EXT-1',
+      validationStatus: 'Accepted',
+      eligible: true,
+      blocked: false
+    }).subscribe();
+
+    const req = httpTesting.expectOne('/api/payment-complements/base-documents/external?page=1&pageSize=25&fromDate=2026-04-01&toDate=2026-04-30&receiverRfc=BBB010101BBB&query=UUID-EXT-1&validationStatus=Accepted&eligible=true&blocked=false');
+    expect(req.request.method).toBe('GET');
+    req.flush({ page: 1, pageSize: 25, totalCount: 0, totalPages: 0, items: [] });
+    httpTesting.verify();
+  });
+
+  it('searches unified rep base documents with filters', () => {
+    const service = TestBed.inject(PaymentComplementsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.searchBaseDocuments({
+      page: 1,
+      pageSize: 25,
+      fromDate: '2026-04-01',
+      toDate: '2026-04-30',
+      receiverRfc: 'BBB010101BBB',
+      query: 'UUID-REP-1',
+      sourceType: 'External',
+      validationStatus: 'Accepted',
+      eligible: true,
+      blocked: false
+    }).subscribe();
+
+    const req = httpTesting.expectOne('/api/payment-complements/base-documents?page=1&pageSize=25&fromDate=2026-04-01&toDate=2026-04-30&receiverRfc=BBB010101BBB&query=UUID-REP-1&sourceType=External&validationStatus=Accepted&eligible=true&blocked=false');
+    expect(req.request.method).toBe('GET');
+    req.flush({ page: 1, pageSize: 25, totalCount: 0, totalPages: 0, items: [] });
     httpTesting.verify();
   });
 });

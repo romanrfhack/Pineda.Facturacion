@@ -311,6 +311,16 @@ public class ExternalRepBaseDocumentImportServicesTests
         public Task<ExternalRepBaseDocument?> GetByUuidAsync(string uuid, CancellationToken cancellationToken = default)
             => Task.FromResult(ExistingByUuid);
 
+        public Task<IReadOnlyList<ExternalRepBaseDocument>> SearchAsync(
+            SearchExternalRepBaseDocumentsDataFilter filter,
+            CancellationToken cancellationToken = default)
+        {
+            IReadOnlyList<ExternalRepBaseDocument> results = ExistingById is null
+                ? []
+                : [ExistingById];
+            return Task.FromResult(results);
+        }
+
         public Task AddAsync(ExternalRepBaseDocument document, CancellationToken cancellationToken = default)
         {
             Added = document;
