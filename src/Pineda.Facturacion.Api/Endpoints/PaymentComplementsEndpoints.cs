@@ -218,6 +218,7 @@ public static class PaymentComplementsEndpoints
         string? alertCode,
         string? severity,
         string? nextRecommendedAction,
+        string? quickView,
         SearchInternalRepBaseDocumentsService service,
         CancellationToken cancellationToken)
     {
@@ -244,7 +245,8 @@ public static class PaymentComplementsEndpoints
                 HasRepEmitted = hasRepEmitted,
                 AlertCode = alertCode,
                 Severity = severity,
-                NextRecommendedAction = nextRecommendedAction
+                NextRecommendedAction = nextRecommendedAction,
+                QuickView = quickView
             },
             cancellationToken);
 
@@ -342,6 +344,7 @@ public static class PaymentComplementsEndpoints
         string? alertCode,
         string? severity,
         string? nextRecommendedAction,
+        string? quickView,
         SearchExternalRepBaseDocumentsService service,
         CancellationToken cancellationToken)
     {
@@ -367,7 +370,8 @@ public static class PaymentComplementsEndpoints
                 Blocked = blocked,
                 AlertCode = alertCode,
                 Severity = severity,
-                NextRecommendedAction = nextRecommendedAction
+                NextRecommendedAction = nextRecommendedAction,
+                QuickView = quickView
             },
             cancellationToken);
 
@@ -396,6 +400,7 @@ public static class PaymentComplementsEndpoints
         string? alertCode,
         string? severity,
         string? nextRecommendedAction,
+        string? quickView,
         SearchRepBaseDocumentsService service,
         CancellationToken cancellationToken)
     {
@@ -422,7 +427,8 @@ public static class PaymentComplementsEndpoints
                 Blocked = blocked,
                 AlertCode = alertCode,
                 Severity = severity,
-                NextRecommendedAction = nextRecommendedAction
+                NextRecommendedAction = nextRecommendedAction,
+                QuickView = quickView
             },
             cancellationToken);
 
@@ -1686,6 +1692,13 @@ public static class PaymentComplementsEndpoints
                     Code = x.Code,
                     Count = x.Count
                 })
+                .ToList(),
+            QuickViewCounts = counts.QuickViewCounts
+                .Select(x => new RepOperationalCountResponse
+                {
+                    Code = x.Code,
+                    Count = x.Count
+                })
                 .ToList()
         };
     }
@@ -2223,6 +2236,8 @@ public sealed class RepOperationalSummaryCountsResponse
     public List<RepOperationalCountResponse> AlertCounts { get; set; } = [];
 
     public List<RepOperationalCountResponse> NextRecommendedActionCounts { get; set; } = [];
+
+    public List<RepOperationalCountResponse> QuickViewCounts { get; set; } = [];
 }
 
 public sealed class InternalRepBaseDocumentDetailResponse

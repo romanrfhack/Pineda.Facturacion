@@ -32,7 +32,11 @@ describe('PaymentComplementExternalBaseDocumentsPageComponent', () => {
                 criticalCount: 0,
                 blockedCount: 0,
                 alertCounts: [{ code: 'StampedRepAvailable', count: 1 }],
-                nextRecommendedActionCounts: [{ code: 'RegisterPayment', count: 1 }]
+                nextRecommendedActionCounts: [{ code: 'RegisterPayment', count: 1 }],
+                quickViewCounts: [
+                  { code: 'Stamped', count: 1 },
+                  { code: 'Blocked', count: 0 }
+                ]
               },
               items: [{
                 externalRepBaseDocumentId: 123,
@@ -219,8 +223,19 @@ describe('PaymentComplementExternalBaseDocumentsPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Bandeja de CFDI externos importados');
     expect(fixture.nativeElement.textContent).toContain('UUID-EXT-123');
     expect(fixture.nativeElement.textContent).toContain('Listo para registrar pago');
-    expect(fixture.nativeElement.textContent).toContain('Advertencias (0)');
-    expect(fixture.nativeElement.textContent).toContain('Bloqueados (0)');
+    expect(fixture.nativeElement.textContent).toContain('Timbrado (1)');
+    expect(fixture.nativeElement.textContent).toContain('Bloqueado (0)');
+  });
+
+  it('applies a quick view and reloads the external tray', async () => {
+    const fixture = await configure();
+    const api = TestBed.inject(PaymentComplementsApiService) as unknown as { searchExternalBaseDocuments: ReturnType<typeof vi.fn> };
+
+    await fixture.componentInstance['applyQuickView']('Stamped');
+
+    expect(api.searchExternalBaseDocuments).toHaveBeenLastCalledWith(expect.objectContaining({
+      quickView: 'Stamped'
+    }));
   });
 
   it('opens external detail context', async () => {

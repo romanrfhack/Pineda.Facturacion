@@ -106,24 +106,19 @@ import {
         </form>
 
         <div class="quick-filters">
-          <button type="button" class="secondary small quick-chip" [class.quick-chip-active]="severityFilter === 'warning'" (click)="applySeverityChip('warning')" [disabled]="loading()">
-            Advertencias ({{ summaryCounts().warningCount }})
+          <button type="button" class="secondary small quick-chip" [class.quick-chip-active]="!quickViewFilter" (click)="applyQuickView('')" [disabled]="loading()">
+            Todos
           </button>
-          <button type="button" class="secondary small quick-chip" [class.quick-chip-active]="severityFilter === 'error'" (click)="applySeverityChip('error')" [disabled]="loading()">
-            Errores ({{ summaryCounts().errorCount }})
-          </button>
-          <button type="button" class="secondary small quick-chip" [class.quick-chip-active]="severityFilter === 'critical'" (click)="applySeverityChip('critical')" [disabled]="loading()">
-            Críticos ({{ summaryCounts().criticalCount }})
-          </button>
-          <button type="button" class="secondary small quick-chip" [class.quick-chip-active]="nextRecommendedActionFilter === 'PrepareRep'" (click)="applyRecommendedActionChip('PrepareRep')" [disabled]="loading()">
-            Preparar REP ({{ countForRecommendedAction('PrepareRep') }})
-          </button>
-          <button type="button" class="secondary small quick-chip" [class.quick-chip-active]="nextRecommendedActionFilter === 'StampRep'" (click)="applyRecommendedActionChip('StampRep')" [disabled]="loading()">
-            Timbrar REP ({{ countForRecommendedAction('StampRep') }})
-          </button>
-          <button type="button" class="secondary small quick-chip" [class.quick-chip-active]="nextRecommendedActionFilter === 'Blocked'" (click)="applyRecommendedActionChip('Blocked')" [disabled]="loading()">
-            Bloqueados ({{ summaryCounts().blockedCount }})
-          </button>
+          @for (quickView of quickViewOptions; track quickView) {
+            <button type="button" class="secondary small quick-chip" [class.quick-chip-active]="quickViewFilter === quickView" (click)="applyQuickView(quickView)" [disabled]="loading()">
+              {{ getDisplayLabel(quickView) }} ({{ countForQuickView(quickView) }})
+            </button>
+          }
+          @if (quickViewFilter) {
+            <button type="button" class="secondary small quick-chip" (click)="applyQuickView('')" [disabled]="loading()">
+              Volver a Todos
+            </button>
+          }
           @if (hasOperationalFilters()) {
             <button type="button" class="secondary small quick-chip" (click)="clearOperationalFilters()" [disabled]="loading()">
               Limpiar operativos
@@ -682,9 +677,11 @@ export class PaymentComplementBaseDocumentsPageComponent {
   protected alertCodeFilter = '';
   protected severityFilter = '';
   protected nextRecommendedActionFilter = '';
+  protected quickViewFilter = '';
   protected readonly alertOptions = REP_OPERATIONAL_ALERT_OPTIONS;
   protected readonly severityOptions = REP_OPERATIONAL_SEVERITY_OPTIONS;
   protected readonly recommendedActionOptions = REP_RECOMMENDED_ACTION_OPTIONS;
+  protected readonly quickViewOptions = REP_QUICK_VIEW_OPTIONS;
   protected readonly page = signal(1);
   protected readonly pageSize = signal(25);
   protected readonly totalCount = signal(0);
@@ -739,6 +736,7 @@ export class PaymentComplementBaseDocumentsPageComponent {
     this.alertCodeFilter = '';
     this.severityFilter = '';
     this.nextRecommendedActionFilter = '';
+    this.quickViewFilter = '';
     this.filtersError.set(null);
     this.page.set(1);
     this.pageSize.set(25);
@@ -989,14 +987,8 @@ export class PaymentComplementBaseDocumentsPageComponent {
     return action ? getDisplayLabel(action) : 'Sin acción disponible';
   }
 
-  protected async applySeverityChip(severity: string): Promise<void> {
-    this.severityFilter = this.severityFilter === severity ? '' : severity;
-    this.page.set(1);
-    await this.load();
-  }
-
-  protected async applyRecommendedActionChip(action: string): Promise<void> {
-    this.nextRecommendedActionFilter = this.nextRecommendedActionFilter === action ? '' : action;
+  protected async applyQuickView(quickView: string): Promise<void> {
+    this.quickViewFilter = this.quickViewFilter === quickView ? '' : quickView;
     this.page.set(1);
     await this.load();
   }
@@ -1005,16 +997,17 @@ export class PaymentComplementBaseDocumentsPageComponent {
     this.alertCodeFilter = '';
     this.severityFilter = '';
     this.nextRecommendedActionFilter = '';
+    this.quickViewFilter = '';
     this.page.set(1);
     await this.load();
   }
 
-  protected countForRecommendedAction(code: string): number {
-    return this.summaryCounts().nextRecommendedActionCounts.find((item) => item.code === code)?.count ?? 0;
+  protected countForQuickView(code: string): number {
+    return this.summaryCounts().quickViewCounts.find((item) => item.code === code)?.count ?? 0;
   }
 
   protected hasOperationalFilters(): boolean {
-    return Boolean(this.alertCodeFilter || this.severityFilter || this.nextRecommendedActionFilter);
+    return Boolean(this.alertCodeFilter || this.severityFilter || this.nextRecommendedActionFilter || this.quickViewFilter);
   }
 
   private async handleSuccessfulPaymentRegistration(
@@ -1105,7 +1098,8 @@ export class PaymentComplementBaseDocumentsPageComponent {
         hasRepEmitted: parseBooleanFilter(this.repEmittedFilter),
         alertCode: this.alertCodeFilter || null,
         severity: this.severityFilter || null,
-        nextRecommendedAction: this.nextRecommendedActionFilter || null
+        nextRecommendedAction: this.nextRecommendedActionFilter || null,
+        quickView: this.quickViewFilter || null
       }));
 
       this.items.set(response.items);
@@ -1147,7 +1141,8 @@ function createEmptySummaryCounts(): RepOperationalSummaryCountsResponse {
     criticalCount: 0,
     blockedCount: 0,
     alertCounts: [],
-    nextRecommendedActionCounts: []
+    nextRecommendedActionCounts: [],
+    quickViewCounts: []
   };
 }
 
@@ -1178,3 +1173,4 @@ const REP_OPERATIONAL_ALERT_OPTIONS = [
 const REP_OPERATIONAL_SEVERITY_OPTIONS = ['info', 'warning', 'error', 'critical'];
 const REP_OPERATIONAL_SEVERITY_PRIORITY = ['critical', 'error', 'warning', 'info'];
 const REP_RECOMMENDED_ACTION_OPTIONS = ['RegisterPayment', 'PrepareRep', 'StampRep', 'RefreshRepStatus', 'CancelRep', 'ViewDetail', 'Blocked', 'NoAction'];
+const REP_QUICK_VIEW_OPTIONS = ['PendingStamp', 'WithError', 'Blocked', 'AppliedPaymentWithoutStampedRep', 'PendingRefresh', 'Stamped'];

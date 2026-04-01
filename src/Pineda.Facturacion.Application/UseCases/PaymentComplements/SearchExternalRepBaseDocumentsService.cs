@@ -60,9 +60,11 @@ public sealed class SearchExternalRepBaseDocumentsService
             items,
             x => x.Alerts,
             x => x.NextRecommendedAction,
-            x => x.IsBlocked);
+            x => x.IsBlocked,
+            x => x.StampedPaymentComplementCount);
 
         var filteredItems = items
+            .Where(x => MatchesQuickView(x, filter))
             .Where(x => MatchesOperationalFilter(x, filter))
             .ToList();
 
@@ -189,6 +191,20 @@ public sealed class SearchExternalRepBaseDocumentsService
         }
 
         return true;
+    }
+
+    private static bool MatchesQuickView(ExternalRepBaseDocumentListItem item, SearchExternalRepBaseDocumentsFilter filter)
+    {
+        if (string.IsNullOrWhiteSpace(filter.QuickView))
+        {
+            return true;
+        }
+
+        return RepQuickViewMatcher.Matches(
+            filter.QuickView.Trim(),
+            item.Alerts,
+            item.NextRecommendedAction,
+            item.StampedPaymentComplementCount);
     }
 
     private static string? NormalizeOptionalText(string? value)

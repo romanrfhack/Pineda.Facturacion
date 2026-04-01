@@ -155,6 +155,7 @@ export interface InternalRepBaseDocumentFilters {
   alertCode?: string | null;
   severity?: string | null;
   nextRecommendedAction?: string | null;
+  quickView?: string | null;
 }
 
 export interface RegisterInternalRepBaseDocumentPaymentRequest {
@@ -213,6 +214,7 @@ export interface RepOperationalSummaryCountsResponse {
   blockedCount: number;
   alertCounts: RepOperationalCountResponse[];
   nextRecommendedActionCounts: RepOperationalCountResponse[];
+  quickViewCounts: RepOperationalCountResponse[];
 }
 
 export interface PrepareInternalRepBaseDocumentPaymentComplementRequest {
@@ -352,6 +354,7 @@ export interface ExternalRepBaseDocumentFilters {
   alertCode?: string | null;
   severity?: string | null;
   nextRecommendedAction?: string | null;
+  quickView?: string | null;
 }
 
 export interface ExternalRepBaseDocumentItemResponse {
@@ -616,6 +619,7 @@ export interface RepBaseDocumentFilters {
   alertCode?: string | null;
   severity?: string | null;
   nextRecommendedAction?: string | null;
+  quickView?: string | null;
 }
 
 export interface RepBaseDocumentItemResponse {

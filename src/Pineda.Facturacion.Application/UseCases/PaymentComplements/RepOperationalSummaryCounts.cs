@@ -15,4 +15,6 @@ public sealed class RepOperationalSummaryCounts
     public IReadOnlyList<RepOperationalCount> AlertCounts { get; init; } = [];
 
     public IReadOnlyList<RepOperationalCount> NextRecommendedActionCounts { get; init; } = [];
+
+    public IReadOnlyList<RepOperationalCount> QuickViewCounts { get; init; } = [];
 }

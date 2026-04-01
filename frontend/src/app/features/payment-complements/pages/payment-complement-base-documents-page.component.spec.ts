@@ -25,6 +25,10 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
           nextRecommendedActionCounts: [
             { code: 'PrepareRep', count: 1 },
             { code: 'Blocked', count: 1 }
+          ],
+          quickViewCounts: [
+            { code: 'AppliedPaymentWithoutStampedRep', count: 1 },
+            { code: 'Blocked', count: 1 }
           ]
         },
         items: [
@@ -405,15 +409,24 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
       pageSize: 25,
       totalCount: 0,
       totalPages: 0,
-      items: []
+      items: [],
+      summaryCounts: {
+        infoCount: 0,
+        warningCount: 0,
+        errorCount: 0,
+        criticalCount: 0,
+        blockedCount: 0,
+        alertCounts: [],
+        nextRecommendedActionCounts: [],
+        quickViewCounts: []
+      }
     }));
     const fixture = await configure({ searchInternalBaseDocuments });
 
     fixture.componentInstance['receiverRfc'] = 'BBB010101BBB';
     fixture.componentInstance['query'] = 'UUID-REP-1';
     fixture.componentInstance['eligibleFilter'] = 'true';
-    fixture.componentInstance['severityFilter'] = 'warning';
-    fixture.componentInstance['nextRecommendedActionFilter'] = 'PrepareRep';
+    fixture.componentInstance['quickViewFilter'] = 'AppliedPaymentWithoutStampedRep';
     await fixture.componentInstance['applyFilters']();
 
     expect(searchInternalBaseDocuments).toHaveBeenCalledWith(expect.objectContaining({
@@ -422,8 +435,7 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
       receiverRfc: 'BBB010101BBB',
       query: 'UUID-REP-1',
       eligible: true,
-      severity: 'warning',
-      nextRecommendedAction: 'PrepareRep'
+      quickView: 'AppliedPaymentWithoutStampedRep'
     }));
   });
 
@@ -431,10 +443,20 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
     const fixture = await configure();
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.textContent).toContain('Advertencias (1)');
-    expect(fixture.nativeElement.textContent).toContain('Críticos (1)');
-    expect(fixture.nativeElement.textContent).toContain('Preparar REP (1)');
-    expect(fixture.nativeElement.textContent).toContain('Bloqueados (1)');
+    expect(fixture.nativeElement.textContent).toContain('Pendientes de timbrar');
+    expect(fixture.nativeElement.textContent).toContain('Pago aplicado sin REP (1)');
+    expect(fixture.nativeElement.textContent).toContain('Bloqueado (1)');
+  });
+
+  it('applies a quick view and reloads the internal tray', async () => {
+    const fixture = await configure();
+    const api = TestBed.inject(PaymentComplementsApiService) as unknown as { searchInternalBaseDocuments: ReturnType<typeof vi.fn> };
+
+    await fixture.componentInstance['applyQuickView']('PendingStamp');
+
+    expect(api.searchInternalBaseDocuments).toHaveBeenLastCalledWith(expect.objectContaining({
+      quickView: 'PendingStamp'
+    }));
   });
 
   it('opens the detail modal with payment and REP context', async () => {

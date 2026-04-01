@@ -99,9 +99,11 @@ public sealed class SearchRepBaseDocumentsService
             items,
             x => x.Alerts,
             x => x.NextRecommendedAction,
-            x => x.IsBlocked);
+            x => x.IsBlocked,
+            x => x.RepCount ?? 0);
 
         var filteredItems = items
+            .Where(x => MatchesQuickView(x, filter))
             .Where(x => MatchesOperationalFilter(x, filter))
             .ToList();
 
@@ -229,6 +231,20 @@ public sealed class SearchRepBaseDocumentsService
         }
 
         return true;
+    }
+
+    private static bool MatchesQuickView(RepBaseDocumentUnifiedListItem item, SearchRepBaseDocumentsFilter filter)
+    {
+        if (string.IsNullOrWhiteSpace(filter.QuickView))
+        {
+            return true;
+        }
+
+        return RepQuickViewMatcher.Matches(
+            filter.QuickView.Trim(),
+            item.Alerts,
+            item.NextRecommendedAction,
+            item.RepCount ?? 0);
     }
 
     private static RepBaseDocumentUnifiedListItem MapInternal(InternalRepBaseDocumentListItem item)

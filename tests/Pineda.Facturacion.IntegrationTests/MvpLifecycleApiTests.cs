@@ -1235,6 +1235,47 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
+    public async Task InternalRepBaseDocuments_List_FiltersByQuickViewPendingStamp_AndReturnsQuickViewCounts()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-REP-F2-INT-1001", uuid: "UUID-REP-F2-INT-1001");
+
+        var createArBody = await (await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest()))
+            .Content.ReadFromJsonAsync<CreateAccountsReceivableInvoiceResponse>();
+        Assert.NotNull(createArBody);
+
+        var registerPaymentResponse = await client.PostAsJsonAsync($"/api/payment-complements/base-documents/internal/{fiscalDocumentId}/payments", new RegisterInternalRepBaseDocumentPaymentRequest
+        {
+            PaymentDate = new DateOnly(2026, 04, 03),
+            PaymentFormSat = "03",
+            Amount = 40m,
+            Reference = "REP-F2-INT-REF"
+        });
+        Assert.Equal(HttpStatusCode.OK, registerPaymentResponse.StatusCode);
+        var registerPaymentBody = await registerPaymentResponse.Content.ReadFromJsonAsync<RegisterInternalRepBaseDocumentPaymentResponse>();
+        Assert.NotNull(registerPaymentBody);
+
+        var prepareResponse = await client.PostAsJsonAsync($"/api/payment-complements/base-documents/internal/{fiscalDocumentId}/prepare", new PrepareInternalRepBaseDocumentPaymentComplementRequest
+        {
+            AccountsReceivablePaymentId = registerPaymentBody!.AccountsReceivablePaymentId
+        });
+        Assert.Equal(HttpStatusCode.OK, prepareResponse.StatusCode);
+
+        var response = await client.GetAsync("/api/payment-complements/base-documents/internal?page=1&pageSize=25&quickView=PendingStamp");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var json = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+        var items = json.RootElement.GetProperty("items").EnumerateArray().ToList();
+        Assert.Contains(items, x => x.GetProperty("fiscalDocumentId").GetInt64() == fiscalDocumentId);
+
+        var summaryCounts = json.RootElement.GetProperty("summaryCounts");
+        Assert.Contains(summaryCounts.GetProperty("quickViewCounts").EnumerateArray().ToList(), x =>
+            x.GetProperty("code").GetString() == "PendingStamp" && x.GetProperty("count").GetInt32() >= 1);
+    }
+
+    [Fact]
     public async Task InternalRepBaseDocuments_Detail_ReturnsEligibilityHistoryAndIssuedRepContext()
     {
         await using var factory = new MvpApiFactory();
@@ -1854,6 +1895,53 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
+    public async Task ExternalRepBaseDocuments_List_FiltersByQuickViewAppliedPaymentWithoutStampedRep()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        await factory.SeedStandardFiscalMasterDataAsync();
+
+        factory.FiscalStatusQueryGateway.ResponseFactory = _ => new FiscalStatusQueryGatewayResult
+        {
+            Outcome = FiscalStatusQueryGatewayOutcome.Refreshed,
+            ExternalStatus = "Vigente",
+            CheckedAtUtc = DateTime.UtcNow
+        };
+
+        long externalId;
+        using (var content = new MultipartFormDataContent())
+        {
+            var file = new ByteArrayContent(Encoding.UTF8.GetBytes(CreateExternalRepXmlContent(uuid: "UUID-EXT-F2-1001")));
+            file.Headers.ContentType = new MediaTypeHeaderValue("application/xml");
+            content.Add(file, "file", "external-f2.xml");
+            var importResponse = await client.PostAsync("/api/payment-complements/external-base-documents/import-xml", content);
+            Assert.Equal(HttpStatusCode.OK, importResponse.StatusCode);
+            var importBody = await importResponse.Content.ReadFromJsonAsync<ExternalRepBaseDocumentImportResponse>();
+            externalId = importBody!.ExternalRepBaseDocumentId!.Value;
+        }
+
+        var paymentResponse = await client.PostAsJsonAsync($"/api/payment-complements/base-documents/external/{externalId}/payments", new RegisterExternalRepBaseDocumentPaymentRequest
+        {
+            PaymentDate = new DateOnly(2026, 04, 03),
+            PaymentFormSat = "03",
+            Amount = 40m,
+            Reference = "REP-F2-EXT-REF"
+        });
+        Assert.Equal(HttpStatusCode.OK, paymentResponse.StatusCode);
+
+        var response = await client.GetAsync("/api/payment-complements/base-documents/external?page=1&pageSize=25&quickView=AppliedPaymentWithoutStampedRep");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var json = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+        var items = json.RootElement.GetProperty("items").EnumerateArray().ToList();
+        Assert.Contains(items, x => x.GetProperty("externalRepBaseDocumentId").GetInt64() == externalId);
+
+        var summaryCounts = json.RootElement.GetProperty("summaryCounts");
+        Assert.Contains(summaryCounts.GetProperty("quickViewCounts").EnumerateArray().ToList(), x =>
+            x.GetProperty("code").GetString() == "AppliedPaymentWithoutStampedRep" && x.GetProperty("count").GetInt32() >= 1);
+    }
+
+    [Fact]
     public async Task RepBaseDocuments_UnifiedList_ReturnsInternalAndExternalRows()
     {
         await using var factory = new MvpApiFactory();
@@ -1908,6 +1996,44 @@ public class MvpLifecycleApiTests
         var summaryCounts = json.RootElement.GetProperty("summaryCounts");
         Assert.Contains(summaryCounts.GetProperty("nextRecommendedActionCounts").EnumerateArray().ToList(), x =>
             x.GetProperty("code").GetString() == "RegisterPayment" && x.GetProperty("count").GetInt32() >= 1);
+    }
+
+    [Fact]
+    public async Task RepBaseDocuments_UnifiedList_FiltersByQuickViewBlocked_AndReturnsQuickViewCounts()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        await factory.SeedStandardFiscalMasterDataAsync();
+
+        factory.FiscalStatusQueryGateway.ResponseFactory = _ => new FiscalStatusQueryGatewayResult
+        {
+            Outcome = FiscalStatusQueryGatewayOutcome.Refreshed,
+            ExternalStatus = "Cancelado",
+            CheckedAtUtc = DateTime.UtcNow
+        };
+
+        long externalId;
+        using (var content = new MultipartFormDataContent())
+        {
+            var file = new ByteArrayContent(Encoding.UTF8.GetBytes(CreateExternalRepXmlContent(uuid: "UUID-EXT-F2-BLOCKED-1")));
+            file.Headers.ContentType = new MediaTypeHeaderValue("application/xml");
+            content.Add(file, "file", "external-f2-blocked.xml");
+            var importResponse = await client.PostAsync("/api/payment-complements/external-base-documents/import-xml", content);
+            Assert.Equal(HttpStatusCode.OK, importResponse.StatusCode);
+            var importBody = await importResponse.Content.ReadFromJsonAsync<ExternalRepBaseDocumentImportResponse>();
+            externalId = importBody!.ExternalRepBaseDocumentId!.Value;
+        }
+
+        var response = await client.GetAsync("/api/payment-complements/base-documents?page=1&pageSize=25&quickView=Blocked");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var json = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+        var items = json.RootElement.GetProperty("items").EnumerateArray().ToList();
+        Assert.Contains(items, x => x.TryGetProperty("externalRepBaseDocumentId", out var id) && id.GetInt64() == externalId);
+
+        var summaryCounts = json.RootElement.GetProperty("summaryCounts");
+        Assert.Contains(summaryCounts.GetProperty("quickViewCounts").EnumerateArray().ToList(), x =>
+            x.GetProperty("code").GetString() == "Blocked" && x.GetProperty("count").GetInt32() >= 1);
     }
 
     [Fact]

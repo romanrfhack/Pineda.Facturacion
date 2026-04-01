@@ -64,6 +64,7 @@ export class PaymentComplementsApiService {
     setOptionalQuery(query, 'alertCode', filters.alertCode);
     setOptionalQuery(query, 'severity', filters.severity);
     setOptionalQuery(query, 'nextRecommendedAction', filters.nextRecommendedAction);
+    setOptionalQuery(query, 'quickView', filters.quickView);
 
     return this.http.get<InternalRepBaseDocumentListResponse>(buildApiUrl(`/payment-complements/base-documents/internal?${query.toString()}`));
   }
@@ -87,6 +88,7 @@ export class PaymentComplementsApiService {
     setOptionalQuery(query, 'alertCode', filters.alertCode);
     setOptionalQuery(query, 'severity', filters.severity);
     setOptionalQuery(query, 'nextRecommendedAction', filters.nextRecommendedAction);
+    setOptionalQuery(query, 'quickView', filters.quickView);
 
     return this.http.get<ExternalRepBaseDocumentListResponse>(buildApiUrl(`/payment-complements/base-documents/external?${query.toString()}`));
   }
@@ -107,6 +109,7 @@ export class PaymentComplementsApiService {
     setOptionalQuery(query, 'alertCode', filters.alertCode);
     setOptionalQuery(query, 'severity', filters.severity);
     setOptionalQuery(query, 'nextRecommendedAction', filters.nextRecommendedAction);
+    setOptionalQuery(query, 'quickView', filters.quickView);
 
     return this.http.get<RepBaseDocumentListResponse>(buildApiUrl(`/payment-complements/base-documents?${query.toString()}`));
   }

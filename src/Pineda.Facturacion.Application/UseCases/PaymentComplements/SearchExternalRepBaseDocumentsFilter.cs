@@ -25,4 +25,6 @@ public sealed class SearchExternalRepBaseDocumentsFilter
     public string? Severity { get; init; }
 
     public string? NextRecommendedAction { get; init; }
+
+    public string? QuickView { get; init; }
 }

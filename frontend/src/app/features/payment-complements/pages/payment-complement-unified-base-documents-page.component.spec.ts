@@ -26,6 +26,10 @@ describe('PaymentComplementUnifiedBaseDocumentsPageComponent', () => {
                 nextRecommendedActionCounts: [
                   { code: 'PrepareRep', count: 1 },
                   { code: 'RegisterPayment', count: 1 }
+                ],
+                quickViewCounts: [
+                  { code: 'AppliedPaymentWithoutStampedRep', count: 1 },
+                  { code: 'Blocked', count: 0 }
                 ]
               },
               items: [
@@ -204,8 +208,19 @@ describe('PaymentComplementUnifiedBaseDocumentsPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Bandeja base REP interna y externa');
     expect(fixture.nativeElement.textContent).toContain('UUID-INT-501');
     expect(fixture.nativeElement.textContent).toContain('UUID-EXT-901');
-    expect(fixture.nativeElement.textContent).toContain('Advertencias (1)');
-    expect(fixture.nativeElement.textContent).toContain('Preparar REP (1)');
+    expect(fixture.nativeElement.textContent).toContain('Pendientes de timbrar');
+    expect(fixture.nativeElement.textContent).toContain('Pago aplicado sin REP (1)');
+  });
+
+  it('applies a quick view and reloads the unified tray', async () => {
+    const fixture = await configure();
+    const api = TestBed.inject(PaymentComplementsApiService) as unknown as { searchBaseDocuments: ReturnType<typeof vi.fn> };
+
+    await fixture.componentInstance['applyQuickView']('AppliedPaymentWithoutStampedRep');
+
+    expect(api.searchBaseDocuments).toHaveBeenLastCalledWith(expect.objectContaining({
+      quickView: 'AppliedPaymentWithoutStampedRep'
+    }));
   });
 
   it('opens unified detail for an external row', async () => {

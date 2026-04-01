@@ -6,12 +6,14 @@ public static class RepOperationalSummaryCountsBuilder
         IReadOnlyCollection<T> items,
         Func<T, IReadOnlyList<RepOperationalAlert>> alertsAccessor,
         Func<T, string> nextRecommendedActionAccessor,
-        Func<T, bool> blockedAccessor)
+        Func<T, bool> blockedAccessor,
+        Func<T, int> stampedRepCountAccessor)
     {
         ArgumentNullException.ThrowIfNull(items);
         ArgumentNullException.ThrowIfNull(alertsAccessor);
         ArgumentNullException.ThrowIfNull(nextRecommendedActionAccessor);
         ArgumentNullException.ThrowIfNull(blockedAccessor);
+        ArgumentNullException.ThrowIfNull(stampedRepCountAccessor);
 
         var materializedItems = items.ToList();
 
@@ -23,7 +25,8 @@ public static class RepOperationalSummaryCountsBuilder
             CriticalCount = CountBySeverity(materializedItems, alertsAccessor, RepOperationalAlertSeverity.Critical),
             BlockedCount = materializedItems.Count(blockedAccessor),
             AlertCounts = BuildAlertCounts(materializedItems, alertsAccessor),
-            NextRecommendedActionCounts = BuildActionCounts(materializedItems, nextRecommendedActionAccessor)
+            NextRecommendedActionCounts = BuildActionCounts(materializedItems, nextRecommendedActionAccessor),
+            QuickViewCounts = BuildQuickViewCounts(materializedItems, alertsAccessor, nextRecommendedActionAccessor, stampedRepCountAccessor)
         };
     }
 
@@ -58,6 +61,26 @@ public static class RepOperationalSummaryCountsBuilder
             {
                 Code = code,
                 Count = items.Count(item => string.Equals(nextRecommendedActionAccessor(item), code, StringComparison.Ordinal))
+            })
+            .Where(x => x.Count > 0)
+            .ToList();
+    }
+
+    private static IReadOnlyList<RepOperationalCount> BuildQuickViewCounts<T>(
+        IReadOnlyCollection<T> items,
+        Func<T, IReadOnlyList<RepOperationalAlert>> alertsAccessor,
+        Func<T, string> nextRecommendedActionAccessor,
+        Func<T, int> stampedRepCountAccessor)
+    {
+        return RepQuickViewCode.OrderedValues
+            .Select(code => new RepOperationalCount
+            {
+                Code = code,
+                Count = items.Count(item => RepQuickViewMatcher.Matches(
+                    code,
+                    alertsAccessor(item),
+                    nextRecommendedActionAccessor(item),
+                    stampedRepCountAccessor(item)))
             })
             .Where(x => x.Count > 0)
             .ToList();
