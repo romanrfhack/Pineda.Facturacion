@@ -64,7 +64,111 @@ public static class PaymentComplementsEndpoints
             .Produces<RefreshPaymentComplementStatusResponse>(StatusCodes.Status404NotFound)
             .Produces<RefreshPaymentComplementStatusResponse>(StatusCodes.Status503ServiceUnavailable);
 
+        group.MapGet("/base-documents/internal", SearchInternalRepBaseDocumentsAsync)
+            .WithName("SearchInternalRepBaseDocuments")
+            .WithSummary("Search internal CFDI base documents for operational REP follow-up")
+            .Produces<InternalRepBaseDocumentListResponse>(StatusCodes.Status200OK)
+            .Produces<PaymentComplementBaseDocumentSearchErrorResponse>(StatusCodes.Status400BadRequest);
+
+        group.MapGet("/base-documents/internal/{fiscalDocumentId:long}", GetInternalRepBaseDocumentByFiscalDocumentIdAsync)
+            .WithName("GetInternalRepBaseDocumentByFiscalDocumentId")
+            .WithSummary("Get internal CFDI base document REP context by fiscal document id")
+            .Produces<InternalRepBaseDocumentDetailResponse>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
+
         return endpoints;
+    }
+
+    private static async Task<Results<Ok<InternalRepBaseDocumentListResponse>, BadRequest<PaymentComplementBaseDocumentSearchErrorResponse>>> SearchInternalRepBaseDocumentsAsync(
+        int? page,
+        int? pageSize,
+        DateOnly? fromDate,
+        DateOnly? toDate,
+        string? receiverRfc,
+        string? query,
+        bool? eligible,
+        bool? blocked,
+        bool? withOutstandingBalance,
+        bool? hasRepEmitted,
+        SearchInternalRepBaseDocumentsService service,
+        CancellationToken cancellationToken)
+    {
+        if (fromDate.HasValue && toDate.HasValue && fromDate.Value > toDate.Value)
+        {
+            return TypedResults.BadRequest(new PaymentComplementBaseDocumentSearchErrorResponse
+            {
+                ErrorMessage = "La fecha inicial no puede ser mayor a la fecha final."
+            });
+        }
+
+        var result = await service.ExecuteAsync(
+            new SearchInternalRepBaseDocumentsFilter
+            {
+                Page = page ?? 1,
+                PageSize = pageSize ?? 25,
+                FromDate = fromDate,
+                ToDate = toDate,
+                ReceiverRfc = receiverRfc,
+                Query = query,
+                Eligible = eligible,
+                Blocked = blocked,
+                WithOutstandingBalance = withOutstandingBalance,
+                HasRepEmitted = hasRepEmitted
+            },
+            cancellationToken);
+
+        return TypedResults.Ok(new InternalRepBaseDocumentListResponse
+        {
+            Page = result.Page,
+            PageSize = result.PageSize,
+            TotalCount = result.TotalCount,
+            TotalPages = result.TotalPages,
+            Items = result.Items.Select(MapInternalRepBaseDocument).ToList()
+        });
+    }
+
+    private static async Task<Results<Ok<InternalRepBaseDocumentDetailResponse>, NotFound>> GetInternalRepBaseDocumentByFiscalDocumentIdAsync(
+        long fiscalDocumentId,
+        GetInternalRepBaseDocumentByFiscalDocumentIdService service,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(fiscalDocumentId, cancellationToken);
+        if (result.Outcome == GetInternalRepBaseDocumentByFiscalDocumentIdOutcome.NotFound || result.Document is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        return TypedResults.Ok(new InternalRepBaseDocumentDetailResponse
+        {
+            Summary = MapInternalRepBaseDocument(result.Document.Summary),
+            PaymentApplications = result.Document.PaymentApplications
+                .Select(x => new InternalRepBaseDocumentPaymentApplicationResponse
+                {
+                    AccountsReceivablePaymentId = x.AccountsReceivablePaymentId,
+                    ApplicationSequence = x.ApplicationSequence,
+                    PaymentDateUtc = x.PaymentDateUtc,
+                    PaymentFormSat = x.PaymentFormSat,
+                    AppliedAmount = x.AppliedAmount,
+                    PreviousBalance = x.PreviousBalance,
+                    NewBalance = x.NewBalance,
+                    Reference = x.Reference,
+                    CreatedAtUtc = x.CreatedAtUtc
+                })
+                .ToList(),
+            PaymentComplements = result.Document.PaymentComplements
+                .Select(x => new InternalRepBaseDocumentPaymentComplementResponse
+                {
+                    PaymentComplementId = x.PaymentComplementId,
+                    AccountsReceivablePaymentId = x.AccountsReceivablePaymentId,
+                    Status = x.Status,
+                    Uuid = x.Uuid,
+                    PaymentDateUtc = x.PaymentDateUtc,
+                    IssuedAtUtc = x.IssuedAtUtc,
+                    StampedAtUtc = x.StampedAtUtc,
+                    PaidAmount = x.PaidAmount
+                })
+                .ToList()
+        });
     }
 
     private static async Task<Results<Ok<StampPaymentComplementResponse>, BadRequest<StampPaymentComplementResponse>, NotFound<StampPaymentComplementResponse>, Conflict<StampPaymentComplementResponse>, JsonHttpResult<StampPaymentComplementResponse>>> StampPaymentComplementAsync(
@@ -380,6 +484,39 @@ public static class PaymentComplementsEndpoints
             CancelledAtUtc = cancellation.CancelledAtUtc,
             CreatedAtUtc = cancellation.CreatedAtUtc,
             UpdatedAtUtc = cancellation.UpdatedAtUtc
+        };
+    }
+
+    public static InternalRepBaseDocumentItemResponse MapInternalRepBaseDocument(InternalRepBaseDocumentListItem item)
+    {
+        return new InternalRepBaseDocumentItemResponse
+        {
+            FiscalDocumentId = item.FiscalDocumentId,
+            BillingDocumentId = item.BillingDocumentId,
+            SalesOrderId = item.SalesOrderId,
+            AccountsReceivableInvoiceId = item.AccountsReceivableInvoiceId,
+            FiscalStampId = item.FiscalStampId,
+            Uuid = item.Uuid,
+            Series = item.Series,
+            Folio = item.Folio,
+            ReceiverRfc = item.ReceiverRfc,
+            ReceiverLegalName = item.ReceiverLegalName,
+            IssuedAtUtc = item.IssuedAtUtc,
+            PaymentMethodSat = item.PaymentMethodSat,
+            PaymentFormSat = item.PaymentFormSat,
+            CurrencyCode = item.CurrencyCode,
+            Total = item.Total,
+            PaidTotal = item.PaidTotal,
+            OutstandingBalance = item.OutstandingBalance,
+            FiscalStatus = item.FiscalStatus,
+            AccountsReceivableStatus = item.AccountsReceivableStatus,
+            RepOperationalStatus = item.RepOperationalStatus,
+            IsEligible = item.IsEligible,
+            IsBlocked = item.IsBlocked,
+            EligibilityReason = item.EligibilityReason,
+            RegisteredPaymentCount = item.RegisteredPaymentCount,
+            PaymentComplementCount = item.PaymentComplementCount,
+            StampedPaymentComplementCount = item.StampedPaymentComplementCount
         };
     }
 
@@ -752,4 +889,126 @@ public class RefreshPaymentComplementStatusResponse
     public string? SupportMessage { get; set; }
 
     public string? RawResponseSummaryJson { get; set; }
+}
+
+public sealed class PaymentComplementBaseDocumentSearchErrorResponse
+{
+    public string ErrorMessage { get; set; } = string.Empty;
+}
+
+public sealed class InternalRepBaseDocumentListResponse
+{
+    public int Page { get; set; }
+
+    public int PageSize { get; set; }
+
+    public int TotalCount { get; set; }
+
+    public int TotalPages { get; set; }
+
+    public List<InternalRepBaseDocumentItemResponse> Items { get; set; } = [];
+}
+
+public sealed class InternalRepBaseDocumentItemResponse
+{
+    public long FiscalDocumentId { get; set; }
+
+    public long? BillingDocumentId { get; set; }
+
+    public long? SalesOrderId { get; set; }
+
+    public long? AccountsReceivableInvoiceId { get; set; }
+
+    public long? FiscalStampId { get; set; }
+
+    public string? Uuid { get; set; }
+
+    public string Series { get; set; } = string.Empty;
+
+    public string Folio { get; set; } = string.Empty;
+
+    public string ReceiverRfc { get; set; } = string.Empty;
+
+    public string ReceiverLegalName { get; set; } = string.Empty;
+
+    public DateTime IssuedAtUtc { get; set; }
+
+    public string PaymentMethodSat { get; set; } = string.Empty;
+
+    public string PaymentFormSat { get; set; } = string.Empty;
+
+    public string CurrencyCode { get; set; } = string.Empty;
+
+    public decimal Total { get; set; }
+
+    public decimal PaidTotal { get; set; }
+
+    public decimal OutstandingBalance { get; set; }
+
+    public string FiscalStatus { get; set; } = string.Empty;
+
+    public string? AccountsReceivableStatus { get; set; }
+
+    public string RepOperationalStatus { get; set; } = string.Empty;
+
+    public bool IsEligible { get; set; }
+
+    public bool IsBlocked { get; set; }
+
+    public string EligibilityReason { get; set; } = string.Empty;
+
+    public int RegisteredPaymentCount { get; set; }
+
+    public int PaymentComplementCount { get; set; }
+
+    public int StampedPaymentComplementCount { get; set; }
+}
+
+public sealed class InternalRepBaseDocumentDetailResponse
+{
+    public InternalRepBaseDocumentItemResponse Summary { get; set; } = new();
+
+    public List<InternalRepBaseDocumentPaymentApplicationResponse> PaymentApplications { get; set; } = [];
+
+    public List<InternalRepBaseDocumentPaymentComplementResponse> PaymentComplements { get; set; } = [];
+}
+
+public sealed class InternalRepBaseDocumentPaymentApplicationResponse
+{
+    public long AccountsReceivablePaymentId { get; set; }
+
+    public int ApplicationSequence { get; set; }
+
+    public DateTime PaymentDateUtc { get; set; }
+
+    public string PaymentFormSat { get; set; } = string.Empty;
+
+    public decimal AppliedAmount { get; set; }
+
+    public decimal PreviousBalance { get; set; }
+
+    public decimal NewBalance { get; set; }
+
+    public string? Reference { get; set; }
+
+    public DateTime CreatedAtUtc { get; set; }
+}
+
+public sealed class InternalRepBaseDocumentPaymentComplementResponse
+{
+    public long PaymentComplementId { get; set; }
+
+    public long AccountsReceivablePaymentId { get; set; }
+
+    public string Status { get; set; } = string.Empty;
+
+    public string? Uuid { get; set; }
+
+    public DateTime PaymentDateUtc { get; set; }
+
+    public DateTime? IssuedAtUtc { get; set; }
+
+    public DateTime? StampedAtUtc { get; set; }
+
+    public decimal PaidAmount { get; set; }
 }

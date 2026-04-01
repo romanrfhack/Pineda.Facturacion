@@ -103,7 +103,7 @@ public class PreparePaymentComplementService
                 return ValidationFailure(command.AccountsReceivablePaymentId, $"Accounts receivable invoice '{invoice.Id}' does not have the persisted stamped fiscal evidence required for a payment complement.");
             }
 
-            if (fiscalDocument.Status != FiscalDocumentStatus.Stamped && fiscalDocument.Status != FiscalDocumentStatus.Cancelled)
+            if (fiscalDocument.Status != FiscalDocumentStatus.Stamped && fiscalDocument.Status != FiscalDocumentStatus.CancellationRejected)
             {
                 return ValidationFailure(command.AccountsReceivablePaymentId, $"Fiscal document '{fiscalDocument.Id}' is not in a stamped lifecycle state eligible for payment complement relation.");
             }

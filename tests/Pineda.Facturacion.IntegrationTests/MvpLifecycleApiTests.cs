@@ -1098,6 +1098,93 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
+    public async Task InternalRepBaseDocuments_List_MarksEligibleAndBlockedDocuments()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        var eligibleFiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-REP-1001", uuid: "UUID-REP-1001");
+        var cancelledFiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-REP-1002", uuid: "UUID-REP-1002");
+
+        var createEligibleArBody = await (await client.PostAsJsonAsync($"/api/fiscal-documents/{eligibleFiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest()))
+            .Content.ReadFromJsonAsync<CreateAccountsReceivableInvoiceResponse>();
+        var eligibleInvoiceId = createEligibleArBody!.AccountsReceivableInvoice!.Id;
+
+        var eligiblePaymentBody = await (await client.PostAsJsonAsync("/api/accounts-receivable/payments", new CreateAccountsReceivablePaymentRequest
+        {
+            PaymentDateUtc = DateTime.UtcNow,
+            PaymentFormSat = "03",
+            Amount = 40m,
+            Reference = "REP-ELIGIBLE-1"
+        })).Content.ReadFromJsonAsync<CreateAccountsReceivablePaymentResponse>();
+        var eligiblePaymentId = eligiblePaymentBody!.Payment!.Id;
+
+        var eligibleApplyResponse = await client.PostAsJsonAsync($"/api/accounts-receivable/payments/{eligiblePaymentId}/apply", new ApplyAccountsReceivablePaymentRequest
+        {
+            Applications =
+            [
+                new ApplyAccountsReceivablePaymentRowRequest
+                {
+                    AccountsReceivableInvoiceId = eligibleInvoiceId,
+                    AppliedAmount = 40m
+                }
+            ]
+        });
+        Assert.Equal(HttpStatusCode.OK, eligibleApplyResponse.StatusCode);
+
+        var createCancelledArResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{cancelledFiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest());
+        Assert.Equal(HttpStatusCode.OK, createCancelledArResponse.StatusCode);
+
+        var cancelFiscalResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{cancelledFiscalDocumentId}/cancel", new FiscalDocumentsEndpoints.CancelFiscalDocumentRequest
+        {
+            CancellationReasonCode = "02"
+        });
+        Assert.Equal(HttpStatusCode.OK, cancelFiscalResponse.StatusCode);
+
+        var listResponse = await client.GetAsync("/api/payment-complements/base-documents/internal?page=1&pageSize=25");
+        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+        using var listJson = await JsonDocument.ParseAsync(await listResponse.Content.ReadAsStreamAsync());
+        var items = listJson.RootElement.GetProperty("items");
+
+        var eligibleItem = items.EnumerateArray().Single(x => x.GetProperty("fiscalDocumentId").GetInt64() == eligibleFiscalDocumentId);
+        Assert.True(eligibleItem.GetProperty("isEligible").GetBoolean());
+        Assert.Equal("Eligible", eligibleItem.GetProperty("repOperationalStatus").GetString());
+        Assert.Equal(76m, eligibleItem.GetProperty("outstandingBalance").GetDecimal());
+
+        var cancelledItem = items.EnumerateArray().Single(x => x.GetProperty("fiscalDocumentId").GetInt64() == cancelledFiscalDocumentId);
+        Assert.False(cancelledItem.GetProperty("isEligible").GetBoolean());
+        Assert.True(cancelledItem.GetProperty("isBlocked").GetBoolean());
+        Assert.Equal("Blocked", cancelledItem.GetProperty("repOperationalStatus").GetString());
+        Assert.Contains("cancelado", cancelledItem.GetProperty("eligibilityReason").GetString()!, StringComparison.OrdinalIgnoreCase);
+
+        var eligibleOnlyResponse = await client.GetAsync("/api/payment-complements/base-documents/internal?page=1&pageSize=25&eligible=true");
+        Assert.Equal(HttpStatusCode.OK, eligibleOnlyResponse.StatusCode);
+        using var eligibleOnlyJson = await JsonDocument.ParseAsync(await eligibleOnlyResponse.Content.ReadAsStreamAsync());
+        var eligibleOnlyItems = eligibleOnlyJson.RootElement.GetProperty("items").EnumerateArray().ToList();
+        Assert.Contains(eligibleOnlyItems, x => x.GetProperty("fiscalDocumentId").GetInt64() == eligibleFiscalDocumentId);
+        Assert.DoesNotContain(eligibleOnlyItems, x => x.GetProperty("fiscalDocumentId").GetInt64() == cancelledFiscalDocumentId);
+    }
+
+    [Fact]
+    public async Task InternalRepBaseDocuments_List_AppliesQueryFilter()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-REP-1003", uuid: "UUID-REP-FILTER-1");
+
+        var createArResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest());
+        Assert.Equal(HttpStatusCode.OK, createArResponse.StatusCode);
+
+        var response = await client.GetAsync("/api/payment-complements/base-documents/internal?page=1&pageSize=25&query=UUID-REP-FILTER-1");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var json = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+        var items = json.RootElement.GetProperty("items").EnumerateArray().ToList();
+        var item = Assert.Single(items);
+        Assert.Equal(fiscalDocumentId, item.GetProperty("fiscalDocumentId").GetInt64());
+    }
+
+    [Fact]
     public async Task Prepare_Stamp_Cancel_AndRefreshPaymentComplement_HappyPath()
     {
         await using var factory = new MvpApiFactory();

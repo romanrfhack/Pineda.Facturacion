@@ -1,0 +1,155 @@
+using Pineda.Facturacion.Application.Abstractions.Persistence;
+using Pineda.Facturacion.Application.Common;
+
+namespace Pineda.Facturacion.Application.UseCases.PaymentComplements;
+
+public sealed class SearchInternalRepBaseDocumentsService
+{
+    private readonly IRepBaseDocumentRepository _repository;
+
+    public SearchInternalRepBaseDocumentsService(IRepBaseDocumentRepository repository)
+    {
+        _repository = repository;
+    }
+
+    public async Task<SearchInternalRepBaseDocumentsResult> ExecuteAsync(
+        SearchInternalRepBaseDocumentsFilter filter,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+
+        var normalizedPage = filter.Page < 1 ? 1 : filter.Page;
+        var normalizedPageSize = filter.PageSize switch
+        {
+            < 1 => 25,
+            > 50 => 50,
+            _ => filter.PageSize
+        };
+
+        if (filter.FromDate.HasValue && filter.ToDate.HasValue && filter.FromDate.Value > filter.ToDate.Value)
+        {
+            throw new ArgumentException("FromDate cannot be greater than ToDate.", nameof(filter));
+        }
+
+        var items = await _repository.SearchInternalAsync(
+            new SearchInternalRepBaseDocumentsDataFilter
+            {
+                FromDate = filter.FromDate,
+                ToDate = filter.ToDate,
+                ReceiverRfc = NormalizeOptionalText(filter.ReceiverRfc)?.ToUpperInvariant(),
+                Query = NormalizeOptionalText(filter.Query)
+            },
+            cancellationToken);
+
+        var evaluatedItems = items
+            .Select(BuildListItem)
+            .Where(x => MatchesFilter(x, filter))
+            .OrderByDescending(x => x.IsEligible)
+            .ThenByDescending(x => x.IsBlocked)
+            .ThenByDescending(x => x.OutstandingBalance)
+            .ThenByDescending(x => x.IssuedAtUtc)
+            .ToList();
+
+        var totalCount = evaluatedItems.Count;
+        var totalPages = totalCount == 0 ? 0 : (int)Math.Ceiling(totalCount / (double)normalizedPageSize);
+        var pageItems = evaluatedItems
+            .Skip((normalizedPage - 1) * normalizedPageSize)
+            .Take(normalizedPageSize)
+            .ToList();
+
+        return new SearchInternalRepBaseDocumentsResult
+        {
+            Page = normalizedPage,
+            PageSize = normalizedPageSize,
+            TotalCount = totalCount,
+            TotalPages = totalPages,
+            Items = pageItems
+        };
+    }
+
+    internal static InternalRepBaseDocumentListItem BuildListItem(InternalRepBaseDocumentSummaryReadModel source)
+    {
+        var evaluation = InternalRepBaseDocumentEligibilityRule.Evaluate(new InternalRepBaseDocumentEligibilitySnapshot
+        {
+            DocumentType = source.DocumentType,
+            FiscalStatus = source.FiscalStatus,
+            PaymentMethodSat = source.PaymentMethodSat,
+            PaymentFormSat = source.PaymentFormSat,
+            CurrencyCode = source.CurrencyCode,
+            HasPersistedUuid = !string.IsNullOrWhiteSpace(source.Uuid),
+            HasAccountsReceivableInvoice = source.AccountsReceivableInvoiceId.HasValue,
+            AccountsReceivableStatus = source.AccountsReceivableStatus,
+            Total = source.Total,
+            PaidTotal = source.PaidTotal,
+            OutstandingBalance = source.OutstandingBalance
+        });
+
+        return new InternalRepBaseDocumentListItem
+        {
+            FiscalDocumentId = source.FiscalDocumentId,
+            BillingDocumentId = source.BillingDocumentId,
+            SalesOrderId = source.SalesOrderId,
+            AccountsReceivableInvoiceId = source.AccountsReceivableInvoiceId,
+            FiscalStampId = source.FiscalStampId,
+            Uuid = source.Uuid,
+            Series = source.Series,
+            Folio = source.Folio,
+            ReceiverRfc = source.ReceiverRfc,
+            ReceiverLegalName = source.ReceiverLegalName,
+            IssuedAtUtc = source.IssuedAtUtc,
+            PaymentMethodSat = source.PaymentMethodSat,
+            PaymentFormSat = source.PaymentFormSat,
+            CurrencyCode = source.CurrencyCode,
+            Total = source.Total,
+            PaidTotal = source.PaidTotal,
+            OutstandingBalance = source.OutstandingBalance,
+            FiscalStatus = source.FiscalStatus,
+            AccountsReceivableStatus = source.AccountsReceivableStatus,
+            RepOperationalStatus = evaluation.Status.ToString(),
+            IsEligible = evaluation.IsEligible,
+            IsBlocked = evaluation.IsBlocked,
+            EligibilityReason = evaluation.Reason,
+            RegisteredPaymentCount = source.RegisteredPaymentCount,
+            PaymentComplementCount = source.PaymentComplementCount,
+            StampedPaymentComplementCount = source.StampedPaymentComplementCount
+        };
+    }
+
+    private static bool MatchesFilter(InternalRepBaseDocumentListItem item, SearchInternalRepBaseDocumentsFilter filter)
+    {
+        if (filter.Eligible.HasValue && item.IsEligible != filter.Eligible.Value)
+        {
+            return false;
+        }
+
+        if (filter.Blocked.HasValue && item.IsBlocked != filter.Blocked.Value)
+        {
+            return false;
+        }
+
+        if (filter.WithOutstandingBalance.HasValue)
+        {
+            var hasOutstandingBalance = item.OutstandingBalance > 0m;
+            if (hasOutstandingBalance != filter.WithOutstandingBalance.Value)
+            {
+                return false;
+            }
+        }
+
+        if (filter.HasRepEmitted.HasValue)
+        {
+            var hasRepEmitted = item.StampedPaymentComplementCount > 0;
+            if (hasRepEmitted != filter.HasRepEmitted.Value)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static string? NormalizeOptionalText(string? value)
+    {
+        return FiscalMasterDataNormalization.NormalizeOptionalText(value);
+    }
+}

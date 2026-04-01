@@ -214,6 +214,27 @@ public class PaymentComplementServicesTests
     }
 
     [Fact]
+    public async Task PreparePaymentComplement_CancelledFiscalDocument_FailsValidation()
+    {
+        var fiscalDocument = CreateFiscalDocument();
+        fiscalDocument.Status = FiscalDocumentStatus.Cancelled;
+        var service = CreatePrepareService(
+            CreatePayment(),
+            new PcFakePaymentComplementDocumentRepository(),
+            CreateInvoice(),
+            fiscalDocument,
+            CreateFiscalStamp());
+
+        var result = await service.ExecuteAsync(new PreparePaymentComplementCommand
+        {
+            AccountsReceivablePaymentId = 10
+        });
+
+        Assert.Equal(PreparePaymentComplementOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("eligible for payment complement relation", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task PreparePaymentComplement_DerivesInstallmentNumber_FromPersistedHistory()
     {
         var payment = CreatePayment(amount: 25m);
