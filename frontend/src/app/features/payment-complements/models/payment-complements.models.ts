@@ -177,9 +177,12 @@ export interface InternalRepBaseDocumentItemResponse {
   isEligible: boolean;
   isBlocked: boolean;
   eligibilityReason: string;
+  eligibility: InternalRepBaseDocumentEligibilityExplanationResponse;
   registeredPaymentCount: number;
   paymentComplementCount: number;
   stampedPaymentComplementCount: number;
+  lastRepIssuedAtUtc?: string | null;
+  operationalState?: InternalRepBaseDocumentOperationalStateResponse | null;
 }
 
 export interface InternalRepBaseDocumentListResponse {
@@ -199,6 +202,9 @@ export interface InternalRepBaseDocumentPaymentApplicationResponse {
   previousBalance: number;
   newBalance: number;
   reference?: string | null;
+  notes?: string | null;
+  paymentAmount: number;
+  remainingPaymentAmount: number;
   createdAtUtc: string;
 }
 
@@ -210,11 +216,58 @@ export interface InternalRepBaseDocumentPaymentComplementResponse {
   paymentDateUtc: string;
   issuedAtUtc?: string | null;
   stampedAtUtc?: string | null;
+  cancelledAtUtc?: string | null;
+  providerName?: string | null;
+  installmentNumber: number;
+  previousBalance: number;
   paidAmount: number;
+  remainingBalance: number;
+}
+
+export interface InternalRepBaseDocumentPaymentHistoryResponse {
+  accountsReceivablePaymentId: number;
+  paymentDateUtc: string;
+  paymentFormSat: string;
+  paymentAmount: number;
+  amountAppliedToDocument: number;
+  remainingPaymentAmount: number;
+  reference?: string | null;
+  notes?: string | null;
+  paymentComplementId?: number | null;
+  paymentComplementStatus?: string | null;
+  paymentComplementUuid?: string | null;
+  createdAtUtc: string;
+}
+
+export interface InternalRepBaseDocumentEligibilitySignalResponse {
+  code: string;
+  severity: string;
+  message: string;
+}
+
+export interface InternalRepBaseDocumentEligibilityExplanationResponse {
+  status: string;
+  primaryReasonCode: string;
+  primaryReasonMessage: string;
+  evaluatedAtUtc: string;
+  secondarySignals: InternalRepBaseDocumentEligibilitySignalResponse[];
+}
+
+export interface InternalRepBaseDocumentOperationalStateResponse {
+  lastEligibilityEvaluatedAtUtc: string;
+  lastEligibilityStatus: string;
+  lastPrimaryReasonCode: string;
+  lastPrimaryReasonMessage: string;
+  repPendingFlag: boolean;
+  lastRepIssuedAtUtc?: string | null;
+  repCount: number;
+  totalPaidApplied: number;
 }
 
 export interface InternalRepBaseDocumentDetailResponse {
   summary: InternalRepBaseDocumentItemResponse;
+  operationalState?: InternalRepBaseDocumentOperationalStateResponse | null;
+  paymentHistory: InternalRepBaseDocumentPaymentHistoryResponse[];
   paymentApplications: InternalRepBaseDocumentPaymentApplicationResponse[];
-  paymentComplements: InternalRepBaseDocumentPaymentComplementResponse[];
+  issuedReps: InternalRepBaseDocumentPaymentComplementResponse[];
 }

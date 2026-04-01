@@ -18,5 +18,11 @@ public sealed class InternalRepBaseDocumentPaymentApplicationReadModel
 
     public string? Reference { get; init; }
 
+    public string? Notes { get; init; }
+
+    public decimal PaymentAmount { get; init; }
+
+    public decimal RemainingPaymentAmount { get; init; }
+
     public DateTime CreatedAtUtc { get; init; }
 }

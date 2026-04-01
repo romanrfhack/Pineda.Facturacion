@@ -1185,6 +1185,135 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
+    public async Task InternalRepBaseDocuments_Detail_ReturnsEligibilityHistoryAndIssuedRepContext()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-REP-DETAIL-1001", uuid: "UUID-REP-DETAIL-1001");
+
+        factory.PaymentComplementStampingGateway.ResponseFactory = _ => new PaymentComplementStampingGatewayResult
+        {
+            Outcome = PaymentComplementStampingGatewayOutcome.Stamped,
+            ProviderName = "FacturaloPlus",
+            ProviderOperation = "payment-complement-stamp",
+            ProviderTrackingId = "TRACK-PC-DETAIL-1",
+            Uuid = "UUID-PC-DETAIL-1",
+            StampedAtUtc = new DateTime(2026, 04, 03, 15, 5, 0, DateTimeKind.Utc),
+            XmlContent = "<cfdi:Comprobante Version=\"4.0\"><pago20:Pagos /></cfdi:Comprobante>",
+            XmlHash = "XML-HASH-PC-DETAIL",
+            OriginalString = "||1.1|UUID-PC-DETAIL-1||"
+        };
+
+        var createArBody = await (await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest()))
+            .Content.ReadFromJsonAsync<CreateAccountsReceivableInvoiceResponse>();
+        var invoiceId = createArBody!.AccountsReceivableInvoice!.Id;
+
+        var paymentDateUtc = new DateTime(2026, 04, 03, 15, 0, 0, DateTimeKind.Utc);
+        var createPaymentBody = await (await client.PostAsJsonAsync("/api/accounts-receivable/payments", new CreateAccountsReceivablePaymentRequest
+        {
+            PaymentDateUtc = paymentDateUtc,
+            PaymentFormSat = "03",
+            Amount = 40m,
+            Reference = "REP-DETAIL-1",
+            Notes = "Pago parcial REP detalle"
+        })).Content.ReadFromJsonAsync<CreateAccountsReceivablePaymentResponse>();
+        var paymentId = createPaymentBody!.Payment!.Id;
+
+        var applyResponse = await client.PostAsJsonAsync($"/api/accounts-receivable/payments/{paymentId}/apply", new ApplyAccountsReceivablePaymentRequest
+        {
+            Applications =
+            [
+                new ApplyAccountsReceivablePaymentRowRequest
+                {
+                    AccountsReceivableInvoiceId = invoiceId,
+                    AppliedAmount = 40m
+                }
+            ]
+        });
+        Assert.Equal(HttpStatusCode.OK, applyResponse.StatusCode);
+
+        var prepareComplementBody = await (await client.PostAsJsonAsync($"/api/accounts-receivable/payments/{paymentId}/payment-complements", new PreparePaymentComplementRequest()))
+            .Content.ReadFromJsonAsync<PreparePaymentComplementResponse>();
+        var paymentComplementId = prepareComplementBody!.PaymentComplementId!.Value;
+
+        var stampComplementResponse = await client.PostAsJsonAsync($"/api/payment-complements/{paymentComplementId}/stamp", new StampPaymentComplementRequest());
+        Assert.Equal(HttpStatusCode.OK, stampComplementResponse.StatusCode);
+
+        var detailResponse = await client.GetAsync($"/api/payment-complements/base-documents/internal/{fiscalDocumentId}");
+        Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
+
+        using var detailJson = await JsonDocument.ParseAsync(await detailResponse.Content.ReadAsStreamAsync());
+        var root = detailJson.RootElement;
+        var summary = root.GetProperty("summary");
+        var eligibility = summary.GetProperty("eligibility");
+        var operationalState = root.GetProperty("operationalState");
+
+        Assert.Equal(fiscalDocumentId, summary.GetProperty("fiscalDocumentId").GetInt64());
+        Assert.True(summary.GetProperty("isEligible").GetBoolean());
+        Assert.Equal("EligibleInternalRep", eligibility.GetProperty("primaryReasonCode").GetString());
+        Assert.Contains("saldo pendiente", eligibility.GetProperty("primaryReasonMessage").GetString()!, StringComparison.OrdinalIgnoreCase);
+        Assert.True(operationalState.GetProperty("repPendingFlag").GetBoolean());
+        Assert.Equal(1, operationalState.GetProperty("repCount").GetInt32());
+        Assert.Equal(40m, operationalState.GetProperty("totalPaidApplied").GetDecimal());
+
+        var paymentHistory = root.GetProperty("paymentHistory").EnumerateArray().ToList();
+        var paymentHistoryItem = Assert.Single(paymentHistory);
+        Assert.Equal(paymentId, paymentHistoryItem.GetProperty("accountsReceivablePaymentId").GetInt64());
+        Assert.Equal(40m, paymentHistoryItem.GetProperty("amountAppliedToDocument").GetDecimal());
+        Assert.Equal("UUID-PC-DETAIL-1", paymentHistoryItem.GetProperty("paymentComplementUuid").GetString());
+
+        var applications = root.GetProperty("paymentApplications").EnumerateArray().ToList();
+        var application = Assert.Single(applications);
+        Assert.Equal(40m, application.GetProperty("appliedAmount").GetDecimal());
+        Assert.Equal("Pago parcial REP detalle", application.GetProperty("notes").GetString());
+
+        var issuedReps = root.GetProperty("issuedReps").EnumerateArray().ToList();
+        var issuedRep = Assert.Single(issuedReps);
+        Assert.Equal(paymentComplementId, issuedRep.GetProperty("paymentComplementId").GetInt64());
+        Assert.Equal("Stamped", issuedRep.GetProperty("status").GetString());
+        Assert.Equal("UUID-PC-DETAIL-1", issuedRep.GetProperty("uuid").GetString());
+        Assert.Equal("FacturaloPlus", issuedRep.GetProperty("providerName").GetString());
+    }
+
+    [Fact]
+    public async Task InternalRepBaseDocuments_Detail_ReturnsBlockedReasonForCancelledFiscalDocument()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-REP-DETAIL-1002", uuid: "UUID-REP-DETAIL-1002");
+
+        var createArResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest());
+        Assert.Equal(HttpStatusCode.OK, createArResponse.StatusCode);
+
+        var cancelFiscalResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/cancel", new FiscalDocumentsEndpoints.CancelFiscalDocumentRequest
+        {
+            CancellationReasonCode = "02"
+        });
+        Assert.Equal(HttpStatusCode.OK, cancelFiscalResponse.StatusCode);
+
+        var detailResponse = await client.GetAsync($"/api/payment-complements/base-documents/internal/{fiscalDocumentId}");
+        Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
+
+        using var detailJson = await JsonDocument.ParseAsync(await detailResponse.Content.ReadAsStreamAsync());
+        var root = detailJson.RootElement;
+        var summary = root.GetProperty("summary");
+        var eligibility = summary.GetProperty("eligibility");
+        var operationalState = root.GetProperty("operationalState");
+
+        Assert.False(summary.GetProperty("isEligible").GetBoolean());
+        Assert.True(summary.GetProperty("isBlocked").GetBoolean());
+        Assert.Equal("Blocked", summary.GetProperty("repOperationalStatus").GetString());
+        Assert.Equal("FiscalDocumentCancelled", eligibility.GetProperty("primaryReasonCode").GetString());
+        Assert.Contains("cancelado", eligibility.GetProperty("primaryReasonMessage").GetString()!, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("FiscalDocumentCancelled", operationalState.GetProperty("lastPrimaryReasonCode").GetString());
+        Assert.False(operationalState.GetProperty("repPendingFlag").GetBoolean());
+        Assert.Empty(root.GetProperty("paymentHistory").EnumerateArray().ToList());
+        Assert.Empty(root.GetProperty("issuedReps").EnumerateArray().ToList());
+    }
+
+    [Fact]
     public async Task Prepare_Stamp_Cancel_AndRefreshPaymentComplement_HappyPath()
     {
         await using var factory = new MvpApiFactory();

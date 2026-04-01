@@ -1,12 +1,8 @@
 namespace Pineda.Facturacion.Application.UseCases.PaymentComplements;
 
-public sealed class InternalRepBaseDocumentEligibilityEvaluation
+public sealed class InternalRepBaseDocumentEligibilityExplanation
 {
-    public InternalRepBaseDocumentOperationalStatus Status { get; init; }
-
-    public bool IsEligible { get; init; }
-
-    public bool IsBlocked { get; init; }
+    public string Status { get; init; } = string.Empty;
 
     public string PrimaryReasonCode { get; init; } = string.Empty;
 
@@ -14,5 +10,5 @@ public sealed class InternalRepBaseDocumentEligibilityEvaluation
 
     public IReadOnlyList<InternalRepBaseDocumentEligibilitySignal> SecondarySignals { get; init; } = [];
 
-    public string Reason { get; init; } = string.Empty;
+    public DateTime EvaluatedAtUtc { get; init; }
 }

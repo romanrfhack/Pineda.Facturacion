@@ -49,6 +49,8 @@ public class BillingDbContext : DbContext, IUnitOfWork
 
     public DbSet<PaymentComplementCancellation> PaymentComplementCancellations => Set<PaymentComplementCancellation>();
 
+    public DbSet<InternalRepBaseDocumentState> InternalRepBaseDocumentStates => Set<InternalRepBaseDocumentState>();
+
     public DbSet<AppUser> AppUsers => Set<AppUser>();
 
     public DbSet<AppRole> AppRoles => Set<AppRole>();

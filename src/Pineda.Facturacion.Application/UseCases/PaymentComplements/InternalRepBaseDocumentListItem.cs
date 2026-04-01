@@ -53,4 +53,10 @@ public sealed class InternalRepBaseDocumentListItem
     public int PaymentComplementCount { get; init; }
 
     public int StampedPaymentComplementCount { get; init; }
+
+    public DateTime? LastRepIssuedAtUtc { get; init; }
+
+    public InternalRepBaseDocumentEligibilityExplanation Eligibility { get; init; } = new();
+
+    public InternalRepBaseDocumentOperationalSnapshot? OperationalState { get; init; }
 }

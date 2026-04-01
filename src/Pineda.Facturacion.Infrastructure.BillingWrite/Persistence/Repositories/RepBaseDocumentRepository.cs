@@ -67,28 +67,127 @@ public sealed class RepBaseDocumentRepository : IRepBaseDocumentRepository
         }
 
         IReadOnlyList<InternalRepBaseDocumentPaymentApplicationReadModel> applications = [];
+        IReadOnlyList<InternalRepBaseDocumentPaymentHistoryReadModel> paymentHistory = [];
         if (summary.AccountsReceivableInvoiceId.HasValue)
         {
             var invoiceId = summary.AccountsReceivableInvoiceId.Value;
-            applications = await (
+            var paymentRows = await (
                 from application in _dbContext.AccountsReceivablePaymentApplications.AsNoTracking()
                 join payment in _dbContext.AccountsReceivablePayments.AsNoTracking()
                     on application.AccountsReceivablePaymentId equals payment.Id
                 where application.AccountsReceivableInvoiceId == invoiceId
-                orderby payment.PaymentDateUtc descending, application.ApplicationSequence descending, application.Id descending
-                select new InternalRepBaseDocumentPaymentApplicationReadModel
+                orderby payment.PaymentDateUtc descending, payment.Id descending
+                select new
                 {
-                    AccountsReceivablePaymentId = application.AccountsReceivablePaymentId,
-                    ApplicationSequence = application.ApplicationSequence,
-                    PaymentDateUtc = payment.PaymentDateUtc,
-                    PaymentFormSat = payment.PaymentFormSat,
+                    PaymentId = payment.Id,
+                    payment.PaymentDateUtc,
+                    payment.PaymentFormSat,
+                    PaymentAmount = payment.Amount,
                     AppliedAmount = application.AppliedAmount,
-                    PreviousBalance = application.PreviousBalance,
-                    NewBalance = application.NewBalance,
-                    Reference = payment.Reference,
-                    CreatedAtUtc = application.CreatedAtUtc
+                    application.ApplicationSequence,
+                    application.PreviousBalance,
+                    application.NewBalance,
+                    payment.Reference,
+                    payment.Notes,
+                    PaymentCreatedAtUtc = payment.CreatedAtUtc,
+                    ApplicationCreatedAtUtc = application.CreatedAtUtc
                 })
                 .ToListAsync(cancellationToken);
+
+            var paymentIds = paymentRows
+                .Select(x => x.PaymentId)
+                .Distinct()
+                .ToArray();
+            var paymentIdSet = paymentIds.ToHashSet();
+
+            var appliedTotalsByPayment = paymentIdSet.Count == 0
+                ? new Dictionary<long, decimal>()
+                : (await _dbContext.AccountsReceivablePaymentApplications.AsNoTracking()
+                    .ToListAsync(cancellationToken))
+                    .Where(x => paymentIdSet.Contains(x.AccountsReceivablePaymentId))
+                    .GroupBy(x => x.AccountsReceivablePaymentId)
+                    .ToDictionary(x => x.Key, x => x.Sum(y => y.AppliedAmount));
+
+            var paymentComplementsByPayment = paymentIdSet.Count == 0
+                ? new Dictionary<long, ComplementLink>()
+                : (await (
+                    from document in _dbContext.PaymentComplementDocuments.AsNoTracking()
+                    join related in _dbContext.PaymentComplementRelatedDocuments.AsNoTracking()
+                        on document.Id equals related.PaymentComplementDocumentId
+                    join stamp in _dbContext.PaymentComplementStamps.AsNoTracking()
+                        on document.Id equals stamp.PaymentComplementDocumentId into stampGroup
+                    from paymentComplementStamp in stampGroup.DefaultIfEmpty()
+                    where related.FiscalDocumentId == fiscalDocumentId
+                    orderby document.IssuedAtUtc descending, document.Id descending
+                    select new
+                    {
+                        PaymentId = document.AccountsReceivablePaymentId,
+                        PaymentComplementId = document.Id,
+                        Status = document.Status.ToString(),
+                        Uuid = paymentComplementStamp != null ? paymentComplementStamp.Uuid : null
+                    })
+                    .ToListAsync(cancellationToken))
+                    .GroupBy(x => x.PaymentId)
+                    .ToDictionary(
+                        x => x.Key,
+                        x => new ComplementLink
+                        {
+                            PaymentComplementId = x.First().PaymentComplementId,
+                            Status = x.First().Status,
+                            Uuid = x.First().Uuid
+                        });
+
+            paymentHistory = paymentRows
+                .OrderByDescending(x => x.PaymentDateUtc)
+                .ThenByDescending(x => x.PaymentId)
+                .Select(x =>
+                {
+                    paymentComplementsByPayment.TryGetValue(x.PaymentId, out var complementLink);
+                    appliedTotalsByPayment.TryGetValue(x.PaymentId, out var appliedTotal);
+
+                    return new InternalRepBaseDocumentPaymentHistoryReadModel
+                    {
+                        AccountsReceivablePaymentId = x.PaymentId,
+                        PaymentDateUtc = x.PaymentDateUtc,
+                        PaymentFormSat = x.PaymentFormSat,
+                        PaymentAmount = x.PaymentAmount,
+                        AmountAppliedToDocument = x.AppliedAmount,
+                        RemainingPaymentAmount = x.PaymentAmount - appliedTotal,
+                        Reference = x.Reference,
+                        Notes = x.Notes,
+                        PaymentComplementId = complementLink?.PaymentComplementId,
+                        PaymentComplementStatus = complementLink?.Status,
+                        PaymentComplementUuid = complementLink?.Uuid,
+                        CreatedAtUtc = x.PaymentCreatedAtUtc
+                    };
+                })
+                .ToList();
+
+            applications = paymentRows
+                .OrderByDescending(x => x.PaymentDateUtc)
+                .ThenByDescending(x => x.ApplicationSequence)
+                .ThenByDescending(x => x.PaymentId)
+                .Select(x =>
+                {
+                    appliedTotalsByPayment.TryGetValue(x.PaymentId, out var appliedTotal);
+
+                    return new InternalRepBaseDocumentPaymentApplicationReadModel
+                    {
+                        AccountsReceivablePaymentId = x.PaymentId,
+                        ApplicationSequence = x.ApplicationSequence,
+                        PaymentDateUtc = x.PaymentDateUtc,
+                        PaymentFormSat = x.PaymentFormSat,
+                        AppliedAmount = x.AppliedAmount,
+                        PreviousBalance = x.PreviousBalance,
+                        NewBalance = x.NewBalance,
+                        Reference = x.Reference,
+                        Notes = x.Notes,
+                        PaymentAmount = x.PaymentAmount,
+                        RemainingPaymentAmount = x.PaymentAmount - appliedTotal,
+                        CreatedAtUtc = x.ApplicationCreatedAtUtc
+                    };
+                })
+                .ToList();
         }
 
         var paymentComplements = await (
@@ -98,6 +197,9 @@ public sealed class RepBaseDocumentRepository : IRepBaseDocumentRepository
             join stamp in _dbContext.PaymentComplementStamps.AsNoTracking()
                 on document.Id equals stamp.PaymentComplementDocumentId into stampGroup
             from paymentComplementStamp in stampGroup.DefaultIfEmpty()
+            join cancellation in _dbContext.PaymentComplementCancellations.AsNoTracking()
+                on document.Id equals cancellation.PaymentComplementDocumentId into cancellationGroup
+            from paymentComplementCancellation in cancellationGroup.DefaultIfEmpty()
             where related.FiscalDocumentId == fiscalDocumentId
             orderby document.IssuedAtUtc descending, document.Id descending
             select new InternalRepBaseDocumentPaymentComplementReadModel
@@ -109,13 +211,20 @@ public sealed class RepBaseDocumentRepository : IRepBaseDocumentRepository
                 PaymentDateUtc = document.PaymentDateUtc,
                 IssuedAtUtc = document.IssuedAtUtc,
                 StampedAtUtc = paymentComplementStamp != null ? paymentComplementStamp.StampedAtUtc : null,
+                CancelledAtUtc = paymentComplementCancellation != null ? paymentComplementCancellation.CancelledAtUtc : null,
+                ProviderName = document.ProviderName,
+                InstallmentNumber = related.InstallmentNumber,
+                PreviousBalance = related.PreviousBalance,
                 PaidAmount = related.PaidAmount
+                ,
+                RemainingBalance = related.RemainingBalance
             })
             .ToListAsync(cancellationToken);
 
         return new InternalRepBaseDocumentDetailReadModel
         {
             Summary = summary,
+            PaymentHistory = paymentHistory,
             PaymentApplications = applications,
             PaymentComplements = paymentComplements
         };
@@ -179,7 +288,28 @@ public sealed class RepBaseDocumentRepository : IRepBaseDocumentRepository
                             || document.Status == PaymentComplementDocumentStatus.Cancelled)
                     select document.Id)
                     .Distinct()
-                    .Count()
+                    .Count(),
+                LastRepIssuedAtUtc = (
+                    from related in _dbContext.PaymentComplementRelatedDocuments.AsNoTracking()
+                    join document in _dbContext.PaymentComplementDocuments.AsNoTracking()
+                        on related.PaymentComplementDocumentId equals document.Id
+                    join stampForIssued in _dbContext.PaymentComplementStamps.AsNoTracking()
+                        on document.Id equals stampForIssued.PaymentComplementDocumentId into stampForIssuedGroup
+                    from stampedComplement in stampForIssuedGroup.DefaultIfEmpty()
+                    where related.FiscalDocumentId == fiscalDocument.Id
+                    select stampedComplement != null
+                        ? stampedComplement.StampedAtUtc
+                        : document.IssuedAtUtc)
+                    .Max()
             };
+    }
+
+    private sealed class ComplementLink
+    {
+        public long PaymentComplementId { get; init; }
+
+        public string Status { get; init; } = string.Empty;
+
+        public string? Uuid { get; init; }
     }
 }

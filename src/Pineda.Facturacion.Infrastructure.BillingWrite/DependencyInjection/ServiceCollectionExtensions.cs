@@ -54,6 +54,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPaymentComplementStampRepository, PaymentComplementStampRepository>();
         services.AddScoped<IPaymentComplementCancellationRepository, PaymentComplementCancellationRepository>();
         services.AddScoped<IRepBaseDocumentRepository, RepBaseDocumentRepository>();
+        services.AddScoped<IInternalRepBaseDocumentStateRepository, InternalRepBaseDocumentStateRepository>();
         services.AddScoped<IIssuerProfileRepository, IssuerProfileRepository>();
         services.AddScoped<IFiscalReceiverRepository, FiscalReceiverRepository>();
         services.AddScoped<IProductFiscalProfileRepository, ProductFiscalProfileRepository>();

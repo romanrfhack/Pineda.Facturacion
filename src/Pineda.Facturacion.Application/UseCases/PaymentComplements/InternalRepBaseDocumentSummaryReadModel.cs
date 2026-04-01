@@ -47,4 +47,6 @@ public sealed class InternalRepBaseDocumentSummaryReadModel
     public int PaymentComplementCount { get; init; }
 
     public int StampedPaymentComplementCount { get; init; }
+
+    public DateTime? LastRepIssuedAtUtc { get; init; }
 }

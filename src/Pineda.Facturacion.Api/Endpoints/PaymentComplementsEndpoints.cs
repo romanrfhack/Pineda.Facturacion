@@ -141,6 +141,24 @@ public static class PaymentComplementsEndpoints
         return TypedResults.Ok(new InternalRepBaseDocumentDetailResponse
         {
             Summary = MapInternalRepBaseDocument(result.Document.Summary),
+            OperationalState = result.Document.OperationalState is null ? null : MapInternalRepOperationalState(result.Document.OperationalState),
+            PaymentHistory = result.Document.PaymentHistory
+                .Select(x => new InternalRepBaseDocumentPaymentHistoryResponse
+                {
+                    AccountsReceivablePaymentId = x.AccountsReceivablePaymentId,
+                    PaymentDateUtc = x.PaymentDateUtc,
+                    PaymentFormSat = x.PaymentFormSat,
+                    PaymentAmount = x.PaymentAmount,
+                    AmountAppliedToDocument = x.AmountAppliedToDocument,
+                    RemainingPaymentAmount = x.RemainingPaymentAmount,
+                    Reference = x.Reference,
+                    Notes = x.Notes,
+                    PaymentComplementId = x.PaymentComplementId,
+                    PaymentComplementStatus = x.PaymentComplementStatus,
+                    PaymentComplementUuid = x.PaymentComplementUuid,
+                    CreatedAtUtc = x.CreatedAtUtc
+                })
+                .ToList(),
             PaymentApplications = result.Document.PaymentApplications
                 .Select(x => new InternalRepBaseDocumentPaymentApplicationResponse
                 {
@@ -152,10 +170,13 @@ public static class PaymentComplementsEndpoints
                     PreviousBalance = x.PreviousBalance,
                     NewBalance = x.NewBalance,
                     Reference = x.Reference,
+                    Notes = x.Notes,
+                    PaymentAmount = x.PaymentAmount,
+                    RemainingPaymentAmount = x.RemainingPaymentAmount,
                     CreatedAtUtc = x.CreatedAtUtc
                 })
                 .ToList(),
-            PaymentComplements = result.Document.PaymentComplements
+            IssuedReps = result.Document.PaymentComplements
                 .Select(x => new InternalRepBaseDocumentPaymentComplementResponse
                 {
                     PaymentComplementId = x.PaymentComplementId,
@@ -165,7 +186,12 @@ public static class PaymentComplementsEndpoints
                     PaymentDateUtc = x.PaymentDateUtc,
                     IssuedAtUtc = x.IssuedAtUtc,
                     StampedAtUtc = x.StampedAtUtc,
-                    PaidAmount = x.PaidAmount
+                    CancelledAtUtc = x.CancelledAtUtc,
+                    ProviderName = x.ProviderName,
+                    InstallmentNumber = x.InstallmentNumber,
+                    PreviousBalance = x.PreviousBalance,
+                    PaidAmount = x.PaidAmount,
+                    RemainingBalance = x.RemainingBalance
                 })
                 .ToList()
         });
@@ -514,9 +540,46 @@ public static class PaymentComplementsEndpoints
             IsEligible = item.IsEligible,
             IsBlocked = item.IsBlocked,
             EligibilityReason = item.EligibilityReason,
+            Eligibility = MapEligibilityExplanation(item.Eligibility),
             RegisteredPaymentCount = item.RegisteredPaymentCount,
             PaymentComplementCount = item.PaymentComplementCount,
-            StampedPaymentComplementCount = item.StampedPaymentComplementCount
+            StampedPaymentComplementCount = item.StampedPaymentComplementCount,
+            LastRepIssuedAtUtc = item.LastRepIssuedAtUtc,
+            OperationalState = item.OperationalState is null ? null : MapInternalRepOperationalState(item.OperationalState)
+        };
+    }
+
+    private static InternalRepBaseDocumentEligibilityExplanationResponse MapEligibilityExplanation(InternalRepBaseDocumentEligibilityExplanation explanation)
+    {
+        return new InternalRepBaseDocumentEligibilityExplanationResponse
+        {
+            Status = explanation.Status,
+            PrimaryReasonCode = explanation.PrimaryReasonCode,
+            PrimaryReasonMessage = explanation.PrimaryReasonMessage,
+            EvaluatedAtUtc = explanation.EvaluatedAtUtc,
+            SecondarySignals = explanation.SecondarySignals
+                .Select(x => new InternalRepBaseDocumentEligibilitySignalResponse
+                {
+                    Code = x.Code,
+                    Severity = x.Severity,
+                    Message = x.Message
+                })
+                .ToList()
+        };
+    }
+
+    private static InternalRepBaseDocumentOperationalStateResponse MapInternalRepOperationalState(InternalRepBaseDocumentOperationalSnapshot snapshot)
+    {
+        return new InternalRepBaseDocumentOperationalStateResponse
+        {
+            LastEligibilityEvaluatedAtUtc = snapshot.LastEligibilityEvaluatedAtUtc,
+            LastEligibilityStatus = snapshot.LastEligibilityStatus,
+            LastPrimaryReasonCode = snapshot.LastPrimaryReasonCode,
+            LastPrimaryReasonMessage = snapshot.LastPrimaryReasonMessage,
+            RepPendingFlag = snapshot.RepPendingFlag,
+            LastRepIssuedAtUtc = snapshot.LastRepIssuedAtUtc,
+            RepCount = snapshot.RepCount,
+            TotalPaidApplied = snapshot.TotalPaidApplied
         };
     }
 
@@ -957,20 +1020,98 @@ public sealed class InternalRepBaseDocumentItemResponse
 
     public string EligibilityReason { get; set; } = string.Empty;
 
+    public InternalRepBaseDocumentEligibilityExplanationResponse Eligibility { get; set; } = new();
+
     public int RegisteredPaymentCount { get; set; }
 
     public int PaymentComplementCount { get; set; }
 
     public int StampedPaymentComplementCount { get; set; }
+
+    public DateTime? LastRepIssuedAtUtc { get; set; }
+
+    public InternalRepBaseDocumentOperationalStateResponse? OperationalState { get; set; }
 }
 
 public sealed class InternalRepBaseDocumentDetailResponse
 {
     public InternalRepBaseDocumentItemResponse Summary { get; set; } = new();
 
+    public InternalRepBaseDocumentOperationalStateResponse? OperationalState { get; set; }
+
+    public List<InternalRepBaseDocumentPaymentHistoryResponse> PaymentHistory { get; set; } = [];
+
     public List<InternalRepBaseDocumentPaymentApplicationResponse> PaymentApplications { get; set; } = [];
 
-    public List<InternalRepBaseDocumentPaymentComplementResponse> PaymentComplements { get; set; } = [];
+    public List<InternalRepBaseDocumentPaymentComplementResponse> IssuedReps { get; set; } = [];
+}
+
+public sealed class InternalRepBaseDocumentEligibilityExplanationResponse
+{
+    public string Status { get; set; } = string.Empty;
+
+    public string PrimaryReasonCode { get; set; } = string.Empty;
+
+    public string PrimaryReasonMessage { get; set; } = string.Empty;
+
+    public DateTime EvaluatedAtUtc { get; set; }
+
+    public List<InternalRepBaseDocumentEligibilitySignalResponse> SecondarySignals { get; set; } = [];
+}
+
+public sealed class InternalRepBaseDocumentEligibilitySignalResponse
+{
+    public string Code { get; set; } = string.Empty;
+
+    public string Severity { get; set; } = string.Empty;
+
+    public string Message { get; set; } = string.Empty;
+}
+
+public sealed class InternalRepBaseDocumentOperationalStateResponse
+{
+    public DateTime LastEligibilityEvaluatedAtUtc { get; set; }
+
+    public string LastEligibilityStatus { get; set; } = string.Empty;
+
+    public string LastPrimaryReasonCode { get; set; } = string.Empty;
+
+    public string LastPrimaryReasonMessage { get; set; } = string.Empty;
+
+    public bool RepPendingFlag { get; set; }
+
+    public DateTime? LastRepIssuedAtUtc { get; set; }
+
+    public int RepCount { get; set; }
+
+    public decimal TotalPaidApplied { get; set; }
+}
+
+public sealed class InternalRepBaseDocumentPaymentHistoryResponse
+{
+    public long AccountsReceivablePaymentId { get; set; }
+
+    public DateTime PaymentDateUtc { get; set; }
+
+    public string PaymentFormSat { get; set; } = string.Empty;
+
+    public decimal PaymentAmount { get; set; }
+
+    public decimal AmountAppliedToDocument { get; set; }
+
+    public decimal RemainingPaymentAmount { get; set; }
+
+    public string? Reference { get; set; }
+
+    public string? Notes { get; set; }
+
+    public long? PaymentComplementId { get; set; }
+
+    public string? PaymentComplementStatus { get; set; }
+
+    public string? PaymentComplementUuid { get; set; }
+
+    public DateTime CreatedAtUtc { get; set; }
 }
 
 public sealed class InternalRepBaseDocumentPaymentApplicationResponse
@@ -991,6 +1132,12 @@ public sealed class InternalRepBaseDocumentPaymentApplicationResponse
 
     public string? Reference { get; set; }
 
+    public string? Notes { get; set; }
+
+    public decimal PaymentAmount { get; set; }
+
+    public decimal RemainingPaymentAmount { get; set; }
+
     public DateTime CreatedAtUtc { get; set; }
 }
 
@@ -1010,5 +1157,15 @@ public sealed class InternalRepBaseDocumentPaymentComplementResponse
 
     public DateTime? StampedAtUtc { get; set; }
 
+    public DateTime? CancelledAtUtc { get; set; }
+
+    public string? ProviderName { get; set; }
+
+    public int InstallmentNumber { get; set; }
+
+    public decimal PreviousBalance { get; set; }
+
     public decimal PaidAmount { get; set; }
+
+    public decimal RemainingBalance { get; set; }
 }

@@ -127,7 +127,7 @@ import {
                       <span class="status-pill" [class.status-eligible]="item.isEligible" [class.status-blocked]="item.isBlocked" [class.status-ineligible]="!item.isEligible && !item.isBlocked">
                         {{ getDisplayLabel(item.repOperationalStatus) }}
                       </span>
-                      <small class="row-reason">{{ item.eligibilityReason }}</small>
+                      <small class="row-reason">{{ item.eligibility.primaryReasonMessage }}</small>
                     </td>
                     <td>{{ item.registeredPaymentCount }}</td>
                     <td>{{ item.stampedPaymentComplementCount }}</td>
@@ -164,35 +164,122 @@ import {
             } @else if (selectedDetail(); as detail) {
               <section class="summary-grid">
                 <article class="summary-card">
-                  <h4>Documento base</h4>
+                  <h4>Resumen fiscal</h4>
                   <dl>
                     <div><dt>FiscalDocumentId</dt><dd>{{ detail.summary.fiscalDocumentId }}</dd></div>
                     <div><dt>BillingDocumentId</dt><dd>{{ detail.summary.billingDocumentId ?? '—' }}</dd></div>
                     <div><dt>SalesOrderId</dt><dd>{{ detail.summary.salesOrderId ?? '—' }}</dd></div>
-                    <div><dt>AR Invoice</dt><dd>{{ detail.summary.accountsReceivableInvoiceId ?? '—' }}</dd></div>
                     <div><dt>UUID</dt><dd>{{ detail.summary.uuid || '—' }}</dd></div>
                     <div><dt>Serie/Folio</dt><dd>{{ buildSeriesFolio(detail.summary) }}</dd></div>
+                    <div><dt>Emisión</dt><dd>{{ formatUtc(detail.summary.issuedAtUtc) }}</dd></div>
                     <div><dt>Receptor</dt><dd>{{ detail.summary.receiverRfc }} · {{ detail.summary.receiverLegalName }}</dd></div>
+                    <div><dt>Método SAT</dt><dd>{{ detail.summary.paymentMethodSat }}</dd></div>
+                    <div><dt>Forma SAT</dt><dd>{{ detail.summary.paymentFormSat }}</dd></div>
+                    <div><dt>Moneda</dt><dd>{{ detail.summary.currencyCode }}</dd></div>
                     <div><dt>Estado fiscal</dt><dd>{{ getDisplayLabel(detail.summary.fiscalStatus) }}</dd></div>
-                    <div><dt>Estado REP</dt><dd>{{ getDisplayLabel(detail.summary.repOperationalStatus) }}</dd></div>
-                    <div><dt>Motivo</dt><dd>{{ detail.summary.eligibilityReason }}</dd></div>
                   </dl>
                 </article>
 
                 <article class="summary-card">
-                  <h4>Saldos y seguimiento</h4>
+                  <h4>Resumen operativo</h4>
                   <dl>
-                    <div><dt>Método</dt><dd>{{ detail.summary.paymentMethodSat }}</dd></div>
-                    <div><dt>Forma</dt><dd>{{ detail.summary.paymentFormSat }}</dd></div>
+                    <div><dt>AR Invoice</dt><dd>{{ detail.summary.accountsReceivableInvoiceId ?? '—' }}</dd></div>
+                    <div><dt>Estado REP</dt><dd>{{ getDisplayLabel(detail.summary.repOperationalStatus) }}</dd></div>
                     <div><dt>Total</dt><dd>{{ detail.summary.total | number:'1.2-2' }}</dd></div>
                     <div><dt>Pagado</dt><dd>{{ detail.summary.paidTotal | number:'1.2-2' }}</dd></div>
                     <div><dt>Saldo</dt><dd>{{ detail.summary.outstandingBalance | number:'1.2-2' }}</dd></div>
                     <div><dt>Pagos registrados</dt><dd>{{ detail.summary.registeredPaymentCount }}</dd></div>
                     <div><dt>REP ligados</dt><dd>{{ detail.summary.paymentComplementCount }}</dd></div>
                     <div><dt>REP emitidos</dt><dd>{{ detail.summary.stampedPaymentComplementCount }}</dd></div>
+                    <div><dt>Último REP</dt><dd>{{ formatOptionalUtc(detail.summary.lastRepIssuedAtUtc) }}</dd></div>
                     <div><dt>Estatus CxC</dt><dd>{{ detail.summary.accountsReceivableStatus ? getDisplayLabel(detail.summary.accountsReceivableStatus) : '—' }}</dd></div>
                   </dl>
                 </article>
+
+                <article class="summary-card">
+                  <h4>Explicación de elegibilidad</h4>
+                  <div class="eligibility-box">
+                    <span class="status-pill" [class.status-eligible]="detail.summary.isEligible" [class.status-blocked]="detail.summary.isBlocked" [class.status-ineligible]="!detail.summary.isEligible && !detail.summary.isBlocked">
+                      {{ detail.summary.eligibility.status }}
+                    </span>
+                    <p class="eligibility-reason">{{ detail.summary.eligibility.primaryReasonMessage }}</p>
+                    <p class="helper">Código: {{ detail.summary.eligibility.primaryReasonCode }} · Evaluado: {{ formatUtc(detail.summary.eligibility.evaluatedAtUtc) }}</p>
+                  </div>
+
+                  @if (detail.summary.eligibility.secondarySignals.length) {
+                    <ul class="signal-list">
+                      @for (signal of detail.summary.eligibility.secondarySignals; track signal.code + '-' + signal.message) {
+                        <li class="signal-item">
+                          <span class="signal-pill" [class.signal-positive]="signal.severity === 'Satisfied'" [class.signal-warning]="signal.severity !== 'Satisfied'">{{ signal.severity }}</span>
+                          <div>
+                            <strong>{{ signal.code }}</strong>
+                            <p>{{ signal.message }}</p>
+                          </div>
+                        </li>
+                      }
+                    </ul>
+                  } @else {
+                    <p class="helper">No hay señales secundarias adicionales para este CFDI.</p>
+                  }
+                </article>
+
+                <article class="summary-card">
+                  <h4>Snapshot operativo persistido</h4>
+                  @if (detail.operationalState; as operationalState) {
+                    <dl>
+                      <div><dt>Última evaluación</dt><dd>{{ formatUtc(operationalState.lastEligibilityEvaluatedAtUtc) }}</dd></div>
+                      <div><dt>Estatus persistido</dt><dd>{{ operationalState.lastEligibilityStatus }}</dd></div>
+                      <div><dt>Motivo persistido</dt><dd>{{ operationalState.lastPrimaryReasonMessage }}</dd></div>
+                      <div><dt>Código persistido</dt><dd>{{ operationalState.lastPrimaryReasonCode }}</dd></div>
+                      <div><dt>REP pendiente</dt><dd>{{ operationalState.repPendingFlag ? 'Sí' : 'No' }}</dd></div>
+                      <div><dt>Total pagado aplicado</dt><dd>{{ operationalState.totalPaidApplied | number:'1.2-2' }}</dd></div>
+                      <div><dt>Conteo REP</dt><dd>{{ operationalState.repCount }}</dd></div>
+                      <div><dt>Último REP emitido</dt><dd>{{ formatOptionalUtc(operationalState.lastRepIssuedAtUtc) }}</dd></div>
+                    </dl>
+                  } @else {
+                    <p class="helper">Todavía no existe snapshot operativo persistido para este CFDI.</p>
+                  }
+                </article>
+              </section>
+
+              <section class="nested-card">
+                <h4>Historial de pagos registrados</h4>
+                @if (!detail.paymentHistory.length) {
+                  <p class="helper">Todavía no hay pagos registrados relacionados con este CFDI dentro del sistema.</p>
+                } @else {
+                  <div class="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>PaymentId</th>
+                          <th>Fecha</th>
+                          <th>Forma</th>
+                          <th>Monto pago</th>
+                          <th>Aplicado al CFDI</th>
+                          <th>Remanente del pago</th>
+                          <th>Referencia</th>
+                          <th>REP ligado</th>
+                          <th>Estatus REP</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (payment of detail.paymentHistory; track payment.accountsReceivablePaymentId + '-' + payment.createdAtUtc) {
+                          <tr>
+                            <td>{{ payment.accountsReceivablePaymentId }}</td>
+                            <td>{{ formatUtc(payment.paymentDateUtc) }}</td>
+                            <td>{{ payment.paymentFormSat }}</td>
+                            <td>{{ payment.paymentAmount | number:'1.2-2' }}</td>
+                            <td>{{ payment.amountAppliedToDocument | number:'1.2-2' }}</td>
+                            <td>{{ payment.remainingPaymentAmount | number:'1.2-2' }}</td>
+                            <td>{{ payment.reference || '—' }}</td>
+                            <td>{{ payment.paymentComplementUuid || (payment.paymentComplementId ? '#' + payment.paymentComplementId : '—') }}</td>
+                            <td>{{ payment.paymentComplementStatus ? getDisplayLabel(payment.paymentComplementStatus) : '—' }}</td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                }
               </section>
 
               <section class="nested-card">
@@ -207,11 +294,14 @@ import {
                           <th>PaymentId</th>
                           <th>Fecha</th>
                           <th>Forma</th>
+                          <th>Monto pago</th>
                           <th>Parcialidad</th>
                           <th>Aplicado</th>
                           <th>Saldo anterior</th>
                           <th>Saldo nuevo</th>
+                          <th>Remanente</th>
                           <th>Referencia</th>
+                          <th>Notas</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -220,11 +310,14 @@ import {
                             <td>{{ application.accountsReceivablePaymentId }}</td>
                             <td>{{ formatUtc(application.paymentDateUtc) }}</td>
                             <td>{{ application.paymentFormSat }}</td>
+                            <td>{{ application.paymentAmount | number:'1.2-2' }}</td>
                             <td>{{ application.applicationSequence }}</td>
                             <td>{{ application.appliedAmount | number:'1.2-2' }}</td>
                             <td>{{ application.previousBalance | number:'1.2-2' }}</td>
                             <td>{{ application.newBalance | number:'1.2-2' }}</td>
+                            <td>{{ application.remainingPaymentAmount | number:'1.2-2' }}</td>
                             <td>{{ application.reference || '—' }}</td>
+                            <td>{{ application.notes || '—' }}</td>
                           </tr>
                         }
                       </tbody>
@@ -234,8 +327,8 @@ import {
               </section>
 
               <section class="nested-card">
-                <h4>REP relacionados</h4>
-                @if (!detail.paymentComplements.length) {
+                <h4>REP emitidos y relacionados</h4>
+                @if (!detail.issuedReps.length) {
                   <p class="helper">Aún no hay REP ligados a este CFDI base.</p>
                 } @else {
                   <div class="table-wrap">
@@ -246,23 +339,33 @@ import {
                           <th>PaymentId</th>
                           <th>Estado</th>
                           <th>UUID</th>
+                          <th>Proveedor</th>
+                          <th>Parcialidad</th>
                           <th>Fecha pago</th>
                           <th>Emisión</th>
                           <th>Timbrado</th>
+                          <th>Cancelación</th>
+                          <th>Saldo anterior</th>
                           <th>Monto</th>
+                          <th>Saldo remanente</th>
                         </tr>
                       </thead>
                       <tbody>
-                        @for (complement of detail.paymentComplements; track complement.paymentComplementId) {
+                        @for (complement of detail.issuedReps; track complement.paymentComplementId) {
                           <tr>
                             <td>{{ complement.paymentComplementId }}</td>
                             <td>{{ complement.accountsReceivablePaymentId }}</td>
                             <td>{{ getDisplayLabel(complement.status) }}</td>
                             <td>{{ complement.uuid || '—' }}</td>
+                            <td>{{ complement.providerName || '—' }}</td>
+                            <td>{{ complement.installmentNumber }}</td>
                             <td>{{ formatUtc(complement.paymentDateUtc) }}</td>
-                            <td>{{ complement.issuedAtUtc ? formatUtc(complement.issuedAtUtc) : '—' }}</td>
-                            <td>{{ complement.stampedAtUtc ? formatUtc(complement.stampedAtUtc) : '—' }}</td>
+                            <td>{{ formatOptionalUtc(complement.issuedAtUtc) }}</td>
+                            <td>{{ formatOptionalUtc(complement.stampedAtUtc) }}</td>
+                            <td>{{ formatOptionalUtc(complement.cancelledAtUtc) }}</td>
+                            <td>{{ complement.previousBalance | number:'1.2-2' }}</td>
                             <td>{{ complement.paidAmount | number:'1.2-2' }}</td>
+                            <td>{{ complement.remainingBalance | number:'1.2-2' }}</td>
                           </tr>
                         }
                       </tbody>
@@ -300,6 +403,15 @@ import {
     .status-eligible { background:#e5f6eb; color:#1b6b3a; }
     .status-blocked { background:#fdeaea; color:#8a1f1f; }
     .status-ineligible { background:#f4efe4; color:#6f5b22; }
+    .eligibility-box { display:grid; gap:0.5rem; margin-bottom:0.75rem; }
+    .eligibility-reason { margin:0; font-weight:600; color:#182533; }
+    .signal-list { list-style:none; padding:0; margin:0; display:grid; gap:0.65rem; }
+    .signal-item { display:grid; grid-template-columns:auto 1fr; gap:0.65rem; align-items:flex-start; padding:0.65rem 0.75rem; border:1px solid #ece5d7; border-radius:0.85rem; background:#fbf8f1; }
+    .signal-item p { margin:0.2rem 0 0; color:#5f6b76; }
+    .signal-pill { display:inline-flex; align-items:center; justify-content:center; min-width:5.5rem; border-radius:999px; padding:0.25rem 0.55rem; font-size:0.78rem; font-weight:700; }
+    .signal-positive { background:#e5f6eb; color:#1b6b3a; }
+    .signal-warning { background:#fff1d6; color:#8a5a00; }
+    .signal-blocking { background:#fdeaea; color:#8a1f1f; }
     .row-reason { display:block; margin-top:0.35rem; color:#5f6b76; }
     .modal-backdrop { position:fixed; inset:0; background:rgba(24, 37, 51, 0.42); display:grid; place-items:center; padding:1rem; z-index:50; }
     .modal-card { width:min(1180px, 100%); max-height:calc(100vh - 2rem); overflow:auto; border:1px solid #d8d1c2; border-radius:1rem; background:#fff; padding:1rem; display:grid; gap:1rem; box-shadow:0 24px 60px rgba(24, 37, 51, 0.24); }
@@ -428,6 +540,10 @@ export class PaymentComplementBaseDocumentsPageComponent {
       timeStyle: 'short',
       timeZone: 'UTC'
     });
+  }
+
+  protected formatOptionalUtc(value?: string | null): string {
+    return value ? this.formatUtc(value) : '—';
   }
 
   private async load(): Promise<void> {

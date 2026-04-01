@@ -16,5 +16,15 @@ public sealed class InternalRepBaseDocumentPaymentComplementReadModel
 
     public DateTime? StampedAtUtc { get; init; }
 
+    public DateTime? CancelledAtUtc { get; init; }
+
+    public string? ProviderName { get; init; }
+
+    public int InstallmentNumber { get; init; }
+
+    public decimal PreviousBalance { get; init; }
+
     public decimal PaidAmount { get; init; }
+
+    public decimal RemainingBalance { get; init; }
 }

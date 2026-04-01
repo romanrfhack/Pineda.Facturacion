@@ -6,10 +6,17 @@ namespace Pineda.Facturacion.Application.UseCases.PaymentComplements;
 public sealed class SearchInternalRepBaseDocumentsService
 {
     private readonly IRepBaseDocumentRepository _repository;
+    private readonly IInternalRepBaseDocumentStateRepository _stateRepository;
+    private readonly IUnitOfWork _unitOfWork;
 
-    public SearchInternalRepBaseDocumentsService(IRepBaseDocumentRepository repository)
+    public SearchInternalRepBaseDocumentsService(
+        IRepBaseDocumentRepository repository,
+        IInternalRepBaseDocumentStateRepository stateRepository,
+        IUnitOfWork unitOfWork)
     {
         _repository = repository;
+        _stateRepository = stateRepository;
+        _unitOfWork = unitOfWork;
     }
 
     public async Task<SearchInternalRepBaseDocumentsResult> ExecuteAsync(
@@ -57,6 +64,8 @@ public sealed class SearchInternalRepBaseDocumentsService
             .Take(normalizedPageSize)
             .ToList();
 
+        await PersistOperationalStatesAsync(pageItems, cancellationToken);
+
         return new SearchInternalRepBaseDocumentsResult
         {
             Page = normalizedPage,
@@ -83,6 +92,7 @@ public sealed class SearchInternalRepBaseDocumentsService
             PaidTotal = source.PaidTotal,
             OutstandingBalance = source.OutstandingBalance
         });
+        var evaluatedAtUtc = DateTime.UtcNow;
 
         return new InternalRepBaseDocumentListItem
         {
@@ -111,8 +121,42 @@ public sealed class SearchInternalRepBaseDocumentsService
             EligibilityReason = evaluation.Reason,
             RegisteredPaymentCount = source.RegisteredPaymentCount,
             PaymentComplementCount = source.PaymentComplementCount,
-            StampedPaymentComplementCount = source.StampedPaymentComplementCount
+            StampedPaymentComplementCount = source.StampedPaymentComplementCount,
+            LastRepIssuedAtUtc = source.LastRepIssuedAtUtc,
+            Eligibility = new InternalRepBaseDocumentEligibilityExplanation
+            {
+                Status = evaluation.Status.ToString(),
+                PrimaryReasonCode = evaluation.PrimaryReasonCode,
+                PrimaryReasonMessage = evaluation.PrimaryReasonMessage,
+                SecondarySignals = evaluation.SecondarySignals,
+                EvaluatedAtUtc = evaluatedAtUtc
+            }
         };
+    }
+
+    private async Task PersistOperationalStatesAsync(
+        IReadOnlyList<InternalRepBaseDocumentListItem> items,
+        CancellationToken cancellationToken)
+    {
+        if (items.Count == 0)
+        {
+            return;
+        }
+
+        var existingStates = await _stateRepository.GetByFiscalDocumentIdsAsync(items.Select(x => x.FiscalDocumentId).ToArray(), cancellationToken);
+
+        foreach (var item in items)
+        {
+            var existingState = existingStates.TryGetValue(item.FiscalDocumentId, out var state) ? state : null;
+            await _stateRepository.UpsertAsync(
+                InternalRepBaseDocumentOperationalStateProjector.BuildEntity(
+                    item,
+                    item.Eligibility.EvaluatedAtUtc,
+                    existingState?.CreatedAtUtc),
+                cancellationToken);
+        }
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 
     private static bool MatchesFilter(InternalRepBaseDocumentListItem item, SearchInternalRepBaseDocumentsFilter filter)
