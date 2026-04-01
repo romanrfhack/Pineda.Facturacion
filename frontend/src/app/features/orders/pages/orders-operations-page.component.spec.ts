@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { HttpErrorResponse } from '@angular/common/http';
 import { OrdersOperationsPageComponent } from './orders-operations-page.component';
@@ -10,10 +10,12 @@ describe('OrdersOperationsPageComponent', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-03-23T12:00:00Z'));
+    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true));
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   function createApi() {
@@ -113,9 +115,33 @@ describe('OrdersOperationsPageComponent', () => {
         reimportEligibility: {
           status: 'Allowed',
           reasonCode: 'None',
-          reasonMessage: 'Preview completed. No protected fiscal state blocks a future controlled reimport.'
+          reasonMessage: 'Preview completed. No protected state blocks controlled reimport.'
         },
         allowedActions: ['view_existing_sales_order', 'preview_reimport', 'reimport_not_available']
+      })),
+      reimportLegacyOrder: vi.fn().mockReturnValue(of({
+        outcome: 'Reimported',
+        isSuccess: true,
+        legacyOrderId: 'LEG-1001',
+        legacyImportRecordId: 10,
+        salesOrderId: 20,
+        salesOrderStatus: 'SnapshotCreated',
+        billingDocumentId: 30,
+        billingDocumentStatus: 'Draft',
+        fiscalDocumentId: null,
+        fiscalDocumentStatus: null,
+        fiscalUuid: null,
+        previousSourceHash: 'old-hash',
+        newSourceHash: 'new-hash',
+        reimportApplied: true,
+        reimportMode: 'ReplaceExistingImport',
+        reimportEligibility: {
+          status: 'Allowed',
+          reasonCode: 'None',
+          reasonMessage: 'Preview completed. No protected state blocks controlled reimport.'
+        },
+        allowedActions: ['view_existing_sales_order', 'view_existing_billing_document', 'preview_reimport'],
+        warnings: []
       })),
       createBillingDocument: vi.fn().mockReturnValue(of({
         outcome: 'Created',
@@ -137,7 +163,8 @@ describe('OrdersOperationsPageComponent', () => {
       providers: [
         { provide: OrdersApiService, useValue: api },
         { provide: FeedbackService, useValue: feedback },
-        { provide: Router, useValue: router }
+        { provide: Router, useValue: router },
+        { provide: ActivatedRoute, useValue: {} }
       ]
     }).compileComponents();
 
@@ -404,6 +431,7 @@ describe('OrdersOperationsPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Líneas modificadas');
     expect(fixture.nativeElement.textContent).toContain('Campos modificados: quantity, unitPrice, lineTotal');
     expect(fixture.nativeElement.textContent).toContain('Elegibilidad: Allowed');
+    expect(fixture.nativeElement.textContent).toContain('Reimportar');
     expect(api.importLegacyOrder).toHaveBeenCalledTimes(1);
   });
 
@@ -459,6 +487,7 @@ describe('OrdersOperationsPageComponent', () => {
 
     expect(fixture.nativeElement.textContent).toContain('BlockedByStampedFiscalDocument');
     expect(fixture.nativeElement.textContent).toContain('related fiscal document is already stamped');
+    expect(fixture.nativeElement.textContent).not.toContain('Reimportar');
   });
 
   it('renders no-changes preview clearly', async () => {
@@ -513,5 +542,117 @@ describe('OrdersOperationsPageComponent', () => {
 
     expect(fixture.nativeElement.textContent).toContain('No se detectaron cambios entre el snapshot existente y el estado actual de Legacy.');
     expect(fixture.nativeElement.textContent).toContain('NotNeededNoChanges');
+    expect(fixture.nativeElement.textContent).not.toContain('Reimportar');
+  });
+
+  it('reimports from preview after explicit confirmation', async () => {
+    const { fixture, api, feedback } = await configure({
+      importLegacyOrder: vi.fn().mockReturnValue(throwError(() =>
+        new HttpErrorResponse({
+          status: 409,
+          error: {
+            outcome: 'Conflict',
+            isSuccess: false,
+            errorCode: 'LegacyOrderAlreadyImportedWithDifferentSourceHash',
+            errorMessage: "Legacy order 'LEG-1001' was already imported with a different source hash.",
+            sourceSystem: 'legacy',
+            sourceTable: 'pedidos',
+            legacyOrderId: 'LEG-1001',
+            sourceHash: 'new-hash',
+            existingSalesOrderId: 20,
+            existingSourceHash: 'old-hash',
+            currentSourceHash: 'new-hash',
+            allowedActions: ['preview_reimport', 'reimport_not_available']
+          }
+        })))
+    });
+
+    fixture.componentInstance['legacyOrderId'] = 'LEG-1001';
+    await fixture.componentInstance['importOrderManually']();
+    await fixture.componentInstance['loadImportPreview']('LEG-1001');
+    await fixture.componentInstance['executeReimport']('LEG-1001', fixture.componentInstance['importPreview']()!);
+    fixture.detectChanges();
+
+    expect(window.confirm).toHaveBeenCalled();
+    expect(api.reimportLegacyOrder).toHaveBeenCalledWith('LEG-1001', {
+      expectedExistingSourceHash: 'old-hash',
+      expectedCurrentSourceHash: 'new-hash',
+      confirmationMode: 'ReplaceExistingImport'
+    });
+    expect(feedback.show).toHaveBeenCalledWith('success', 'La importación existente fue reemplazada con el estado actual de Legacy.');
+    expect(fixture.componentInstance['importConflict']()).toBeNull();
+    expect(fixture.componentInstance['importedOrder']()?.outcome).toBe('Reimported');
+  });
+
+  it('does not reimport when the user cancels confirmation', async () => {
+    vi.mocked(window.confirm).mockReturnValue(false);
+    const { fixture, api } = await configure({
+      importLegacyOrder: vi.fn().mockReturnValue(throwError(() =>
+        new HttpErrorResponse({
+          status: 409,
+          error: {
+            outcome: 'Conflict',
+            isSuccess: false,
+            errorCode: 'LegacyOrderAlreadyImportedWithDifferentSourceHash',
+            errorMessage: "Legacy order 'LEG-1001' was already imported with a different source hash.",
+            sourceSystem: 'legacy',
+            sourceTable: 'pedidos',
+            legacyOrderId: 'LEG-1001',
+            sourceHash: 'new-hash',
+            existingSalesOrderId: 20,
+            existingSourceHash: 'old-hash',
+            currentSourceHash: 'new-hash',
+            allowedActions: ['preview_reimport', 'reimport_not_available']
+          }
+        })))
+    });
+
+    fixture.componentInstance['legacyOrderId'] = 'LEG-1001';
+    await fixture.componentInstance['importOrderManually']();
+    await fixture.componentInstance['loadImportPreview']('LEG-1001');
+    await fixture.componentInstance['executeReimport']('LEG-1001', fixture.componentInstance['importPreview']()!);
+
+    expect(api.reimportLegacyOrder).not.toHaveBeenCalled();
+  });
+
+  it('renders preview-expired reimport failure clearly', async () => {
+    const { fixture } = await configure({
+      importLegacyOrder: vi.fn().mockReturnValue(throwError(() =>
+        new HttpErrorResponse({
+          status: 409,
+          error: {
+            outcome: 'Conflict',
+            isSuccess: false,
+            errorCode: 'LegacyOrderAlreadyImportedWithDifferentSourceHash',
+            errorMessage: "Legacy order 'LEG-1001' was already imported with a different source hash.",
+            sourceSystem: 'legacy',
+            sourceTable: 'pedidos',
+            legacyOrderId: 'LEG-1001',
+            sourceHash: 'new-hash',
+            existingSalesOrderId: 20,
+            existingSourceHash: 'old-hash',
+            currentSourceHash: 'new-hash',
+            allowedActions: ['preview_reimport', 'reimport_not_available']
+          }
+        }))),
+      reimportLegacyOrder: vi.fn().mockReturnValue(throwError(() =>
+        new HttpErrorResponse({
+          status: 409,
+          error: {
+            outcome: 'Conflict',
+            isSuccess: false,
+            errorCode: 'ReimportPreviewExpired',
+            errorMessage: 'Reimport preview is no longer current. Refresh the preview and confirm the new hashes before retrying.'
+          }
+        })))
+    });
+
+    fixture.componentInstance['legacyOrderId'] = 'LEG-1001';
+    await fixture.componentInstance['importOrderManually']();
+    await fixture.componentInstance['loadImportPreview']('LEG-1001');
+    await fixture.componentInstance['executeReimport']('LEG-1001', fixture.componentInstance['importPreview']()!);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Refresh the preview and confirm the new hashes before retrying');
   });
 });

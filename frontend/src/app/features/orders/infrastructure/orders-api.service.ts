@@ -7,6 +7,8 @@ import {
   CreateBillingDocumentResponse,
   ImportLegacyOrderPreviewResponse,
   ImportLegacyOrderResponse,
+  ReimportLegacyOrderRequest,
+  ReimportLegacyOrderResponse,
   SearchLegacyOrdersRequest,
   SearchLegacyOrdersResponse
 } from '../models/orders.models';
@@ -38,6 +40,10 @@ export class OrdersApiService {
 
   previewLegacyOrderImport(legacyOrderId: string): Observable<ImportLegacyOrderPreviewResponse> {
     return this.http.get<ImportLegacyOrderPreviewResponse>(buildApiUrl(`/orders/${legacyOrderId}/import-preview`));
+  }
+
+  reimportLegacyOrder(legacyOrderId: string, request: ReimportLegacyOrderRequest): Observable<ReimportLegacyOrderResponse> {
+    return this.http.post<ReimportLegacyOrderResponse>(buildApiUrl(`/orders/${legacyOrderId}/reimport`), request);
   }
 
   createBillingDocument(salesOrderId: number, request: CreateBillingDocumentRequest): Observable<CreateBillingDocumentResponse> {

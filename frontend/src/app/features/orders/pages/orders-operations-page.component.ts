@@ -11,6 +11,7 @@ import {
   ImportLegacyOrderAllowedAction,
   ImportLegacyOrderPreviewResponse,
   LegacyOrderListItem,
+  ReimportLegacyOrderResponse,
   SearchLegacyOrdersResponse
 } from '../models/orders.models';
 import { BillingDocumentCardComponent } from '../components/billing-document-card.component';
@@ -257,7 +258,7 @@ type QuickRange = 'today' | 'yesterday' | 'last7' | 'custom';
               }
             </div>
 
-            <p class="helper">La reimportación real sigue bloqueada en esta fase. Usa las entidades existentes para revisar el caso.</p>
+            <p class="helper">El preview es no destructivo. La reimportación solo se habilita cuando el backend confirma estado seguro.</p>
 
             @if (previewError(); as previewError) {
               <p class="error">{{ previewError }}</p>
@@ -328,6 +329,17 @@ type QuickRange = 'today' | 'yesterday' | 'last7' | 'custom';
                   Elegibilidad: <strong>{{ preview.eligibilityStatus }}</strong>.
                   {{ preview.eligibilityReasonMessage }}
                 </p>
+
+                @if (preview.eligibilityStatus === 'Allowed') {
+                  <div class="actions">
+                    <button
+                      type="button"
+                      (click)="executeReimport(conflict.legacyOrderId, preview)"
+                      [disabled]="loadingReimport()">
+                      {{ loadingReimport() ? 'Reimportando...' : 'Reimportar' }}
+                    </button>
+                  </div>
+                }
               </section>
             }
           </section>
@@ -393,6 +405,7 @@ export class OrdersOperationsPageComponent implements OnInit {
   protected readonly loadingImportOrderId = signal<string | null>(null);
   protected readonly loadingBilling = signal(false);
   protected readonly loadingPreview = signal(false);
+  protected readonly loadingReimport = signal(false);
   protected readonly ordersError = signal<string | null>(null);
   protected readonly localError = signal<string | null>(null);
   protected readonly previewError = signal<string | null>(null);
@@ -623,6 +636,68 @@ export class OrdersOperationsPageComponent implements OnInit {
     }
   }
 
+  protected async executeReimport(legacyOrderId: string, preview: ImportLegacyOrderPreviewViewModel): Promise<void> {
+    if (preview.eligibilityStatus !== 'Allowed') {
+      return;
+    }
+
+    if (!window.confirm(`¿Reemplazar la importación existente de la orden ${legacyOrderId} con el estado actual de Legacy?`)) {
+      return;
+    }
+
+    this.previewError.set(null);
+    this.loadingReimport.set(true);
+
+    try {
+      const response = await firstValueFrom(this.ordersApi.reimportLegacyOrder(legacyOrderId, {
+        expectedExistingSourceHash: preview.existingSourceHash,
+        expectedCurrentSourceHash: preview.currentSourceHash,
+        confirmationMode: 'ReplaceExistingImport'
+      }));
+      this.applyReimportSuccess(response);
+    } catch (error) {
+      this.previewError.set(extractErrorMessage(error));
+    } finally {
+      this.loadingReimport.set(false);
+    }
+  }
+
+  private applyReimportSuccess(response: ReimportLegacyOrderResponse): void {
+    this.legacyOrderId = response.legacyOrderId;
+    this.selectedLegacyOrderId.set(response.legacyOrderId);
+    this.importConflict.set(null);
+    this.importPreview.set(null);
+    this.previewError.set(null);
+    this.localError.set(null);
+    this.importedOrder.set(toReimportedOrder(response));
+
+    if (response.billingDocumentId) {
+      this.billingDocument.set({
+        outcome: 'Conflict',
+        isSuccess: false,
+        errorMessage: null,
+        salesOrderId: response.salesOrderId ?? 0,
+        billingDocumentId: response.billingDocumentId,
+        billingDocumentStatus: response.billingDocumentStatus ?? null
+      });
+    } else {
+      this.billingDocument.set(null);
+    }
+
+    this.updateOrderInPage(response.legacyOrderId, (order) => ({
+      ...order,
+      isImported: true,
+      salesOrderId: response.salesOrderId ?? order.salesOrderId,
+      billingDocumentId: response.billingDocumentId ?? order.billingDocumentId,
+      billingDocumentStatus: response.billingDocumentStatus ?? order.billingDocumentStatus,
+      fiscalDocumentId: response.fiscalDocumentId ?? order.fiscalDocumentId,
+      fiscalDocumentStatus: response.fiscalDocumentStatus ?? order.fiscalDocumentStatus,
+      importStatus: 'Imported'
+    }));
+
+    this.feedbackService.show('success', 'La importación existente fue reemplazada con el estado actual de Legacy.');
+  }
+
   protected openExistingSalesOrderConflict(conflict: ImportLegacyOrderConflictViewModel): void {
     this.importedOrder.set({
       outcome: 'Conflict',
@@ -746,6 +821,33 @@ function extractBillingDocumentResponse(error: unknown): CreateBillingDocumentRe
         billingDocumentStatus: payload.billingDocumentStatus ?? null
       }
     : null;
+}
+
+function toReimportedOrder(response: ReimportLegacyOrderResponse): ImportLegacyOrderResponse {
+  return {
+    outcome: response.outcome,
+    isSuccess: response.isSuccess,
+    isIdempotent: false,
+    errorMessage: response.errorMessage ?? null,
+    errorCode: response.errorCode ?? null,
+    sourceSystem: 'legacy',
+    sourceTable: 'pedidos',
+    legacyOrderId: response.legacyOrderId,
+    sourceHash: response.newSourceHash,
+    legacyImportRecordId: response.legacyImportRecordId ?? null,
+    salesOrderId: response.salesOrderId ?? null,
+    importStatus: 'Imported',
+    existingSalesOrderId: response.salesOrderId ?? null,
+    existingSalesOrderStatus: response.salesOrderStatus ?? null,
+    existingBillingDocumentId: response.billingDocumentId ?? null,
+    existingBillingDocumentStatus: response.billingDocumentStatus ?? null,
+    existingFiscalDocumentId: response.fiscalDocumentId ?? null,
+    existingFiscalDocumentStatus: response.fiscalDocumentStatus ?? null,
+    fiscalUuid: response.fiscalUuid ?? null,
+    existingSourceHash: response.previousSourceHash,
+    currentSourceHash: response.newSourceHash,
+    allowedActions: response.allowedActions
+  };
 }
 
 function validateCustomRange(fromDate: string, toDate: string, today: string): string | null {

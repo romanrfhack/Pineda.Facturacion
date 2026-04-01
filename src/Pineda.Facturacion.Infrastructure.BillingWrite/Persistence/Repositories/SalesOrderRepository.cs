@@ -28,6 +28,13 @@ public class SalesOrderRepository : ISalesOrderRepository, ISalesOrderSnapshotRe
             .FirstOrDefaultAsync(x => x.Id == salesOrderId, cancellationToken);
     }
 
+    public Task<SalesOrder?> GetTrackedByIdWithItemsAsync(long salesOrderId, CancellationToken cancellationToken = default)
+    {
+        return _dbContext.SalesOrders
+            .Include(x => x.Items)
+            .FirstOrDefaultAsync(x => x.Id == salesOrderId, cancellationToken);
+    }
+
     public async Task<IReadOnlyList<SalesOrder>> GetByBillingDocumentIdWithItemsAsync(long billingDocumentId, CancellationToken cancellationToken = default)
     {
         return await (

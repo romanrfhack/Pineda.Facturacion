@@ -351,6 +351,154 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
+    public async Task ReimportLegacyOrder_ReplacesEditableSalesBillingAndFiscalState()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        var seed = await factory.SeedStandardFiscalMasterDataAsync();
+
+        factory.LegacyOrderReader.Orders["LEG-REIMPORT-1001"] = CreateLegacyOrder("LEG-REIMPORT-1001", "SKU-1", 100m);
+
+        var importBody = await (await client.PostAsync("/api/orders/LEG-REIMPORT-1001/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+        var salesOrderId = importBody!.SalesOrderId!.Value;
+
+        var billingBody = await (await client.PostAsJsonAsync($"/api/sales-orders/{salesOrderId}/billing-documents", new SalesOrdersEndpoints.CreateBillingDocumentRequest
+        {
+            DocumentType = "I"
+        })).Content.ReadFromJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>();
+        Assert.NotNull(billingBody);
+
+        await client.PostAsJsonAsync($"/api/billing-documents/{billingBody!.BillingDocumentId}/fiscal-documents", new BillingDocumentsEndpoints.PrepareFiscalDocumentRequest
+        {
+            FiscalReceiverId = seed.ReceiverId,
+            IssuerProfileId = seed.IssuerId,
+            PaymentMethodSat = "PUE",
+            PaymentFormSat = "01",
+            PaymentCondition = "CONTADO"
+        });
+
+        factory.LegacyOrderReader.Orders["LEG-REIMPORT-1001"] = CreateLegacyOrder("LEG-REIMPORT-1001", "SKU-1", 150m, quantity: 2m);
+
+        var previewBody = await (await client.GetAsync("/api/orders/LEG-REIMPORT-1001/import-preview"))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderPreviewResponse>();
+        Assert.NotNull(previewBody);
+        Assert.Equal("Allowed", previewBody!.ReimportEligibility.Status);
+
+        var reimportResponse = await client.PostAsJsonAsync("/api/orders/LEG-REIMPORT-1001/reimport", new OrdersEndpoints.ReimportLegacyOrderRequest
+        {
+            ExpectedExistingSourceHash = previewBody.ExistingSourceHash,
+            ExpectedCurrentSourceHash = previewBody.CurrentSourceHash,
+            ConfirmationMode = "ReplaceExistingImport"
+        });
+
+        Assert.Equal(HttpStatusCode.OK, reimportResponse.StatusCode);
+        var reimportBody = await reimportResponse.Content.ReadFromJsonAsync<OrdersEndpoints.ReimportLegacyOrderResponse>();
+        Assert.NotNull(reimportBody);
+        Assert.True(reimportBody!.ReimportApplied);
+        Assert.Equal("Reimported", reimportBody.Outcome);
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+        var salesOrder = await db.SalesOrders.Include(x => x.Items).SingleAsync(x => x.Id == salesOrderId);
+        var billingDocument = await db.BillingDocuments.Include(x => x.Items).SingleAsync(x => x.Id == billingBody.BillingDocumentId);
+        var fiscalDocument = await db.FiscalDocuments.Include(x => x.Items).SingleAsync(x => x.BillingDocumentId == billingDocument.Id);
+        var importRecord = await db.LegacyImportRecords.SingleAsync(x => x.SourceDocumentId == "LEG-REIMPORT-1001");
+
+        Assert.Equal(150m, salesOrder.Subtotal);
+        Assert.Equal(174m, salesOrder.Total);
+        Assert.Equal(150m, billingDocument.Subtotal);
+        Assert.Equal(174m, billingDocument.Total);
+        Assert.Equal(150m, fiscalDocument.Subtotal);
+        Assert.Equal(174m, fiscalDocument.Total);
+        Assert.Equal(FiscalDocumentStatus.ReadyForStamping, fiscalDocument.Status);
+        Assert.Equal(previewBody.CurrentSourceHash, importRecord.SourceHash);
+    }
+
+    [Fact]
+    public async Task ReimportLegacyOrder_Blocks_WhenFiscalDocumentIsStamped()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        var seed = await factory.SeedStandardFiscalMasterDataAsync();
+
+        factory.LegacyOrderReader.Orders["LEG-REIMPORT-STAMPED"] = CreateLegacyOrder("LEG-REIMPORT-STAMPED", "SKU-1", 100m);
+        var importBody = await (await client.PostAsync("/api/orders/LEG-REIMPORT-STAMPED/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+        var salesOrderId = importBody!.SalesOrderId!.Value;
+
+        var billingBody = await (await client.PostAsJsonAsync($"/api/sales-orders/{salesOrderId}/billing-documents", new SalesOrdersEndpoints.CreateBillingDocumentRequest
+        {
+            DocumentType = "I"
+        })).Content.ReadFromJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>();
+
+        await client.PostAsJsonAsync($"/api/billing-documents/{billingBody!.BillingDocumentId}/fiscal-documents", new BillingDocumentsEndpoints.PrepareFiscalDocumentRequest
+        {
+            FiscalReceiverId = seed.ReceiverId,
+            IssuerProfileId = seed.IssuerId,
+            PaymentMethodSat = "PUE",
+            PaymentFormSat = "01",
+            PaymentCondition = "CONTADO"
+        });
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+            var fiscalDocument = await db.FiscalDocuments.SingleAsync(x => x.BillingDocumentId == billingBody.BillingDocumentId);
+            fiscalDocument.Status = FiscalDocumentStatus.Stamped;
+            await db.SaveChangesAsync();
+        }
+
+        factory.LegacyOrderReader.Orders["LEG-REIMPORT-STAMPED"] = CreateLegacyOrder("LEG-REIMPORT-STAMPED", "SKU-1", 150m, quantity: 2m);
+        var previewBody = await (await client.GetAsync("/api/orders/LEG-REIMPORT-STAMPED/import-preview"))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderPreviewResponse>();
+        Assert.NotNull(previewBody);
+        Assert.Equal("BlockedByStampedFiscalDocument", previewBody!.ReimportEligibility.Status);
+
+        var response = await client.PostAsJsonAsync("/api/orders/LEG-REIMPORT-STAMPED/reimport", new OrdersEndpoints.ReimportLegacyOrderRequest
+        {
+            ExpectedExistingSourceHash = previewBody.ExistingSourceHash,
+            ExpectedCurrentSourceHash = previewBody.CurrentSourceHash,
+            ConfirmationMode = "ReplaceExistingImport"
+        });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<OrdersEndpoints.ReimportLegacyOrderResponse>();
+        Assert.NotNull(body);
+        Assert.Equal("ReimportBlockedByStampedFiscalDocument", body!.ErrorCode);
+        Assert.False(body.ReimportApplied);
+    }
+
+    [Fact]
+    public async Task ReimportLegacyOrder_Blocks_WhenPreviewHashesAreStale()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        factory.LegacyOrderReader.Orders["LEG-REIMPORT-STALE"] = CreateLegacyOrder("LEG-REIMPORT-STALE", "SKU-1", 100m);
+        await client.PostAsync("/api/orders/LEG-REIMPORT-STALE/import", null);
+
+        factory.LegacyOrderReader.Orders["LEG-REIMPORT-STALE"] = CreateLegacyOrder("LEG-REIMPORT-STALE", "SKU-1", 150m, quantity: 2m);
+        var previewBody = await (await client.GetAsync("/api/orders/LEG-REIMPORT-STALE/import-preview"))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderPreviewResponse>();
+        Assert.NotNull(previewBody);
+
+        factory.LegacyOrderReader.Orders["LEG-REIMPORT-STALE"] = CreateLegacyOrder("LEG-REIMPORT-STALE", "SKU-1", 200m, quantity: 2m);
+        var response = await client.PostAsJsonAsync("/api/orders/LEG-REIMPORT-STALE/reimport", new OrdersEndpoints.ReimportLegacyOrderRequest
+        {
+            ExpectedExistingSourceHash = previewBody!.ExistingSourceHash,
+            ExpectedCurrentSourceHash = previewBody.CurrentSourceHash,
+            ConfirmationMode = "ReplaceExistingImport"
+        });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<OrdersEndpoints.ReimportLegacyOrderResponse>();
+        Assert.NotNull(body);
+        Assert.Equal("ReimportPreviewExpired", body!.ErrorCode);
+        Assert.False(body.ReimportApplied);
+    }
+
+    [Fact]
     public async Task BillingDocument_Lookup_And_Search_Return_Context_ForOperationalReuse()
     {
         await using var factory = new MvpApiFactory();
@@ -1076,7 +1224,7 @@ public class MvpLifecycleApiTests
         Assert.Equal(HttpStatusCode.BadRequest, cancelResponse.StatusCode);
     }
 
-    private static LegacyOrderReadModel CreateLegacyOrder(string legacyOrderId, string sku, decimal total)
+    private static LegacyOrderReadModel CreateLegacyOrder(string legacyOrderId, string sku, decimal total, decimal quantity = 1m)
     {
         return new LegacyOrderReadModel
         {
@@ -1104,8 +1252,8 @@ public class MvpLifecycleApiTests
                     Description = $"Product {sku}",
                     UnitCode = "H87",
                     UnitName = "Pieza",
-                    Quantity = 1m,
-                    UnitPrice = total,
+                    Quantity = quantity,
+                    UnitPrice = total / quantity,
                     DiscountAmount = 0m,
                     TaxRate = 0m,
                     TaxAmount = 0m,

@@ -29,6 +29,8 @@ describe('import-legacy-order-preview', () => {
     });
 
     expect(viewModel.legacyOrderId).toBe('1173481');
+    expect(viewModel.existingSourceHash).toBe('abc');
+    expect(viewModel.currentSourceHash).toBe('xyz');
     expect(viewModel.hasChanges).toBe(true);
     expect(viewModel.addedLines).toBe(1);
     expect(viewModel.oldTotal).toBe(696);

@@ -191,7 +191,7 @@ The UI behavior for this phase is:
 - use `errorCode = LegacyOrderAlreadyImportedWithDifferentSourceHash` plus `allowedActions` instead of parsing message text
 - allow only safe navigation or visibility actions
 
-This phase does not implement reimport, overwrite, or automatic reconciliation.
+The initial conflict remains non-destructive until the operator opens preview and explicitly confirms a controlled reimport.
 
 ## Legacy import preview
 The Orders screen now exposes a safe import preview from the enriched hash-conflict panel.
@@ -201,12 +201,20 @@ The preview:
 - shows added, removed, and modified lines
 - shows previous vs current subtotal and total
 - shows any changed header fields detected in the comparison
-- shows explicit reimport eligibility for a future phase
+- shows explicit reimport eligibility for the apply step
 
-In this phase:
-- preview is available
-- reimport execution is still disabled
-- blocked states are shown clearly to the operator
+When eligibility is `Allowed`, the UI now:
+- enables a single explicit `Reimportar` button
+- asks for confirmation before sending the apply request
+- sends the preview hashes back to the backend so stale previews are rejected
+- shows either success, protected-state blocking, or preview-expired feedback
+- refreshes the local order context after successful reimport
+
+Current 2B operator rules:
+- reimport stays disabled unless preview eligibility is `Allowed`
+- stamped or protected fiscal states remain blocked
+- stale previews must be regenerated before retrying
+- full version history is still deferred to Phase 3
 
 ## Destructive-action confirmations
 The UI requires explicit confirmation before:

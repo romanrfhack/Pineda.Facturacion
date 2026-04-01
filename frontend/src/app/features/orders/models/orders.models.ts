@@ -153,3 +153,32 @@ export interface ImportLegacyOrderPreviewEligibility {
   reasonCode: ImportLegacyOrderReimportReasonCode;
   reasonMessage: string;
 }
+
+export interface ReimportLegacyOrderRequest {
+  expectedExistingSourceHash: string;
+  expectedCurrentSourceHash: string;
+  confirmationMode: 'ReplaceExistingImport';
+}
+
+export interface ReimportLegacyOrderResponse {
+  outcome: string;
+  isSuccess: boolean;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+  legacyOrderId: string;
+  legacyImportRecordId?: number | null;
+  salesOrderId?: number | null;
+  salesOrderStatus?: string | null;
+  billingDocumentId?: number | null;
+  billingDocumentStatus?: string | null;
+  fiscalDocumentId?: number | null;
+  fiscalDocumentStatus?: string | null;
+  fiscalUuid?: string | null;
+  previousSourceHash: string;
+  newSourceHash: string;
+  reimportApplied: boolean;
+  reimportMode: string;
+  reimportEligibility: ImportLegacyOrderPreviewEligibility;
+  allowedActions: ImportLegacyOrderAllowedAction[];
+  warnings: string[];
+}

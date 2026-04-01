@@ -22,6 +22,7 @@ public static class ServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.AddScoped<ImportLegacyOrderService>();
+        services.AddScoped<ReimportLegacyOrderService>();
         services.AddScoped<PreviewLegacyOrderImportService>();
         services.AddScoped<SearchLegacyOrdersService>();
         services.AddScoped<ListAuditEventsService>();

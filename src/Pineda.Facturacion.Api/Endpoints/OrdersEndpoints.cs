@@ -43,6 +43,15 @@ public static class OrdersEndpoints
             .Produces<ImportLegacyOrderPreviewResponse>(StatusCodes.Status200OK)
             .Produces<ImportLegacyOrderPreviewResponse>(StatusCodes.Status404NotFound);
 
+        group.MapPost("/{legacyOrderId}/reimport", ReimportOrderAsync)
+            .WithName("ReimportLegacyOrder")
+            .WithSummary("Apply a controlled reimport for an existing legacy snapshot")
+            .WithDescription("Revalidates preview hashes and protected states, then replaces the current imported snapshot in-place when the legacy order is still eligible.")
+            .Produces<ReimportLegacyOrderResponse>(StatusCodes.Status200OK)
+            .Produces<ReimportLegacyOrderResponse>(StatusCodes.Status400BadRequest)
+            .Produces<ReimportLegacyOrderResponse>(StatusCodes.Status404NotFound)
+            .Produces<ReimportLegacyOrderResponse>(StatusCodes.Status409Conflict);
+
         return endpoints;
     }
 
@@ -237,6 +246,86 @@ public static class OrdersEndpoints
         return result.IsSuccess
             ? TypedResults.Ok(response)
             : TypedResults.NotFound(response);
+    }
+
+    private static async Task<Results<Ok<ReimportLegacyOrderResponse>, BadRequest<ReimportLegacyOrderResponse>, NotFound<ReimportLegacyOrderResponse>, Conflict<ReimportLegacyOrderResponse>>> ReimportOrderAsync(
+        string legacyOrderId,
+        ReimportLegacyOrderRequest request,
+        ReimportLegacyOrderService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(new ReimportLegacyOrderCommand
+        {
+            LegacyOrderId = legacyOrderId,
+            ExpectedExistingSourceHash = request.ExpectedExistingSourceHash,
+            ExpectedCurrentSourceHash = request.ExpectedCurrentSourceHash,
+            ConfirmationMode = request.ConfirmationMode
+        }, cancellationToken);
+
+        var response = new ReimportLegacyOrderResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorCode = result.ErrorCode,
+            ErrorMessage = result.ErrorMessage,
+            LegacyOrderId = result.LegacyOrderId,
+            LegacyImportRecordId = result.LegacyImportRecordId,
+            SalesOrderId = result.SalesOrderId,
+            SalesOrderStatus = result.SalesOrderStatus,
+            BillingDocumentId = result.BillingDocumentId,
+            BillingDocumentStatus = result.BillingDocumentStatus,
+            FiscalDocumentId = result.FiscalDocumentId,
+            FiscalDocumentStatus = result.FiscalDocumentStatus,
+            FiscalUuid = result.FiscalUuid,
+            PreviousSourceHash = result.PreviousSourceHash,
+            NewSourceHash = result.NewSourceHash,
+            ReimportApplied = result.ReimportApplied,
+            ReimportMode = result.ReimportMode,
+            ReimportEligibility = new ImportLegacyOrderPreviewEligibilityResponse
+            {
+                Status = result.ReimportEligibility.Status.ToString(),
+                ReasonCode = result.ReimportEligibility.ReasonCode.ToString(),
+                ReasonMessage = result.ReimportEligibility.ReasonMessage
+            },
+            AllowedActions = result.AllowedActions,
+            Warnings = result.Warnings
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "Order.Reimport",
+            "SalesOrder",
+            result.SalesOrderId?.ToString() ?? legacyOrderId,
+            result.Outcome.ToString(),
+            new
+            {
+                legacyOrderId,
+                request.ExpectedExistingSourceHash,
+                request.ExpectedCurrentSourceHash,
+                request.ConfirmationMode
+            },
+            new
+            {
+                result.LegacyImportRecordId,
+                result.SalesOrderId,
+                result.BillingDocumentId,
+                result.FiscalDocumentId,
+                result.PreviousSourceHash,
+                result.NewSourceHash,
+                result.ReimportApplied
+            },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            ReimportLegacyOrderOutcome.Reimported => TypedResults.Ok(response),
+            ReimportLegacyOrderOutcome.ValidationFailed => TypedResults.BadRequest(response),
+            ReimportLegacyOrderOutcome.NotFound => TypedResults.NotFound(response),
+            ReimportLegacyOrderOutcome.Conflict => TypedResults.Conflict(response),
+            _ => TypedResults.Conflict(response)
+        };
     }
 
     public sealed class ImportLegacyOrderResponse
@@ -449,6 +538,58 @@ public static class OrdersEndpoints
         public string ReasonCode { get; init; } = string.Empty;
 
         public string ReasonMessage { get; init; } = string.Empty;
+    }
+
+    public sealed class ReimportLegacyOrderRequest
+    {
+        public string ExpectedExistingSourceHash { get; init; } = string.Empty;
+
+        public string ExpectedCurrentSourceHash { get; init; } = string.Empty;
+
+        public string ConfirmationMode { get; init; } = string.Empty;
+    }
+
+    public sealed class ReimportLegacyOrderResponse
+    {
+        public string Outcome { get; init; } = string.Empty;
+
+        public bool IsSuccess { get; init; }
+
+        public string? ErrorCode { get; init; }
+
+        public string? ErrorMessage { get; init; }
+
+        public string LegacyOrderId { get; init; } = string.Empty;
+
+        public long? LegacyImportRecordId { get; init; }
+
+        public long? SalesOrderId { get; init; }
+
+        public string? SalesOrderStatus { get; init; }
+
+        public long? BillingDocumentId { get; init; }
+
+        public string? BillingDocumentStatus { get; init; }
+
+        public long? FiscalDocumentId { get; init; }
+
+        public string? FiscalDocumentStatus { get; init; }
+
+        public string? FiscalUuid { get; init; }
+
+        public string PreviousSourceHash { get; init; } = string.Empty;
+
+        public string NewSourceHash { get; init; } = string.Empty;
+
+        public bool ReimportApplied { get; init; }
+
+        public string ReimportMode { get; init; } = string.Empty;
+
+        public ImportLegacyOrderPreviewEligibilityResponse ReimportEligibility { get; init; } = new();
+
+        public IReadOnlyList<string> AllowedActions { get; init; } = [];
+
+        public IReadOnlyList<string> Warnings { get; init; } = [];
     }
 
     private static ImportLegacyOrderPreviewLineResponse? MapLine(PreviewLegacyOrderLineSnapshot? line)

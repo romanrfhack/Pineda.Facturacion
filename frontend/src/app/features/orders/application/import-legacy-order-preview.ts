@@ -2,6 +2,8 @@ import { ImportLegacyOrderPreviewResponse } from '../models/orders.models';
 
 export interface ImportLegacyOrderPreviewViewModel {
   readonly legacyOrderId: string;
+  readonly existingSourceHash: string;
+  readonly currentSourceHash: string;
   readonly hasChanges: boolean;
   readonly changedOrderFields: string[];
   readonly addedLines: number;
@@ -22,6 +24,8 @@ export interface ImportLegacyOrderPreviewViewModel {
 export function adaptImportLegacyOrderPreview(response: ImportLegacyOrderPreviewResponse): ImportLegacyOrderPreviewViewModel {
   return {
     legacyOrderId: response.legacyOrderId,
+    existingSourceHash: response.existingSourceHash,
+    currentSourceHash: response.currentSourceHash,
     hasChanges: response.hasChanges,
     changedOrderFields: response.changedOrderFields,
     addedLines: response.changeSummary.addedLines,

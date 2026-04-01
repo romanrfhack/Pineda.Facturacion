@@ -77,7 +77,7 @@ public sealed class PreviewLegacyOrderImportService
             || lineDiff.LineChanges.Count > 0
             || changedOrderFields.Count > 0;
 
-        var eligibility = BuildEligibility(existingOrder, hasChanges);
+        var eligibility = LegacyOrderReimportPolicy.BuildEligibility(existingOrder, hasChanges);
 
         return new PreviewLegacyOrderImportResult
         {
@@ -107,7 +107,7 @@ public sealed class PreviewLegacyOrderImportService
             },
             LineChanges = lineDiff.LineChanges,
             ReimportEligibility = eligibility,
-            AllowedActions = BuildAllowedActions(existingOrder)
+            AllowedActions = LegacyOrderReimportPolicy.BuildAllowedActions(existingOrder)
         };
     }
 
@@ -294,72 +294,4 @@ public sealed class PreviewLegacyOrderImportService
         };
     }
 
-    private static PreviewLegacyOrderReimportEligibility BuildEligibility(ImportedLegacyOrderLookupModel? existingOrder, bool hasChanges)
-    {
-        if (!hasChanges)
-        {
-            return new PreviewLegacyOrderReimportEligibility
-            {
-                Status = PreviewLegacyOrderReimportEligibilityStatus.NotNeededNoChanges,
-                ReasonCode = PreviewLegacyOrderReimportReasonCode.NoChangesDetected,
-                ReasonMessage = "Reimport preview shows no changes between the current legacy order and the existing snapshot."
-            };
-        }
-
-        if (string.Equals(existingOrder?.FiscalDocumentStatus, FiscalDocumentStatus.Stamped.ToString(), StringComparison.Ordinal))
-        {
-            return new PreviewLegacyOrderReimportEligibility
-            {
-                Status = PreviewLegacyOrderReimportEligibilityStatus.BlockedByStampedFiscalDocument,
-                ReasonCode = PreviewLegacyOrderReimportReasonCode.FiscalDocumentStamped,
-                ReasonMessage = "Reimport is blocked because the related fiscal document is already stamped."
-            };
-        }
-
-        if (existingOrder?.FiscalDocumentStatus is not null
-            && existingOrder.FiscalDocumentStatus is nameof(FiscalDocumentStatus.StampingRequested)
-                or nameof(FiscalDocumentStatus.CancellationRequested)
-                or nameof(FiscalDocumentStatus.Cancelled)
-                or nameof(FiscalDocumentStatus.CancellationRejected))
-        {
-            return new PreviewLegacyOrderReimportEligibility
-            {
-                Status = PreviewLegacyOrderReimportEligibilityStatus.BlockedByProtectedState,
-                ReasonCode = PreviewLegacyOrderReimportReasonCode.ProtectedDocumentState,
-                ReasonMessage = $"Reimport is blocked because the related fiscal document is in protected state '{existingOrder.FiscalDocumentStatus}'."
-            };
-        }
-
-        return new PreviewLegacyOrderReimportEligibility
-        {
-            Status = PreviewLegacyOrderReimportEligibilityStatus.Allowed,
-            ReasonCode = PreviewLegacyOrderReimportReasonCode.None,
-            ReasonMessage = "Preview completed. No protected fiscal state blocks a future controlled reimport."
-        };
-    }
-
-    private static IReadOnlyList<string> BuildAllowedActions(ImportedLegacyOrderLookupModel? existingOrder)
-    {
-        var actions = new List<string>();
-
-        if (existingOrder?.SalesOrderId is not null)
-        {
-            actions.Add(ImportLegacyOrderResult.ViewExistingSalesOrderAction);
-        }
-
-        if (existingOrder?.BillingDocumentId is not null)
-        {
-            actions.Add(ImportLegacyOrderResult.ViewExistingBillingDocumentAction);
-        }
-
-        if (existingOrder?.FiscalDocumentId is not null)
-        {
-            actions.Add(ImportLegacyOrderResult.ViewExistingFiscalDocumentAction);
-        }
-
-        actions.Add(ImportLegacyOrderResult.PreviewReimportAction);
-        actions.Add(ImportLegacyOrderResult.ReimportNotAvailableAction);
-
-        return actions;
-    }
 }

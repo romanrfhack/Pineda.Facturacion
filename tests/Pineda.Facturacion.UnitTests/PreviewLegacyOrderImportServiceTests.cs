@@ -171,6 +171,32 @@ public class PreviewLegacyOrderImportServiceTests
         Assert.Contains(ImportLegacyOrderResult.PreviewReimportAction, result.AllowedActions);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_BlocksEligibility_WhenBillingDocumentIsNotDraft()
+    {
+        var legacyOrder = CreateLegacyOrder();
+        legacyOrder.Items[0].Quantity = 2m;
+        var service = CreateService(
+            legacyOrder,
+            CreateExistingSnapshot(),
+            new ImportedLegacyOrderLookupModel
+            {
+                LegacyOrderId = legacyOrder.LegacyOrderId,
+                SalesOrderId = 20,
+                SalesOrderStatus = "SnapshotCreated",
+                BillingDocumentId = 40,
+                BillingDocumentStatus = "ReadyToStamp"
+            },
+            existingSourceHash: "old-hash",
+            currentSourceHash: "new-hash");
+
+        var result = await service.ExecuteAsync(legacyOrder.LegacyOrderId);
+
+        Assert.Equal(PreviewLegacyOrderReimportEligibilityStatus.BlockedByProtectedState, result.ReimportEligibility.Status);
+        Assert.Equal(PreviewLegacyOrderReimportReasonCode.ProtectedDocumentState, result.ReimportEligibility.ReasonCode);
+        Assert.Contains("billing document", result.ReimportEligibility.ReasonMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static PreviewLegacyOrderImportService CreateService(
         LegacyOrderReadModel currentLegacyOrder,
         SalesOrder existingSnapshot,
