@@ -89,7 +89,7 @@ public class ImportLegacyOrderService
         await _legacyImportRecordRepository.AddAsync(importRecord, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        var salesOrder = MapSalesOrder(legacyOrder, importRecord.Id);
+        var salesOrder = LegacyOrderSnapshotMapper.MapToSalesOrder(legacyOrder, importRecord.Id);
 
         await _salesOrderRepository.AddAsync(salesOrder, cancellationToken);
 
@@ -208,50 +208,11 @@ public class ImportLegacyOrderService
             actions.Add(ImportLegacyOrderResult.ViewExistingFiscalDocumentAction);
         }
 
+        actions.Add(ImportLegacyOrderResult.PreviewReimportAction);
         actions.Add(ImportLegacyOrderResult.ReimportNotAvailableAction);
         actions.Add(ImportLegacyOrderResult.ReimportPreviewNotAvailableYetAction);
 
         return actions;
     }
 
-    private static SalesOrder MapSalesOrder(
-        Models.Legacy.LegacyOrderReadModel legacyOrder,
-        long legacyImportRecordId)
-    {
-        var salesOrder = new SalesOrder
-        {
-            LegacyImportRecordId = legacyImportRecordId,
-            LegacyOrderNumber = legacyOrder.LegacyOrderNumber,
-            LegacyOrderType = legacyOrder.LegacyOrderType,
-            CustomerLegacyId = legacyOrder.CustomerLegacyId,
-            CustomerName = legacyOrder.CustomerName,
-            CustomerRfc = legacyOrder.CustomerRfc,
-            PaymentCondition = legacyOrder.PaymentCondition,
-            PriceListCode = legacyOrder.PriceListCode,
-            DeliveryType = legacyOrder.DeliveryType,
-            CurrencyCode = legacyOrder.CurrencyCode,
-            SnapshotTakenAtUtc = DateTime.UtcNow,
-            Status = SalesOrderStatus.SnapshotCreated,
-            Items = legacyOrder.Items.Select(item => new SalesOrderItem
-            {
-                LineNumber = item.LineNumber,
-                LegacyArticleId = item.LegacyArticleId,
-                Sku = item.Sku,
-                Description = item.Description,
-                UnitCode = item.UnitCode,
-                UnitName = item.UnitName,
-                Quantity = item.Quantity,
-                UnitPrice = item.UnitPrice,
-                DiscountAmount = item.DiscountAmount,
-                TaxRate = StandardVat16Calculator.StandardVatRate,
-                TaxAmount = 0m,
-                LineTotal = 0m,
-                SatProductServiceCode = item.SatProductServiceCode,
-                SatUnitCode = item.SatUnitCode
-            }).ToList()
-        };
-
-        StandardVat16Calculator.ApplyStandardVat(salesOrder);
-        return salesOrder;
-    }
 }

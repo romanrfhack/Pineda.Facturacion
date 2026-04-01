@@ -9,6 +9,7 @@ import {
   CreateBillingDocumentResponse,
   ImportLegacyOrderResponse,
   ImportLegacyOrderAllowedAction,
+  ImportLegacyOrderPreviewResponse,
   LegacyOrderListItem,
   SearchLegacyOrdersResponse
 } from '../models/orders.models';
@@ -17,6 +18,7 @@ import { FeedbackService } from '../../../core/ui/feedback.service';
 import { extractApiErrorMessage } from '../../../core/http/api-error-message';
 import { StatusBadgeComponent } from '../../../shared/components/status-badge.component';
 import { extractImportLegacyOrderConflict, ImportLegacyOrderConflictViewModel } from '../application/import-legacy-order-conflict';
+import { adaptImportLegacyOrderPreview, ImportLegacyOrderPreviewViewModel } from '../application/import-legacy-order-preview';
 
 type QuickRange = 'today' | 'yesterday' | 'last7' | 'custom';
 
@@ -226,6 +228,16 @@ type QuickRange = 'today' | 'yesterday' | 'last7' | 'custom';
             </dl>
 
             <div class="actions">
+              @if (hasAllowedAction(conflict, 'preview_reimport')) {
+                <button
+                  type="button"
+                  class="secondary"
+                  (click)="loadImportPreview(conflict.legacyOrderId)"
+                  [disabled]="loadingPreview()">
+                  {{ loadingPreview() ? 'Generando preview...' : 'Ver preview de cambios' }}
+                </button>
+              }
+
               @if (hasAllowedAction(conflict, 'view_existing_sales_order') && conflict.existingSalesOrderId) {
                 <button type="button" class="secondary" (click)="openExistingSalesOrderConflict(conflict)">
                   Ver sales order existente
@@ -246,6 +258,78 @@ type QuickRange = 'today' | 'yesterday' | 'last7' | 'custom';
             </div>
 
             <p class="helper">La reimportación real sigue bloqueada en esta fase. Usa las entidades existentes para revisar el caso.</p>
+
+            @if (previewError(); as previewError) {
+              <p class="error">{{ previewError }}</p>
+            }
+
+            @if (importPreview(); as preview) {
+              <section class="preview-panel">
+                <div class="section-header">
+                  <div>
+                    <p class="eyebrow">Preview de reimportación</p>
+                    <h3>Comparación segura de snapshot vs Legacy actual</h3>
+                  </div>
+                  <app-status-badge
+                    [label]="preview.eligibilityStatus"
+                    [tone]="preview.eligibilityStatus === 'Allowed' ? 'success' : preview.eligibilityStatus === 'NotNeededNoChanges' ? 'neutral' : 'warning'" />
+                </div>
+
+                @if (!preview.hasChanges) {
+                  <p class="helper">No se detectaron cambios entre el snapshot existente y el estado actual de Legacy.</p>
+                } @else {
+                  <dl class="conflict-grid">
+                    <div><dt>Líneas agregadas</dt><dd>{{ preview.addedLines }}</dd></div>
+                    <div><dt>Líneas eliminadas</dt><dd>{{ preview.removedLines }}</dd></div>
+                    <div><dt>Líneas modificadas</dt><dd>{{ preview.modifiedLines }}</dd></div>
+                    <div><dt>Líneas sin cambio</dt><dd>{{ preview.unchangedLines }}</dd></div>
+                    <div><dt>Subtotal anterior</dt><dd>{{ preview.oldSubtotal | currency:'MXN':'symbol':'1.2-2' }}</dd></div>
+                    <div><dt>Subtotal nuevo</dt><dd>{{ preview.newSubtotal | currency:'MXN':'symbol':'1.2-2' }}</dd></div>
+                    <div><dt>Total anterior</dt><dd>{{ preview.oldTotal | currency:'MXN':'symbol':'1.2-2' }}</dd></div>
+                    <div><dt>Total nuevo</dt><dd>{{ preview.newTotal | currency:'MXN':'symbol':'1.2-2' }}</dd></div>
+                  </dl>
+
+                  @if (preview.changedOrderFields.length) {
+                    <p class="helper">Campos de cabecera con cambio: {{ preview.changedOrderFields.join(', ') }}</p>
+                  }
+
+                  @if (preview.lineChanges.length) {
+                    <div class="preview-lines">
+                      @for (change of preview.lineChanges; track change.matchKey) {
+                        <article class="preview-line-card">
+                          <div class="section-header">
+                            <div>
+                              <p class="eyebrow">{{ change.changeType }}</p>
+                              <h3>{{ change.matchKey }}</h3>
+                            </div>
+                          </div>
+
+                          @if (change.changedFields.length) {
+                            <p class="helper">Campos modificados: {{ change.changedFields.join(', ') }}</p>
+                          }
+
+                          <div class="conflict-grid">
+                            <div>
+                              <dt>Anterior</dt>
+                              <dd>{{ formatPreviewLine(change.oldLine) }}</dd>
+                            </div>
+                            <div>
+                              <dt>Nuevo</dt>
+                              <dd>{{ formatPreviewLine(change.newLine) }}</dd>
+                            </div>
+                          </div>
+                        </article>
+                      }
+                    </div>
+                  }
+                }
+
+                <p class="helper">
+                  Elegibilidad: <strong>{{ preview.eligibilityStatus }}</strong>.
+                  {{ preview.eligibilityReasonMessage }}
+                </p>
+              </section>
+            }
           </section>
         } @else {
           <p class="helper">Puedes seguir usando el flujo manual como respaldo, pero la operación principal ahora parte de la lista paginada de órdenes.</p>
@@ -285,6 +369,9 @@ type QuickRange = 'today' | 'yesterday' | 'last7' | 'custom';
     .conflict-grid dt { font-size:0.82rem; color:#6d6d6d; }
     .conflict-grid dd { margin:0.2rem 0 0; font-weight:600; }
     .mono { font-family:ui-monospace, SFMono-Regular, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap:anywhere; }
+    .preview-panel { border:1px solid #d8d1c2; border-radius:0.9rem; background:#fff; padding:1rem; display:grid; gap:1rem; }
+    .preview-lines { display:grid; gap:0.75rem; }
+    .preview-line-card { border:1px solid #eadfcb; border-radius:0.8rem; padding:0.9rem; background:#faf7f0; display:grid; gap:0.75rem; }
   `],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -305,11 +392,14 @@ export class OrdersOperationsPageComponent implements OnInit {
   protected readonly loadingOrders = signal(false);
   protected readonly loadingImportOrderId = signal<string | null>(null);
   protected readonly loadingBilling = signal(false);
+  protected readonly loadingPreview = signal(false);
   protected readonly ordersError = signal<string | null>(null);
   protected readonly localError = signal<string | null>(null);
+  protected readonly previewError = signal<string | null>(null);
   protected readonly ordersPage = signal<SearchLegacyOrdersResponse | null>(null);
   protected readonly importedOrder = signal<ImportLegacyOrderResponse | null>(null);
   protected readonly importConflict = signal<ImportLegacyOrderConflictViewModel | null>(null);
+  protected readonly importPreview = signal<ImportLegacyOrderPreviewViewModel | null>(null);
   protected readonly billingDocument = signal<CreateBillingDocumentResponse | null>(null);
   protected readonly selectedLegacyOrderId = signal<string | null>(null);
   protected readonly billingButtonLabel = computed(() =>
@@ -380,6 +470,8 @@ export class OrdersOperationsPageComponent implements OnInit {
   protected async continueOrder(order: LegacyOrderListItem): Promise<void> {
     this.localError.set(null);
     this.importConflict.set(null);
+    this.importPreview.set(null);
+    this.previewError.set(null);
     this.selectedLegacyOrderId.set(order.legacyOrderId);
     this.legacyOrderId = order.legacyOrderId;
     this.importedOrder.set(toImportedOrder(order));
@@ -476,6 +568,8 @@ export class OrdersOperationsPageComponent implements OnInit {
   private async importOrderInternal(legacyOrderId: string, loadingKey: string): Promise<void> {
     this.localError.set(null);
     this.importConflict.set(null);
+    this.importPreview.set(null);
+    this.previewError.set(null);
     this.billingDocument.set(null);
     this.loadingImportOrderId.set(loadingKey);
 
@@ -513,6 +607,20 @@ export class OrdersOperationsPageComponent implements OnInit {
 
   protected hasAllowedAction(conflict: ImportLegacyOrderConflictViewModel, action: ImportLegacyOrderAllowedAction): boolean {
     return conflict.allowedActions.includes(action);
+  }
+
+  protected async loadImportPreview(legacyOrderId: string): Promise<void> {
+    this.previewError.set(null);
+    this.loadingPreview.set(true);
+
+    try {
+      const response = await firstValueFrom(this.ordersApi.previewLegacyOrderImport(legacyOrderId));
+      this.importPreview.set(adaptImportLegacyOrderPreview(response));
+    } catch (error) {
+      this.previewError.set(extractErrorMessage(error));
+    } finally {
+      this.loadingPreview.set(false);
+    }
   }
 
   protected openExistingSalesOrderConflict(conflict: ImportLegacyOrderConflictViewModel): void {
@@ -565,6 +673,14 @@ export class OrdersOperationsPageComponent implements OnInit {
     await this.router.navigate(['/app/fiscal-documents', conflict.existingFiscalDocumentId], {
       queryParams: conflict.existingBillingDocumentId ? { billingDocumentId: conflict.existingBillingDocumentId } : {}
     });
+  }
+
+  protected formatPreviewLine(line?: ImportLegacyOrderPreviewResponse['lineChanges'][number]['oldLine'] | null): string {
+    if (!line) {
+      return 'N/D';
+    }
+
+    return `#${line.lineNumber} · ${line.sku || line.legacyArticleId} · ${line.description} · Cant ${line.quantity} · PU ${line.unitPrice.toFixed(2)} · Total ${line.lineTotal.toFixed(2)}`;
   }
 
   private updateOrderInPage(legacyOrderId: string, updater: (order: LegacyOrderListItem) => LegacyOrderListItem): void {

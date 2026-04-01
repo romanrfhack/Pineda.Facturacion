@@ -53,6 +53,70 @@ describe('OrdersOperationsPageComponent', () => {
         salesOrderId: 20,
         importStatus: 'Imported'
       })),
+      previewLegacyOrderImport: vi.fn().mockReturnValue(of({
+        isSuccess: true,
+        legacyOrderId: 'LEG-1001',
+        existingSalesOrderId: 20,
+        existingSalesOrderStatus: 'SnapshotCreated',
+        existingBillingDocumentId: 30,
+        existingBillingDocumentStatus: 'Draft',
+        existingFiscalDocumentId: null,
+        existingFiscalDocumentStatus: null,
+        fiscalUuid: null,
+        existingSourceHash: 'old-hash',
+        currentSourceHash: 'new-hash',
+        hasChanges: true,
+        changedOrderFields: [],
+        changeSummary: {
+          addedLines: 0,
+          removedLines: 0,
+          modifiedLines: 1,
+          unchangedLines: 0,
+          oldSubtotal: 100,
+          newSubtotal: 150,
+          oldTotal: 116,
+          newTotal: 174
+        },
+        lineChanges: [
+          {
+            changeType: 'Modified',
+            matchKey: 'A-1#1',
+            oldLine: {
+              lineNumber: 1,
+              legacyArticleId: 'A-1',
+              sku: 'A-1',
+              description: 'Articulo demo',
+              unitCode: 'H87',
+              unitName: 'Pieza',
+              quantity: 1,
+              unitPrice: 100,
+              discountAmount: 0,
+              taxAmount: 16,
+              lineTotal: 100
+            },
+            newLine: {
+              lineNumber: 1,
+              legacyArticleId: 'A-1',
+              sku: 'A-1',
+              description: 'Articulo demo',
+              unitCode: 'H87',
+              unitName: 'Pieza',
+              quantity: 2,
+              unitPrice: 75,
+              discountAmount: 0,
+              taxAmount: 24,
+              lineTotal: 150
+            },
+            changedFields: ['quantity', 'unitPrice', 'lineTotal']
+          }
+        ],
+        reimportEligibility: {
+          status: 'Allowed',
+          reasonCode: 'None',
+          reasonMessage: 'Preview completed. No protected fiscal state blocks a future controlled reimport.'
+        },
+        allowedActions: ['view_existing_sales_order', 'preview_reimport', 'reimport_not_available']
+      })),
       createBillingDocument: vi.fn().mockReturnValue(of({
         outcome: 'Created',
         isSuccess: true,
@@ -308,5 +372,146 @@ describe('OrdersOperationsPageComponent', () => {
 
     await fixture.componentInstance['openExistingFiscalDocumentConflict'](conflict!);
     expect(router.navigate).toHaveBeenCalledWith(['/app/fiscal-documents', 41], { queryParams: { billingDocumentId: 31 } });
+  });
+
+  it('renders the import preview summary and detail without triggering reimport', async () => {
+    const { fixture, api } = await configure({
+      importLegacyOrder: vi.fn().mockReturnValue(throwError(() =>
+        new HttpErrorResponse({
+          status: 409,
+          error: {
+            outcome: 'Conflict',
+            isSuccess: false,
+            errorCode: 'LegacyOrderAlreadyImportedWithDifferentSourceHash',
+            errorMessage: "Legacy order 'LEG-1001' was already imported with a different source hash.",
+            sourceSystem: 'legacy',
+            sourceTable: 'pedidos',
+            legacyOrderId: 'LEG-1001',
+            sourceHash: 'current-hash',
+            existingSalesOrderId: 20,
+            allowedActions: ['preview_reimport', 'reimport_not_available']
+          }
+        })))
+    });
+
+    fixture.componentInstance['legacyOrderId'] = 'LEG-1001';
+    await fixture.componentInstance['importOrderManually']();
+    await fixture.componentInstance['loadImportPreview']('LEG-1001');
+    fixture.detectChanges();
+
+    expect(api.previewLegacyOrderImport).toHaveBeenCalledWith('LEG-1001');
+    expect(fixture.nativeElement.textContent).toContain('Comparación segura de snapshot vs Legacy actual');
+    expect(fixture.nativeElement.textContent).toContain('Líneas modificadas');
+    expect(fixture.nativeElement.textContent).toContain('Campos modificados: quantity, unitPrice, lineTotal');
+    expect(fixture.nativeElement.textContent).toContain('Elegibilidad: Allowed');
+    expect(api.importLegacyOrder).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders blocked preview eligibility clearly', async () => {
+    const { fixture } = await configure({
+      importLegacyOrder: vi.fn().mockReturnValue(throwError(() =>
+        new HttpErrorResponse({
+          status: 409,
+          error: {
+            outcome: 'Conflict',
+            isSuccess: false,
+            errorCode: 'LegacyOrderAlreadyImportedWithDifferentSourceHash',
+            errorMessage: "Legacy order 'LEG-1001' was already imported with a different source hash.",
+            sourceSystem: 'legacy',
+            sourceTable: 'pedidos',
+            legacyOrderId: 'LEG-1001',
+            sourceHash: 'current-hash',
+            existingSalesOrderId: 20,
+            allowedActions: ['preview_reimport', 'reimport_not_available']
+          }
+        }))),
+      previewLegacyOrderImport: vi.fn().mockReturnValue(of({
+        isSuccess: true,
+        legacyOrderId: 'LEG-1001',
+        existingSourceHash: 'old-hash',
+        currentSourceHash: 'new-hash',
+        hasChanges: true,
+        changedOrderFields: [],
+        changeSummary: {
+          addedLines: 0,
+          removedLines: 0,
+          modifiedLines: 1,
+          unchangedLines: 0,
+          oldSubtotal: 100,
+          newSubtotal: 150,
+          oldTotal: 116,
+          newTotal: 174
+        },
+        lineChanges: [],
+        reimportEligibility: {
+          status: 'BlockedByStampedFiscalDocument',
+          reasonCode: 'FiscalDocumentStamped',
+          reasonMessage: 'Reimport is blocked because the related fiscal document is already stamped.'
+        },
+        allowedActions: ['preview_reimport', 'reimport_not_available']
+      }))
+    });
+
+    fixture.componentInstance['legacyOrderId'] = 'LEG-1001';
+    await fixture.componentInstance['importOrderManually']();
+    await fixture.componentInstance['loadImportPreview']('LEG-1001');
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('BlockedByStampedFiscalDocument');
+    expect(fixture.nativeElement.textContent).toContain('related fiscal document is already stamped');
+  });
+
+  it('renders no-changes preview clearly', async () => {
+    const { fixture } = await configure({
+      importLegacyOrder: vi.fn().mockReturnValue(throwError(() =>
+        new HttpErrorResponse({
+          status: 409,
+          error: {
+            outcome: 'Conflict',
+            isSuccess: false,
+            errorCode: 'LegacyOrderAlreadyImportedWithDifferentSourceHash',
+            errorMessage: "Legacy order 'LEG-1001' was already imported with a different source hash.",
+            sourceSystem: 'legacy',
+            sourceTable: 'pedidos',
+            legacyOrderId: 'LEG-1001',
+            sourceHash: 'same-hash',
+            existingSalesOrderId: 20,
+            allowedActions: ['preview_reimport', 'reimport_not_available']
+          }
+        }))),
+      previewLegacyOrderImport: vi.fn().mockReturnValue(of({
+        isSuccess: true,
+        legacyOrderId: 'LEG-1001',
+        existingSourceHash: 'same-hash',
+        currentSourceHash: 'same-hash',
+        hasChanges: false,
+        changedOrderFields: [],
+        changeSummary: {
+          addedLines: 0,
+          removedLines: 0,
+          modifiedLines: 0,
+          unchangedLines: 1,
+          oldSubtotal: 100,
+          newSubtotal: 100,
+          oldTotal: 116,
+          newTotal: 116
+        },
+        lineChanges: [],
+        reimportEligibility: {
+          status: 'NotNeededNoChanges',
+          reasonCode: 'NoChangesDetected',
+          reasonMessage: 'Reimport preview shows no changes between the current legacy order and the existing snapshot.'
+        },
+        allowedActions: ['preview_reimport', 'reimport_not_available']
+      }))
+    });
+
+    fixture.componentInstance['legacyOrderId'] = 'LEG-1001';
+    await fixture.componentInstance['importOrderManually']();
+    await fixture.componentInstance['loadImportPreview']('LEG-1001');
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('No se detectaron cambios entre el snapshot existente y el estado actual de Legacy.');
+    expect(fixture.nativeElement.textContent).toContain('NotNeededNoChanges');
   });
 });

@@ -29,3 +29,31 @@ Conflict payload fields:
 - `reimport_preview_not_available_yet`
 
 This phase does not implement reimport or overwrite behavior. The conflict remains blocked by default.
+
+## GET `/api/orders/{legacyOrderId}/import-preview`
+
+This endpoint is read-only and does not persist changes.
+
+Purpose:
+- read the current legacy order
+- compare it with the existing imported snapshot
+- summarize line-level and total-level changes
+- evaluate whether a future controlled reimport would be allowed or blocked
+
+Response includes:
+- existing linked entities (`sales_order`, `billing_document`, `fiscal_document`)
+- `existingSourceHash`
+- `currentSourceHash`
+- `hasChanges`
+- `changedOrderFields`
+- `changeSummary`
+- `lineChanges`
+- `reimportEligibility`
+- `allowedActions`
+
+Stable string values:
+- `lineChanges[].changeType`: `Added`, `Removed`, `Modified`
+- `reimportEligibility.status`: `Allowed`, `BlockedByStampedFiscalDocument`, `BlockedByProtectedState`, `NotNeededNoChanges`, `NotAvailableYet`
+- `reimportEligibility.reasonCode`: `None`, `FiscalDocumentStamped`, `ProtectedDocumentState`, `NoChangesDetected`, `PreviewOnly`
+
+This phase only compares and evaluates. It does not execute reimport.

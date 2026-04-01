@@ -7,6 +7,7 @@ using Pineda.Facturacion.Application.UseCases.CreateBillingDocument;
 using Pineda.Facturacion.Application.UseCases.FiscalReceivers;
 using Pineda.Facturacion.Application.UseCases.FiscalDocuments;
 using Pineda.Facturacion.Application.UseCases.ImportLegacyOrder;
+using Pineda.Facturacion.Application.UseCases.ImportLegacyOrderPreview;
 using Pineda.Facturacion.Application.UseCases.IssuerProfiles;
 using Pineda.Facturacion.Application.UseCases.Orders;
 using Pineda.Facturacion.Application.UseCases.PaymentComplements;
@@ -21,6 +22,7 @@ public static class ServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.AddScoped<ImportLegacyOrderService>();
+        services.AddScoped<PreviewLegacyOrderImportService>();
         services.AddScoped<SearchLegacyOrdersService>();
         services.AddScoped<ListAuditEventsService>();
         services.AddScoped<LoginService>();

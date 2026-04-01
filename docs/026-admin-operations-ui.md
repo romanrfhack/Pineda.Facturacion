@@ -193,6 +193,21 @@ The UI behavior for this phase is:
 
 This phase does not implement reimport, overwrite, or automatic reconciliation.
 
+## Legacy import preview
+The Orders screen now exposes a safe import preview from the enriched hash-conflict panel.
+
+The preview:
+- calls a read-only endpoint for the current legacy order plus the existing snapshot
+- shows added, removed, and modified lines
+- shows previous vs current subtotal and total
+- shows any changed header fields detected in the comparison
+- shows explicit reimport eligibility for a future phase
+
+In this phase:
+- preview is available
+- reimport execution is still disabled
+- blocked states are shown clearly to the operator
+
 ## Destructive-action confirmations
 The UI requires explicit confirmation before:
 - invoice cancellation

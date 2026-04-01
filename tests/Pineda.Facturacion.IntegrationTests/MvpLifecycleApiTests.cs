@@ -293,6 +293,64 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
+    public async Task PreviewLegacyOrderImport_ReturnsDiffAndEligibility()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        factory.LegacyOrderReader.Orders["LEG-PREVIEW-1001"] = CreateLegacyOrder("LEG-PREVIEW-1001", "SKU-1", 100m);
+        var firstImport = await client.PostAsync("/api/orders/LEG-PREVIEW-1001/import", null);
+        Assert.Equal(HttpStatusCode.OK, firstImport.StatusCode);
+
+        factory.LegacyOrderReader.Orders["LEG-PREVIEW-1001"] = new LegacyOrderReadModel
+        {
+            LegacyOrderId = "LEG-PREVIEW-1001",
+            LegacyOrderNumber = "ORD-LEG-PREVIEW-1001",
+            LegacyOrderType = "F",
+            CustomerLegacyId = "C-1",
+            CustomerName = "Cliente Demo",
+            CustomerRfc = "XAXX010101000",
+            PaymentCondition = "CONTADO",
+            PriceListCode = "GENERAL",
+            DeliveryType = "LOCAL",
+            CurrencyCode = "MXN",
+            Subtotal = 150m,
+            DiscountTotal = 0m,
+            TaxTotal = 0m,
+            Total = 150m,
+            Items =
+            [
+                new LegacyOrderItemReadModel
+                {
+                    LineNumber = 1,
+                    LegacyArticleId = "SKU-1",
+                    Sku = "SKU-1",
+                    Description = "Product SKU-1",
+                    UnitCode = "H87",
+                    UnitName = "Pieza",
+                    Quantity = 2m,
+                    UnitPrice = 75m,
+                    DiscountAmount = 0m,
+                    TaxRate = 0m,
+                    TaxAmount = 0m,
+                    LineTotal = 150m
+                }
+            ]
+        };
+
+        var previewResponse = await client.GetAsync("/api/orders/LEG-PREVIEW-1001/import-preview");
+        Assert.Equal(HttpStatusCode.OK, previewResponse.StatusCode);
+
+        var body = await previewResponse.Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderPreviewResponse>();
+        Assert.NotNull(body);
+        Assert.True(body!.IsSuccess);
+        Assert.True(body.HasChanges);
+        Assert.Equal(1, body.ChangeSummary.ModifiedLines);
+        Assert.Equal("Allowed", body.ReimportEligibility.Status);
+        Assert.Contains("preview_reimport", body.AllowedActions);
+    }
+
+    [Fact]
     public async Task BillingDocument_Lookup_And_Search_Return_Context_ForOperationalReuse()
     {
         await using var factory = new MvpApiFactory();

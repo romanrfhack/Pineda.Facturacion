@@ -2,8 +2,25 @@ export type ImportLegacyOrderAllowedAction =
   | 'view_existing_sales_order'
   | 'view_existing_billing_document'
   | 'view_existing_fiscal_document'
+  | 'preview_reimport'
   | 'reimport_not_available'
   | 'reimport_preview_not_available_yet';
+
+export type ImportLegacyOrderPreviewChangeType = 'Added' | 'Removed' | 'Modified';
+
+export type ImportLegacyOrderReimportEligibilityStatus =
+  | 'Allowed'
+  | 'BlockedByStampedFiscalDocument'
+  | 'BlockedByProtectedState'
+  | 'NotNeededNoChanges'
+  | 'NotAvailableYet';
+
+export type ImportLegacyOrderReimportReasonCode =
+  | 'None'
+  | 'FiscalDocumentStamped'
+  | 'ProtectedDocumentState'
+  | 'NoChangesDetected'
+  | 'PreviewOnly';
 
 export interface ImportLegacyOrderResponse {
   outcome: string;
@@ -75,4 +92,64 @@ export interface CreateBillingDocumentResponse {
   salesOrderId: number;
   billingDocumentId?: number | null;
   billingDocumentStatus?: string | null;
+}
+
+export interface ImportLegacyOrderPreviewResponse {
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  legacyOrderId: string;
+  existingSalesOrderId?: number | null;
+  existingSalesOrderStatus?: string | null;
+  existingBillingDocumentId?: number | null;
+  existingBillingDocumentStatus?: string | null;
+  existingFiscalDocumentId?: number | null;
+  existingFiscalDocumentStatus?: string | null;
+  fiscalUuid?: string | null;
+  existingSourceHash: string;
+  currentSourceHash: string;
+  hasChanges: boolean;
+  changedOrderFields: string[];
+  changeSummary: ImportLegacyOrderPreviewChangeSummary;
+  lineChanges: ImportLegacyOrderPreviewLineChange[];
+  reimportEligibility: ImportLegacyOrderPreviewEligibility;
+  allowedActions: ImportLegacyOrderAllowedAction[];
+}
+
+export interface ImportLegacyOrderPreviewChangeSummary {
+  addedLines: number;
+  removedLines: number;
+  modifiedLines: number;
+  unchangedLines: number;
+  oldSubtotal: number;
+  newSubtotal: number;
+  oldTotal: number;
+  newTotal: number;
+}
+
+export interface ImportLegacyOrderPreviewLineChange {
+  changeType: ImportLegacyOrderPreviewChangeType;
+  matchKey: string;
+  oldLine?: ImportLegacyOrderPreviewLine | null;
+  newLine?: ImportLegacyOrderPreviewLine | null;
+  changedFields: string[];
+}
+
+export interface ImportLegacyOrderPreviewLine {
+  lineNumber: number;
+  legacyArticleId: string;
+  sku?: string | null;
+  description: string;
+  unitCode?: string | null;
+  unitName?: string | null;
+  quantity: number;
+  unitPrice: number;
+  discountAmount: number;
+  taxAmount: number;
+  lineTotal: number;
+}
+
+export interface ImportLegacyOrderPreviewEligibility {
+  status: ImportLegacyOrderReimportEligibilityStatus;
+  reasonCode: ImportLegacyOrderReimportReasonCode;
+  reasonMessage: string;
 }

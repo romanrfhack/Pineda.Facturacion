@@ -8,6 +8,7 @@ public class ImportLegacyOrderResult
     public const string ViewExistingSalesOrderAction = "view_existing_sales_order";
     public const string ViewExistingBillingDocumentAction = "view_existing_billing_document";
     public const string ViewExistingFiscalDocumentAction = "view_existing_fiscal_document";
+    public const string PreviewReimportAction = "preview_reimport";
     public const string ReimportNotAvailableAction = "reimport_not_available";
     public const string ReimportPreviewNotAvailableYetAction = "reimport_preview_not_available_yet";
 

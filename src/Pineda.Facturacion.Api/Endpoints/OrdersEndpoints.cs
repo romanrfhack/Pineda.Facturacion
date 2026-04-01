@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Pineda.Facturacion.Api.Security;
 using Pineda.Facturacion.Application.Abstractions.Security;
 using Pineda.Facturacion.Application.UseCases.ImportLegacyOrder;
+using Pineda.Facturacion.Application.UseCases.ImportLegacyOrderPreview;
 using Pineda.Facturacion.Application.UseCases.Orders;
 using Pineda.Facturacion.Application.Security;
 
@@ -34,6 +35,13 @@ public static class OrdersEndpoints
             .Produces<ImportLegacyOrderResponse>(StatusCodes.Status200OK)
             .Produces<ImportLegacyOrderResponse>(StatusCodes.Status404NotFound)
             .Produces<ImportLegacyOrderResponse>(StatusCodes.Status409Conflict);
+
+        group.MapGet("/{legacyOrderId}/import-preview", PreviewImportAsync)
+            .WithName("PreviewLegacyOrderImport")
+            .WithSummary("Preview changes for a previously imported legacy order")
+            .WithDescription("Reads the current legacy order, compares it against the existing internal snapshot, and returns a non-destructive preview plus reimport eligibility.")
+            .Produces<ImportLegacyOrderPreviewResponse>(StatusCodes.Status200OK)
+            .Produces<ImportLegacyOrderPreviewResponse>(StatusCodes.Status404NotFound);
 
         return endpoints;
     }
@@ -176,6 +184,61 @@ public static class OrdersEndpoints
         };
     }
 
+    private static async Task<Results<Ok<ImportLegacyOrderPreviewResponse>, NotFound<ImportLegacyOrderPreviewResponse>>> PreviewImportAsync(
+        string legacyOrderId,
+        PreviewLegacyOrderImportService service,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(legacyOrderId, cancellationToken);
+        var response = new ImportLegacyOrderPreviewResponse
+        {
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            LegacyOrderId = result.LegacyOrderId,
+            ExistingSalesOrderId = result.ExistingSalesOrderId,
+            ExistingSalesOrderStatus = result.ExistingSalesOrderStatus,
+            ExistingBillingDocumentId = result.ExistingBillingDocumentId,
+            ExistingBillingDocumentStatus = result.ExistingBillingDocumentStatus,
+            ExistingFiscalDocumentId = result.ExistingFiscalDocumentId,
+            ExistingFiscalDocumentStatus = result.ExistingFiscalDocumentStatus,
+            FiscalUuid = result.FiscalUuid,
+            ExistingSourceHash = result.ExistingSourceHash,
+            CurrentSourceHash = result.CurrentSourceHash,
+            HasChanges = result.HasChanges,
+            ChangedOrderFields = result.ChangedOrderFields,
+            ChangeSummary = new ImportLegacyOrderPreviewChangeSummaryResponse
+            {
+                AddedLines = result.ChangeSummary.AddedLines,
+                RemovedLines = result.ChangeSummary.RemovedLines,
+                ModifiedLines = result.ChangeSummary.ModifiedLines,
+                UnchangedLines = result.ChangeSummary.UnchangedLines,
+                OldSubtotal = result.ChangeSummary.OldSubtotal,
+                NewSubtotal = result.ChangeSummary.NewSubtotal,
+                OldTotal = result.ChangeSummary.OldTotal,
+                NewTotal = result.ChangeSummary.NewTotal
+            },
+            LineChanges = result.LineChanges.Select(change => new ImportLegacyOrderPreviewLineChangeResponse
+            {
+                ChangeType = change.ChangeType.ToString(),
+                MatchKey = change.MatchKey,
+                OldLine = MapLine(change.OldLine),
+                NewLine = MapLine(change.NewLine),
+                ChangedFields = change.ChangedFields
+            }).ToArray(),
+            ReimportEligibility = new ImportLegacyOrderPreviewEligibilityResponse
+            {
+                Status = result.ReimportEligibility.Status.ToString(),
+                ReasonCode = result.ReimportEligibility.ReasonCode.ToString(),
+                ReasonMessage = result.ReimportEligibility.ReasonMessage
+            },
+            AllowedActions = result.AllowedActions
+        };
+
+        return result.IsSuccess
+            ? TypedResults.Ok(response)
+            : TypedResults.NotFound(response);
+    }
+
     public sealed class ImportLegacyOrderResponse
     {
         public string Outcome { get; init; } = string.Empty;
@@ -281,5 +344,133 @@ public static class OrdersEndpoints
         public string? FiscalDocumentStatus { get; init; }
 
         public string? ImportStatus { get; init; }
+    }
+
+    public sealed class ImportLegacyOrderPreviewResponse
+    {
+        public bool IsSuccess { get; init; }
+
+        public string? ErrorMessage { get; init; }
+
+        public string LegacyOrderId { get; init; } = string.Empty;
+
+        public long? ExistingSalesOrderId { get; init; }
+
+        public string? ExistingSalesOrderStatus { get; init; }
+
+        public long? ExistingBillingDocumentId { get; init; }
+
+        public string? ExistingBillingDocumentStatus { get; init; }
+
+        public long? ExistingFiscalDocumentId { get; init; }
+
+        public string? ExistingFiscalDocumentStatus { get; init; }
+
+        public string? FiscalUuid { get; init; }
+
+        public string ExistingSourceHash { get; init; } = string.Empty;
+
+        public string CurrentSourceHash { get; init; } = string.Empty;
+
+        public bool HasChanges { get; init; }
+
+        public IReadOnlyList<string> ChangedOrderFields { get; init; } = [];
+
+        public ImportLegacyOrderPreviewChangeSummaryResponse ChangeSummary { get; init; } = new();
+
+        public IReadOnlyList<ImportLegacyOrderPreviewLineChangeResponse> LineChanges { get; init; } = [];
+
+        public ImportLegacyOrderPreviewEligibilityResponse ReimportEligibility { get; init; } = new();
+
+        public IReadOnlyList<string> AllowedActions { get; init; } = [];
+    }
+
+    public sealed class ImportLegacyOrderPreviewChangeSummaryResponse
+    {
+        public int AddedLines { get; init; }
+
+        public int RemovedLines { get; init; }
+
+        public int ModifiedLines { get; init; }
+
+        public int UnchangedLines { get; init; }
+
+        public decimal OldSubtotal { get; init; }
+
+        public decimal NewSubtotal { get; init; }
+
+        public decimal OldTotal { get; init; }
+
+        public decimal NewTotal { get; init; }
+    }
+
+    public sealed class ImportLegacyOrderPreviewLineChangeResponse
+    {
+        public string ChangeType { get; init; } = string.Empty;
+
+        public string MatchKey { get; init; } = string.Empty;
+
+        public ImportLegacyOrderPreviewLineResponse? OldLine { get; init; }
+
+        public ImportLegacyOrderPreviewLineResponse? NewLine { get; init; }
+
+        public IReadOnlyList<string> ChangedFields { get; init; } = [];
+    }
+
+    public sealed class ImportLegacyOrderPreviewLineResponse
+    {
+        public int LineNumber { get; init; }
+
+        public string LegacyArticleId { get; init; } = string.Empty;
+
+        public string? Sku { get; init; }
+
+        public string Description { get; init; } = string.Empty;
+
+        public string? UnitCode { get; init; }
+
+        public string? UnitName { get; init; }
+
+        public decimal Quantity { get; init; }
+
+        public decimal UnitPrice { get; init; }
+
+        public decimal DiscountAmount { get; init; }
+
+        public decimal TaxAmount { get; init; }
+
+        public decimal LineTotal { get; init; }
+    }
+
+    public sealed class ImportLegacyOrderPreviewEligibilityResponse
+    {
+        public string Status { get; init; } = string.Empty;
+
+        public string ReasonCode { get; init; } = string.Empty;
+
+        public string ReasonMessage { get; init; } = string.Empty;
+    }
+
+    private static ImportLegacyOrderPreviewLineResponse? MapLine(PreviewLegacyOrderLineSnapshot? line)
+    {
+        if (line is null)
+        {
+            return null;
+        }
+
+        return new ImportLegacyOrderPreviewLineResponse
+        {
+            LineNumber = line.LineNumber,
+            LegacyArticleId = line.LegacyArticleId,
+            Sku = line.Sku,
+            Description = line.Description,
+            UnitCode = line.UnitCode,
+            UnitName = line.UnitName,
+            Quantity = line.Quantity,
+            UnitPrice = line.UnitPrice,
+            DiscountAmount = line.DiscountAmount,
+            TaxAmount = line.TaxAmount,
+            LineTotal = line.LineTotal
+        };
     }
 }
