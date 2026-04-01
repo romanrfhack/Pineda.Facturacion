@@ -134,13 +134,25 @@ public static class OrdersEndpoints
             IsSuccess = result.IsSuccess,
             IsIdempotent = result.IsIdempotent,
             ErrorMessage = result.ErrorMessage,
+            ErrorCode = result.ErrorCode,
             SourceSystem = result.SourceSystem,
             SourceTable = result.SourceTable,
             LegacyOrderId = result.LegacyOrderId,
             SourceHash = result.SourceHash,
             LegacyImportRecordId = result.LegacyImportRecordId,
             SalesOrderId = result.SalesOrderId,
-            ImportStatus = result.ImportStatus?.ToString()
+            ImportStatus = result.ImportStatus?.ToString(),
+            ExistingSalesOrderId = result.ExistingSalesOrderId,
+            ExistingSalesOrderStatus = result.ExistingSalesOrderStatus,
+            ExistingBillingDocumentId = result.ExistingBillingDocumentId,
+            ExistingBillingDocumentStatus = result.ExistingBillingDocumentStatus,
+            ExistingFiscalDocumentId = result.ExistingFiscalDocumentId,
+            ExistingFiscalDocumentStatus = result.ExistingFiscalDocumentStatus,
+            FiscalUuid = result.FiscalUuid,
+            ImportedAtUtc = result.ImportedAtUtc,
+            ExistingSourceHash = result.ExistingSourceHash,
+            CurrentSourceHash = result.CurrentSourceHash,
+            AllowedActions = result.AllowedActions
         };
 
         await AuditApiHelper.RecordAsync(
@@ -174,6 +186,8 @@ public static class OrdersEndpoints
 
         public string? ErrorMessage { get; init; }
 
+        public string? ErrorCode { get; init; }
+
         public string SourceSystem { get; init; } = string.Empty;
 
         public string SourceTable { get; init; } = string.Empty;
@@ -187,6 +201,28 @@ public static class OrdersEndpoints
         public long? SalesOrderId { get; init; }
 
         public string? ImportStatus { get; init; }
+
+        public long? ExistingSalesOrderId { get; init; }
+
+        public string? ExistingSalesOrderStatus { get; init; }
+
+        public long? ExistingBillingDocumentId { get; init; }
+
+        public string? ExistingBillingDocumentStatus { get; init; }
+
+        public long? ExistingFiscalDocumentId { get; init; }
+
+        public string? ExistingFiscalDocumentStatus { get; init; }
+
+        public string? FiscalUuid { get; init; }
+
+        public DateTime? ImportedAtUtc { get; init; }
+
+        public string? ExistingSourceHash { get; init; }
+
+        public string? CurrentSourceHash { get; init; }
+
+        public IReadOnlyList<string> AllowedActions { get; init; } = [];
     }
 
     private static SearchLegacyOrdersResponse CreateValidationFailure(string errorMessage)

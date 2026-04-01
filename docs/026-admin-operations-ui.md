@@ -181,6 +181,18 @@ The Orders and Fiscal Documents areas now keep continuity around billing documen
 
 This uses the existing create response plus a small billing-document lookup/search read surface.
 
+## Legacy import hash conflict
+Manual legacy-order import now exposes an enriched non-destructive conflict when `/api/orders/{legacyOrderId}/import` detects that the order was already imported but the current legacy snapshot has a different source hash.
+
+The UI behavior for this phase is:
+- keep the import blocked
+- show the existing linked `sales_order`, `billing_document`, and `fiscal_document` when available
+- show source-hash traceability (`existingSourceHash` and `currentSourceHash`)
+- use `errorCode = LegacyOrderAlreadyImportedWithDifferentSourceHash` plus `allowedActions` instead of parsing message text
+- allow only safe navigation or visibility actions
+
+This phase does not implement reimport, overwrite, or automatic reconciliation.
+
 ## Destructive-action confirmations
 The UI requires explicit confirmation before:
 - invoice cancellation

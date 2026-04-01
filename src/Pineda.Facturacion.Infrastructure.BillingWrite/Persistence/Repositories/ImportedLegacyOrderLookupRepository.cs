@@ -63,6 +63,14 @@ public sealed class ImportedLegacyOrderLookupRepository : IImportedLegacyOrderLo
             .ToListAsync(cancellationToken))
             .Where(x => billingDocumentIds.Contains(x.BillingDocumentId))
             .ToArray();
+        var fiscalDocumentIds = fiscalDocuments.Select(x => x.Id).ToArray();
+        var fiscalStamps = fiscalDocumentIds.Length == 0
+            ? []
+            : (await _dbContext.FiscalStamps
+                .AsNoTracking()
+                .ToListAsync(cancellationToken))
+                .Where(x => fiscalDocumentIds.Contains(x.FiscalDocumentId) && !string.IsNullOrWhiteSpace(x.Uuid))
+                .ToArray();
 
         return matchedImportRecords
             .Select(importRecord =>
@@ -76,16 +84,27 @@ public sealed class ImportedLegacyOrderLookupRepository : IImportedLegacyOrderLo
                 var fiscalDocument = billingDocument is null
                     ? null
                     : fiscalDocuments.FirstOrDefault(x => x.BillingDocumentId == billingDocument.Id);
+                var fiscalStamp = fiscalDocument is null
+                    ? null
+                    : fiscalStamps
+                        .Where(x => x.FiscalDocumentId == fiscalDocument.Id)
+                        .OrderByDescending(x => x.CreatedAtUtc)
+                        .ThenByDescending(x => x.Id)
+                        .FirstOrDefault();
 
                 return new ImportedLegacyOrderLookupModel
                 {
                     LegacyOrderId = importRecord.SourceDocumentId,
                     SalesOrderId = salesOrder?.Id,
+                    SalesOrderStatus = salesOrder?.Status.ToString(),
                     BillingDocumentId = billingDocument?.Id,
                     BillingDocumentStatus = billingDocument?.Status.ToString(),
                     FiscalDocumentId = fiscalDocument?.Id,
                     FiscalDocumentStatus = fiscalDocument?.Status.ToString(),
-                    ImportStatus = importRecord.ImportStatus.ToString()
+                    FiscalUuid = fiscalStamp?.Uuid,
+                    ImportStatus = importRecord.ImportStatus.ToString(),
+                    ImportedAtUtc = importRecord.ImportedAtUtc,
+                    ExistingSourceHash = importRecord.SourceHash
                 };
             })
             .GroupBy(x => x.LegacyOrderId, StringComparer.OrdinalIgnoreCase)

@@ -1,8 +1,16 @@
+export type ImportLegacyOrderAllowedAction =
+  | 'view_existing_sales_order'
+  | 'view_existing_billing_document'
+  | 'view_existing_fiscal_document'
+  | 'reimport_not_available'
+  | 'reimport_preview_not_available_yet';
+
 export interface ImportLegacyOrderResponse {
   outcome: string;
   isSuccess: boolean;
   isIdempotent: boolean;
   errorMessage?: string | null;
+  errorCode?: string | null;
   sourceSystem: string;
   sourceTable: string;
   legacyOrderId: string;
@@ -10,6 +18,17 @@ export interface ImportLegacyOrderResponse {
   legacyImportRecordId?: number | null;
   salesOrderId?: number | null;
   importStatus?: string | null;
+  existingSalesOrderId?: number | null;
+  existingSalesOrderStatus?: string | null;
+  existingBillingDocumentId?: number | null;
+  existingBillingDocumentStatus?: string | null;
+  existingFiscalDocumentId?: number | null;
+  existingFiscalDocumentStatus?: string | null;
+  fiscalUuid?: string | null;
+  importedAtUtc?: string | null;
+  existingSourceHash?: string | null;
+  currentSourceHash?: string | null;
+  allowedActions?: ImportLegacyOrderAllowedAction[];
 }
 
 export interface LegacyOrderListItem {

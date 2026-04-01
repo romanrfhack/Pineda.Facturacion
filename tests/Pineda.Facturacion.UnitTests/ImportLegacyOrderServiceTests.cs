@@ -73,6 +73,20 @@ public class ImportLegacyOrderServiceTests
     public async Task ExecuteAsync_ReturnsFailure_WhenExistingImportHasDifferentHash()
     {
         var legacyOrder = CreateLegacyOrder();
+        var importedLookupRepository = new FakeImportedLegacyOrderLookupRepository
+        {
+            Results =
+            {
+                [legacyOrder.LegacyOrderId] = new ImportedLegacyOrderLookupModel
+                {
+                    LegacyOrderId = legacyOrder.LegacyOrderId,
+                    SalesOrderId = 20,
+                    SalesOrderStatus = "SnapshotCreated",
+                    ImportedAtUtc = new DateTime(2026, 04, 01, 12, 0, 0, DateTimeKind.Utc),
+                    ExistingSourceHash = "old-hash"
+                }
+            }
+        };
         var service = CreateService(
             new FakeLegacyOrderReader { Result = legacyOrder },
             new FakeContentHashGenerator { Hash = "new-hash" },
@@ -85,6 +99,7 @@ public class ImportLegacyOrderServiceTests
                     ImportStatus = ImportStatus.Imported
                 }
             },
+            importedLookupRepository,
             new FakeSalesOrderRepository(),
             new FakeUnitOfWork());
 
@@ -97,7 +112,115 @@ public class ImportLegacyOrderServiceTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal(ImportLegacyOrderOutcome.Conflict, result.Outcome);
+        Assert.Equal(ImportLegacyOrderResult.LegacyOrderAlreadyImportedWithDifferentSourceHashErrorCode, result.ErrorCode);
+        Assert.Equal(20, result.ExistingSalesOrderId);
+        Assert.Equal("SnapshotCreated", result.ExistingSalesOrderStatus);
+        Assert.Equal("old-hash", result.ExistingSourceHash);
+        Assert.Equal("new-hash", result.CurrentSourceHash);
+        Assert.Contains(ImportLegacyOrderResult.ViewExistingSalesOrderAction, result.AllowedActions);
+        Assert.Contains(ImportLegacyOrderResult.ReimportNotAvailableAction, result.AllowedActions);
+        Assert.Contains(ImportLegacyOrderResult.ReimportPreviewNotAvailableYetAction, result.AllowedActions);
         Assert.Contains("different source hash", result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ReturnsConflict_WithBillingDocumentContext_WhenExistingImportHasDifferentHash()
+    {
+        var legacyOrder = CreateLegacyOrder();
+        var service = CreateService(
+            new FakeLegacyOrderReader { Result = legacyOrder },
+            new FakeContentHashGenerator { Hash = "new-hash" },
+            new FakeLegacyImportRecordRepository
+            {
+                Existing = new LegacyImportRecord
+                {
+                    Id = 10,
+                    SourceHash = "old-hash",
+                    ImportStatus = ImportStatus.Imported
+                }
+            },
+            new FakeImportedLegacyOrderLookupRepository
+            {
+                Results =
+                {
+                    [legacyOrder.LegacyOrderId] = new ImportedLegacyOrderLookupModel
+                    {
+                        LegacyOrderId = legacyOrder.LegacyOrderId,
+                        SalesOrderId = 20,
+                        SalesOrderStatus = "BillingInProgress",
+                        BillingDocumentId = 45,
+                        BillingDocumentStatus = "Draft",
+                        ImportedAtUtc = new DateTime(2026, 04, 01, 12, 0, 0, DateTimeKind.Utc),
+                        ExistingSourceHash = "old-hash"
+                    }
+                }
+            },
+            new FakeSalesOrderRepository(),
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new ImportLegacyOrderCommand
+        {
+            SourceSystem = "legacy",
+            SourceTable = "orders",
+            LegacyOrderId = legacyOrder.LegacyOrderId
+        });
+
+        Assert.Equal(ImportLegacyOrderOutcome.Conflict, result.Outcome);
+        Assert.Equal(45, result.ExistingBillingDocumentId);
+        Assert.Equal("Draft", result.ExistingBillingDocumentStatus);
+        Assert.Contains(ImportLegacyOrderResult.ViewExistingBillingDocumentAction, result.AllowedActions);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ReturnsConflict_WithFiscalDocumentContext_WhenExistingImportHasDifferentHash()
+    {
+        var legacyOrder = CreateLegacyOrder();
+        var service = CreateService(
+            new FakeLegacyOrderReader { Result = legacyOrder },
+            new FakeContentHashGenerator { Hash = "new-hash" },
+            new FakeLegacyImportRecordRepository
+            {
+                Existing = new LegacyImportRecord
+                {
+                    Id = 10,
+                    SourceHash = "old-hash",
+                    ImportStatus = ImportStatus.Imported
+                }
+            },
+            new FakeImportedLegacyOrderLookupRepository
+            {
+                Results =
+                {
+                    [legacyOrder.LegacyOrderId] = new ImportedLegacyOrderLookupModel
+                    {
+                        LegacyOrderId = legacyOrder.LegacyOrderId,
+                        SalesOrderId = 20,
+                        SalesOrderStatus = "Billed",
+                        BillingDocumentId = 45,
+                        BillingDocumentStatus = "Stamped",
+                        FiscalDocumentId = 78,
+                        FiscalDocumentStatus = "Stamped",
+                        FiscalUuid = "UUID-123",
+                        ImportedAtUtc = new DateTime(2026, 04, 01, 12, 0, 0, DateTimeKind.Utc),
+                        ExistingSourceHash = "old-hash"
+                    }
+                }
+            },
+            new FakeSalesOrderRepository(),
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new ImportLegacyOrderCommand
+        {
+            SourceSystem = "legacy",
+            SourceTable = "orders",
+            LegacyOrderId = legacyOrder.LegacyOrderId
+        });
+
+        Assert.Equal(ImportLegacyOrderOutcome.Conflict, result.Outcome);
+        Assert.Equal(78, result.ExistingFiscalDocumentId);
+        Assert.Equal("Stamped", result.ExistingFiscalDocumentStatus);
+        Assert.Equal("UUID-123", result.FiscalUuid);
+        Assert.Contains(ImportLegacyOrderResult.ViewExistingFiscalDocumentAction, result.AllowedActions);
     }
 
     [Fact]
@@ -272,9 +395,27 @@ public class ImportLegacyOrderServiceTests
         ISalesOrderRepository salesOrderRepository,
         IUnitOfWork unitOfWork)
     {
+        return CreateService(
+            legacyOrderReader,
+            contentHashGenerator,
+            legacyImportRecordRepository,
+            importedLegacyOrderLookupRepository: null,
+            salesOrderRepository,
+            unitOfWork);
+    }
+
+    private static ImportLegacyOrderService CreateService(
+        ILegacyOrderReader legacyOrderReader,
+        IContentHashGenerator contentHashGenerator,
+        ILegacyImportRecordRepository legacyImportRecordRepository,
+        IImportedLegacyOrderLookupRepository? importedLegacyOrderLookupRepository,
+        ISalesOrderRepository salesOrderRepository,
+        IUnitOfWork unitOfWork)
+    {
         return new ImportLegacyOrderService(
             legacyOrderReader,
             legacyImportRecordRepository,
+            importedLegacyOrderLookupRepository ?? new FakeImportedLegacyOrderLookupRepository(),
             salesOrderRepository,
             unitOfWork,
             contentHashGenerator);
@@ -395,6 +536,22 @@ public class ImportLegacyOrderServiceTests
             salesOrder.Id = 202;
             Added = salesOrder;
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FakeImportedLegacyOrderLookupRepository : IImportedLegacyOrderLookupRepository
+    {
+        public Dictionary<string, ImportedLegacyOrderLookupModel> Results { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        public Task<IReadOnlyDictionary<string, ImportedLegacyOrderLookupModel>> GetByLegacyOrderIdsAsync(
+            IReadOnlyCollection<string> legacyOrderIds,
+            CancellationToken cancellationToken = default)
+        {
+            var matched = Results
+                .Where(x => legacyOrderIds.Contains(x.Key, StringComparer.OrdinalIgnoreCase))
+                .ToDictionary(x => x.Key, x => x.Value, StringComparer.OrdinalIgnoreCase);
+
+            return Task.FromResult<IReadOnlyDictionary<string, ImportedLegacyOrderLookupModel>>(matched);
         }
     }
 

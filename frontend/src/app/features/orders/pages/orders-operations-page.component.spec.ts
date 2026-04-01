@@ -228,4 +228,85 @@ describe('OrdersOperationsPageComponent', () => {
     expect(router.navigate).toHaveBeenCalledWith(['/app/fiscal-documents'], { queryParams: { billingDocumentId: 31 } });
     expect(fixture.componentInstance['billingDocument']()?.outcome).toBe('Conflict');
   });
+
+  it('renders the enriched legacy hash conflict and does not attempt reimport beyond the failed call', async () => {
+    const createBillingDocument = vi.fn();
+    const { fixture, api } = await configure({
+      importLegacyOrder: vi.fn().mockReturnValue(throwError(() =>
+        new HttpErrorResponse({
+          status: 409,
+          error: {
+            outcome: 'Conflict',
+            isSuccess: false,
+            errorCode: 'LegacyOrderAlreadyImportedWithDifferentSourceHash',
+            errorMessage: "Legacy order 'LEG-1001' was already imported with a different source hash.",
+            sourceSystem: 'legacy',
+            sourceTable: 'pedidos',
+            legacyOrderId: 'LEG-1001',
+            sourceHash: 'current-hash',
+            existingSalesOrderId: 20,
+            existingSalesOrderStatus: 'SnapshotCreated',
+            existingBillingDocumentId: 31,
+            existingBillingDocumentStatus: 'Draft',
+            existingFiscalDocumentId: 41,
+            existingFiscalDocumentStatus: 'Stamped',
+            fiscalUuid: 'UUID-LEG-1001',
+            importedAtUtc: '2026-04-01T12:00:00Z',
+            existingSourceHash: 'old-hash',
+            currentSourceHash: 'current-hash',
+            allowedActions: ['view_existing_sales_order', 'view_existing_billing_document', 'view_existing_fiscal_document', 'reimport_not_available']
+          }
+        }))),
+      createBillingDocument
+    });
+
+    fixture.componentInstance['legacyOrderId'] = 'LEG-1001';
+    await fixture.componentInstance['importOrderManually']();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('La orden legacy LEG-1001 cambió después de la importación');
+    expect(fixture.nativeElement.textContent).toContain('UUID-LEG-1001');
+    expect(fixture.nativeElement.textContent).toContain('old-hash');
+    expect(fixture.nativeElement.textContent).toContain('current-hash');
+    expect(api.importLegacyOrder).toHaveBeenCalledTimes(1);
+    expect(createBillingDocument).not.toHaveBeenCalled();
+  });
+
+  it('opens the existing billing or fiscal document from the enriched conflict actions', async () => {
+    const { fixture, router } = await configure({
+      importLegacyOrder: vi.fn().mockReturnValue(throwError(() =>
+        new HttpErrorResponse({
+          status: 409,
+          error: {
+            outcome: 'Conflict',
+            isSuccess: false,
+            errorCode: 'LegacyOrderAlreadyImportedWithDifferentSourceHash',
+            errorMessage: "Legacy order 'LEG-1001' was already imported with a different source hash.",
+            sourceSystem: 'legacy',
+            sourceTable: 'pedidos',
+            legacyOrderId: 'LEG-1001',
+            sourceHash: 'current-hash',
+            existingSalesOrderId: 20,
+            existingBillingDocumentId: 31,
+            existingBillingDocumentStatus: 'Draft',
+            existingFiscalDocumentId: 41,
+            existingFiscalDocumentStatus: 'Stamped',
+            allowedActions: ['view_existing_sales_order', 'view_existing_billing_document', 'view_existing_fiscal_document', 'reimport_not_available']
+          }
+        })))
+    });
+
+    fixture.componentInstance['legacyOrderId'] = 'LEG-1001';
+    await fixture.componentInstance['importOrderManually']();
+    fixture.detectChanges();
+
+    const conflict = fixture.componentInstance['importConflict']();
+    expect(conflict).not.toBeNull();
+
+    await fixture.componentInstance['openExistingBillingDocumentConflict'](conflict!);
+    expect(router.navigate).toHaveBeenCalledWith(['/app/fiscal-documents'], { queryParams: { billingDocumentId: 31 } });
+
+    await fixture.componentInstance['openExistingFiscalDocumentConflict'](conflict!);
+    expect(router.navigate).toHaveBeenCalledWith(['/app/fiscal-documents', 41], { queryParams: { billingDocumentId: 31 } });
+  });
 });

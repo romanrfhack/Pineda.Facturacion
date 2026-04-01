@@ -217,6 +217,82 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
+    public async Task ImportLegacyOrder_ReturnsEnrichedHashConflict_WhenExistingImportHasNoRelatedDocuments()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        factory.LegacyOrderReader.Orders["LEG-HASH-1001"] = CreateLegacyOrder("LEG-HASH-1001", "SKU-1", 100m);
+        var firstImport = await client.PostAsync("/api/orders/LEG-HASH-1001/import", null);
+        Assert.Equal(HttpStatusCode.OK, firstImport.StatusCode);
+
+        factory.LegacyOrderReader.Orders["LEG-HASH-1001"] = CreateLegacyOrder("LEG-HASH-1001", "SKU-1", 200m);
+        var conflictResponse = await client.PostAsync("/api/orders/LEG-HASH-1001/import", null);
+        Assert.Equal(HttpStatusCode.Conflict, conflictResponse.StatusCode);
+
+        var body = await conflictResponse.Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+        Assert.NotNull(body);
+        Assert.Equal("LegacyOrderAlreadyImportedWithDifferentSourceHash", body!.ErrorCode);
+        Assert.Equal("LEG-HASH-1001", body.LegacyOrderId);
+        Assert.NotNull(body.ExistingSalesOrderId);
+        Assert.Equal("SnapshotCreated", body.ExistingSalesOrderStatus);
+        Assert.Null(body.ExistingBillingDocumentId);
+        Assert.Null(body.ExistingFiscalDocumentId);
+        Assert.NotNull(body.ImportedAtUtc);
+        Assert.NotEmpty(body.ExistingSourceHash);
+        Assert.NotEmpty(body.CurrentSourceHash);
+        Assert.Contains("view_existing_sales_order", body.AllowedActions);
+        Assert.Contains("reimport_not_available", body.AllowedActions);
+        Assert.Contains("reimport_preview_not_available_yet", body.AllowedActions);
+    }
+
+    [Fact]
+    public async Task ImportLegacyOrder_ReturnsEnrichedHashConflict_WithBillingDocumentContext()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        factory.LegacyOrderReader.Orders["LEG-HASH-2001"] = CreateLegacyOrder("LEG-HASH-2001", "SKU-1", 100m);
+        var importBody = await (await client.PostAsync("/api/orders/LEG-HASH-2001/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+
+        var billingBody = await (await client.PostAsJsonAsync($"/api/sales-orders/{importBody!.SalesOrderId}/billing-documents", new SalesOrdersEndpoints.CreateBillingDocumentRequest
+        {
+            DocumentType = "I"
+        })).Content.ReadFromJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>();
+
+        factory.LegacyOrderReader.Orders["LEG-HASH-2001"] = CreateLegacyOrder("LEG-HASH-2001", "SKU-1", 150m);
+        var conflictResponse = await client.PostAsync("/api/orders/LEG-HASH-2001/import", null);
+        Assert.Equal(HttpStatusCode.Conflict, conflictResponse.StatusCode);
+
+        var body = await conflictResponse.Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+        Assert.NotNull(body);
+        Assert.Equal(billingBody!.BillingDocumentId, body!.ExistingBillingDocumentId);
+        Assert.Equal("Draft", body.ExistingBillingDocumentStatus);
+        Assert.Contains("view_existing_billing_document", body.AllowedActions);
+    }
+
+    [Fact]
+    public async Task ImportLegacyOrder_ReturnsEnrichedHashConflict_WithFiscalDocumentContext()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-HASH-3001", uuid: "UUID-HASH-3001");
+
+        factory.LegacyOrderReader.Orders["LEG-HASH-3001"] = CreateLegacyOrder("LEG-HASH-3001", "SKU-1", 180m);
+        var conflictResponse = await client.PostAsync("/api/orders/LEG-HASH-3001/import", null);
+        Assert.Equal(HttpStatusCode.Conflict, conflictResponse.StatusCode);
+
+        var body = await conflictResponse.Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+        Assert.NotNull(body);
+        Assert.Equal(fiscalDocumentId, body!.ExistingFiscalDocumentId);
+        Assert.Equal("Stamped", body.ExistingFiscalDocumentStatus);
+        Assert.Equal("UUID-HASH-3001", body.FiscalUuid);
+        Assert.Contains("view_existing_fiscal_document", body.AllowedActions);
+    }
+
+    [Fact]
     public async Task BillingDocument_Lookup_And_Search_Return_Context_ForOperationalReuse()
     {
         await using var factory = new MvpApiFactory();

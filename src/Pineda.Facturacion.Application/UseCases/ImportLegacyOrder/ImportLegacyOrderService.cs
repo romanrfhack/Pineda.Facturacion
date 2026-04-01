@@ -10,6 +10,7 @@ namespace Pineda.Facturacion.Application.UseCases.ImportLegacyOrder;
 public class ImportLegacyOrderService
 {
     private readonly IContentHashGenerator _contentHashGenerator;
+    private readonly IImportedLegacyOrderLookupRepository _importedLegacyOrderLookupRepository;
     private readonly ILegacyImportRecordRepository _legacyImportRecordRepository;
     private readonly ILegacyOrderReader _legacyOrderReader;
     private readonly ISalesOrderRepository _salesOrderRepository;
@@ -18,12 +19,14 @@ public class ImportLegacyOrderService
     public ImportLegacyOrderService(
         ILegacyOrderReader legacyOrderReader,
         ILegacyImportRecordRepository legacyImportRecordRepository,
+        IImportedLegacyOrderLookupRepository importedLegacyOrderLookupRepository,
         ISalesOrderRepository salesOrderRepository,
         IUnitOfWork unitOfWork,
         IContentHashGenerator contentHashGenerator)
     {
         _legacyOrderReader = legacyOrderReader;
         _legacyImportRecordRepository = legacyImportRecordRepository;
+        _importedLegacyOrderLookupRepository = importedLegacyOrderLookupRepository;
         _salesOrderRepository = salesOrderRepository;
         _unitOfWork = unitOfWork;
         _contentHashGenerator = contentHashGenerator;
@@ -118,6 +121,11 @@ public class ImportLegacyOrderService
     {
         if (!string.Equals(existingImportRecord.SourceHash, sourceHash, StringComparison.Ordinal))
         {
+            var existingContext = await _importedLegacyOrderLookupRepository.GetByLegacyOrderIdsAsync(
+                [command.LegacyOrderId],
+                cancellationToken);
+            existingContext.TryGetValue(command.LegacyOrderId, out var importedOrder);
+
             return new ImportLegacyOrderResult
             {
                 Outcome = ImportLegacyOrderOutcome.Conflict,
@@ -128,7 +136,20 @@ public class ImportLegacyOrderService
                 SourceHash = sourceHash,
                 LegacyImportRecordId = existingImportRecord.Id,
                 ImportStatus = existingImportRecord.ImportStatus,
-                ErrorMessage = $"Legacy order '{command.LegacyOrderId}' was already imported with a different source hash."
+                SalesOrderId = importedOrder?.SalesOrderId,
+                ErrorCode = ImportLegacyOrderResult.LegacyOrderAlreadyImportedWithDifferentSourceHashErrorCode,
+                ErrorMessage = $"Legacy order '{command.LegacyOrderId}' was already imported with a different source hash.",
+                ExistingSalesOrderId = importedOrder?.SalesOrderId,
+                ExistingSalesOrderStatus = importedOrder?.SalesOrderStatus,
+                ExistingBillingDocumentId = importedOrder?.BillingDocumentId,
+                ExistingBillingDocumentStatus = importedOrder?.BillingDocumentStatus,
+                ExistingFiscalDocumentId = importedOrder?.FiscalDocumentId,
+                ExistingFiscalDocumentStatus = importedOrder?.FiscalDocumentStatus,
+                FiscalUuid = importedOrder?.FiscalUuid,
+                ImportedAtUtc = importedOrder?.ImportedAtUtc ?? existingImportRecord.ImportedAtUtc,
+                ExistingSourceHash = importedOrder?.ExistingSourceHash ?? existingImportRecord.SourceHash,
+                CurrentSourceHash = sourceHash,
+                AllowedActions = BuildAllowedActions(importedOrder)
             };
         }
 
@@ -166,6 +187,31 @@ public class ImportLegacyOrderService
             LegacyOrderId = command.LegacyOrderId,
             ErrorMessage = errorMessage
         };
+    }
+
+    private static IReadOnlyList<string> BuildAllowedActions(ImportedLegacyOrderLookupModel? importedOrder)
+    {
+        var actions = new List<string>();
+
+        if (importedOrder?.SalesOrderId is not null)
+        {
+            actions.Add(ImportLegacyOrderResult.ViewExistingSalesOrderAction);
+        }
+
+        if (importedOrder?.BillingDocumentId is not null)
+        {
+            actions.Add(ImportLegacyOrderResult.ViewExistingBillingDocumentAction);
+        }
+
+        if (importedOrder?.FiscalDocumentId is not null)
+        {
+            actions.Add(ImportLegacyOrderResult.ViewExistingFiscalDocumentAction);
+        }
+
+        actions.Add(ImportLegacyOrderResult.ReimportNotAvailableAction);
+        actions.Add(ImportLegacyOrderResult.ReimportPreviewNotAvailableYetAction);
+
+        return actions;
     }
 
     private static SalesOrder MapSalesOrder(

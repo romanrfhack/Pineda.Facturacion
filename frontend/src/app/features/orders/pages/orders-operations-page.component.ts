@@ -8,6 +8,7 @@ import { OrdersApiService } from '../infrastructure/orders-api.service';
 import {
   CreateBillingDocumentResponse,
   ImportLegacyOrderResponse,
+  ImportLegacyOrderAllowedAction,
   LegacyOrderListItem,
   SearchLegacyOrdersResponse
 } from '../models/orders.models';
@@ -15,6 +16,7 @@ import { BillingDocumentCardComponent } from '../components/billing-document-car
 import { FeedbackService } from '../../../core/ui/feedback.service';
 import { extractApiErrorMessage } from '../../../core/http/api-error-message';
 import { StatusBadgeComponent } from '../../../shared/components/status-badge.component';
+import { extractImportLegacyOrderConflict, ImportLegacyOrderConflictViewModel } from '../application/import-legacy-order-conflict';
 
 type QuickRange = 'today' | 'yesterday' | 'last7' | 'custom';
 
@@ -195,6 +197,56 @@ type QuickRange = 'today' | 'yesterday' | 'last7' | 'custom';
 
         @if (localError()) {
           <p class="error">{{ localError() }}</p>
+        } @else if (importConflict(); as conflict) {
+          <section class="conflict-panel">
+            <div class="section-header">
+              <div>
+                <p class="eyebrow">Conflicto detectado</p>
+                <h3>La orden legacy {{ conflict.legacyOrderId }} cambió después de la importación</h3>
+              </div>
+              <app-status-badge label="Conflicto" tone="warning" />
+            </div>
+
+            <p class="helper">{{ conflict.errorMessage }}</p>
+
+            <dl class="conflict-grid">
+              <div><dt>Sales order existente</dt><dd>{{ conflict.existingSalesOrderId ?? 'N/D' }}</dd></div>
+              <div><dt>Estatus sales order</dt><dd>{{ conflict.existingSalesOrderStatus ?? 'N/D' }}</dd></div>
+              <div><dt>Billing document existente</dt><dd>{{ conflict.existingBillingDocumentId ?? 'N/D' }}</dd></div>
+              <div><dt>Estatus billing</dt><dd>{{ conflict.existingBillingDocumentStatus ?? 'N/D' }}</dd></div>
+              <div><dt>Fiscal document existente</dt><dd>{{ conflict.existingFiscalDocumentId ?? 'N/D' }}</dd></div>
+              <div><dt>Estatus fiscal</dt><dd>{{ conflict.existingFiscalDocumentStatus ?? 'N/D' }}</dd></div>
+              <div><dt>UUID fiscal</dt><dd>{{ conflict.fiscalUuid ?? 'N/D' }}</dd></div>
+              <div><dt>Importada el</dt><dd>{{ conflict.importedAtUtc ? (conflict.importedAtUtc | date:'dd/MM/yyyy HH:mm') : 'N/D' }}</dd></div>
+            </dl>
+
+            <dl class="conflict-grid">
+              <div><dt>Hash importado</dt><dd class="mono">{{ conflict.existingSourceHash ?? 'N/D' }}</dd></div>
+              <div><dt>Hash actual</dt><dd class="mono">{{ conflict.currentSourceHash ?? 'N/D' }}</dd></div>
+            </dl>
+
+            <div class="actions">
+              @if (hasAllowedAction(conflict, 'view_existing_sales_order') && conflict.existingSalesOrderId) {
+                <button type="button" class="secondary" (click)="openExistingSalesOrderConflict(conflict)">
+                  Ver sales order existente
+                </button>
+              }
+
+              @if (hasAllowedAction(conflict, 'view_existing_billing_document') && conflict.existingBillingDocumentId) {
+                <button type="button" class="secondary" (click)="openExistingBillingDocumentConflict(conflict)">
+                  Abrir billing document existente
+                </button>
+              }
+
+              @if (hasAllowedAction(conflict, 'view_existing_fiscal_document') && conflict.existingFiscalDocumentId) {
+                <button type="button" class="secondary" (click)="openExistingFiscalDocumentConflict(conflict)">
+                  Abrir fiscal document existente
+                </button>
+              }
+            </div>
+
+            <p class="helper">La reimportación real sigue bloqueada en esta fase. Usa las entidades existentes para revisar el caso.</p>
+          </section>
         } @else {
           <p class="helper">Puedes seguir usando el flujo manual como respaldo, pero la operación principal ahora parte de la lista paginada de órdenes.</p>
         }
@@ -228,6 +280,11 @@ type QuickRange = 'today' | 'yesterday' | 'last7' | 'custom';
     th { font-size:0.85rem; color:#5f6b76; background:#faf6ee; }
     tr.selected { background:#f7f1e3; }
     .pager { display:flex; justify-content:space-between; gap:1rem; align-items:center; flex-wrap:wrap; }
+    .conflict-panel { border:1px solid #e6c981; border-radius:0.9rem; background:#fff8ea; padding:1rem; display:grid; gap:1rem; }
+    .conflict-grid { margin:0; display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:0.75rem; }
+    .conflict-grid dt { font-size:0.82rem; color:#6d6d6d; }
+    .conflict-grid dd { margin:0.2rem 0 0; font-weight:600; }
+    .mono { font-family:ui-monospace, SFMono-Regular, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap:anywhere; }
   `],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -252,6 +309,7 @@ export class OrdersOperationsPageComponent implements OnInit {
   protected readonly localError = signal<string | null>(null);
   protected readonly ordersPage = signal<SearchLegacyOrdersResponse | null>(null);
   protected readonly importedOrder = signal<ImportLegacyOrderResponse | null>(null);
+  protected readonly importConflict = signal<ImportLegacyOrderConflictViewModel | null>(null);
   protected readonly billingDocument = signal<CreateBillingDocumentResponse | null>(null);
   protected readonly selectedLegacyOrderId = signal<string | null>(null);
   protected readonly billingButtonLabel = computed(() =>
@@ -321,6 +379,7 @@ export class OrdersOperationsPageComponent implements OnInit {
 
   protected async continueOrder(order: LegacyOrderListItem): Promise<void> {
     this.localError.set(null);
+    this.importConflict.set(null);
     this.selectedLegacyOrderId.set(order.legacyOrderId);
     this.legacyOrderId = order.legacyOrderId;
     this.importedOrder.set(toImportedOrder(order));
@@ -416,6 +475,7 @@ export class OrdersOperationsPageComponent implements OnInit {
 
   private async importOrderInternal(legacyOrderId: string, loadingKey: string): Promise<void> {
     this.localError.set(null);
+    this.importConflict.set(null);
     this.billingDocument.set(null);
     this.loadingImportOrderId.set(loadingKey);
 
@@ -436,10 +496,75 @@ export class OrdersOperationsPageComponent implements OnInit {
           ? 'La orden ya había sido importada. Se reutilizó el snapshot.'
           : 'La orden legada se importó correctamente. Puedes continuar con el documento de facturación.');
     } catch (error) {
+      const conflict = extractImportLegacyOrderConflict(error);
+      if (conflict) {
+        this.legacyOrderId = legacyOrderId;
+        this.selectedLegacyOrderId.set(legacyOrderId);
+        this.importConflict.set(conflict);
+        this.localError.set(null);
+        return;
+      }
+
       this.localError.set(extractErrorMessage(error));
     } finally {
       this.loadingImportOrderId.set(null);
     }
+  }
+
+  protected hasAllowedAction(conflict: ImportLegacyOrderConflictViewModel, action: ImportLegacyOrderAllowedAction): boolean {
+    return conflict.allowedActions.includes(action);
+  }
+
+  protected openExistingSalesOrderConflict(conflict: ImportLegacyOrderConflictViewModel): void {
+    this.importedOrder.set({
+      outcome: 'Conflict',
+      isSuccess: false,
+      isIdempotent: true,
+      errorCode: conflict.errorCode,
+      errorMessage: conflict.errorMessage,
+      sourceSystem: 'legacy',
+      sourceTable: 'pedidos',
+      legacyOrderId: conflict.legacyOrderId,
+      sourceHash: conflict.currentSourceHash ?? '',
+      salesOrderId: conflict.existingSalesOrderId,
+      importStatus: conflict.existingSalesOrderStatus,
+      existingSalesOrderId: conflict.existingSalesOrderId,
+      existingSalesOrderStatus: conflict.existingSalesOrderStatus,
+      existingBillingDocumentId: conflict.existingBillingDocumentId,
+      existingBillingDocumentStatus: conflict.existingBillingDocumentStatus,
+      existingFiscalDocumentId: conflict.existingFiscalDocumentId,
+      existingFiscalDocumentStatus: conflict.existingFiscalDocumentStatus,
+      fiscalUuid: conflict.fiscalUuid,
+      importedAtUtc: conflict.importedAtUtc,
+      existingSourceHash: conflict.existingSourceHash,
+      currentSourceHash: conflict.currentSourceHash,
+      allowedActions: conflict.allowedActions
+    });
+
+    if (conflict.existingBillingDocumentId) {
+      this.billingDocument.set({
+        outcome: 'Conflict',
+        isSuccess: false,
+        errorMessage: conflict.errorMessage,
+        salesOrderId: conflict.existingSalesOrderId ?? 0,
+        billingDocumentId: conflict.existingBillingDocumentId,
+        billingDocumentStatus: conflict.existingBillingDocumentStatus
+      });
+    }
+  }
+
+  protected async openExistingBillingDocumentConflict(conflict: ImportLegacyOrderConflictViewModel): Promise<void> {
+    await this.openBillingDocument(conflict.existingBillingDocumentId);
+  }
+
+  protected async openExistingFiscalDocumentConflict(conflict: ImportLegacyOrderConflictViewModel): Promise<void> {
+    if (!conflict.existingFiscalDocumentId) {
+      return;
+    }
+
+    await this.router.navigate(['/app/fiscal-documents', conflict.existingFiscalDocumentId], {
+      queryParams: conflict.existingBillingDocumentId ? { billingDocumentId: conflict.existingBillingDocumentId } : {}
+    });
   }
 
   private updateOrderInPage(legacyOrderId: string, updater: (order: LegacyOrderListItem) => LegacyOrderListItem): void {
@@ -536,12 +661,14 @@ function toImportedOrder(order: LegacyOrderListItem): ImportLegacyOrderResponse 
     outcome: 'Idempotent',
     isSuccess: true,
     isIdempotent: true,
+    errorCode: null,
     sourceSystem: 'legacy',
     sourceTable: 'pedidos',
     legacyOrderId: order.legacyOrderId,
     sourceHash: '',
     salesOrderId: order.salesOrderId ?? null,
-    importStatus: order.importStatus ?? 'Imported'
+    importStatus: order.importStatus ?? 'Imported',
+    allowedActions: []
   };
 }
 
