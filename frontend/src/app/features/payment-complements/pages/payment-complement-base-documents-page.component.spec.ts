@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { FeedbackService } from '../../../core/ui/feedback.service';
 import { PaymentComplementsApiService } from '../infrastructure/payment-complements-api.service';
 import { PaymentComplementBaseDocumentsPageComponent } from './payment-complement-base-documents-page.component';
@@ -221,6 +221,42 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
           }
         ]
       })),
+      registerInternalBaseDocumentPayment: vi.fn().mockReturnValue(of({
+        outcome: 'RegisteredAndApplied',
+        isSuccess: true,
+        warningMessages: [],
+        fiscalDocumentId: 501,
+        accountsReceivableInvoiceId: 201,
+        accountsReceivablePaymentId: 9002,
+        appliedAmount: 36,
+        remainingBalance: 40,
+        remainingPaymentAmount: 0,
+        repOperationalStatus: 'Eligible',
+        isEligible: true,
+        isBlocked: false,
+        eligibilityReason: 'CFDI interno vigente, timbrado, con PPD/99 y saldo pendiente.',
+        operationalState: {
+          lastEligibilityEvaluatedAtUtc: '2026-04-03T09:00:00Z',
+          lastEligibilityStatus: 'Eligible',
+          lastPrimaryReasonCode: 'EligibleInternalRep',
+          lastPrimaryReasonMessage: 'CFDI interno vigente, timbrado, con PPD/99 y saldo pendiente.',
+          repPendingFlag: true,
+          lastRepIssuedAtUtc: '2026-04-02T12:05:00Z',
+          repCount: 1,
+          totalPaidApplied: 76
+        },
+        applications: [
+          {
+            applicationId: 9101,
+            accountsReceivablePaymentId: 9002,
+            accountsReceivableInvoiceId: 201,
+            applicationSequence: 2,
+            appliedAmount: 36,
+            previousBalance: 76,
+            newBalance: 40
+          }
+        ]
+      })),
       ...overrides
     };
   }
@@ -248,6 +284,7 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Cliente Elegible');
     expect(fixture.nativeElement.textContent).toContain('Elegible');
     expect(fixture.nativeElement.textContent).toContain('Bloqueado');
+    expect(fixture.nativeElement.textContent).toContain('Registrar pago');
   });
 
   it('applies filters through the internal base-document search endpoint', async () => {
@@ -290,6 +327,229 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('UUID-PC-1');
     expect(fixture.nativeElement.textContent).toContain('EligibleInternalRep');
     expect(fixture.nativeElement.textContent).toContain('FacturaloPlus');
+  });
+
+  it('renders the payment form from the base-document context and submits successfully', async () => {
+    const getInternalBaseDocumentByFiscalDocumentId = vi.fn()
+      .mockReturnValueOnce(of({
+        summary: {
+          fiscalDocumentId: 501,
+          billingDocumentId: 401,
+          salesOrderId: 301,
+          accountsReceivableInvoiceId: 201,
+          fiscalStampId: 101,
+          uuid: 'UUID-REP-1',
+          series: 'A',
+          folio: '1001',
+          receiverRfc: 'BBB010101BBB',
+          receiverLegalName: 'Cliente Elegible',
+          issuedAtUtc: '2026-04-01T00:00:00Z',
+          paymentMethodSat: 'PPD',
+          paymentFormSat: '99',
+          currencyCode: 'MXN',
+          total: 116,
+          paidTotal: 40,
+          outstandingBalance: 76,
+          fiscalStatus: 'Stamped',
+          accountsReceivableStatus: 'PartiallyPaid',
+          repOperationalStatus: 'Eligible',
+          isEligible: true,
+          isBlocked: false,
+          eligibilityReason: 'CFDI interno vigente, timbrado, con PPD/99 y saldo pendiente.',
+          eligibility: {
+            status: 'Eligible',
+            primaryReasonCode: 'EligibleInternalRep',
+            primaryReasonMessage: 'CFDI interno vigente, timbrado, con PPD/99 y saldo pendiente.',
+            evaluatedAtUtc: '2026-04-03T08:00:00Z',
+            secondarySignals: []
+          },
+          registeredPaymentCount: 1,
+          paymentComplementCount: 1,
+          stampedPaymentComplementCount: 1,
+          lastRepIssuedAtUtc: '2026-04-02T12:05:00Z',
+          operationalState: {
+            lastEligibilityEvaluatedAtUtc: '2026-04-03T08:00:00Z',
+            lastEligibilityStatus: 'Eligible',
+            lastPrimaryReasonCode: 'EligibleInternalRep',
+            lastPrimaryReasonMessage: 'CFDI interno vigente, timbrado, con PPD/99 y saldo pendiente.',
+            repPendingFlag: true,
+            lastRepIssuedAtUtc: '2026-04-02T12:05:00Z',
+            repCount: 1,
+            totalPaidApplied: 40
+          }
+        },
+        operationalState: {
+          lastEligibilityEvaluatedAtUtc: '2026-04-03T08:00:00Z',
+          lastEligibilityStatus: 'Eligible',
+          lastPrimaryReasonCode: 'EligibleInternalRep',
+          lastPrimaryReasonMessage: 'CFDI interno vigente, timbrado, con PPD/99 y saldo pendiente.',
+          repPendingFlag: true,
+          lastRepIssuedAtUtc: '2026-04-02T12:05:00Z',
+          repCount: 1,
+          totalPaidApplied: 40
+        },
+        paymentHistory: [],
+        paymentApplications: [],
+        issuedReps: []
+      }))
+      .mockReturnValueOnce(of({
+        summary: {
+          fiscalDocumentId: 501,
+          billingDocumentId: 401,
+          salesOrderId: 301,
+          accountsReceivableInvoiceId: 201,
+          fiscalStampId: 101,
+          uuid: 'UUID-REP-1',
+          series: 'A',
+          folio: '1001',
+          receiverRfc: 'BBB010101BBB',
+          receiverLegalName: 'Cliente Elegible',
+          issuedAtUtc: '2026-04-01T00:00:00Z',
+          paymentMethodSat: 'PPD',
+          paymentFormSat: '99',
+          currencyCode: 'MXN',
+          total: 116,
+          paidTotal: 76,
+          outstandingBalance: 40,
+          fiscalStatus: 'Stamped',
+          accountsReceivableStatus: 'PartiallyPaid',
+          repOperationalStatus: 'Eligible',
+          isEligible: true,
+          isBlocked: false,
+          eligibilityReason: 'CFDI interno vigente, timbrado, con PPD/99 y saldo pendiente.',
+          eligibility: {
+            status: 'Eligible',
+            primaryReasonCode: 'EligibleInternalRep',
+            primaryReasonMessage: 'CFDI interno vigente, timbrado, con PPD/99 y saldo pendiente.',
+            evaluatedAtUtc: '2026-04-03T09:00:00Z',
+            secondarySignals: []
+          },
+          registeredPaymentCount: 2,
+          paymentComplementCount: 1,
+          stampedPaymentComplementCount: 1,
+          lastRepIssuedAtUtc: '2026-04-02T12:05:00Z',
+          operationalState: {
+            lastEligibilityEvaluatedAtUtc: '2026-04-03T09:00:00Z',
+            lastEligibilityStatus: 'Eligible',
+            lastPrimaryReasonCode: 'EligibleInternalRep',
+            lastPrimaryReasonMessage: 'CFDI interno vigente, timbrado, con PPD/99 y saldo pendiente.',
+            repPendingFlag: true,
+            lastRepIssuedAtUtc: '2026-04-02T12:05:00Z',
+            repCount: 1,
+            totalPaidApplied: 76
+          }
+        },
+        operationalState: {
+          lastEligibilityEvaluatedAtUtc: '2026-04-03T09:00:00Z',
+          lastEligibilityStatus: 'Eligible',
+          lastPrimaryReasonCode: 'EligibleInternalRep',
+          lastPrimaryReasonMessage: 'CFDI interno vigente, timbrado, con PPD/99 y saldo pendiente.',
+          repPendingFlag: true,
+          lastRepIssuedAtUtc: '2026-04-02T12:05:00Z',
+          repCount: 1,
+          totalPaidApplied: 76
+        },
+        paymentHistory: [
+          {
+            accountsReceivablePaymentId: 9002,
+            paymentDateUtc: '2026-04-03T00:00:00Z',
+            paymentFormSat: '03',
+            paymentAmount: 36,
+            amountAppliedToDocument: 36,
+            remainingPaymentAmount: 0,
+            reference: 'TRANS-123',
+            notes: 'Pago parcial',
+            paymentComplementId: null,
+            paymentComplementStatus: null,
+            paymentComplementUuid: null,
+            createdAtUtc: '2026-04-03T00:00:00Z'
+          }
+        ],
+        paymentApplications: [
+          {
+            accountsReceivablePaymentId: 9002,
+            applicationSequence: 2,
+            paymentDateUtc: '2026-04-03T00:00:00Z',
+            paymentFormSat: '03',
+            appliedAmount: 36,
+            previousBalance: 76,
+            newBalance: 40,
+            reference: 'TRANS-123',
+            notes: 'Pago parcial',
+            paymentAmount: 36,
+            remainingPaymentAmount: 0,
+            createdAtUtc: '2026-04-03T00:00:00Z'
+          }
+        ],
+        issuedReps: []
+      }));
+    const registerInternalBaseDocumentPayment = vi.fn().mockReturnValue(of({
+      outcome: 'RegisteredAndApplied',
+      isSuccess: true,
+      warningMessages: [],
+      fiscalDocumentId: 501,
+      accountsReceivableInvoiceId: 201,
+      accountsReceivablePaymentId: 9002,
+      appliedAmount: 36,
+      remainingBalance: 40,
+      remainingPaymentAmount: 0,
+      applications: [
+        {
+          applicationId: 9101,
+          accountsReceivablePaymentId: 9002,
+          accountsReceivableInvoiceId: 201,
+          applicationSequence: 2,
+          appliedAmount: 36,
+          previousBalance: 76,
+          newBalance: 40
+        }
+      ]
+    }));
+    const fixture = await configure({
+      getInternalBaseDocumentByFiscalDocumentId,
+      registerInternalBaseDocumentPayment
+    });
+
+    await fixture.componentInstance['openDetailModal'](fixture.componentInstance['items']()[0], true);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Registro de pago');
+    expect(fixture.nativeElement.textContent).toContain('Fecha de pago');
+
+    fixture.componentInstance['paymentDate'] = '2026-04-03';
+    fixture.componentInstance['paymentFormSat'] = '03';
+    fixture.componentInstance['paymentAmount'] = 36;
+    fixture.componentInstance['paymentReference'] = 'TRANS-123';
+    fixture.componentInstance['paymentNotes'] = 'Pago parcial';
+    await fixture.componentInstance['submitRegisterPayment']();
+    fixture.detectChanges();
+
+    expect(registerInternalBaseDocumentPayment).toHaveBeenCalledWith(501, {
+      paymentDate: '2026-04-03',
+      paymentFormSat: '03',
+      amount: 36,
+      reference: 'TRANS-123',
+      notes: 'Pago parcial'
+    });
+    expect(getInternalBaseDocumentByFiscalDocumentId).toHaveBeenCalledTimes(2);
+    expect(fixture.nativeElement.textContent).toContain('40.00');
+    expect(fixture.nativeElement.textContent).toContain('TRANS-123');
+  });
+
+  it('renders validation errors returned by payment registration', async () => {
+    const registerInternalBaseDocumentPayment = vi.fn().mockReturnValue(throwError(() => ({
+      error: { errorMessage: 'El monto del pago no puede exceder el saldo pendiente del CFDI.' }
+    })));
+    const fixture = await configure({ registerInternalBaseDocumentPayment });
+
+    await fixture.componentInstance['openDetailModal'](fixture.componentInstance['items']()[0], true);
+    fixture.componentInstance['paymentDate'] = '2026-04-03';
+    fixture.componentInstance['paymentFormSat'] = '03';
+    fixture.componentInstance['paymentAmount'] = 999;
+    await fixture.componentInstance['submitRegisterPayment']();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('El monto del pago no puede exceder el saldo pendiente del CFDI.');
   });
 
   it('renders explicit eligibility explanation for blocked documents in the tray', async () => {

@@ -47,4 +47,40 @@ describe('PaymentComplementsApiService', () => {
     req.flush({ page: 2, pageSize: 10, totalCount: 0, totalPages: 0, items: [] });
     httpTesting.verify();
   });
+
+  it('registers and applies a payment from the internal base-document context', () => {
+    const service = TestBed.inject(PaymentComplementsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.registerInternalBaseDocumentPayment(501, {
+      paymentDate: '2026-04-01',
+      paymentFormSat: '03',
+      amount: 40,
+      reference: 'TRANS-123',
+      notes: 'Pago parcial'
+    }).subscribe();
+
+    const req = httpTesting.expectOne('/api/payment-complements/base-documents/internal/501/payments');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({
+      paymentDate: '2026-04-01',
+      paymentFormSat: '03',
+      amount: 40,
+      reference: 'TRANS-123',
+      notes: 'Pago parcial'
+    });
+    req.flush({
+      outcome: 'RegisteredAndApplied',
+      isSuccess: true,
+      warningMessages: [],
+      fiscalDocumentId: 501,
+      accountsReceivableInvoiceId: 201,
+      accountsReceivablePaymentId: 9002,
+      appliedAmount: 40,
+      remainingBalance: 36,
+      remainingPaymentAmount: 0,
+      applications: []
+    });
+    httpTesting.verify();
+  });
 });

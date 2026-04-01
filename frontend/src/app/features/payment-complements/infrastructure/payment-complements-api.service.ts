@@ -7,6 +7,8 @@ import {
   InternalRepBaseDocumentDetailResponse,
   InternalRepBaseDocumentFilters,
   InternalRepBaseDocumentListResponse,
+  RegisterInternalRepBaseDocumentPaymentRequest,
+  RegisterInternalRepBaseDocumentPaymentResponse,
   PaymentComplementCancellationResponse,
   PaymentComplementDocumentResponse,
   PaymentComplementStampResponse,
@@ -41,6 +43,16 @@ export class PaymentComplementsApiService {
 
   getInternalBaseDocumentByFiscalDocumentId(fiscalDocumentId: number): Observable<InternalRepBaseDocumentDetailResponse> {
     return this.http.get<InternalRepBaseDocumentDetailResponse>(buildApiUrl(`/payment-complements/base-documents/internal/${fiscalDocumentId}`));
+  }
+
+  registerInternalBaseDocumentPayment(
+    fiscalDocumentId: number,
+    request: RegisterInternalRepBaseDocumentPaymentRequest
+  ): Observable<RegisterInternalRepBaseDocumentPaymentResponse> {
+    return this.http.post<RegisterInternalRepBaseDocumentPaymentResponse>(
+      buildApiUrl(`/payment-complements/base-documents/internal/${fiscalDocumentId}/payments`),
+      request
+    );
   }
 
   stamp(paymentComplementId: number): Observable<StampPaymentComplementResponse> {

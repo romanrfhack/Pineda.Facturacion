@@ -153,6 +153,43 @@ export interface InternalRepBaseDocumentFilters {
   hasRepEmitted?: boolean | null;
 }
 
+export interface RegisterInternalRepBaseDocumentPaymentRequest {
+  paymentDate: string;
+  paymentFormSat: string;
+  amount: number;
+  reference?: string | null;
+  notes?: string | null;
+}
+
+export interface RegisterInternalRepBaseDocumentPaymentApplicationResponse {
+  applicationId: number;
+  accountsReceivablePaymentId: number;
+  accountsReceivableInvoiceId: number;
+  applicationSequence: number;
+  appliedAmount: number;
+  previousBalance: number;
+  newBalance: number;
+}
+
+export interface RegisterInternalRepBaseDocumentPaymentResponse {
+  outcome: string;
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  warningMessages: string[];
+  fiscalDocumentId: number;
+  accountsReceivableInvoiceId?: number | null;
+  accountsReceivablePaymentId?: number | null;
+  appliedAmount: number;
+  remainingBalance: number;
+  remainingPaymentAmount: number;
+  repOperationalStatus?: string | null;
+  isEligible?: boolean | null;
+  isBlocked?: boolean | null;
+  eligibilityReason?: string | null;
+  operationalState?: InternalRepBaseDocumentOperationalStateResponse | null;
+  applications: RegisterInternalRepBaseDocumentPaymentApplicationResponse[];
+}
+
 export interface InternalRepBaseDocumentItemResponse {
   fiscalDocumentId: number;
   billingDocumentId?: number | null;

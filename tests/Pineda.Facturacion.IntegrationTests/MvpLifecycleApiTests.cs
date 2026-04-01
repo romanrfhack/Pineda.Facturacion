@@ -1314,6 +1314,114 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
+    public async Task InternalRepBaseDocuments_RegisterPayment_UpdatesDetailAndOperationalState()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-REP-PAY-1001", uuid: "UUID-REP-PAY-1001");
+
+        var createArBody = await (await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest()))
+            .Content.ReadFromJsonAsync<CreateAccountsReceivableInvoiceResponse>();
+        var invoiceId = createArBody!.AccountsReceivableInvoice!.Id;
+
+        var registerPaymentResponse = await client.PostAsJsonAsync($"/api/payment-complements/base-documents/internal/{fiscalDocumentId}/payments", new RegisterInternalRepBaseDocumentPaymentRequest
+        {
+            PaymentDate = new DateOnly(2026, 04, 05),
+            PaymentFormSat = "03",
+            Amount = 40m,
+            Reference = "TRANS-1001",
+            Notes = "Pago parcial desde bandeja REP"
+        });
+        Assert.Equal(HttpStatusCode.OK, registerPaymentResponse.StatusCode);
+
+        using var registerPaymentJson = await JsonDocument.ParseAsync(await registerPaymentResponse.Content.ReadAsStreamAsync());
+        Assert.Equal(fiscalDocumentId, registerPaymentJson.RootElement.GetProperty("fiscalDocumentId").GetInt64());
+        Assert.Equal(invoiceId, registerPaymentJson.RootElement.GetProperty("accountsReceivableInvoiceId").GetInt64());
+        Assert.Equal(40m, registerPaymentJson.RootElement.GetProperty("appliedAmount").GetDecimal());
+        Assert.Equal(76m, registerPaymentJson.RootElement.GetProperty("remainingBalance").GetDecimal());
+        Assert.Equal(0m, registerPaymentJson.RootElement.GetProperty("remainingPaymentAmount").GetDecimal());
+
+        var detailResponse = await client.GetAsync($"/api/payment-complements/base-documents/internal/{fiscalDocumentId}");
+        Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
+
+        using var detailJson = await JsonDocument.ParseAsync(await detailResponse.Content.ReadAsStreamAsync());
+        var root = detailJson.RootElement;
+        var summary = root.GetProperty("summary");
+        var paymentHistory = root.GetProperty("paymentHistory").EnumerateArray().ToList();
+        var paymentApplications = root.GetProperty("paymentApplications").EnumerateArray().ToList();
+        var operationalState = root.GetProperty("operationalState");
+
+        Assert.Equal(40m, summary.GetProperty("paidTotal").GetDecimal());
+        Assert.Equal(76m, summary.GetProperty("outstandingBalance").GetDecimal());
+        Assert.Equal("Eligible", summary.GetProperty("repOperationalStatus").GetString());
+        Assert.Equal(1, summary.GetProperty("registeredPaymentCount").GetInt32());
+        Assert.Equal(40m, operationalState.GetProperty("totalPaidApplied").GetDecimal());
+        Assert.True(operationalState.GetProperty("repPendingFlag").GetBoolean());
+
+        var paymentHistoryItem = Assert.Single(paymentHistory);
+        Assert.Equal("TRANS-1001", paymentHistoryItem.GetProperty("reference").GetString());
+        Assert.Equal(40m, paymentHistoryItem.GetProperty("amountAppliedToDocument").GetDecimal());
+
+        var paymentApplicationItem = Assert.Single(paymentApplications);
+        Assert.Equal(40m, paymentApplicationItem.GetProperty("appliedAmount").GetDecimal());
+        Assert.Equal(116m, paymentApplicationItem.GetProperty("previousBalance").GetDecimal());
+        Assert.Equal(76m, paymentApplicationItem.GetProperty("newBalance").GetDecimal());
+    }
+
+    [Fact]
+    public async Task InternalRepBaseDocuments_RegisterPayment_BlocksCancelledDocument()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-REP-PAY-1002", uuid: "UUID-REP-PAY-1002");
+
+        var createArResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest());
+        Assert.Equal(HttpStatusCode.OK, createArResponse.StatusCode);
+
+        var cancelFiscalResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/cancel", new FiscalDocumentsEndpoints.CancelFiscalDocumentRequest
+        {
+            CancellationReasonCode = "02"
+        });
+        Assert.Equal(HttpStatusCode.OK, cancelFiscalResponse.StatusCode);
+
+        var registerPaymentResponse = await client.PostAsJsonAsync($"/api/payment-complements/base-documents/internal/{fiscalDocumentId}/payments", new RegisterInternalRepBaseDocumentPaymentRequest
+        {
+            PaymentDate = new DateOnly(2026, 04, 05),
+            PaymentFormSat = "03",
+            Amount = 40m
+        });
+        Assert.Equal(HttpStatusCode.Conflict, registerPaymentResponse.StatusCode);
+
+        using var errorJson = await JsonDocument.ParseAsync(await registerPaymentResponse.Content.ReadAsStreamAsync());
+        Assert.Contains("cancelado", errorJson.RootElement.GetProperty("errorMessage").GetString()!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task InternalRepBaseDocuments_RegisterPayment_BlocksAmountGreaterThanOutstandingBalance()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-REP-PAY-1003", uuid: "UUID-REP-PAY-1003");
+
+        var createArResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest());
+        Assert.Equal(HttpStatusCode.OK, createArResponse.StatusCode);
+
+        var registerPaymentResponse = await client.PostAsJsonAsync($"/api/payment-complements/base-documents/internal/{fiscalDocumentId}/payments", new RegisterInternalRepBaseDocumentPaymentRequest
+        {
+            PaymentDate = new DateOnly(2026, 04, 05),
+            PaymentFormSat = "03",
+            Amount = 120m
+        });
+        Assert.Equal(HttpStatusCode.Conflict, registerPaymentResponse.StatusCode);
+
+        using var errorJson = await JsonDocument.ParseAsync(await registerPaymentResponse.Content.ReadAsStreamAsync());
+        Assert.Contains("saldo pendiente", errorJson.RootElement.GetProperty("errorMessage").GetString()!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Prepare_Stamp_Cancel_AndRefreshPaymentComplement_HappyPath()
     {
         await using var factory = new MvpApiFactory();

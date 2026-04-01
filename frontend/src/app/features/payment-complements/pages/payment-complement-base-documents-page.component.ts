@@ -8,7 +8,8 @@ import { getDisplayLabel } from '../../../shared/ui/display-labels';
 import { PaymentComplementsApiService } from '../infrastructure/payment-complements-api.service';
 import {
   InternalRepBaseDocumentDetailResponse,
-  InternalRepBaseDocumentItemResponse
+  InternalRepBaseDocumentItemResponse,
+  RegisterInternalRepBaseDocumentPaymentResponse
 } from '../models/payment-complements.models';
 
 @Component({
@@ -19,7 +20,7 @@ import {
       <header>
         <p class="eyebrow">Complementos de pago</p>
         <h2>Bandeja operativa de CFDI internos para REP</h2>
-        <p class="helper">La unidad operativa es el CFDI base. En esta fase la bandeja solo identifica, clasifica y da contexto; todavía no emite REP desde aquí.</p>
+        <p class="helper">La unidad operativa es el CFDI base. En esta fase la bandeja registra y aplica pagos sobre CFDI internos; el timbrado REP desde esta vista queda para la siguiente fase.</p>
       </header>
 
       <section class="card">
@@ -131,7 +132,14 @@ import {
                     </td>
                     <td>{{ item.registeredPaymentCount }}</td>
                     <td>{{ item.stampedPaymentComplementCount }}</td>
-                    <td><button type="button" class="secondary small" (click)="openDetailModal(item)">Ver contexto</button></td>
+                    <td>
+                      <div class="row-actions">
+                        <button type="button" class="secondary small" (click)="openDetailModal(item)">Ver contexto</button>
+                        @if (item.isEligible && item.outstandingBalance > 0) {
+                          <button type="button" class="small" (click)="openDetailModal(item, true)">Registrar pago</button>
+                        }
+                      </div>
+                    </td>
                   </tr>
                 }
               </tbody>
@@ -154,7 +162,12 @@ import {
                 <p class="eyebrow">Complementos de pago</p>
                 <h3>Contexto del CFDI base</h3>
               </div>
-              <button type="button" class="secondary" (click)="closeDetailModal()">Cerrar</button>
+              <div class="modal-actions">
+                @if (selectedDetail()?.summary?.isEligible && (selectedDetail()?.summary?.outstandingBalance ?? 0) > 0) {
+                  <button type="button" (click)="openRegisterPaymentForm()">Registrar pago</button>
+                }
+                <button type="button" class="secondary" (click)="closeDetailModal()">Cerrar</button>
+              </div>
             </div>
 
             @if (loadingDetail()) {
@@ -240,6 +253,48 @@ import {
                     <p class="helper">Todavía no existe snapshot operativo persistido para este CFDI.</p>
                   }
                 </article>
+              </section>
+
+              <section class="nested-card">
+                <div class="section-header">
+                  <div>
+                    <h4>Registro de pago</h4>
+                    <p class="helper">El pago se registra y se aplica completo al CFDI base actual. Este flujo no deja remanente sin aplicar.</p>
+                  </div>
+                  @if (!showRegisterPaymentForm()) {
+                    <button
+                      type="button"
+                      [disabled]="!detail.summary.isEligible || detail.summary.outstandingBalance <= 0 || submittingPayment()"
+                      (click)="openRegisterPaymentForm()">
+                      Registrar pago
+                    </button>
+                  }
+                </div>
+
+                @if (showRegisterPaymentForm()) {
+                  <form class="payment-form" (ngSubmit)="submitRegisterPayment()">
+                    <label><span>Fecha de pago</span><input [(ngModel)]="paymentDate" name="paymentDate" type="date" [disabled]="submittingPayment()" /></label>
+                    <label><span>Forma SAT</span><input [(ngModel)]="paymentFormSat" name="paymentFormSat" maxlength="3" [disabled]="submittingPayment()" /></label>
+                    <label><span>Monto</span><input [(ngModel)]="paymentAmount" name="paymentAmount" type="number" min="0" step="0.01" [disabled]="submittingPayment()" /></label>
+                    <label><span>Referencia</span><input [(ngModel)]="paymentReference" name="paymentReference" [disabled]="submittingPayment()" /></label>
+                    <label class="wide"><span>Notas</span><textarea [(ngModel)]="paymentNotes" name="paymentNotes" rows="3" [disabled]="submittingPayment()"></textarea></label>
+
+                    <div class="wide helper">
+                      Saldo disponible para aplicar: {{ detail.summary.outstandingBalance | number:'1.2-2' }}
+                    </div>
+
+                    @if (paymentError()) {
+                      <p class="error wide">{{ paymentError() }}</p>
+                    }
+
+                    <div class="actions wide">
+                      <button type="submit" [disabled]="submittingPayment()">{{ submittingPayment() ? 'Aplicando...' : 'Confirmar pago' }}</button>
+                      <button type="button" class="secondary" (click)="cancelRegisterPaymentForm()" [disabled]="submittingPayment()">Cancelar</button>
+                    </div>
+                  </form>
+                } @else if (!detail.summary.isEligible || detail.summary.outstandingBalance <= 0) {
+                  <p class="helper">El CFDI no puede recibir pagos desde esta vista: {{ detail.summary.eligibility.primaryReasonMessage }}</p>
+                }
               </section>
 
               <section class="nested-card">
@@ -392,8 +447,9 @@ import {
     button.secondary { background:#d8c49b; color:#182533; }
     button.small { padding:0.45rem 0.7rem; font-size:0.88rem; }
     button:disabled { opacity:0.6; cursor:not-allowed; }
-    .actions, .toolbar, .pagination { display:flex; flex-wrap:wrap; gap:0.75rem; align-items:center; }
+    .actions, .toolbar, .pagination, .modal-actions, .section-header, .row-actions { display:flex; flex-wrap:wrap; gap:0.75rem; align-items:center; }
     .toolbar, .pagination { justify-content:space-between; }
+    .section-header { justify-content:space-between; margin-bottom:0.75rem; }
     .table-wrap { overflow:auto; }
     table { width:100%; border-collapse:collapse; }
     th, td { text-align:left; padding:0.75rem 0.5rem; border-bottom:1px solid #ece5d7; vertical-align:top; }
@@ -417,6 +473,8 @@ import {
     .modal-card { width:min(1180px, 100%); max-height:calc(100vh - 2rem); overflow:auto; border:1px solid #d8d1c2; border-radius:1rem; background:#fff; padding:1rem; display:grid; gap:1rem; box-shadow:0 24px 60px rgba(24, 37, 51, 0.24); }
     .detail-modal { align-content:start; }
     .modal-header { display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; }
+    .payment-form { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:1rem; align-items:end; }
+    textarea { font:inherit; border:1px solid #c9d1da; border-radius:0.8rem; padding:0.75rem 0.9rem; resize:vertical; }
     .summary-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:1rem; }
     dl { display:grid; gap:0.5rem; margin:0; }
     dl div { display:grid; gap:0.15rem; }
@@ -453,6 +511,14 @@ export class PaymentComplementBaseDocumentsPageComponent {
   protected readonly selectedDetail = signal<InternalRepBaseDocumentDetailResponse | null>(null);
   protected readonly loadingDetail = signal(false);
   protected readonly detailError = signal<string | null>(null);
+  protected readonly showRegisterPaymentForm = signal(false);
+  protected readonly submittingPayment = signal(false);
+  protected readonly paymentError = signal<string | null>(null);
+  protected paymentDate = todayInputValue();
+  protected paymentFormSat = '03';
+  protected paymentAmount: number | null = null;
+  protected paymentReference = '';
+  protected paymentNotes = '';
 
   constructor() {
     void this.load();
@@ -499,21 +565,9 @@ export class PaymentComplementBaseDocumentsPageComponent {
     await this.load();
   }
 
-  protected async openDetailModal(item: InternalRepBaseDocumentItemResponse): Promise<void> {
+  protected async openDetailModal(item: InternalRepBaseDocumentItemResponse, openRegisterPayment = false): Promise<void> {
     this.showDetailModal.set(true);
-    this.loadingDetail.set(true);
-    this.detailError.set(null);
-    this.selectedDetail.set(null);
-
-    try {
-      this.selectedDetail.set(await firstValueFrom(this.api.getInternalBaseDocumentByFiscalDocumentId(item.fiscalDocumentId)));
-    } catch (error) {
-      const message = extractApiErrorMessage(error, 'No fue posible cargar el contexto del CFDI base.');
-      this.detailError.set(message);
-      this.feedbackService.show('error', message);
-    } finally {
-      this.loadingDetail.set(false);
-    }
+    await this.loadDetail(item.fiscalDocumentId, openRegisterPayment);
   }
 
   protected closeDetailModal(): void {
@@ -521,6 +575,63 @@ export class PaymentComplementBaseDocumentsPageComponent {
     this.selectedDetail.set(null);
     this.loadingDetail.set(false);
     this.detailError.set(null);
+    this.cancelRegisterPaymentForm();
+  }
+
+  protected openRegisterPaymentForm(): void {
+    const detail = this.selectedDetail();
+    if (!detail?.summary.isEligible || detail.summary.outstandingBalance <= 0) {
+      this.paymentError.set(detail?.summary.eligibility.primaryReasonMessage ?? 'El CFDI no puede recibir pagos desde esta vista.');
+      this.showRegisterPaymentForm.set(false);
+      return;
+    }
+
+    this.paymentDate = todayInputValue();
+    this.paymentFormSat = '03';
+    this.paymentAmount = Number(detail.summary.outstandingBalance.toFixed(2));
+    this.paymentReference = '';
+    this.paymentNotes = '';
+    this.paymentError.set(null);
+    this.showRegisterPaymentForm.set(true);
+  }
+
+  protected cancelRegisterPaymentForm(): void {
+    this.showRegisterPaymentForm.set(false);
+    this.submittingPayment.set(false);
+    this.paymentError.set(null);
+    this.paymentDate = todayInputValue();
+    this.paymentFormSat = '03';
+    this.paymentAmount = null;
+    this.paymentReference = '';
+    this.paymentNotes = '';
+  }
+
+  protected async submitRegisterPayment(): Promise<void> {
+    const detail = this.selectedDetail();
+    if (!detail) {
+      return;
+    }
+
+    this.paymentError.set(null);
+    this.submittingPayment.set(true);
+
+    try {
+      const result = await firstValueFrom(this.api.registerInternalBaseDocumentPayment(detail.summary.fiscalDocumentId, {
+        paymentDate: this.paymentDate,
+        paymentFormSat: this.paymentFormSat,
+        amount: Number(this.paymentAmount),
+        reference: this.paymentReference || null,
+        notes: this.paymentNotes || null
+      }));
+
+      await this.handleSuccessfulPaymentRegistration(detail.summary.fiscalDocumentId, result);
+    } catch (error) {
+      const message = extractApiErrorMessage(error, 'No fue posible registrar y aplicar el pago sobre el CFDI.');
+      this.paymentError.set(message);
+      this.feedbackService.show('error', message);
+    } finally {
+      this.submittingPayment.set(false);
+    }
   }
 
   protected buildSeriesFolio(item: InternalRepBaseDocumentItemResponse): string {
@@ -544,6 +655,46 @@ export class PaymentComplementBaseDocumentsPageComponent {
 
   protected formatOptionalUtc(value?: string | null): string {
     return value ? this.formatUtc(value) : '—';
+  }
+
+  private async handleSuccessfulPaymentRegistration(
+    fiscalDocumentId: number,
+    result: RegisterInternalRepBaseDocumentPaymentResponse
+  ): Promise<void> {
+    const paymentIdLabel = result.accountsReceivablePaymentId ?? 'nuevo';
+    const successMessage = `Pago ${paymentIdLabel} aplicado. Saldo pendiente: ${result.remainingBalance.toFixed(2)}.`;
+    if (result.warningMessages.length) {
+      this.feedbackService.show('warning', result.warningMessages.join(' | '));
+    }
+    this.feedbackService.show('success', successMessage);
+    this.cancelRegisterPaymentForm();
+    await this.loadDetail(fiscalDocumentId);
+    await this.load();
+  }
+
+  private async loadDetail(fiscalDocumentId: number, openRegisterPayment = false): Promise<void> {
+    this.loadingDetail.set(true);
+    this.detailError.set(null);
+    this.selectedDetail.set(null);
+    this.paymentError.set(null);
+
+    try {
+      const detail = await firstValueFrom(this.api.getInternalBaseDocumentByFiscalDocumentId(fiscalDocumentId));
+      this.selectedDetail.set(detail);
+
+      if (openRegisterPayment && detail.summary.isEligible && detail.summary.outstandingBalance > 0) {
+        this.openRegisterPaymentForm();
+      } else {
+        this.showRegisterPaymentForm.set(false);
+      }
+    } catch (error) {
+      this.showRegisterPaymentForm.set(false);
+      const message = extractApiErrorMessage(error, 'No fue posible cargar el contexto del CFDI base.');
+      this.detailError.set(message);
+      this.feedbackService.show('error', message);
+    } finally {
+      this.loadingDetail.set(false);
+    }
   }
 
   private async load(): Promise<void> {
@@ -587,4 +738,8 @@ function parseBooleanFilter(value: string): boolean | null {
   }
 
   return null;
+}
+
+function todayInputValue(): string {
+  return new Date().toISOString().slice(0, 10);
 }
