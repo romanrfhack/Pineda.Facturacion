@@ -72,6 +72,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<SearchIssuedFiscalDocumentsService>();
         services.AddScoped<ListIssuedFiscalDocumentSpecialFieldsService>();
         services.AddScoped<GetFiscalDocumentByIdService>();
+        services.AddScoped<SyncFiscalDocumentSpecialFieldsService>();
         services.AddScoped<GetFiscalStampByFiscalDocumentIdService>();
         services.AddScoped<QueryRemoteFiscalStampService>();
         services.AddScoped<GetFiscalDocumentPdfService>();

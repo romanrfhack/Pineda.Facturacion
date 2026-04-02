@@ -95,6 +95,18 @@ export async function mockInvoiceStampingJourney(page: Page): Promise<void> {
     await route.fulfill({ json: buildFiscalDocument(401, fiscalDocumentStatus) });
   });
 
+  await page.route('**/api/fiscal-documents/401/special-fields/sync', async (route) => {
+    await route.fulfill({
+      json: {
+        outcome: 'Updated',
+        isSuccess: true,
+        fiscalDocumentId: 401,
+        fiscalDocumentStatus,
+        specialFieldCount: 0
+      }
+    });
+  });
+
   await page.route('**/api/fiscal-documents/401/stamp', async (route) => {
     if (route.request().method() === 'GET') {
       if (!stampEvidence) {
@@ -441,6 +453,17 @@ export async function mockStampUnavailableFiscalDocument(page: Page): Promise<vo
   await page.route('**/api/fiscal-documents/406', async (route) => {
     await route.fulfill({ json: buildFiscalDocument(406, 'ReadyForStamping') });
   });
+  await page.route('**/api/fiscal-documents/406/special-fields/sync', async (route) => {
+    await route.fulfill({
+      json: {
+        outcome: 'Updated',
+        isSuccess: true,
+        fiscalDocumentId: 406,
+        fiscalDocumentStatus: 'ReadyForStamping',
+        specialFieldCount: 0
+      }
+    });
+  });
   await page.route('**/api/fiscal-documents/406/stamp', async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({ status: 404, json: { errorMessage: 'No encontrado.' } });
@@ -496,6 +519,32 @@ export async function mockSession(page: Page, options: SessionOptions): Promise<
         totalPages: 0,
         page: 1,
         pageSize: 10,
+        items: []
+      }
+    });
+  });
+
+  await page.route('**/api/audit-events**', async (route) => {
+    await route.fulfill({
+      json: {
+        page: 1,
+        pageSize: 25,
+        totalCount: 0,
+        totalPages: 0,
+        items: []
+      }
+    });
+  });
+
+  await page.route('**/api/billing-documents/pending-items', async (route) => {
+    await route.fulfill({ json: [] });
+  });
+
+  await page.route('**/api/fiscal-documents/cancellation-authorizations/pending', async (route) => {
+    await route.fulfill({
+      json: {
+        outcome: 'Retrieved',
+        isSuccess: true,
         items: []
       }
     });

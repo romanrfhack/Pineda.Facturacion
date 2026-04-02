@@ -29,6 +29,8 @@ import {
   RefreshFiscalDocumentStatusResponse,
   SendFiscalDocumentEmailRequest,
   SendFiscalDocumentEmailResponse,
+  SyncFiscalDocumentSpecialFieldsRequest,
+  SyncFiscalDocumentSpecialFieldsResponse,
   UpdateBillingDocumentOrderAssociationResponse,
   StampFiscalDocumentRequest,
   StampFiscalDocumentResponse
@@ -115,6 +117,12 @@ export class FiscalDocumentsApiService {
 
   stampFiscalDocument(fiscalDocumentId: number, request: StampFiscalDocumentRequest): Observable<StampFiscalDocumentResponse> {
     return this.http.post<StampFiscalDocumentResponse>(buildApiUrl(`/fiscal-documents/${fiscalDocumentId}/stamp`), request);
+  }
+
+  syncFiscalDocumentSpecialFields(
+    fiscalDocumentId: number,
+    request: SyncFiscalDocumentSpecialFieldsRequest): Observable<SyncFiscalDocumentSpecialFieldsResponse> {
+    return this.http.post<SyncFiscalDocumentSpecialFieldsResponse>(buildApiUrl(`/fiscal-documents/${fiscalDocumentId}/special-fields/sync`), request);
   }
 
   getStamp(fiscalDocumentId: number): Observable<FiscalStampResponse> {

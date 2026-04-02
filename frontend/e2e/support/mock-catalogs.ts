@@ -50,6 +50,19 @@ export async function mockCatalogReceiversBackend(page: Page): Promise<void> {
     });
   });
 
+  await page.route('**/api/orders/legacy**', async (route) => {
+    await route.fulfill({
+      json: {
+        isSuccess: true,
+        totalCount: 0,
+        totalPages: 0,
+        page: 1,
+        pageSize: 10,
+        items: []
+      }
+    });
+  });
+
   await page.route('**/api/fiscal/receivers/search**', async (route) => {
     const url = new URL(route.request().url());
     const query = (url.searchParams.get('q') || '').toUpperCase();
@@ -177,6 +190,19 @@ export async function mockCatalogReceiverImportsBackend(page: Page): Promise<voi
         displayName: 'Supervisor',
         roles: ['FiscalSupervisor'],
         isAuthenticated: true
+      }
+    });
+  });
+
+  await page.route('**/api/orders/legacy**', async (route) => {
+    await route.fulfill({
+      json: {
+        isSuccess: true,
+        totalCount: 0,
+        totalPages: 0,
+        page: 1,
+        pageSize: 10,
+        items: []
       }
     });
   });

@@ -228,6 +228,74 @@ public class FiscalStampingServicesTests
     }
 
     [Fact]
+    public async Task StampFiscalDocument_RequestBuilder_MapsGlobalInformation_For_Global_PublicoEnGeneral()
+    {
+        var fiscalDocument = CreateFiscalDocument();
+        fiscalDocument.ReceiverRfc = "XAXX010101000";
+        fiscalDocument.ReceiverLegalName = "PÚBLICO EN GENERAL";
+        fiscalDocument.SpecialFieldValues =
+        [
+            new FiscalDocumentSpecialFieldValue
+            {
+                FieldCode = "PERIODICIDAD",
+                Value = "01"
+            },
+            new FiscalDocumentSpecialFieldValue
+            {
+                FieldCode = "MESES",
+                Value = "03"
+            },
+            new FiscalDocumentSpecialFieldValue
+            {
+                FieldCode = "AÑO",
+                Value = "2026"
+            }
+        ];
+
+        var gateway = new FakeFiscalStampingGateway();
+        var service = new StampFiscalDocumentService(
+            new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
+            new FakeFiscalStampRepository(),
+            gateway,
+            new FakeUnitOfWork());
+
+        await service.ExecuteAsync(new StampFiscalDocumentCommand
+        {
+            FiscalDocumentId = fiscalDocument.Id
+        });
+
+        Assert.NotNull(gateway.LastRequest);
+        Assert.NotNull(gateway.LastRequest!.GlobalInformation);
+        Assert.Equal("01", gateway.LastRequest.GlobalInformation!.Periodicity);
+        Assert.Equal("03", gateway.LastRequest.GlobalInformation.Months);
+        Assert.Equal("2026", gateway.LastRequest.GlobalInformation.Year);
+    }
+
+    [Fact]
+    public async Task StampFiscalDocument_Global_PublicoEnGeneral_WithoutGlobalInformation_FailsBeforeCallingProvider()
+    {
+        var fiscalDocument = CreateFiscalDocument();
+        fiscalDocument.ReceiverRfc = "XAXX010101000";
+        fiscalDocument.ReceiverLegalName = "PUBLICO EN GENERAL";
+
+        var gateway = new FakeFiscalStampingGateway();
+        var service = new StampFiscalDocumentService(
+            new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
+            new FakeFiscalStampRepository(),
+            gateway,
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new StampFiscalDocumentCommand
+        {
+            FiscalDocumentId = fiscalDocument.Id
+        });
+
+        Assert.Equal(StampFiscalDocumentOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("InformacionGlobal", result.ErrorMessage, StringComparison.Ordinal);
+        Assert.Equal(0, gateway.CallCount);
+    }
+
+    [Fact]
     public async Task StampFiscalDocument_RetryRejected_AllowsRetry()
     {
         var fiscalDocument = CreateFiscalDocument();
