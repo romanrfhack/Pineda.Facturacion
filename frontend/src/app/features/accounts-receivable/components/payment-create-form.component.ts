@@ -37,9 +37,7 @@ import { CreateAccountsReceivablePaymentRequest } from '../models/accounts-recei
             <small class="helper">Cargando catálogo SAT...</small>
           } @else if (catalogError()) {
             <small class="helper error">{{ catalogError() }}</small>
-          } @else {
-            <small class="helper">Selecciona una forma de pago real válida para REP. 99 - Por definir no aplica aquí.</small>
-          }
+          } 
         </label>
 
         <label><span>Monto</span><input class="field-control" [(ngModel)]="model.amount" name="amount" type="number" min="0.01" step="0.01" required /></label>
