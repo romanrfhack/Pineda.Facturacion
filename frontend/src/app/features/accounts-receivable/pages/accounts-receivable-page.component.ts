@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CurrencyPipe, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
@@ -698,19 +699,40 @@ export class AccountsReceivablePageComponent {
   };
 
   constructor() {
-    if (this.detailMode()) {
-      if (this.accountsReceivableInvoiceId()) {
-        void this.loadInvoiceById(this.accountsReceivableInvoiceId()!);
-      } else if (this.fiscalDocumentId()) {
-        void this.loadInvoiceByFiscalDocumentId(this.fiscalDocumentId()!);
-      }
-      if (this.paymentId()) {
-        void this.loadPayment(this.paymentId()!);
-      }
-    } else {
-      void this.loadPortfolio();
-      void this.loadPayments();
-    }
+    this.route.queryParamMap
+      .pipe(takeUntilDestroyed())
+      .subscribe((params) => {
+        const accountsReceivableInvoiceId = parseNumber(params.get('invoiceId'));
+        const fiscalDocumentId = parseNumber(params.get('fiscalDocumentId'));
+        const paymentId = parseNumber(params.get('paymentId'));
+
+        this.accountsReceivableInvoiceId.set(accountsReceivableInvoiceId);
+        this.fiscalDocumentId.set(fiscalDocumentId);
+        this.paymentId.set(paymentId);
+
+        if (accountsReceivableInvoiceId !== null || fiscalDocumentId !== null || paymentId !== null) {
+          if (accountsReceivableInvoiceId !== null) {
+            void this.loadInvoiceById(accountsReceivableInvoiceId);
+          } else if (fiscalDocumentId !== null) {
+            void this.loadInvoiceByFiscalDocumentId(fiscalDocumentId);
+          } else {
+            this.invoice.set(null);
+          }
+
+          if (paymentId !== null) {
+            void this.loadPayment(paymentId);
+          } else {
+            this.payment.set(null);
+          }
+
+          return;
+        }
+
+        this.invoice.set(null);
+        this.payment.set(null);
+        void this.loadPortfolio();
+        void this.loadPayments();
+      });
   }
 
   protected formatFiscalLabel(item: AccountsReceivablePortfolioItemResponse): string {
