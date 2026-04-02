@@ -12,6 +12,8 @@ import {
   AccountsReceivablePortfolioItemResponse,
   AccountsReceivablePaymentSummaryItemResponse,
   ApplyAccountsReceivablePaymentRequest,
+  CreateCollectionCommitmentRequest,
+  CreateCollectionNoteRequest,
   CreateAccountsReceivablePaymentRequest,
   SearchAccountsReceivablePortfolioRequest,
   SearchAccountsReceivablePaymentsRequest
@@ -73,6 +75,33 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
                 <option value="false">Solo sin saldo</option>
               </select>
             </label>
+
+            <label>
+              <span>Aging</span>
+              <select [(ngModel)]="filters.agingFilter">
+                <option value="">Todos</option>
+                <option value="overdue">Solo vencidas</option>
+                <option value="dueSoon">Solo por vencer</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Compromiso</span>
+              <select [(ngModel)]="filters.pendingCommitment">
+                <option value="">Todos</option>
+                <option value="true">Con compromiso pendiente</option>
+                <option value="false">Sin compromiso pendiente</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Seguimiento</span>
+              <select [(ngModel)]="filters.followUpPending">
+                <option value="">Todos</option>
+                <option value="true">Seguimiento vencido</option>
+                <option value="false">Sin seguimiento vencido</option>
+              </select>
+            </label>
           </div>
 
           <div class="actions">
@@ -101,6 +130,7 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
                     <th>Vencimiento</th>
                     <th>Atraso</th>
                     <th>Estatus</th>
+                    <th>Cobranza</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -119,7 +149,27 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
                       <td>{{ item.outstandingBalance | currency:'MXN':'symbol':'1.2-2' }}</td>
                       <td>{{ item.dueAtUtc ? (item.dueAtUtc | date:'yyyy-MM-dd') : 'Sin vencimiento' }}</td>
                       <td>{{ item.daysPastDue }}</td>
-                      <td><span class="badge" [attr.data-status]="item.status">{{ item.status }}</span></td>
+                      <td>
+                        <span class="badge" [attr.data-status]="item.status">{{ item.status }}</span>
+                        <div class="subtle"><span class="badge" [attr.data-status]="item.agingBucket">{{ item.agingBucket }}</span></div>
+                      </td>
+                      <td>
+                        @if (item.hasPendingCommitment) {
+                          <div class="subtle">Compromiso {{ item.nextCommitmentDateUtc ? (item.nextCommitmentDateUtc | date:'yyyy-MM-dd') : 'pendiente' }}</div>
+                        } @else {
+                          <div class="subtle">Sin compromiso</div>
+                        }
+                        <div class="subtle">
+                          @if (item.nextFollowUpAtUtc) {
+                            Seguimiento {{ item.nextFollowUpAtUtc | date:'yyyy-MM-dd HH:mm' }}
+                          } @else {
+                            Sin seguimiento
+                          }
+                        </div>
+                        @if (item.followUpPending) {
+                          <div class="subtle">Seguimiento vencido</div>
+                        }
+                      </td>
                       <td>
                         @if (item.fiscalDocumentId) {
                           <a [routerLink]="['/app/accounts-receivable']" [queryParams]="{ fiscalDocumentId: item.fiscalDocumentId }">Ver detalle</a>
@@ -251,6 +301,128 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
 
       @if (detailMode() && invoice(); as currentInvoice) {
         <app-accounts-receivable-card [invoice]="currentInvoice" />
+
+        <section class="card">
+          <div class="section-head compact">
+            <h3>Seguimiento de cobranza</h3>
+            <div class="detail-badges">
+              <span class="badge" [attr.data-status]="currentInvoice.agingBucket">{{ currentInvoice.agingBucket }}</span>
+              @if (currentInvoice.hasPendingCommitment) {
+                <span class="badge" data-status="PendingCommitment">Compromiso pendiente</span>
+              }
+              @if (currentInvoice.followUpPending) {
+                <span class="badge" data-status="FollowUpPending">Seguimiento vencido</span>
+              }
+            </div>
+          </div>
+
+          <p class="helper">
+            Próximo compromiso {{ currentInvoice.nextCommitmentDateUtc ? (currentInvoice.nextCommitmentDateUtc | date:'yyyy-MM-dd') : 'sin fecha' }}
+            · Próximo seguimiento {{ currentInvoice.nextFollowUpAtUtc ? (currentInvoice.nextFollowUpAtUtc | date:'yyyy-MM-dd HH:mm') : 'sin fecha' }}
+          </p>
+
+          @if (permissionService.canManagePayments()) {
+            <div class="collection-forms">
+              <form class="card nested" (ngSubmit)="createCollectionCommitment()">
+                <h4>Registrar compromiso</h4>
+                <label>
+                  <span>Monto prometido</span>
+                  <input type="number" min="0.01" step="0.01" [(ngModel)]="collectionCommitmentForm.promisedAmount" name="promisedAmount" />
+                </label>
+                <label>
+                  <span>Fecha compromiso</span>
+                  <input type="date" [(ngModel)]="collectionCommitmentForm.promisedDateUtc" name="promisedDateUtc" />
+                </label>
+                <label>
+                  <span>Notas</span>
+                  <textarea rows="3" [(ngModel)]="collectionCommitmentForm.notes" name="promisedNotes"></textarea>
+                </label>
+                <button type="submit" [disabled]="loading()">Guardar compromiso</button>
+              </form>
+
+              <form class="card nested" (ngSubmit)="createCollectionNote()">
+                <h4>Registrar nota</h4>
+                <label>
+                  <span>Tipo</span>
+                  <select [(ngModel)]="collectionNoteForm.noteType" name="noteType">
+                    <option value="Call">Call</option>
+                    <option value="Reminder">Reminder</option>
+                    <option value="Agreement">Agreement</option>
+                    <option value="InternalNote">InternalNote</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Contenido</span>
+                  <textarea rows="3" [(ngModel)]="collectionNoteForm.content" name="noteContent"></textarea>
+                </label>
+                <label>
+                  <span>Siguiente seguimiento</span>
+                  <input type="datetime-local" [(ngModel)]="collectionNoteForm.nextFollowUpAtUtc" name="nextFollowUpAtUtc" />
+                </label>
+                <button type="submit" [disabled]="loading()">Guardar nota</button>
+              </form>
+            </div>
+          }
+
+          <div class="collection-history">
+            <div>
+              <h4>Compromisos</h4>
+              @if (!currentInvoice.collectionCommitments.length) {
+                <p class="helper">Sin compromisos registrados.</p>
+              } @else {
+                <table class="applications">
+                  <thead>
+                    <tr>
+                      <th>Fecha</th>
+                      <th>Monto</th>
+                      <th>Estatus</th>
+                      <th>Notas</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (commitment of currentInvoice.collectionCommitments; track commitment.id) {
+                      <tr>
+                        <td>{{ commitment.promisedDateUtc | date:'yyyy-MM-dd' }}</td>
+                        <td>{{ commitment.promisedAmount | currency:'MXN':'symbol':'1.2-2' }}</td>
+                        <td><span class="badge" [attr.data-status]="commitment.status">{{ commitment.status }}</span></td>
+                        <td>{{ commitment.notes || 'Sin notas' }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              }
+            </div>
+
+            <div>
+              <h4>Notas</h4>
+              @if (!currentInvoice.collectionNotes.length) {
+                <p class="helper">Sin notas de cobranza.</p>
+              } @else {
+                <table class="applications">
+                  <thead>
+                    <tr>
+                      <th>Fecha</th>
+                      <th>Tipo</th>
+                      <th>Contenido</th>
+                      <th>Próximo seguimiento</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (note of currentInvoice.collectionNotes; track note.id) {
+                      <tr>
+                        <td>{{ note.createdAtUtc | date:'yyyy-MM-dd HH:mm' }}</td>
+                        <td><span class="badge" [attr.data-status]="note.noteType">{{ note.noteType }}</span></td>
+                        <td>{{ note.content }}</td>
+                        <td>{{ note.nextFollowUpAtUtc ? (note.nextFollowUpAtUtc | date:'yyyy-MM-dd HH:mm') : 'Sin seguimiento' }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              }
+            </div>
+          </div>
+        </section>
       }
 
       @if (detailMode() && permissionService.canManagePayments()) {
@@ -334,8 +506,24 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
     .badge[data-status='ReadyToPrepare'] { background:#dff2ea; color:#116149; }
     .badge[data-status='Prepared'] { background:#e5ebff; color:#324d8f; }
     .badge[data-status='Stamped'] { background:#dde8ff; color:#24498a; }
+    .badge[data-status='Current'] { background:#eef1f4; color:#243444; }
+    .badge[data-status='DueSoon'] { background:#fff2d8; color:#8a5a00; }
+    .badge[data-status='Overdue'] { background:#fde3e3; color:#8a2d2d; }
+    .badge[data-status='PendingCommitment'] { background:#f6ead7; color:#7a5420; }
+    .badge[data-status='FollowUpPending'] { background:#fde3e3; color:#8a2d2d; }
+    .badge[data-status='Pending'] { background:#fff2d8; color:#8a5a00; }
+    .badge[data-status='Fulfilled'] { background:#dff2ea; color:#116149; }
+    .badge[data-status='Broken'] { background:#fde3e3; color:#8a2d2d; }
+    .badge[data-status='Call'] { background:#eef1f4; color:#243444; }
+    .badge[data-status='Reminder'] { background:#fff2d8; color:#8a5a00; }
+    .badge[data-status='Agreement'] { background:#dff2ea; color:#116149; }
+    .badge[data-status='InternalNote'] { background:#e5ebff; color:#324d8f; }
     .detail-badges { display:flex; gap:0.5rem; margin-top:0.75rem; flex-wrap:wrap; }
     .links { margin-top:1rem; }
+    textarea { border:1px solid #d8d1c2; border-radius:0.75rem; padding:0.7rem 0.85rem; background:#fffdf8; font:inherit; }
+    .collection-forms { display:grid; gap:1rem; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); margin-top:1rem; }
+    .nested { background:#fffdf8; }
+    .collection-history { display:grid; gap:1rem; margin-top:1rem; }
     @media (max-width: 720px) {
       .actions { flex-direction:column; }
     }
@@ -362,7 +550,10 @@ export class AccountsReceivablePageComponent {
     status: '',
     dueDateFrom: '',
     dueDateTo: '',
-    pendingBalance: 'true'
+    pendingBalance: 'true',
+    agingFilter: '',
+    pendingCommitment: '',
+    followUpPending: ''
   };
   protected readonly paymentFilters = {
     fiscalReceiverIdText: '',
@@ -371,6 +562,16 @@ export class AccountsReceivablePageComponent {
     receivedTo: '',
     hasUnappliedAmount: '',
     linkedFiscalDocumentIdText: ''
+  };
+  protected readonly collectionCommitmentForm = {
+    promisedAmount: '',
+    promisedDateUtc: '',
+    notes: ''
+  };
+  protected readonly collectionNoteForm = {
+    noteType: 'Call',
+    content: '',
+    nextFollowUpAtUtc: ''
   };
 
   constructor() {
@@ -414,6 +615,9 @@ export class AccountsReceivablePageComponent {
     this.filters.dueDateFrom = '';
     this.filters.dueDateTo = '';
     this.filters.pendingBalance = 'true';
+    this.filters.agingFilter = '';
+    this.filters.pendingCommitment = '';
+    this.filters.followUpPending = '';
     await this.applyPortfolioFilters();
   }
 
@@ -483,6 +687,50 @@ export class AccountsReceivablePageComponent {
     });
   }
 
+  protected async createCollectionCommitment(): Promise<void> {
+    const currentInvoice = this.invoice();
+    if (!currentInvoice) {
+      return;
+    }
+
+    await this.run(async () => {
+      const payload: CreateCollectionCommitmentRequest = {
+        promisedAmount: Number(this.collectionCommitmentForm.promisedAmount),
+        promisedDateUtc: new Date(this.collectionCommitmentForm.promisedDateUtc).toISOString(),
+        notes: this.collectionCommitmentForm.notes || null
+      };
+      await firstValueFrom(this.api.createCollectionCommitment(currentInvoice.id, payload));
+      await this.loadInvoice(this.fiscalDocumentId()!);
+      this.collectionCommitmentForm.promisedAmount = '';
+      this.collectionCommitmentForm.promisedDateUtc = '';
+      this.collectionCommitmentForm.notes = '';
+      this.feedbackService.show('success', 'Compromiso registrado.');
+    });
+  }
+
+  protected async createCollectionNote(): Promise<void> {
+    const currentInvoice = this.invoice();
+    if (!currentInvoice) {
+      return;
+    }
+
+    await this.run(async () => {
+      const payload: CreateCollectionNoteRequest = {
+        noteType: this.collectionNoteForm.noteType,
+        content: this.collectionNoteForm.content,
+        nextFollowUpAtUtc: this.collectionNoteForm.nextFollowUpAtUtc
+          ? new Date(this.collectionNoteForm.nextFollowUpAtUtc).toISOString()
+          : null
+      };
+      await firstValueFrom(this.api.createCollectionNote(currentInvoice.id, payload));
+      await this.loadInvoice(this.fiscalDocumentId()!);
+      this.collectionNoteForm.noteType = 'Call';
+      this.collectionNoteForm.content = '';
+      this.collectionNoteForm.nextFollowUpAtUtc = '';
+      this.feedbackService.show('success', 'Nota registrada.');
+    });
+  }
+
   private async loadPortfolio(): Promise<void> {
     const request = this.buildPortfolioRequest();
     const response = await firstValueFrom(this.api.searchPortfolio(request));
@@ -504,7 +752,11 @@ export class AccountsReceivablePageComponent {
       status: this.filters.status || null,
       dueDateFrom: this.filters.dueDateFrom || null,
       dueDateTo: this.filters.dueDateTo || null,
-      hasPendingBalance
+      hasPendingBalance,
+      overdueOnly: this.filters.agingFilter === 'overdue' ? true : null,
+      dueSoonOnly: this.filters.agingFilter === 'dueSoon' ? true : null,
+      hasPendingCommitment: parseNullableBoolean(this.filters.pendingCommitment),
+      followUpPending: parseNullableBoolean(this.filters.followUpPending)
     };
   }
 

@@ -13,4 +13,12 @@ public sealed class SearchAccountsReceivablePortfolioFilter
     public DateTime? DueDateToUtcInclusive { get; init; }
 
     public bool? HasPendingBalance { get; init; }
+
+    public bool? OverdueOnly { get; init; }
+
+    public bool? DueSoonOnly { get; init; }
+
+    public bool? HasPendingCommitment { get; init; }
+
+    public bool? FollowUpPending { get; init; }
 }

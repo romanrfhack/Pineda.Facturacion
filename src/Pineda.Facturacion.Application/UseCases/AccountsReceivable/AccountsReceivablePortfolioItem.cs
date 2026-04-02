@@ -31,4 +31,14 @@ public sealed class AccountsReceivablePortfolioItem
     public string Status { get; init; } = string.Empty;
 
     public int DaysPastDue { get; init; }
+
+    public string AgingBucket { get; init; } = string.Empty;
+
+    public bool HasPendingCommitment { get; init; }
+
+    public DateTime? NextCommitmentDateUtc { get; init; }
+
+    public DateTime? NextFollowUpAtUtc { get; init; }
+
+    public bool FollowUpPending { get; init; }
 }

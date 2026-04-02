@@ -1,4 +1,6 @@
 using Pineda.Facturacion.Application.Abstractions.Persistence;
+using Pineda.Facturacion.Application.Abstractions.Security;
+using Pineda.Facturacion.Application.Security;
 using Pineda.Facturacion.Application.UseCases.AccountsReceivable;
 using Pineda.Facturacion.Domain.Entities;
 using Pineda.Facturacion.Domain.Enums;
@@ -569,6 +571,221 @@ public class AccountsReceivableServicesTests
         Assert.Equal(AccountsReceivablePaymentRepStatus.Stamped, result.Items.Single(x => x.PaymentId == 3).RepStatus);
     }
 
+    [Fact]
+    public async Task CreateCollectionCommitment_CreatesPendingCommitment_ForOpenInvoice()
+    {
+        var invoice = CreateInvoice(total: 150m);
+        var repository = new ArFakeAccountsReceivableCollectionRepository();
+        var service = new CreateCollectionCommitmentService(
+            new ArFakeAccountsReceivableInvoiceRepository
+            {
+                TrackedById = new Dictionary<long, AccountsReceivableInvoice> { [invoice.Id] = invoice }
+            },
+            repository,
+            new ArFakeCurrentUserAccessor(),
+            new ArFakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new CreateCollectionCommitmentCommand
+        {
+            AccountsReceivableInvoiceId = invoice.Id,
+            PromisedAmount = 75m,
+            PromisedDateUtc = DateTime.UtcNow.Date.AddDays(2)
+        });
+
+        Assert.Equal(CreateCollectionCommitmentOutcome.Created, result.Outcome);
+        Assert.NotNull(repository.AddedCommitment);
+        Assert.Equal(CollectionCommitmentStatus.Pending, repository.AddedCommitment!.Status);
+    }
+
+    [Fact]
+    public async Task CreateCollectionCommitment_RejectsCancelledInvoice()
+    {
+        var invoice = CreateInvoice();
+        invoice.Status = AccountsReceivableInvoiceStatus.Cancelled;
+
+        var service = new CreateCollectionCommitmentService(
+            new ArFakeAccountsReceivableInvoiceRepository
+            {
+                TrackedById = new Dictionary<long, AccountsReceivableInvoice> { [invoice.Id] = invoice }
+            },
+            new ArFakeAccountsReceivableCollectionRepository(),
+            new ArFakeCurrentUserAccessor(),
+            new ArFakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new CreateCollectionCommitmentCommand
+        {
+            AccountsReceivableInvoiceId = invoice.Id,
+            PromisedAmount = 50m,
+            PromisedDateUtc = DateTime.UtcNow.Date.AddDays(1)
+        });
+
+        Assert.Equal(CreateCollectionCommitmentOutcome.Conflict, result.Outcome);
+    }
+
+    [Fact]
+    public async Task CreateCollectionCommitment_RejectsInvalidAmount()
+    {
+        var invoice = CreateInvoice();
+        var service = new CreateCollectionCommitmentService(
+            new ArFakeAccountsReceivableInvoiceRepository
+            {
+                TrackedById = new Dictionary<long, AccountsReceivableInvoice> { [invoice.Id] = invoice }
+            },
+            new ArFakeAccountsReceivableCollectionRepository(),
+            new ArFakeCurrentUserAccessor(),
+            new ArFakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new CreateCollectionCommitmentCommand
+        {
+            AccountsReceivableInvoiceId = invoice.Id,
+            PromisedAmount = 0m,
+            PromisedDateUtc = DateTime.UtcNow.Date.AddDays(1)
+        });
+
+        Assert.Equal(CreateCollectionCommitmentOutcome.ValidationFailed, result.Outcome);
+    }
+
+    [Fact]
+    public async Task CreateCollectionNote_DoesNotAlterInvoiceBalance()
+    {
+        var invoice = CreateInvoice(total: 150m);
+        var originalBalance = invoice.OutstandingBalance;
+        var service = new CreateCollectionNoteService(
+            new ArFakeAccountsReceivableInvoiceRepository
+            {
+                TrackedById = new Dictionary<long, AccountsReceivableInvoice> { [invoice.Id] = invoice }
+            },
+            new ArFakeAccountsReceivableCollectionRepository(),
+            new ArFakeCurrentUserAccessor(),
+            new ArFakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new CreateCollectionNoteCommand
+        {
+            AccountsReceivableInvoiceId = invoice.Id,
+            NoteType = "Call",
+            Content = "Cliente solicita recontacto",
+            NextFollowUpAtUtc = DateTime.UtcNow.AddDays(1)
+        });
+
+        Assert.Equal(CreateCollectionNoteOutcome.Created, result.Outcome);
+        Assert.Equal(originalBalance, invoice.OutstandingBalance);
+    }
+
+    [Fact]
+    public async Task ApplyAccountsReceivablePayment_FulfillsOpenCommitments_WhenInvoiceIsPaid()
+    {
+        var payment = CreatePayment(amount: 100m);
+        var invoice = CreateInvoice(total: 100m);
+        var collectionRepository = new ArFakeAccountsReceivableCollectionRepository
+        {
+            TrackedOpenCommitments =
+            [
+                new CollectionCommitment
+                {
+                    Id = 901,
+                    AccountsReceivableInvoiceId = invoice.Id,
+                    PromisedAmount = 100m,
+                    PromisedDateUtc = DateTime.UtcNow.Date.AddDays(1),
+                    Status = CollectionCommitmentStatus.Pending,
+                    CreatedAtUtc = DateTime.UtcNow,
+                    UpdatedAtUtc = DateTime.UtcNow
+                }
+            ]
+        };
+        var service = new ApplyAccountsReceivablePaymentService(
+            new ArFakeAccountsReceivablePaymentRepository { ExistingTracked = payment },
+            new ArFakeAccountsReceivableInvoiceRepository
+            {
+                TrackedById = new Dictionary<long, AccountsReceivableInvoice> { [invoice.Id] = invoice }
+            },
+            new ArFakeAccountsReceivablePaymentApplicationRepository(),
+            new ArFakePaymentComplementDocumentRepository(),
+            new SynchronizeAccountsReceivableCollectionStateService(collectionRepository),
+            new ArFakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new ApplyAccountsReceivablePaymentCommand
+        {
+            AccountsReceivablePaymentId = payment.Id,
+            Applications =
+            [
+                new ApplyAccountsReceivablePaymentApplicationInput
+                {
+                    AccountsReceivableInvoiceId = invoice.Id,
+                    AppliedAmount = 100m
+                }
+            ]
+        });
+
+        Assert.Equal(ApplyAccountsReceivablePaymentOutcome.Applied, result.Outcome);
+        Assert.Equal(CollectionCommitmentStatus.Fulfilled, collectionRepository.TrackedOpenCommitments.Single().Status);
+    }
+
+    [Fact]
+    public async Task SearchAccountsReceivablePortfolio_EnrichesAgingAndCommitmentFilters()
+    {
+        var today = DateTime.UtcNow.Date;
+        var overdueItem = new AccountsReceivablePortfolioItem
+        {
+            AccountsReceivableInvoiceId = 1,
+            FiscalDocumentId = 101,
+            OutstandingBalance = 100m,
+            DueAtUtc = today.AddDays(-3),
+            IssuedAtUtc = today.AddDays(-10),
+            Status = AccountsReceivableInvoiceStatus.Open.ToString()
+        };
+        var dueSoonItem = new AccountsReceivablePortfolioItem
+        {
+            AccountsReceivableInvoiceId = 2,
+            FiscalDocumentId = 102,
+            OutstandingBalance = 80m,
+            DueAtUtc = today.AddDays(3),
+            IssuedAtUtc = today.AddDays(-5),
+            Status = AccountsReceivableInvoiceStatus.Open.ToString()
+        };
+
+        var service = new SearchAccountsReceivablePortfolioService(
+            new ArFakeAccountsReceivableInvoiceRepository { PortfolioItems = [overdueItem, dueSoonItem] },
+            new ArFakeAccountsReceivableCollectionRepository
+            {
+                CommitmentItems =
+                [
+                    new CollectionCommitment
+                    {
+                        Id = 1,
+                        AccountsReceivableInvoiceId = dueSoonItem.AccountsReceivableInvoiceId,
+                        PromisedAmount = 50m,
+                        PromisedDateUtc = today.AddDays(2),
+                        Status = CollectionCommitmentStatus.Pending,
+                        CreatedAtUtc = DateTime.UtcNow,
+                        UpdatedAtUtc = DateTime.UtcNow
+                    }
+                ],
+                NoteItems =
+                [
+                    new CollectionNote
+                    {
+                        Id = 2,
+                        AccountsReceivableInvoiceId = overdueItem.AccountsReceivableInvoiceId,
+                        NoteType = CollectionNoteType.Call,
+                        Content = "Recontactar",
+                        NextFollowUpAtUtc = DateTime.UtcNow.AddDays(-1),
+                        CreatedAtUtc = DateTime.UtcNow
+                    }
+                ]
+            });
+
+        var overdueResult = await service.ExecuteAsync(new SearchAccountsReceivablePortfolioFilter { OverdueOnly = true });
+        var commitmentResult = await service.ExecuteAsync(new SearchAccountsReceivablePortfolioFilter { HasPendingCommitment = true });
+        var followUpResult = await service.ExecuteAsync(new SearchAccountsReceivablePortfolioFilter { FollowUpPending = true });
+
+        Assert.Single(overdueResult.Items);
+        Assert.Equal(AccountsReceivableAgingBucket.Overdue.ToString(), overdueResult.Items.Single().AgingBucket);
+        Assert.Single(commitmentResult.Items);
+        Assert.True(commitmentResult.Items.Single().HasPendingCommitment);
+        Assert.Single(followUpResult.Items);
+        Assert.True(followUpResult.Items.Single().FollowUpPending);
+    }
+
     private static ApplyAccountsReceivablePaymentService CreateApplyService(
         AccountsReceivablePayment payment,
         params AccountsReceivableInvoice[] invoices)
@@ -808,6 +1025,11 @@ public class AccountsReceivableServicesTests
         public Task SaveChangesAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
+    private sealed class ArFakeCurrentUserAccessor : ICurrentUserAccessor
+    {
+        public CurrentUserContext GetCurrentUser() => new() { IsAuthenticated = true, Username = "tester" };
+    }
+
     private sealed class ArFakePaymentComplementDocumentRepository : IPaymentComplementDocumentRepository
     {
         public PaymentComplementDocument? ExistingByPaymentId { get; set; }
@@ -856,5 +1078,57 @@ public class AccountsReceivableServicesTests
         public Task AddAsync(FiscalReceiver fiscalReceiver, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
         public Task UpdateAsync(FiscalReceiver fiscalReceiver, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class ArFakeAccountsReceivableCollectionRepository : IAccountsReceivableCollectionRepository
+    {
+        public CollectionCommitment? AddedCommitment { get; private set; }
+
+        public CollectionNote? AddedNote { get; private set; }
+
+        public List<CollectionCommitment> CommitmentItems { get; set; } = [];
+
+        public List<CollectionNote> NoteItems { get; set; } = [];
+
+        public List<CollectionCommitment> TrackedOpenCommitments { get; set; } = [];
+
+        public Task AddCommitmentAsync(CollectionCommitment commitment, CancellationToken cancellationToken = default)
+        {
+            AddedCommitment = commitment;
+            if (commitment.Id == 0)
+            {
+                commitment.Id = 501;
+            }
+
+            CommitmentItems.Add(commitment);
+            return Task.CompletedTask;
+        }
+
+        public Task AddNoteAsync(CollectionNote note, CancellationToken cancellationToken = default)
+        {
+            AddedNote = note;
+            if (note.Id == 0)
+            {
+                note.Id = 601;
+            }
+
+            NoteItems.Add(note);
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<CollectionCommitment>> ListCommitmentsByInvoiceIdAsync(long accountsReceivableInvoiceId, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<CollectionCommitment>>(CommitmentItems.Where(x => x.AccountsReceivableInvoiceId == accountsReceivableInvoiceId).ToList());
+
+        public Task<IReadOnlyList<CollectionCommitment>> ListCommitmentsByInvoiceIdsAsync(IReadOnlyCollection<long> accountsReceivableInvoiceIds, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<CollectionCommitment>>(CommitmentItems.Where(x => accountsReceivableInvoiceIds.Contains(x.AccountsReceivableInvoiceId)).ToList());
+
+        public Task<IReadOnlyList<CollectionCommitment>> GetTrackedOpenCommitmentsByInvoiceIdsAsync(IReadOnlyCollection<long> accountsReceivableInvoiceIds, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<CollectionCommitment>>(TrackedOpenCommitments.Where(x => accountsReceivableInvoiceIds.Contains(x.AccountsReceivableInvoiceId)).ToList());
+
+        public Task<IReadOnlyList<CollectionNote>> ListNotesByInvoiceIdAsync(long accountsReceivableInvoiceId, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<CollectionNote>>(NoteItems.Where(x => x.AccountsReceivableInvoiceId == accountsReceivableInvoiceId).ToList());
+
+        public Task<IReadOnlyList<CollectionNote>> ListNotesByInvoiceIdsAsync(IReadOnlyCollection<long> accountsReceivableInvoiceIds, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<CollectionNote>>(NoteItems.Where(x => accountsReceivableInvoiceIds.Contains(x.AccountsReceivableInvoiceId)).ToList());
     }
 }

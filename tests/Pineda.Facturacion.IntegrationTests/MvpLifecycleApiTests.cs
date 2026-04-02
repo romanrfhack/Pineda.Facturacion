@@ -1290,6 +1290,87 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
+    public async Task AccountsReceivableCollection_CreatesNotesAndCommitments_AndClosesPendingCommitment_WhenInvoiceIsPaid()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-AR-COL-1001", uuid: "UUID-AR-COL-1001");
+        var ensureBody = await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId);
+        var invoiceId = ensureBody.AccountsReceivableInvoice!.Id;
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+            var invoice = await dbContext.AccountsReceivableInvoices.SingleAsync(x => x.Id == invoiceId);
+            invoice.DueAtUtc = DateTime.UtcNow.Date.AddDays(-2);
+            await dbContext.SaveChangesAsync();
+        }
+
+        var commitmentResponse = await client.PostAsJsonAsync($"/api/accounts-receivable/invoices/{invoiceId}/collection-commitments", new CreateCollectionCommitmentRequest
+        {
+            PromisedAmount = 50m,
+            PromisedDateUtc = DateTime.UtcNow.Date.AddDays(1),
+            Notes = "Promesa confirmada por telefono"
+        });
+        Assert.Equal(HttpStatusCode.OK, commitmentResponse.StatusCode);
+
+        var noteResponse = await client.PostAsJsonAsync($"/api/accounts-receivable/invoices/{invoiceId}/collection-notes", new CreateCollectionNoteRequest
+        {
+            NoteType = "Call",
+            Content = "Cliente pide seguimiento urgente",
+            NextFollowUpAtUtc = DateTime.UtcNow.AddHours(-2)
+        });
+        Assert.Equal(HttpStatusCode.OK, noteResponse.StatusCode);
+
+        var detailResponse = await client.GetAsync($"/api/fiscal-documents/{fiscalDocumentId}/accounts-receivable");
+        Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
+        using (var detailJson = await JsonDocument.ParseAsync(await detailResponse.Content.ReadAsStreamAsync()))
+        {
+            Assert.Equal("Overdue", detailJson.RootElement.GetProperty("agingBucket").GetString());
+            Assert.True(detailJson.RootElement.GetProperty("hasPendingCommitment").GetBoolean());
+            Assert.True(detailJson.RootElement.GetProperty("followUpPending").GetBoolean());
+            Assert.Single(detailJson.RootElement.GetProperty("collectionCommitments").EnumerateArray());
+            Assert.Single(detailJson.RootElement.GetProperty("collectionNotes").EnumerateArray());
+        }
+
+        var filteredResponse = await client.GetAsync("/api/accounts-receivable/invoices?overdueOnly=true&hasPendingCommitment=true&followUpPending=true");
+        Assert.Equal(HttpStatusCode.OK, filteredResponse.StatusCode);
+        using (var filteredJson = await JsonDocument.ParseAsync(await filteredResponse.Content.ReadAsStreamAsync()))
+        {
+            var item = Assert.Single(filteredJson.RootElement.GetProperty("items").EnumerateArray());
+            Assert.Equal(fiscalDocumentId, item.GetProperty("fiscalDocumentId").GetInt64());
+        }
+
+        var paymentBody = await (await client.PostAsJsonAsync("/api/accounts-receivable/payments", new CreateAccountsReceivablePaymentRequest
+        {
+            PaymentDateUtc = DateTime.UtcNow,
+            PaymentFormSat = "03",
+            Amount = 116m,
+            Reference = "AR-COL-PAID-1"
+        })).Content.ReadFromJsonAsync<CreateAccountsReceivablePaymentResponse>();
+
+        var applyResponse = await client.PostAsJsonAsync($"/api/accounts-receivable/payments/{paymentBody!.Payment!.Id}/apply", new ApplyAccountsReceivablePaymentRequest
+        {
+            Applications =
+            [
+                new ApplyAccountsReceivablePaymentRowRequest
+                {
+                    AccountsReceivableInvoiceId = invoiceId,
+                    AppliedAmount = 116m
+                }
+            ]
+        });
+        Assert.Equal(HttpStatusCode.OK, applyResponse.StatusCode);
+
+        var commitmentsListResponse = await client.GetAsync($"/api/accounts-receivable/invoices/{invoiceId}/collection-commitments");
+        Assert.Equal(HttpStatusCode.OK, commitmentsListResponse.StatusCode);
+        using var commitmentsJson = await JsonDocument.ParseAsync(await commitmentsListResponse.Content.ReadAsStreamAsync());
+        var commitment = Assert.Single(commitmentsJson.RootElement.GetProperty("items").EnumerateArray());
+        Assert.Equal("Fulfilled", commitment.GetProperty("status").GetString());
+    }
+
+    [Fact]
     public async Task AccountsReceivablePayments_List_ReturnsOperationalStatusesAndFilters()
     {
         await using var factory = new MvpApiFactory();

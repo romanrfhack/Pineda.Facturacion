@@ -11,6 +11,7 @@ public class ApplyAccountsReceivablePaymentService
     private readonly IAccountsReceivableInvoiceRepository _accountsReceivableInvoiceRepository;
     private readonly IAccountsReceivablePaymentApplicationRepository _accountsReceivablePaymentApplicationRepository;
     private readonly IPaymentComplementDocumentRepository _paymentComplementDocumentRepository;
+    private readonly SynchronizeAccountsReceivableCollectionStateService? _collectionStateService;
     private readonly IUnitOfWork _unitOfWork;
 
     public ApplyAccountsReceivablePaymentService(
@@ -19,11 +20,29 @@ public class ApplyAccountsReceivablePaymentService
         IAccountsReceivablePaymentApplicationRepository accountsReceivablePaymentApplicationRepository,
         IPaymentComplementDocumentRepository paymentComplementDocumentRepository,
         IUnitOfWork unitOfWork)
+        : this(
+            accountsReceivablePaymentRepository,
+            accountsReceivableInvoiceRepository,
+            accountsReceivablePaymentApplicationRepository,
+            paymentComplementDocumentRepository,
+            null,
+            unitOfWork)
+    {
+    }
+
+    public ApplyAccountsReceivablePaymentService(
+        IAccountsReceivablePaymentRepository accountsReceivablePaymentRepository,
+        IAccountsReceivableInvoiceRepository accountsReceivableInvoiceRepository,
+        IAccountsReceivablePaymentApplicationRepository accountsReceivablePaymentApplicationRepository,
+        IPaymentComplementDocumentRepository paymentComplementDocumentRepository,
+        SynchronizeAccountsReceivableCollectionStateService? collectionStateService,
+        IUnitOfWork unitOfWork)
     {
         _accountsReceivablePaymentRepository = accountsReceivablePaymentRepository;
         _accountsReceivableInvoiceRepository = accountsReceivableInvoiceRepository;
         _accountsReceivablePaymentApplicationRepository = accountsReceivablePaymentApplicationRepository;
         _paymentComplementDocumentRepository = paymentComplementDocumentRepository;
+        _collectionStateService = collectionStateService;
         _unitOfWork = unitOfWork;
     }
 
@@ -159,6 +178,17 @@ public class ApplyAccountsReceivablePaymentService
         }
 
         payment.UpdatedAtUtc = now;
+
+        var paidInvoiceIds = validationPlans
+            .Where(x => x.Invoice.Status == AccountsReceivableInvoiceStatus.Paid)
+            .Select(x => x.Invoice.Id)
+            .Distinct()
+            .ToArray();
+
+        if (paidInvoiceIds.Length > 0 && _collectionStateService is not null)
+        {
+            await _collectionStateService.FulfillOpenCommitmentsAsync(paidInvoiceIds, now, cancellationToken);
+        }
 
         await _accountsReceivablePaymentApplicationRepository.AddRangeAsync(createdApplications, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);

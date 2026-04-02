@@ -2,6 +2,7 @@ using Pineda.Facturacion.Application.Abstractions.Pac;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Common;
 using Pineda.Facturacion.Application.Contracts.Pac;
+using Pineda.Facturacion.Application.UseCases.AccountsReceivable;
 using Pineda.Facturacion.Domain.Enums;
 
 namespace Pineda.Facturacion.Application.UseCases.FiscalDocuments;
@@ -12,6 +13,7 @@ public class RefreshFiscalDocumentStatusService
     private readonly IFiscalStampRepository _fiscalStampRepository;
     private readonly IAccountsReceivableInvoiceRepository _accountsReceivableInvoiceRepository;
     private readonly IFiscalStatusQueryGateway _fiscalStatusQueryGateway;
+    private readonly SynchronizeAccountsReceivableCollectionStateService? _collectionStateService;
     private readonly IUnitOfWork _unitOfWork;
 
     public RefreshFiscalDocumentStatusService(
@@ -20,11 +22,29 @@ public class RefreshFiscalDocumentStatusService
         IAccountsReceivableInvoiceRepository accountsReceivableInvoiceRepository,
         IFiscalStatusQueryGateway fiscalStatusQueryGateway,
         IUnitOfWork unitOfWork)
+        : this(
+            fiscalDocumentRepository,
+            fiscalStampRepository,
+            accountsReceivableInvoiceRepository,
+            fiscalStatusQueryGateway,
+            null,
+            unitOfWork)
+    {
+    }
+
+    public RefreshFiscalDocumentStatusService(
+        IFiscalDocumentRepository fiscalDocumentRepository,
+        IFiscalStampRepository fiscalStampRepository,
+        IAccountsReceivableInvoiceRepository accountsReceivableInvoiceRepository,
+        IFiscalStatusQueryGateway fiscalStatusQueryGateway,
+        SynchronizeAccountsReceivableCollectionStateService? collectionStateService,
+        IUnitOfWork unitOfWork)
     {
         _fiscalDocumentRepository = fiscalDocumentRepository;
         _fiscalStampRepository = fiscalStampRepository;
         _accountsReceivableInvoiceRepository = accountsReceivableInvoiceRepository;
         _fiscalStatusQueryGateway = fiscalStatusQueryGateway;
+        _collectionStateService = collectionStateService;
         _unitOfWork = unitOfWork;
     }
 
@@ -176,6 +196,10 @@ public class RefreshFiscalDocumentStatusService
 
         accountsReceivableInvoice.Status = AccountsReceivableInvoiceStatus.Cancelled;
         accountsReceivableInvoice.UpdatedAtUtc = now;
+        if (_collectionStateService is not null)
+        {
+            await _collectionStateService.CancelOpenCommitmentsAsync([accountsReceivableInvoice.Id], now, cancellationToken);
+        }
     }
 
     private static void AlignFiscalDocumentStatus(

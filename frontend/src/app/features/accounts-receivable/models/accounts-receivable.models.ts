@@ -28,6 +28,13 @@ export interface AccountsReceivableInvoiceResponse {
   outstandingBalance: number;
   createdAtUtc: string;
   updatedAtUtc: string;
+  agingBucket: string;
+  hasPendingCommitment: boolean;
+  nextCommitmentDateUtc?: string | null;
+  nextFollowUpAtUtc?: string | null;
+  followUpPending: boolean;
+  collectionCommitments: CollectionCommitmentResponse[];
+  collectionNotes: CollectionNoteResponse[];
   applications: AccountsReceivablePaymentApplicationResponse[];
 }
 
@@ -47,6 +54,11 @@ export interface AccountsReceivablePortfolioItemResponse {
   dueAtUtc?: string | null;
   status: string;
   daysPastDue: number;
+  agingBucket: string;
+  hasPendingCommitment: boolean;
+  nextCommitmentDateUtc?: string | null;
+  nextFollowUpAtUtc?: string | null;
+  followUpPending: boolean;
 }
 
 export interface AccountsReceivablePortfolioResponse {
@@ -60,6 +72,66 @@ export interface SearchAccountsReceivablePortfolioRequest {
   dueDateFrom?: string | null;
   dueDateTo?: string | null;
   hasPendingBalance?: boolean | null;
+  overdueOnly?: boolean | null;
+  dueSoonOnly?: boolean | null;
+  hasPendingCommitment?: boolean | null;
+  followUpPending?: boolean | null;
+}
+
+export interface CreateCollectionCommitmentRequest {
+  promisedAmount: number;
+  promisedDateUtc: string;
+  notes?: string | null;
+}
+
+export interface CollectionCommitmentResponse {
+  id: number;
+  accountsReceivableInvoiceId: number;
+  promisedAmount: number;
+  promisedDateUtc: string;
+  status: string;
+  notes?: string | null;
+  createdAtUtc: string;
+  updatedAtUtc: string;
+  createdByUsername?: string | null;
+}
+
+export interface CreateCollectionCommitmentResponse {
+  outcome: string;
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  commitment?: CollectionCommitmentResponse | null;
+}
+
+export interface CollectionCommitmentsResponse {
+  items: CollectionCommitmentResponse[];
+}
+
+export interface CreateCollectionNoteRequest {
+  noteType: string;
+  content: string;
+  nextFollowUpAtUtc?: string | null;
+}
+
+export interface CollectionNoteResponse {
+  id: number;
+  accountsReceivableInvoiceId: number;
+  noteType: string;
+  content: string;
+  nextFollowUpAtUtc?: string | null;
+  createdAtUtc: string;
+  createdByUsername?: string | null;
+}
+
+export interface CreateCollectionNoteResponse {
+  outcome: string;
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  note?: CollectionNoteResponse | null;
+}
+
+export interface CollectionNotesResponse {
+  items: CollectionNoteResponse[];
 }
 
 export interface CreateAccountsReceivableInvoiceRequest {

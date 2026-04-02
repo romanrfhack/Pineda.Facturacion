@@ -41,6 +41,10 @@ public class BillingDbContext : DbContext, IUnitOfWork
 
     public DbSet<AccountsReceivablePaymentApplication> AccountsReceivablePaymentApplications => Set<AccountsReceivablePaymentApplication>();
 
+    public DbSet<CollectionCommitment> CollectionCommitments => Set<CollectionCommitment>();
+
+    public DbSet<CollectionNote> CollectionNotes => Set<CollectionNote>();
+
     public DbSet<PaymentComplementDocument> PaymentComplementDocuments => Set<PaymentComplementDocument>();
 
     public DbSet<PaymentComplementRelatedDocument> PaymentComplementRelatedDocuments => Set<PaymentComplementRelatedDocument>();

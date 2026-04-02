@@ -2,6 +2,7 @@ using Pineda.Facturacion.Application.Abstractions.Pac;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Common;
 using Pineda.Facturacion.Application.Contracts.Pac;
+using Pineda.Facturacion.Application.UseCases.AccountsReceivable;
 using Pineda.Facturacion.Domain.Entities;
 using Pineda.Facturacion.Domain.Enums;
 
@@ -14,6 +15,7 @@ public class CancelFiscalDocumentService
     private readonly IFiscalCancellationRepository _fiscalCancellationRepository;
     private readonly IAccountsReceivableInvoiceRepository _accountsReceivableInvoiceRepository;
     private readonly IFiscalCancellationGateway _fiscalCancellationGateway;
+    private readonly SynchronizeAccountsReceivableCollectionStateService? _collectionStateService;
     private readonly IUnitOfWork _unitOfWork;
 
     public CancelFiscalDocumentService(
@@ -23,12 +25,32 @@ public class CancelFiscalDocumentService
         IAccountsReceivableInvoiceRepository accountsReceivableInvoiceRepository,
         IFiscalCancellationGateway fiscalCancellationGateway,
         IUnitOfWork unitOfWork)
+        : this(
+            fiscalDocumentRepository,
+            fiscalStampRepository,
+            fiscalCancellationRepository,
+            accountsReceivableInvoiceRepository,
+            fiscalCancellationGateway,
+            null,
+            unitOfWork)
+    {
+    }
+
+    public CancelFiscalDocumentService(
+        IFiscalDocumentRepository fiscalDocumentRepository,
+        IFiscalStampRepository fiscalStampRepository,
+        IFiscalCancellationRepository fiscalCancellationRepository,
+        IAccountsReceivableInvoiceRepository accountsReceivableInvoiceRepository,
+        IFiscalCancellationGateway fiscalCancellationGateway,
+        SynchronizeAccountsReceivableCollectionStateService? collectionStateService,
+        IUnitOfWork unitOfWork)
     {
         _fiscalDocumentRepository = fiscalDocumentRepository;
         _fiscalStampRepository = fiscalStampRepository;
         _fiscalCancellationRepository = fiscalCancellationRepository;
         _accountsReceivableInvoiceRepository = accountsReceivableInvoiceRepository;
         _fiscalCancellationGateway = fiscalCancellationGateway;
+        _collectionStateService = collectionStateService;
         _unitOfWork = unitOfWork;
     }
 
@@ -214,6 +236,10 @@ public class CancelFiscalDocumentService
 
         accountsReceivableInvoice.Status = AccountsReceivableInvoiceStatus.Cancelled;
         accountsReceivableInvoice.UpdatedAtUtc = now;
+        if (_collectionStateService is not null)
+        {
+            await _collectionStateService.CancelOpenCommitmentsAsync([accountsReceivableInvoice.Id], now, cancellationToken);
+        }
     }
 
     private static bool TryBuildCancellationRequest(

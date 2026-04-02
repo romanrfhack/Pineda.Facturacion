@@ -57,6 +57,34 @@ public static class AccountsReceivableEndpoints
             .WithSummary("List minimal accounts receivable portfolio rows")
             .Produces<AccountsReceivablePortfolioResponse>(StatusCodes.Status200OK);
 
+        group.MapGet("/invoices/{accountsReceivableInvoiceId:long}/collection-commitments", ListCollectionCommitmentsAsync)
+            .WithName("ListCollectionCommitments")
+            .WithSummary("List collection commitments for an accounts receivable invoice")
+            .Produces<CollectionCommitmentsResponse>(StatusCodes.Status200OK);
+
+        group.MapPost("/invoices/{accountsReceivableInvoiceId:long}/collection-commitments", CreateCollectionCommitmentAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.OperatorOrAbove)
+            .WithName("CreateCollectionCommitment")
+            .WithSummary("Create a collection commitment for an accounts receivable invoice")
+            .Produces<CreateCollectionCommitmentResponse>(StatusCodes.Status200OK)
+            .Produces<CreateCollectionCommitmentResponse>(StatusCodes.Status400BadRequest)
+            .Produces<CreateCollectionCommitmentResponse>(StatusCodes.Status404NotFound)
+            .Produces<CreateCollectionCommitmentResponse>(StatusCodes.Status409Conflict);
+
+        group.MapGet("/invoices/{accountsReceivableInvoiceId:long}/collection-notes", ListCollectionNotesAsync)
+            .WithName("ListCollectionNotes")
+            .WithSummary("List collection notes for an accounts receivable invoice")
+            .Produces<CollectionNotesResponse>(StatusCodes.Status200OK);
+
+        group.MapPost("/invoices/{accountsReceivableInvoiceId:long}/collection-notes", CreateCollectionNoteAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.OperatorOrAbove)
+            .WithName("CreateCollectionNote")
+            .WithSummary("Create a collection note for an accounts receivable invoice")
+            .Produces<CreateCollectionNoteResponse>(StatusCodes.Status200OK)
+            .Produces<CreateCollectionNoteResponse>(StatusCodes.Status400BadRequest)
+            .Produces<CreateCollectionNoteResponse>(StatusCodes.Status404NotFound)
+            .Produces<CreateCollectionNoteResponse>(StatusCodes.Status409Conflict);
+
         group.MapGet("/payments", SearchAccountsReceivablePaymentsAsync)
             .WithName("SearchAccountsReceivablePayments")
             .WithSummary("List minimal accounts receivable payment rows with operational status")
@@ -144,6 +172,8 @@ public static class AccountsReceivableEndpoints
     private static async Task<Results<Ok<AccountsReceivableInvoiceResponse>, NotFound>> GetAccountsReceivableInvoiceByFiscalDocumentIdAsync(
         long fiscalDocumentId,
         GetAccountsReceivableInvoiceByFiscalDocumentIdService service,
+        ListCollectionCommitmentsByInvoiceIdService listCollectionCommitmentsByInvoiceIdService,
+        ListCollectionNotesByInvoiceIdService listCollectionNotesByInvoiceIdService,
         CancellationToken cancellationToken)
     {
         var result = await service.ExecuteAsync(fiscalDocumentId, cancellationToken);
@@ -152,7 +182,9 @@ public static class AccountsReceivableEndpoints
             return TypedResults.NotFound();
         }
 
-        return TypedResults.Ok(MapInvoice(result.AccountsReceivableInvoice));
+        var commitments = await listCollectionCommitmentsByInvoiceIdService.ExecuteAsync(result.AccountsReceivableInvoice.Id, cancellationToken);
+        var notes = await listCollectionNotesByInvoiceIdService.ExecuteAsync(result.AccountsReceivableInvoice.Id, cancellationToken);
+        return TypedResults.Ok(MapInvoice(result.AccountsReceivableInvoice, commitments, notes));
     }
 
     private static async Task<Results<Ok<CreateAccountsReceivableInvoiceResponse>, BadRequest<CreateAccountsReceivableInvoiceResponse>, NotFound<CreateAccountsReceivableInvoiceResponse>>> EnsureAccountsReceivableInvoiceAsync(
@@ -248,6 +280,10 @@ public static class AccountsReceivableEndpoints
         DateOnly? dueDateFrom,
         DateOnly? dueDateTo,
         bool? hasPendingBalance,
+        bool? overdueOnly,
+        bool? dueSoonOnly,
+        bool? hasPendingCommitment,
+        bool? followUpPending,
         SearchAccountsReceivablePortfolioService service,
         CancellationToken cancellationToken)
     {
@@ -259,7 +295,11 @@ public static class AccountsReceivableEndpoints
                 Status = status,
                 DueDateFromUtc = dueDateFrom?.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
                 DueDateToUtcInclusive = dueDateTo?.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
-                HasPendingBalance = hasPendingBalance
+                HasPendingBalance = hasPendingBalance,
+                OverdueOnly = overdueOnly,
+                DueSoonOnly = dueSoonOnly,
+                HasPendingCommitment = hasPendingCommitment,
+                FollowUpPending = followUpPending
             },
             cancellationToken);
 
@@ -267,6 +307,116 @@ public static class AccountsReceivableEndpoints
         {
             Items = result.Items.Select(MapPortfolioItem).ToList()
         });
+    }
+
+    private static async Task<Ok<CollectionCommitmentsResponse>> ListCollectionCommitmentsAsync(
+        long accountsReceivableInvoiceId,
+        ListCollectionCommitmentsByInvoiceIdService service,
+        CancellationToken cancellationToken)
+    {
+        var items = await service.ExecuteAsync(accountsReceivableInvoiceId, cancellationToken);
+        return TypedResults.Ok(new CollectionCommitmentsResponse
+        {
+            Items = items.Select(MapCommitment).ToList()
+        });
+    }
+
+    private static async Task<Results<Ok<CreateCollectionCommitmentResponse>, BadRequest<CreateCollectionCommitmentResponse>, NotFound<CreateCollectionCommitmentResponse>, Conflict<CreateCollectionCommitmentResponse>>> CreateCollectionCommitmentAsync(
+        long accountsReceivableInvoiceId,
+        CreateCollectionCommitmentRequest request,
+        CreateCollectionCommitmentService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(new CreateCollectionCommitmentCommand
+        {
+            AccountsReceivableInvoiceId = accountsReceivableInvoiceId,
+            PromisedAmount = request.PromisedAmount,
+            PromisedDateUtc = request.PromisedDateUtc,
+            Notes = request.Notes
+        }, cancellationToken);
+
+        var response = new CreateCollectionCommitmentResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            Commitment = result.Commitment is null ? null : MapCommitment(result.Commitment)
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "CollectionCommitment.Create",
+            "CollectionCommitment",
+            response.Commitment?.Id.ToString() ?? accountsReceivableInvoiceId.ToString(),
+            result.Outcome.ToString(),
+            new { accountsReceivableInvoiceId, request.PromisedAmount, request.PromisedDateUtc },
+            new { response.Commitment?.Status },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            CreateCollectionCommitmentOutcome.Created => TypedResults.Ok(response),
+            CreateCollectionCommitmentOutcome.NotFound => TypedResults.NotFound(response),
+            CreateCollectionCommitmentOutcome.Conflict => TypedResults.Conflict(response),
+            _ => TypedResults.BadRequest(response)
+        };
+    }
+
+    private static async Task<Ok<CollectionNotesResponse>> ListCollectionNotesAsync(
+        long accountsReceivableInvoiceId,
+        ListCollectionNotesByInvoiceIdService service,
+        CancellationToken cancellationToken)
+    {
+        var items = await service.ExecuteAsync(accountsReceivableInvoiceId, cancellationToken);
+        return TypedResults.Ok(new CollectionNotesResponse
+        {
+            Items = items.Select(MapNote).ToList()
+        });
+    }
+
+    private static async Task<Results<Ok<CreateCollectionNoteResponse>, BadRequest<CreateCollectionNoteResponse>, NotFound<CreateCollectionNoteResponse>, Conflict<CreateCollectionNoteResponse>>> CreateCollectionNoteAsync(
+        long accountsReceivableInvoiceId,
+        CreateCollectionNoteRequest request,
+        CreateCollectionNoteService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(new CreateCollectionNoteCommand
+        {
+            AccountsReceivableInvoiceId = accountsReceivableInvoiceId,
+            NoteType = request.NoteType,
+            Content = request.Content,
+            NextFollowUpAtUtc = request.NextFollowUpAtUtc
+        }, cancellationToken);
+
+        var response = new CreateCollectionNoteResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            Note = result.Note is null ? null : MapNote(result.Note)
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "CollectionNote.Create",
+            "CollectionNote",
+            response.Note?.Id.ToString() ?? accountsReceivableInvoiceId.ToString(),
+            result.Outcome.ToString(),
+            new { accountsReceivableInvoiceId, request.NoteType, request.NextFollowUpAtUtc },
+            new { response.Note?.NoteType },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            CreateCollectionNoteOutcome.Created => TypedResults.Ok(response),
+            CreateCollectionNoteOutcome.NotFound => TypedResults.NotFound(response),
+            CreateCollectionNoteOutcome.Conflict => TypedResults.Conflict(response),
+            _ => TypedResults.BadRequest(response)
+        };
     }
 
     private static async Task<Results<Ok<AccountsReceivablePaymentResponse>, NotFound>> GetAccountsReceivablePaymentByIdAsync(
@@ -430,8 +580,21 @@ public static class AccountsReceivableEndpoints
         return TypedResults.Ok(PaymentComplementsEndpoints.MapPaymentComplement(result.PaymentComplementDocument));
     }
 
-    private static AccountsReceivableInvoiceResponse MapInvoice(AccountsReceivableInvoice invoice)
+    private static AccountsReceivableInvoiceResponse MapInvoice(
+        AccountsReceivableInvoice invoice,
+        IReadOnlyList<CollectionCommitmentProjection>? commitments = null,
+        IReadOnlyList<CollectionNoteProjection>? notes = null)
     {
+        commitments ??= [];
+        notes ??= [];
+        var collectionSummary = AccountsReceivableCollectionProjectionBuilder.BuildSummary(
+            invoice.OutstandingBalance,
+            invoice.Status.ToString(),
+            invoice.DueAtUtc,
+            commitments,
+            notes,
+            DateTime.UtcNow);
+
         return new AccountsReceivableInvoiceResponse
         {
             Id = invoice.Id,
@@ -452,6 +615,13 @@ public static class AccountsReceivableEndpoints
             OutstandingBalance = invoice.OutstandingBalance,
             CreatedAtUtc = invoice.CreatedAtUtc,
             UpdatedAtUtc = invoice.UpdatedAtUtc,
+            AgingBucket = collectionSummary.AgingBucket.ToString(),
+            HasPendingCommitment = collectionSummary.HasPendingCommitment,
+            NextCommitmentDateUtc = collectionSummary.NextCommitmentDateUtc,
+            NextFollowUpAtUtc = collectionSummary.NextFollowUpAtUtc,
+            FollowUpPending = collectionSummary.FollowUpPending,
+            CollectionCommitments = commitments.Select(MapCommitment).ToList(),
+            CollectionNotes = notes.Select(MapNote).ToList(),
             Applications = invoice.Applications
                 .OrderBy(x => x.ApplicationSequence)
                 .Select(MapApplication)
@@ -549,7 +719,42 @@ public static class AccountsReceivableEndpoints
             IssuedAtUtc = item.IssuedAtUtc,
             DueAtUtc = item.DueAtUtc,
             Status = item.Status,
-            DaysPastDue = item.DaysPastDue
+            DaysPastDue = item.DaysPastDue,
+            AgingBucket = item.AgingBucket,
+            HasPendingCommitment = item.HasPendingCommitment,
+            NextCommitmentDateUtc = item.NextCommitmentDateUtc,
+            NextFollowUpAtUtc = item.NextFollowUpAtUtc,
+            FollowUpPending = item.FollowUpPending
+        };
+    }
+
+    private static CollectionCommitmentResponse MapCommitment(CollectionCommitmentProjection item)
+    {
+        return new CollectionCommitmentResponse
+        {
+            Id = item.Id,
+            AccountsReceivableInvoiceId = item.AccountsReceivableInvoiceId,
+            PromisedAmount = item.PromisedAmount,
+            PromisedDateUtc = item.PromisedDateUtc,
+            Status = item.Status,
+            Notes = item.Notes,
+            CreatedAtUtc = item.CreatedAtUtc,
+            UpdatedAtUtc = item.UpdatedAtUtc,
+            CreatedByUsername = item.CreatedByUsername
+        };
+    }
+
+    private static CollectionNoteResponse MapNote(CollectionNoteProjection item)
+    {
+        return new CollectionNoteResponse
+        {
+            Id = item.Id,
+            AccountsReceivableInvoiceId = item.AccountsReceivableInvoiceId,
+            NoteType = item.NoteType,
+            Content = item.Content,
+            NextFollowUpAtUtc = item.NextFollowUpAtUtc,
+            CreatedAtUtc = item.CreatedAtUtc,
+            CreatedByUsername = item.CreatedByUsername
         };
     }
 
@@ -633,6 +838,20 @@ public class AccountsReceivableInvoiceResponse
 
     public DateTime UpdatedAtUtc { get; set; }
 
+    public string AgingBucket { get; set; } = string.Empty;
+
+    public bool HasPendingCommitment { get; set; }
+
+    public DateTime? NextCommitmentDateUtc { get; set; }
+
+    public DateTime? NextFollowUpAtUtc { get; set; }
+
+    public bool FollowUpPending { get; set; }
+
+    public List<CollectionCommitmentResponse> CollectionCommitments { get; set; } = [];
+
+    public List<CollectionNoteResponse> CollectionNotes { get; set; } = [];
+
     public List<AccountsReceivablePaymentApplicationResponse> Applications { get; set; } = [];
 }
 
@@ -672,6 +891,104 @@ public class AccountsReceivablePortfolioItemResponse
     public string Status { get; set; } = string.Empty;
 
     public int DaysPastDue { get; set; }
+
+    public string AgingBucket { get; set; } = string.Empty;
+
+    public bool HasPendingCommitment { get; set; }
+
+    public DateTime? NextCommitmentDateUtc { get; set; }
+
+    public DateTime? NextFollowUpAtUtc { get; set; }
+
+    public bool FollowUpPending { get; set; }
+}
+
+public class CreateCollectionCommitmentRequest
+{
+    public decimal PromisedAmount { get; set; }
+
+    public DateTime PromisedDateUtc { get; set; }
+
+    public string? Notes { get; set; }
+}
+
+public class CreateCollectionCommitmentResponse
+{
+    public string Outcome { get; set; } = string.Empty;
+
+    public bool IsSuccess { get; set; }
+
+    public string? ErrorMessage { get; set; }
+
+    public CollectionCommitmentResponse? Commitment { get; set; }
+}
+
+public class CollectionCommitmentsResponse
+{
+    public List<CollectionCommitmentResponse> Items { get; set; } = [];
+}
+
+public class CollectionCommitmentResponse
+{
+    public long Id { get; set; }
+
+    public long AccountsReceivableInvoiceId { get; set; }
+
+    public decimal PromisedAmount { get; set; }
+
+    public DateTime PromisedDateUtc { get; set; }
+
+    public string Status { get; set; } = string.Empty;
+
+    public string? Notes { get; set; }
+
+    public DateTime CreatedAtUtc { get; set; }
+
+    public DateTime UpdatedAtUtc { get; set; }
+
+    public string? CreatedByUsername { get; set; }
+}
+
+public class CreateCollectionNoteRequest
+{
+    public string NoteType { get; set; } = string.Empty;
+
+    public string Content { get; set; } = string.Empty;
+
+    public DateTime? NextFollowUpAtUtc { get; set; }
+}
+
+public class CreateCollectionNoteResponse
+{
+    public string Outcome { get; set; } = string.Empty;
+
+    public bool IsSuccess { get; set; }
+
+    public string? ErrorMessage { get; set; }
+
+    public CollectionNoteResponse? Note { get; set; }
+}
+
+public class CollectionNotesResponse
+{
+    public List<CollectionNoteResponse> Items { get; set; } = [];
+}
+
+public class CollectionNoteResponse
+{
+    public long Id { get; set; }
+
+    public long AccountsReceivableInvoiceId { get; set; }
+
+    public string NoteType { get; set; } = string.Empty;
+
+    public string Content { get; set; } = string.Empty;
+
+    public DateTime? NextFollowUpAtUtc { get; set; }
+
+    public DateTime CreatedAtUtc { get; set; }
+
+    public string? CreatedByUsername { get; set; }
 }
 
 public class CreateAccountsReceivablePaymentRequest

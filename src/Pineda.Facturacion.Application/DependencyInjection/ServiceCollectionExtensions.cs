@@ -41,6 +41,11 @@ public static class ServiceCollectionExtensions
         services.AddScoped<EnsureAccountsReceivableInvoiceForFiscalDocumentService>();
         services.AddScoped<GetAccountsReceivableInvoiceByFiscalDocumentIdService>();
         services.AddScoped<SearchAccountsReceivablePortfolioService>();
+        services.AddScoped<SynchronizeAccountsReceivableCollectionStateService>();
+        services.AddScoped<CreateCollectionCommitmentService>();
+        services.AddScoped<ListCollectionCommitmentsByInvoiceIdService>();
+        services.AddScoped<CreateCollectionNoteService>();
+        services.AddScoped<ListCollectionNotesByInvoiceIdService>();
         services.AddScoped<SearchAccountsReceivablePaymentsService>();
         services.AddScoped<CreateAccountsReceivablePaymentService>();
         services.AddScoped<GetAccountsReceivablePaymentByIdService>();

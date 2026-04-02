@@ -9,8 +9,14 @@ import {
   AccountsReceivablePaymentResponse,
   ApplyAccountsReceivablePaymentRequest,
   ApplyAccountsReceivablePaymentResponse,
+  CollectionCommitmentsResponse,
+  CollectionNotesResponse,
   CreateAccountsReceivableInvoiceRequest,
   CreateAccountsReceivableInvoiceResponse,
+  CreateCollectionCommitmentRequest,
+  CreateCollectionCommitmentResponse,
+  CreateCollectionNoteRequest,
+  CreateCollectionNoteResponse,
   CreateAccountsReceivablePaymentRequest,
   CreateAccountsReceivablePaymentResponse,
   SearchAccountsReceivablePortfolioRequest,
@@ -57,8 +63,36 @@ export class AccountsReceivableApiService {
     if (request.hasPendingBalance != null) {
       params = params.set('hasPendingBalance', request.hasPendingBalance);
     }
+    if (request.overdueOnly != null) {
+      params = params.set('overdueOnly', request.overdueOnly);
+    }
+    if (request.dueSoonOnly != null) {
+      params = params.set('dueSoonOnly', request.dueSoonOnly);
+    }
+    if (request.hasPendingCommitment != null) {
+      params = params.set('hasPendingCommitment', request.hasPendingCommitment);
+    }
+    if (request.followUpPending != null) {
+      params = params.set('followUpPending', request.followUpPending);
+    }
 
     return this.http.get<AccountsReceivablePortfolioResponse>(buildApiUrl('/accounts-receivable/invoices'), { params });
+  }
+
+  listCollectionCommitments(accountsReceivableInvoiceId: number): Observable<CollectionCommitmentsResponse> {
+    return this.http.get<CollectionCommitmentsResponse>(buildApiUrl(`/accounts-receivable/invoices/${accountsReceivableInvoiceId}/collection-commitments`));
+  }
+
+  createCollectionCommitment(accountsReceivableInvoiceId: number, request: CreateCollectionCommitmentRequest): Observable<CreateCollectionCommitmentResponse> {
+    return this.http.post<CreateCollectionCommitmentResponse>(buildApiUrl(`/accounts-receivable/invoices/${accountsReceivableInvoiceId}/collection-commitments`), request);
+  }
+
+  listCollectionNotes(accountsReceivableInvoiceId: number): Observable<CollectionNotesResponse> {
+    return this.http.get<CollectionNotesResponse>(buildApiUrl(`/accounts-receivable/invoices/${accountsReceivableInvoiceId}/collection-notes`));
+  }
+
+  createCollectionNote(accountsReceivableInvoiceId: number, request: CreateCollectionNoteRequest): Observable<CreateCollectionNoteResponse> {
+    return this.http.post<CreateCollectionNoteResponse>(buildApiUrl(`/accounts-receivable/invoices/${accountsReceivableInvoiceId}/collection-notes`), request);
   }
 
   createPayment(request: CreateAccountsReceivablePaymentRequest): Observable<CreateAccountsReceivablePaymentResponse> {

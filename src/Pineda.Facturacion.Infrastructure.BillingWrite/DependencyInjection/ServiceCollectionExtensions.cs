@@ -50,6 +50,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAccountsReceivableInvoiceRepository, AccountsReceivableInvoiceRepository>();
         services.AddScoped<IAccountsReceivablePaymentRepository, AccountsReceivablePaymentRepository>();
         services.AddScoped<IAccountsReceivablePaymentApplicationRepository, AccountsReceivablePaymentApplicationRepository>();
+        services.AddScoped<IAccountsReceivableCollectionRepository, AccountsReceivableCollectionRepository>();
         services.AddScoped<IPaymentComplementDocumentRepository, PaymentComplementDocumentRepository>();
         services.AddScoped<IPaymentComplementStampRepository, PaymentComplementStampRepository>();
         services.AddScoped<IPaymentComplementCancellationRepository, PaymentComplementCancellationRepository>();

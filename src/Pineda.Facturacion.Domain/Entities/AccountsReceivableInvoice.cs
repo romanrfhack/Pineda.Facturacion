@@ -43,4 +43,8 @@ public class AccountsReceivableInvoice
     public DateTime UpdatedAtUtc { get; set; }
 
     public List<AccountsReceivablePaymentApplication> Applications { get; set; } = [];
+
+    public List<CollectionCommitment> CollectionCommitments { get; set; } = [];
+
+    public List<CollectionNote> CollectionNotes { get; set; } = [];
 }
