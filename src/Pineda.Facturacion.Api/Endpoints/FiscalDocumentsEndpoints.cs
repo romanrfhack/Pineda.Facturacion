@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Pineda.Facturacion.Api.Security;
 using Pineda.Facturacion.Application.Abstractions.Security;
 using Pineda.Facturacion.Application.Security;
+using Pineda.Facturacion.Application.UseCases.AccountsReceivable;
 using Pineda.Facturacion.Application.UseCases.FiscalDocuments;
 using Pineda.Facturacion.Domain.Entities;
 
@@ -246,6 +247,7 @@ public static class FiscalDocumentsEndpoints
         long fiscalDocumentId,
         StampFiscalDocumentRequest? request,
         StampFiscalDocumentService service,
+        EnsureAccountsReceivableInvoiceForFiscalDocumentService ensureAccountsReceivableInvoiceForFiscalDocumentService,
         IAuditService auditService,
         CancellationToken cancellationToken)
     {
@@ -299,6 +301,48 @@ public static class FiscalDocumentsEndpoints
             },
             result.ErrorMessage,
             cancellationToken);
+
+        if (result.Outcome == StampFiscalDocumentOutcome.Stamped)
+        {
+            try
+            {
+                var ensureResult = await ensureAccountsReceivableInvoiceForFiscalDocumentService.ExecuteAsync(
+                    new EnsureAccountsReceivableInvoiceForFiscalDocumentCommand
+                    {
+                        FiscalDocumentId = fiscalDocumentId
+                    },
+                    cancellationToken);
+
+                await AuditApiHelper.RecordAsync(
+                    auditService,
+                    "AccountsReceivableInvoice.EnsureAfterFiscalStamp",
+                    "AccountsReceivableInvoice",
+                    ensureResult.AccountsReceivableInvoice?.Id.ToString() ?? fiscalDocumentId.ToString(),
+                    ensureResult.Outcome.ToString(),
+                    new { fiscalDocumentId },
+                    new
+                    {
+                        invoiceId = ensureResult.AccountsReceivableInvoice?.Id,
+                        ensureResult.AccountsReceivableInvoice?.Status,
+                        ensureResult.AccountsReceivableInvoice?.OutstandingBalance
+                    },
+                    ensureResult.ErrorMessage,
+                    cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                await AuditApiHelper.RecordAsync(
+                    auditService,
+                    "AccountsReceivableInvoice.EnsureAfterFiscalStamp",
+                    "AccountsReceivableInvoice",
+                    fiscalDocumentId.ToString(),
+                    "UnexpectedError",
+                    new { fiscalDocumentId },
+                    null,
+                    ex.Message,
+                    cancellationToken);
+            }
+        }
 
         return result.Outcome switch
         {

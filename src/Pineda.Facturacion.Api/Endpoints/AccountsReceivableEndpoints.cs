@@ -32,6 +32,15 @@ public static class AccountsReceivableEndpoints
             .Produces<AccountsReceivableInvoiceResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status404NotFound);
 
+        endpoints.MapPost("/api/fiscal-documents/{fiscalDocumentId:long}/accounts-receivable/ensure", EnsureAccountsReceivableInvoiceAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.OperatorOrAbove)
+            .WithTags("AccountsReceivable")
+            .WithName("EnsureAccountsReceivableInvoiceForFiscalDocument")
+            .WithSummary("Ensure an operational accounts receivable invoice exists for a fiscal document")
+            .Produces<CreateAccountsReceivableInvoiceResponse>(StatusCodes.Status200OK)
+            .Produces<CreateAccountsReceivableInvoiceResponse>(StatusCodes.Status400BadRequest)
+            .Produces<CreateAccountsReceivableInvoiceResponse>(StatusCodes.Status404NotFound);
+
         var group = endpoints.MapGroup("/api/accounts-receivable")
             .WithTags("AccountsReceivable")
             .RequireAuthorization(AuthorizationPolicyNames.Authenticated);
@@ -134,6 +143,49 @@ public static class AccountsReceivableEndpoints
         }
 
         return TypedResults.Ok(MapInvoice(result.AccountsReceivableInvoice));
+    }
+
+    private static async Task<Results<Ok<CreateAccountsReceivableInvoiceResponse>, BadRequest<CreateAccountsReceivableInvoiceResponse>, NotFound<CreateAccountsReceivableInvoiceResponse>>> EnsureAccountsReceivableInvoiceAsync(
+        long fiscalDocumentId,
+        EnsureAccountsReceivableInvoiceForFiscalDocumentService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(
+            new EnsureAccountsReceivableInvoiceForFiscalDocumentCommand
+            {
+                FiscalDocumentId = fiscalDocumentId
+            },
+            cancellationToken);
+
+        var response = new CreateAccountsReceivableInvoiceResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            FiscalDocumentId = result.FiscalDocumentId,
+            AccountsReceivableInvoice = result.AccountsReceivableInvoice is null
+                ? null
+                : MapInvoice(result.AccountsReceivableInvoice)
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "AccountsReceivableInvoice.Ensure",
+            "AccountsReceivableInvoice",
+            result.AccountsReceivableInvoice?.Id.ToString() ?? fiscalDocumentId.ToString(),
+            result.Outcome.ToString(),
+            new { fiscalDocumentId },
+            new { invoiceId = result.AccountsReceivableInvoice?.Id, result.AccountsReceivableInvoice?.Status, result.AccountsReceivableInvoice?.OutstandingBalance },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            EnsureAccountsReceivableInvoiceForFiscalDocumentOutcome.NotFound => TypedResults.NotFound(response),
+            EnsureAccountsReceivableInvoiceForFiscalDocumentOutcome.ValidationFailed => TypedResults.BadRequest(response),
+            _ => TypedResults.Ok(response)
+        };
     }
 
     private static async Task<Results<Ok<CreateAccountsReceivablePaymentResponse>, BadRequest<CreateAccountsReceivablePaymentResponse>>> CreateAccountsReceivablePaymentAsync(

@@ -1063,9 +1063,7 @@ public class MvpLifecycleApiTests
         var client = await factory.CreateAuthenticatedClientAsync();
         var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-1006");
 
-        var createArResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest());
-        Assert.Equal(HttpStatusCode.OK, createArResponse.StatusCode);
-        var createArBody = await createArResponse.Content.ReadFromJsonAsync<CreateAccountsReceivableInvoiceResponse>();
+        var createArBody = await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId);
         var invoiceId = createArBody!.AccountsReceivableInvoice!.Id;
 
         var createPaymentResponse = await client.PostAsJsonAsync("/api/accounts-receivable/payments", new CreateAccountsReceivablePaymentRequest
@@ -1099,6 +1097,91 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
+    public async Task StampFiscalDocument_AutoEnsuresAccountsReceivable_ForCreditSalePpd99()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-AR-AUTO-1001", uuid: "UUID-AR-AUTO-1001");
+
+        var getInvoiceResponse = await client.GetAsync($"/api/fiscal-documents/{fiscalDocumentId}/accounts-receivable");
+        Assert.Equal(HttpStatusCode.OK, getInvoiceResponse.StatusCode);
+
+        using var invoiceJson = await JsonDocument.ParseAsync(await getInvoiceResponse.Content.ReadAsStreamAsync());
+        Assert.Equal(fiscalDocumentId, invoiceJson.RootElement.GetProperty("fiscalDocumentId").GetInt64());
+        Assert.Equal("Open", invoiceJson.RootElement.GetProperty("status").GetString());
+        Assert.Equal(116m, invoiceJson.RootElement.GetProperty("outstandingBalance").GetDecimal());
+    }
+
+    [Fact]
+    public async Task StampFiscalDocument_DoesNotAutoEnsureAccountsReceivable_ForPueCashDocument()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        var seed = await factory.SeedStandardFiscalMasterDataAsync();
+
+        factory.LegacyOrderReader.Orders["LEG-AR-PUE-1001"] = CreateLegacyOrder("LEG-AR-PUE-1001", "SKU-1", 100m);
+
+        var importBody = await (await client.PostAsync("/api/orders/LEG-AR-PUE-1001/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+        var billingBody = await (await client.PostAsJsonAsync($"/api/sales-orders/{importBody!.SalesOrderId}/billing-documents", new SalesOrdersEndpoints.CreateBillingDocumentRequest
+        {
+            DocumentType = "I"
+        })).Content.ReadFromJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>();
+        var fiscalBody = await (await client.PostAsJsonAsync($"/api/billing-documents/{billingBody!.BillingDocumentId}/fiscal-documents", new BillingDocumentsEndpoints.PrepareFiscalDocumentRequest
+        {
+            FiscalReceiverId = seed.ReceiverId,
+            IssuerProfileId = seed.IssuerId,
+            PaymentMethodSat = "PUE",
+            PaymentFormSat = "03",
+            PaymentCondition = "CONTADO",
+            IsCreditSale = false
+        })).Content.ReadFromJsonAsync<BillingDocumentsEndpoints.PrepareFiscalDocumentResponse>();
+
+        var stampResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalBody!.FiscalDocumentId}/stamp", new FiscalDocumentsEndpoints.StampFiscalDocumentRequest());
+        Assert.Equal(HttpStatusCode.OK, stampResponse.StatusCode);
+
+        var getInvoiceResponse = await client.GetAsync($"/api/fiscal-documents/{fiscalBody.FiscalDocumentId}/accounts-receivable");
+        Assert.Equal(HttpStatusCode.NotFound, getInvoiceResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task InternalRepBaseDocument_EnsureAccountsReceivable_UnblocksDocument_WhenInvoiceWasMissing()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-REP-AR-ENSURE-1001", uuid: "UUID-REP-AR-ENSURE-1001");
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+            var invoice = await dbContext.AccountsReceivableInvoices.SingleAsync(x => x.FiscalDocumentId == fiscalDocumentId);
+            dbContext.AccountsReceivableInvoices.Remove(invoice);
+            await dbContext.SaveChangesAsync();
+        }
+
+        var blockedDetailResponse = await client.GetAsync($"/api/payment-complements/base-documents/internal/{fiscalDocumentId}");
+        Assert.Equal(HttpStatusCode.OK, blockedDetailResponse.StatusCode);
+        using (var blockedJson = await JsonDocument.ParseAsync(await blockedDetailResponse.Content.ReadAsStreamAsync()))
+        {
+            Assert.Equal("AccountsReceivableMissing", blockedJson.RootElement.GetProperty("summary").GetProperty("eligibility").GetProperty("primaryReasonCode").GetString());
+            Assert.True(blockedJson.RootElement.GetProperty("summary").GetProperty("isBlocked").GetBoolean());
+        }
+
+        var ensureResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/accounts-receivable/ensure", new { });
+        Assert.Equal(HttpStatusCode.OK, ensureResponse.StatusCode);
+        using var ensureJson = await JsonDocument.ParseAsync(await ensureResponse.Content.ReadAsStreamAsync());
+        Assert.Equal("Created", ensureJson.RootElement.GetProperty("outcome").GetString());
+
+        var detailResponse = await client.GetAsync($"/api/payment-complements/base-documents/internal/{fiscalDocumentId}");
+        Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
+        using var detailJson = await JsonDocument.ParseAsync(await detailResponse.Content.ReadAsStreamAsync());
+        Assert.Equal("Eligible", detailJson.RootElement.GetProperty("summary").GetProperty("repOperationalStatus").GetString());
+        Assert.Equal("EligibleInternalRep", detailJson.RootElement.GetProperty("summary").GetProperty("eligibility").GetProperty("primaryReasonCode").GetString());
+    }
+
+    [Fact]
     public async Task InternalRepBaseDocuments_List_MarksEligibleAndBlockedDocuments()
     {
         await using var factory = new MvpApiFactory();
@@ -1107,8 +1190,7 @@ public class MvpLifecycleApiTests
         var eligibleFiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-REP-1001", uuid: "UUID-REP-1001");
         var cancelledFiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-REP-1002", uuid: "UUID-REP-1002");
 
-        var createEligibleArBody = await (await client.PostAsJsonAsync($"/api/fiscal-documents/{eligibleFiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest()))
-            .Content.ReadFromJsonAsync<CreateAccountsReceivableInvoiceResponse>();
+        var createEligibleArBody = await EnsureAccountsReceivableInvoiceThroughApiAsync(client, eligibleFiscalDocumentId);
         var eligibleInvoiceId = createEligibleArBody!.AccountsReceivableInvoice!.Id;
 
         var eligiblePaymentBody = await (await client.PostAsJsonAsync("/api/accounts-receivable/payments", new CreateAccountsReceivablePaymentRequest
@@ -1133,8 +1215,7 @@ public class MvpLifecycleApiTests
         });
         Assert.Equal(HttpStatusCode.OK, eligibleApplyResponse.StatusCode);
 
-        var createCancelledArResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{cancelledFiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest());
-        Assert.Equal(HttpStatusCode.OK, createCancelledArResponse.StatusCode);
+        await EnsureAccountsReceivableInvoiceThroughApiAsync(client, cancelledFiscalDocumentId);
 
         var cancelFiscalResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{cancelledFiscalDocumentId}/cancel", new FiscalDocumentsEndpoints.CancelFiscalDocumentRequest
         {
@@ -1174,8 +1255,7 @@ public class MvpLifecycleApiTests
 
         var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-REP-1003", uuid: "UUID-REP-FILTER-1");
 
-        var createArResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest());
-        Assert.Equal(HttpStatusCode.OK, createArResponse.StatusCode);
+        await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId);
 
         var response = await client.GetAsync("/api/payment-complements/base-documents/internal?page=1&pageSize=25&query=UUID-REP-FILTER-1");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -1193,8 +1273,7 @@ public class MvpLifecycleApiTests
 
         var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-REP-F1-INT-1001", uuid: "UUID-REP-F1-INT-1001");
 
-        var createArBody = await (await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest()))
-            .Content.ReadFromJsonAsync<CreateAccountsReceivableInvoiceResponse>();
+        var createArBody = await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId);
         var invoiceId = createArBody!.AccountsReceivableInvoice!.Id;
 
         var createPaymentBody = await (await client.PostAsJsonAsync("/api/accounts-receivable/payments", new CreateAccountsReceivablePaymentRequest
@@ -1242,8 +1321,7 @@ public class MvpLifecycleApiTests
 
         var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-REP-F2-INT-1001", uuid: "UUID-REP-F2-INT-1001");
 
-        var createArBody = await (await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest()))
-            .Content.ReadFromJsonAsync<CreateAccountsReceivableInvoiceResponse>();
+        var createArBody = await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId);
         Assert.NotNull(createArBody);
 
         var registerPaymentResponse = await client.PostAsJsonAsync($"/api/payment-complements/base-documents/internal/{fiscalDocumentId}/payments", new RegisterInternalRepBaseDocumentPaymentRequest
@@ -1296,8 +1374,7 @@ public class MvpLifecycleApiTests
             OriginalString = "||1.1|UUID-PC-DETAIL-1||"
         };
 
-        var createArBody = await (await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest()))
-            .Content.ReadFromJsonAsync<CreateAccountsReceivableInvoiceResponse>();
+        var createArBody = await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId);
         var invoiceId = createArBody!.AccountsReceivableInvoice!.Id;
 
         var paymentDateUtc = new DateTime(2026, 04, 03, 15, 0, 0, DateTimeKind.Utc);
@@ -1379,8 +1456,7 @@ public class MvpLifecycleApiTests
 
         var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-REP-DETAIL-1002", uuid: "UUID-REP-DETAIL-1002");
 
-        var createArResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest());
-        Assert.Equal(HttpStatusCode.OK, createArResponse.StatusCode);
+        await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId);
 
         var cancelFiscalResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/cancel", new FiscalDocumentsEndpoints.CancelFiscalDocumentRequest
         {
@@ -1416,8 +1492,7 @@ public class MvpLifecycleApiTests
 
         var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-REP-PAY-1001", uuid: "UUID-REP-PAY-1001");
 
-        var createArBody = await (await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest()))
-            .Content.ReadFromJsonAsync<CreateAccountsReceivableInvoiceResponse>();
+        var createArBody = await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId);
         var invoiceId = createArBody!.AccountsReceivableInvoice!.Id;
 
         var registerPaymentResponse = await client.PostAsJsonAsync($"/api/payment-complements/base-documents/internal/{fiscalDocumentId}/payments", new RegisterInternalRepBaseDocumentPaymentRequest
@@ -1472,8 +1547,7 @@ public class MvpLifecycleApiTests
 
         var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-REP-PAY-1002", uuid: "UUID-REP-PAY-1002");
 
-        var createArResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest());
-        Assert.Equal(HttpStatusCode.OK, createArResponse.StatusCode);
+        await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId);
 
         var cancelFiscalResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/cancel", new FiscalDocumentsEndpoints.CancelFiscalDocumentRequest
         {
@@ -1501,8 +1575,7 @@ public class MvpLifecycleApiTests
 
         var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-REP-PAY-1003", uuid: "UUID-REP-PAY-1003");
 
-        var createArResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest());
-        Assert.Equal(HttpStatusCode.OK, createArResponse.StatusCode);
+        await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId);
 
         var registerPaymentResponse = await client.PostAsJsonAsync($"/api/payment-complements/base-documents/internal/{fiscalDocumentId}/payments", new RegisterInternalRepBaseDocumentPaymentRequest
         {
@@ -1537,8 +1610,7 @@ public class MvpLifecycleApiTests
             OriginalString = "||1.1|UUID-PC-2B-1001||"
         };
 
-        var createArResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest());
-        Assert.Equal(HttpStatusCode.OK, createArResponse.StatusCode);
+        await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId);
 
         var registerPaymentResponse = await client.PostAsJsonAsync($"/api/payment-complements/base-documents/internal/{fiscalDocumentId}/payments", new RegisterInternalRepBaseDocumentPaymentRequest
         {
@@ -1621,8 +1693,7 @@ public class MvpLifecycleApiTests
             CheckedAtUtc = new DateTime(2026, 04, 08, 12, 30, 0, DateTimeKind.Utc)
         };
 
-        var createArResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest());
-        Assert.Equal(HttpStatusCode.OK, createArResponse.StatusCode);
+        await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId);
 
         var registerPaymentResponse = await client.PostAsJsonAsync($"/api/payment-complements/base-documents/internal/{fiscalDocumentId}/payments", new RegisterInternalRepBaseDocumentPaymentRequest
         {
@@ -1685,8 +1756,7 @@ public class MvpLifecycleApiTests
 
         var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-REP-2B-1002", uuid: "UUID-REP-2B-1002");
 
-        var createArResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest());
-        Assert.Equal(HttpStatusCode.OK, createArResponse.StatusCode);
+        await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId);
 
         var prepareResponse = await client.PostAsJsonAsync($"/api/payment-complements/base-documents/internal/{fiscalDocumentId}/prepare", new PrepareInternalRepBaseDocumentPaymentComplementRequest());
         Assert.Equal(HttpStatusCode.Conflict, prepareResponse.StatusCode);
@@ -1703,8 +1773,7 @@ public class MvpLifecycleApiTests
 
         var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-REP-2B-1003", uuid: "UUID-REP-2B-1003");
 
-        var createArResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest());
-        Assert.Equal(HttpStatusCode.OK, createArResponse.StatusCode);
+        await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId);
 
         var cancelFiscalResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/cancel", new FiscalDocumentsEndpoints.CancelFiscalDocumentRequest
         {
@@ -1955,8 +2024,7 @@ public class MvpLifecycleApiTests
         var client = await factory.CreateAuthenticatedClientAsync();
 
         var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-REP-3B-1001", uuid: "UUID-REP-3B-INT-1");
-        var createArResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest());
-        Assert.Equal(HttpStatusCode.OK, createArResponse.StatusCode);
+        await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId);
 
         factory.FiscalStatusQueryGateway.ResponseFactory = _ => new FiscalStatusQueryGatewayResult
         {
@@ -1990,8 +2058,7 @@ public class MvpLifecycleApiTests
         var client = await factory.CreateAuthenticatedClientAsync();
 
         var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-REP-F1-UNI-1001", uuid: "UUID-REP-F1-UNI-1001");
-        var createArResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest());
-        Assert.Equal(HttpStatusCode.OK, createArResponse.StatusCode);
+        await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId);
 
         var response = await client.GetAsync("/api/payment-complements/base-documents?page=1&pageSize=25&nextRecommendedAction=RegisterPayment");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -2051,12 +2118,10 @@ public class MvpLifecycleApiTests
         await factory.SeedStandardFiscalMasterDataAsync();
 
         var healthyFiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-REP-ATTN-OK-1001", uuid: "UUID-REP-ATTN-OK-1001");
-        var healthyArResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{healthyFiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest());
-        Assert.Equal(HttpStatusCode.OK, healthyArResponse.StatusCode);
+        await EnsureAccountsReceivableInvoiceThroughApiAsync(client, healthyFiscalDocumentId);
 
         var blockedFiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-REP-ATTN-BLOCK-1002", uuid: "UUID-REP-ATTN-BLOCK-1002");
-        var blockedArResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{blockedFiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest());
-        Assert.Equal(HttpStatusCode.OK, blockedArResponse.StatusCode);
+        await EnsureAccountsReceivableInvoiceThroughApiAsync(client, blockedFiscalDocumentId);
 
         var cancelFiscalResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{blockedFiscalDocumentId}/cancel", new FiscalDocumentsEndpoints.CancelFiscalDocumentRequest
         {
@@ -2137,8 +2202,7 @@ public class MvpLifecycleApiTests
             CheckedAtUtc = new DateTime(2026, 04, 08, 12, 30, 0, DateTimeKind.Utc)
         };
 
-        var createArResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest());
-        Assert.Equal(HttpStatusCode.OK, createArResponse.StatusCode);
+        await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId);
 
         var registerPaymentResponse = await client.PostAsJsonAsync($"/api/payment-complements/base-documents/internal/{fiscalDocumentId}/payments", new RegisterInternalRepBaseDocumentPaymentRequest
         {
@@ -2320,8 +2384,7 @@ public class MvpLifecycleApiTests
         };
 
         var internalFiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-REP-BULK-UNI-INT-1001", uuid: "UUID-REP-BULK-UNI-INT-1001");
-        var createArResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{internalFiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest());
-        Assert.Equal(HttpStatusCode.OK, createArResponse.StatusCode);
+        await EnsureAccountsReceivableInvoiceThroughApiAsync(client, internalFiscalDocumentId);
 
         var internalPaymentResponse = await client.PostAsJsonAsync($"/api/payment-complements/base-documents/internal/{internalFiscalDocumentId}/payments", new RegisterInternalRepBaseDocumentPaymentRequest
         {
@@ -2672,8 +2735,7 @@ public class MvpLifecycleApiTests
             OriginalString = "||1.1|UUID-PC-1||"
         };
 
-        var createArBody = await (await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest()))
-            .Content.ReadFromJsonAsync<CreateAccountsReceivableInvoiceResponse>();
+        var createArBody = await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId);
         var invoiceId = createArBody!.AccountsReceivableInvoice!.Id;
 
         var createPaymentBody = await (await client.PostAsJsonAsync("/api/accounts-receivable/payments", new CreateAccountsReceivablePaymentRequest
@@ -2753,10 +2815,8 @@ public class MvpLifecycleApiTests
         var fiscalDocumentId1 = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-1008", seed.ReceiverId);
         var fiscalDocumentId2 = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-1009", secondReceiverId, "SKU-1", "UUID-FISCAL-2");
 
-        var ar1 = await (await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId1}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest()))
-            .Content.ReadFromJsonAsync<CreateAccountsReceivableInvoiceResponse>();
-        var ar2 = await (await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId2}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest()))
-            .Content.ReadFromJsonAsync<CreateAccountsReceivableInvoiceResponse>();
+        var ar1 = await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId1);
+        var ar2 = await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId2);
 
         var paymentBody = await (await client.PostAsJsonAsync("/api/accounts-receivable/payments", new CreateAccountsReceivablePaymentRequest
         {
@@ -2904,6 +2964,16 @@ public class MvpLifecycleApiTests
         var stampResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/stamp", new FiscalDocumentsEndpoints.StampFiscalDocumentRequest());
         Assert.Equal(HttpStatusCode.OK, stampResponse.StatusCode);
         return fiscalDocumentId;
+    }
+
+    private static async Task<CreateAccountsReceivableInvoiceResponse> EnsureAccountsReceivableInvoiceThroughApiAsync(HttpClient client, long fiscalDocumentId)
+    {
+        var response = await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/accounts-receivable/ensure", new { });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<CreateAccountsReceivableInvoiceResponse>();
+        Assert.NotNull(body);
+        Assert.NotNull(body!.AccountsReceivableInvoice);
+        return body;
     }
 }
 

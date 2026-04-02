@@ -90,6 +90,113 @@ public class AccountsReceivableServicesTests
     }
 
     [Fact]
+    public async Task EnsureAccountsReceivableInvoiceForFiscalDocument_Creates_WhenStampedCreditSalePpd99()
+    {
+        var fiscalDocument = CreateStampedFiscalDocument();
+        var fiscalStamp = CreateFiscalStamp();
+        var repository = new ArFakeAccountsReceivableInvoiceRepository();
+        var createService = new CreateAccountsReceivableInvoiceFromFiscalDocumentService(
+            new ArFakeFiscalDocumentRepository { ExistingById = fiscalDocument },
+            new ArFakeFiscalStampRepository { ExistingByFiscalDocumentId = fiscalStamp },
+            repository,
+            new ArFakeUnitOfWork());
+
+        var service = new EnsureAccountsReceivableInvoiceForFiscalDocumentService(
+            new ArFakeFiscalDocumentRepository { ExistingById = fiscalDocument },
+            repository,
+            createService);
+
+        var result = await service.ExecuteAsync(new EnsureAccountsReceivableInvoiceForFiscalDocumentCommand
+        {
+            FiscalDocumentId = fiscalDocument.Id
+        });
+
+        Assert.Equal(EnsureAccountsReceivableInvoiceForFiscalDocumentOutcome.Created, result.Outcome);
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(result.AccountsReceivableInvoice);
+        Assert.Equal(fiscalDocument.Id, result.AccountsReceivableInvoice!.FiscalDocumentId);
+    }
+
+    [Fact]
+    public async Task EnsureAccountsReceivableInvoiceForFiscalDocument_IsIdempotent_WhenInvoiceAlreadyExists()
+    {
+        var existingInvoice = CreateInvoice();
+        existingInvoice.FiscalDocumentId = 50;
+        var repository = new ArFakeAccountsReceivableInvoiceRepository
+        {
+            ExistingByFiscalDocumentId = existingInvoice
+        };
+
+        var service = new EnsureAccountsReceivableInvoiceForFiscalDocumentService(
+            new ArFakeFiscalDocumentRepository { ExistingById = CreateStampedFiscalDocument() },
+            repository,
+            new CreateAccountsReceivableInvoiceFromFiscalDocumentService(
+                new ArFakeFiscalDocumentRepository { ExistingById = CreateStampedFiscalDocument() },
+                new ArFakeFiscalStampRepository { ExistingByFiscalDocumentId = CreateFiscalStamp() },
+                repository,
+                new ArFakeUnitOfWork()));
+
+        var result = await service.ExecuteAsync(new EnsureAccountsReceivableInvoiceForFiscalDocumentCommand
+        {
+            FiscalDocumentId = 50
+        });
+
+        Assert.Equal(EnsureAccountsReceivableInvoiceForFiscalDocumentOutcome.AlreadyExists, result.Outcome);
+        Assert.True(result.IsSuccess);
+        Assert.Same(existingInvoice, result.AccountsReceivableInvoice);
+        Assert.Null(repository.Added);
+    }
+
+    [Fact]
+    public async Task EnsureAccountsReceivableInvoiceForFiscalDocument_Skips_WhenFiscalDocumentIsNotEligible()
+    {
+        var notCreditDocument = CreateStampedFiscalDocument();
+        notCreditDocument.IsCreditSale = false;
+
+        var service = new EnsureAccountsReceivableInvoiceForFiscalDocumentService(
+            new ArFakeFiscalDocumentRepository { ExistingById = notCreditDocument },
+            new ArFakeAccountsReceivableInvoiceRepository(),
+            new CreateAccountsReceivableInvoiceFromFiscalDocumentService(
+                new ArFakeFiscalDocumentRepository { ExistingById = notCreditDocument },
+                new ArFakeFiscalStampRepository { ExistingByFiscalDocumentId = CreateFiscalStamp() },
+                new ArFakeAccountsReceivableInvoiceRepository(),
+                new ArFakeUnitOfWork()));
+
+        var result = await service.ExecuteAsync(new EnsureAccountsReceivableInvoiceForFiscalDocumentCommand
+        {
+            FiscalDocumentId = notCreditDocument.Id
+        });
+
+        Assert.Equal(EnsureAccountsReceivableInvoiceForFiscalDocumentOutcome.Skipped, result.Outcome);
+        Assert.True(result.IsSuccess);
+    }
+
+    [Fact]
+    public async Task EnsureAccountsReceivableInvoiceForFiscalDocument_Skips_WhenFiscalDocumentIsNotStamped()
+    {
+        var pendingDocument = CreateStampedFiscalDocument();
+        pendingDocument.Status = FiscalDocumentStatus.ReadyForStamping;
+        var repository = new ArFakeAccountsReceivableInvoiceRepository();
+
+        var service = new EnsureAccountsReceivableInvoiceForFiscalDocumentService(
+            new ArFakeFiscalDocumentRepository { ExistingById = pendingDocument },
+            repository,
+            new CreateAccountsReceivableInvoiceFromFiscalDocumentService(
+                new ArFakeFiscalDocumentRepository { ExistingById = pendingDocument },
+                new ArFakeFiscalStampRepository { ExistingByFiscalDocumentId = CreateFiscalStamp() },
+                repository,
+                new ArFakeUnitOfWork()));
+
+        var result = await service.ExecuteAsync(new EnsureAccountsReceivableInvoiceForFiscalDocumentCommand
+        {
+            FiscalDocumentId = pendingDocument.Id
+        });
+
+        Assert.Equal(EnsureAccountsReceivableInvoiceForFiscalDocumentOutcome.Skipped, result.Outcome);
+        Assert.Null(repository.Added);
+    }
+
+    [Fact]
     public async Task CreateAccountsReceivablePayment_Succeeds_WithValidAmountAndPaymentForm()
     {
         var repository = new ArFakeAccountsReceivablePaymentRepository();

@@ -24,6 +24,10 @@ export class AccountsReceivableApiService {
     return this.http.post<CreateAccountsReceivableInvoiceResponse>(buildApiUrl(`/fiscal-documents/${fiscalDocumentId}/accounts-receivable`), request);
   }
 
+  ensureInvoiceForFiscalDocument(fiscalDocumentId: number): Observable<CreateAccountsReceivableInvoiceResponse> {
+    return this.http.post<CreateAccountsReceivableInvoiceResponse>(buildApiUrl(`/fiscal-documents/${fiscalDocumentId}/accounts-receivable/ensure`), {});
+  }
+
   getInvoiceByFiscalDocumentId(fiscalDocumentId: number): Observable<AccountsReceivableInvoiceResponse> {
     return this.http.get<AccountsReceivableInvoiceResponse>(buildApiUrl(`/fiscal-documents/${fiscalDocumentId}/accounts-receivable`));
   }

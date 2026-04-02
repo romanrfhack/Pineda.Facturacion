@@ -5,6 +5,7 @@ import { firstValueFrom } from 'rxjs';
 import { extractApiErrorMessage } from '../../../core/http/api-error-message';
 import { FeedbackService } from '../../../core/ui/feedback.service';
 import { getDisplayLabel } from '../../../shared/ui/display-labels';
+import { AccountsReceivableApiService } from '../../accounts-receivable/infrastructure/accounts-receivable-api.service';
 import { PaymentComplementsApiService } from '../infrastructure/payment-complements-api.service';
 import {
   RepBaseDocumentBulkRefreshResponse,
@@ -357,6 +358,14 @@ import {
                     </span>
                     <p class="eligibility-reason">{{ detail.summary.eligibility.primaryReasonMessage }}</p>
                     <p class="helper">Código: {{ detail.summary.eligibility.primaryReasonCode }} · Evaluado: {{ formatUtc(detail.summary.eligibility.evaluatedAtUtc) }}</p>
+                    @if (canEnsureAccountsReceivable(detail)) {
+                      <p class="helper">Este CFDI ya cumple el patrón fiscal del flujo diferido, pero todavía no tiene la cuenta operativa que REP usa para controlar saldo, parcialidades y aplicaciones.</p>
+                      <div class="row-actions">
+                        <button type="button" [disabled]="ensuringAccountsReceivable()" (click)="ensureAccountsReceivable(detail.summary.fiscalDocumentId)">
+                          {{ ensuringAccountsReceivable() ? 'Habilitando...' : 'Habilitar cuenta por cobrar' }}
+                        </button>
+                      </div>
+                    }
                   </div>
 
                   @if (detail.summary.eligibility.secondarySignals.length) {
@@ -511,7 +520,14 @@ import {
                     </div>
                   </form>
                 } @else if (!detail.summary.isEligible || detail.summary.outstandingBalance <= 0) {
-                  <p class="helper">El CFDI no puede recibir pagos desde esta vista: {{ detail.summary.eligibility.primaryReasonMessage }}</p>
+                  <p class="helper">{{ buildRegisterPaymentBlockedMessage(detail) }}</p>
+                  @if (canEnsureAccountsReceivable(detail)) {
+                    <div class="row-actions">
+                      <button type="button" [disabled]="ensuringAccountsReceivable()" (click)="ensureAccountsReceivable(detail.summary.fiscalDocumentId)">
+                        {{ ensuringAccountsReceivable() ? 'Habilitando...' : 'Habilitar cuenta por cobrar' }}
+                      </button>
+                    </div>
+                  }
                 }
               </section>
 
@@ -798,6 +814,7 @@ import {
 })
 export class PaymentComplementBaseDocumentsPageComponent {
   private readonly api = inject(PaymentComplementsApiService);
+  private readonly accountsReceivableApi = inject(AccountsReceivableApiService);
   private readonly feedbackService = inject(FeedbackService);
   protected readonly getDisplayLabel = getDisplayLabel;
 
@@ -836,6 +853,7 @@ export class PaymentComplementBaseDocumentsPageComponent {
   protected readonly detailError = signal<string | null>(null);
   protected readonly showRegisterPaymentForm = signal(false);
   protected readonly submittingPayment = signal(false);
+  protected readonly ensuringAccountsReceivable = signal(false);
   protected readonly paymentError = signal<string | null>(null);
   protected readonly preparingComplement = signal<number | null>(null);
   protected readonly stampingComplement = signal<number | null>(null);
@@ -938,6 +956,42 @@ export class PaymentComplementBaseDocumentsPageComponent {
     this.paymentAmount = null;
     this.paymentReference = '';
     this.paymentNotes = '';
+  }
+
+  protected canEnsureAccountsReceivable(detail: InternalRepBaseDocumentDetailResponse | null): boolean {
+    return detail?.summary.eligibility.primaryReasonCode === 'AccountsReceivableMissing';
+  }
+
+  protected buildRegisterPaymentBlockedMessage(detail: InternalRepBaseDocumentDetailResponse): string {
+    if (this.canEnsureAccountsReceivable(detail)) {
+      return 'El CFDI no puede recibir pagos desde esta vista porque todavía no tiene una cuenta por cobrar operativa. Habilítala para controlar saldo, parcialidades y REP.';
+    }
+
+    return `El CFDI no puede recibir pagos desde esta vista: ${detail.summary.eligibility.primaryReasonMessage}`;
+  }
+
+  protected async ensureAccountsReceivable(fiscalDocumentId: number): Promise<void> {
+    this.ensuringAccountsReceivable.set(true);
+    this.paymentError.set(null);
+    this.repActionError.set(null);
+
+    try {
+      const result = await firstValueFrom(this.accountsReceivableApi.ensureInvoiceForFiscalDocument(fiscalDocumentId));
+      const invoiceId = result.accountsReceivableInvoice?.id;
+      const message = invoiceId
+        ? `Cuenta por cobrar ${invoiceId} habilitada para el CFDI.`
+        : (result.errorMessage || 'La cuenta por cobrar ya quedó asegurada.');
+      this.feedbackService.show(result.outcome === 'Skipped' ? 'warning' : 'success', message);
+      await this.loadDetail(fiscalDocumentId);
+      await this.load();
+    } catch (error) {
+      const message = extractApiErrorMessage(error, 'No fue posible habilitar la cuenta por cobrar operativa para este CFDI.');
+      this.repActionError.set(message);
+      this.paymentError.set(message);
+      this.feedbackService.show('error', message);
+    } finally {
+      this.ensuringAccountsReceivable.set(false);
+    }
   }
 
   protected async submitRegisterPayment(): Promise<void> {

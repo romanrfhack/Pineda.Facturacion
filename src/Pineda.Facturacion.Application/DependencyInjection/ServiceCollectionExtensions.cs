@@ -38,6 +38,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<RemoveBillingDocumentItemService>();
         services.AddScoped<AssignPendingBillingItemsService>();
         services.AddScoped<CreateAccountsReceivableInvoiceFromFiscalDocumentService>();
+        services.AddScoped<EnsureAccountsReceivableInvoiceForFiscalDocumentService>();
         services.AddScoped<GetAccountsReceivableInvoiceByFiscalDocumentIdService>();
         services.AddScoped<CreateAccountsReceivablePaymentService>();
         services.AddScoped<GetAccountsReceivablePaymentByIdService>();
