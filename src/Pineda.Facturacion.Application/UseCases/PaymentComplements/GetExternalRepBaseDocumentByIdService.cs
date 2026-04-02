@@ -19,6 +19,8 @@ public sealed class GetExternalRepBaseDocumentByIdService
     {
         var document = await _repository.GetOperationalByIdAsync(externalRepBaseDocumentId, cancellationToken);
         var activeIssuerProfile = document is null ? null : await _issuerProfileRepository.GetActiveAsync(cancellationToken);
+        var summary = document is null ? null : SearchExternalRepBaseDocumentsService.BuildListItem(document.Summary, activeIssuerProfile);
+
         return new GetExternalRepBaseDocumentByIdResult
         {
             Outcome = document is null ? GetExternalRepBaseDocumentByIdOutcome.NotFound : GetExternalRepBaseDocumentByIdOutcome.Found,
@@ -28,7 +30,12 @@ public sealed class GetExternalRepBaseDocumentByIdService
                 ? null
                 : new ExternalRepBaseDocumentDetail
                 {
-                    Summary = SearchExternalRepBaseDocumentsService.BuildListItem(document.Summary, activeIssuerProfile),
+                    Summary = summary!,
+                    Timeline = RepBaseDocumentTimelineBuilder.BuildExternal(
+                        summary!,
+                        document.PaymentHistory,
+                        document.PaymentApplications,
+                        document.PaymentComplements),
                     PaymentHistory = document.PaymentHistory,
                     PaymentApplications = document.PaymentApplications,
                     PaymentComplements = document.PaymentComplements

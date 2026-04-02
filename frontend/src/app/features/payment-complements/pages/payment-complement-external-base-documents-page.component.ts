@@ -12,6 +12,7 @@ import {
   ExternalRepBaseDocumentItemResponse,
   ExternalRepBaseDocumentPaymentComplementResponse,
   RepOperationalAlertResponse,
+  RepBaseDocumentTimelineEntryResponse,
   RepOperationalSummaryCountsResponse
 } from '../models/payment-complements.models';
 
@@ -347,6 +348,60 @@ import {
                 </article>
               </section>
 
+              <section class="card inset-card">
+                <div class="section-header">
+                  <div>
+                    <h4>Timeline operativo</h4>
+                    <p class="helper">Historial cronológico del documento base REP derivado de importación, validación, pagos y operación REP. Las alertas activas permanecen en el resumen operativo.</p>
+                  </div>
+                </div>
+
+                @if (!(detail.timeline ?? []).length) {
+                  <p class="helper">Todavía no hay eventos cronológicos disponibles para este CFDI externo.</p>
+                } @else {
+                  <div class="timeline-list">
+                    @for (event of detail.timeline ?? []; track event.eventType + '-' + event.occurredAtUtc + '-' + (event.referenceId ?? 0)) {
+                      <article class="timeline-item">
+                        <header>
+                          <div class="timeline-heading">
+                            <strong>{{ event.title }}</strong>
+                            <div class="timeline-badges">
+                              @if (event.severity) {
+                                <span class="severity-pill" [class.severity-warning]="event.severity === 'warning'" [class.severity-error]="event.severity === 'error'" [class.severity-critical]="event.severity === 'critical'" [class.severity-info]="event.severity === 'info'">
+                                  {{ getDisplayLabel(event.severity) }}
+                                </span>
+                              }
+                              @if (event.status) {
+                                <span class="timeline-chip">{{ getDisplayLabel(event.status) }}</span>
+                              }
+                              <span class="timeline-chip">{{ event.eventType }}</span>
+                            </div>
+                          </div>
+                          <span>{{ formatUtc(event.occurredAtUtc) }}</span>
+                        </header>
+                        <p>{{ event.description }}</p>
+                        <small>
+                          Fuente {{ event.sourceType }}
+                          @if (event.referenceId) {
+                            · Ref #{{ event.referenceId }}
+                          }
+                          @if (event.referenceUuid) {
+                            · UUID {{ event.referenceUuid }}
+                          }
+                        </small>
+                        @if (timelineMetadataEntries(event).length) {
+                          <div class="timeline-meta-list">
+                            @for (entry of timelineMetadataEntries(event); track entry) {
+                              <span class="timeline-chip">{{ entry }}</span>
+                            }
+                          </div>
+                        }
+                      </article>
+                    }
+                  </div>
+                }
+              </section>
+
               @if (showRegisterPaymentForm()) {
                 <section class="card inset-card">
                   <h4>Registrar pago</h4>
@@ -497,6 +552,13 @@ import {
     .history-item { border:1px solid #ece5d7; border-radius:0.8rem; padding:0.75rem; display:grid; gap:0.35rem; }
     .history-item header { display:flex; justify-content:space-between; gap:1rem; }
     .history-item p, .history-item small { margin:0; color:#425466; }
+    .timeline-list { display:grid; gap:0.85rem; }
+    .timeline-item { border:1px solid #ece5d7; border-left:4px solid #8a6a32; border-radius:0.9rem; padding:0.85rem 1rem; display:grid; gap:0.45rem; background:#fcfaf4; }
+    .timeline-item header { display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; }
+    .timeline-heading { display:grid; gap:0.45rem; }
+    .timeline-badges, .timeline-meta-list { display:flex; gap:0.45rem; flex-wrap:wrap; }
+    .timeline-chip { display:inline-flex; align-items:center; padding:0.2rem 0.55rem; border-radius:0.8rem; background:#eef1f4; color:#425466; font-size:0.75rem; font-weight:700; }
+    .timeline-item p, .timeline-item small { margin:0; color:#425466; }
   `],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -829,6 +891,12 @@ export class PaymentComplementExternalBaseDocumentsPageComponent {
 
   protected getRecommendedActionLabel(action?: string | null): string {
     return action ? getDisplayLabel(action) : 'Sin acción disponible';
+  }
+
+  protected timelineMetadataEntries(item: RepBaseDocumentTimelineEntryResponse): string[] {
+    return Object.entries(item.metadata ?? {})
+      .filter(([, value]) => value)
+      .map(([key, value]) => `${key}: ${value}`);
   }
 
   protected async applyQuickView(quickView: string): Promise<void> {

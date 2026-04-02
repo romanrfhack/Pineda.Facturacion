@@ -297,6 +297,9 @@ public static class PaymentComplementsEndpoints
         {
             Summary = MapInternalRepBaseDocument(result.Document.Summary),
             OperationalState = result.Document.OperationalState is null ? null : MapInternalRepOperationalState(result.Document.OperationalState),
+            Timeline = result.Document.Timeline
+                .Select(MapTimelineEntry)
+                .ToList(),
             PaymentHistory = result.Document.PaymentHistory
                 .Select(x => new InternalRepBaseDocumentPaymentHistoryResponse
                 {
@@ -1753,6 +1756,9 @@ public static class PaymentComplementsEndpoints
         return new ExternalRepBaseDocumentDetailResponse
         {
             Summary = MapExternalRepBaseDocumentListItem(document.Summary),
+            Timeline = document.Timeline
+                .Select(MapTimelineEntry)
+                .ToList(),
             PaymentHistory = document.PaymentHistory
                 .Select(x => new ExternalRepBaseDocumentPaymentHistoryResponse
                 {
@@ -1863,6 +1869,23 @@ public static class PaymentComplementsEndpoints
             NextRecommendedAction = item.NextRecommendedAction,
             AvailableActions = item.AvailableActions.ToList(),
             Alerts = item.Alerts.Select(MapOperationalAlert).ToList()
+        };
+    }
+
+    private static RepBaseDocumentTimelineEntryResponse MapTimelineEntry(RepBaseDocumentTimelineEntry item)
+    {
+        return new RepBaseDocumentTimelineEntryResponse
+        {
+            EventType = item.EventType,
+            OccurredAtUtc = item.OccurredAtUtc,
+            SourceType = item.SourceType,
+            Severity = item.Severity,
+            Title = item.Title,
+            Description = item.Description,
+            Status = item.Status,
+            ReferenceId = item.ReferenceId,
+            ReferenceUuid = item.ReferenceUuid,
+            Metadata = item.Metadata.ToDictionary(x => x.Key, x => x.Value)
         };
     }
 
@@ -2640,11 +2663,36 @@ public sealed class InternalRepBaseDocumentDetailResponse
 
     public InternalRepBaseDocumentOperationalStateResponse? OperationalState { get; set; }
 
+    public List<RepBaseDocumentTimelineEntryResponse> Timeline { get; set; } = [];
+
     public List<InternalRepBaseDocumentPaymentHistoryResponse> PaymentHistory { get; set; } = [];
 
     public List<InternalRepBaseDocumentPaymentApplicationResponse> PaymentApplications { get; set; } = [];
 
     public List<InternalRepBaseDocumentPaymentComplementResponse> IssuedReps { get; set; } = [];
+}
+
+public sealed class RepBaseDocumentTimelineEntryResponse
+{
+    public string EventType { get; set; } = string.Empty;
+
+    public DateTime OccurredAtUtc { get; set; }
+
+    public string SourceType { get; set; } = string.Empty;
+
+    public string? Severity { get; set; }
+
+    public string Title { get; set; } = string.Empty;
+
+    public string Description { get; set; } = string.Empty;
+
+    public string? Status { get; set; }
+
+    public long? ReferenceId { get; set; }
+
+    public string? ReferenceUuid { get; set; }
+
+    public Dictionary<string, string?> Metadata { get; set; } = [];
 }
 
 public sealed class InternalRepBaseDocumentEligibilityExplanationResponse
@@ -3291,6 +3339,8 @@ public sealed class ExternalRepBaseDocumentImportResponse
 public sealed class ExternalRepBaseDocumentDetailResponse
 {
     public ExternalRepBaseDocumentItemResponse Summary { get; set; } = new();
+
+    public List<RepBaseDocumentTimelineEntryResponse> Timeline { get; set; } = [];
 
     public List<ExternalRepBaseDocumentPaymentHistoryResponse> PaymentHistory { get; set; } = [];
 

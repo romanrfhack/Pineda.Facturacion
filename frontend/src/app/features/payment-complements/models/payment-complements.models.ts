@@ -395,9 +395,23 @@ export interface ExternalRepBaseDocumentImportResponse {
 
 export interface ExternalRepBaseDocumentDetailResponse {
   summary: ExternalRepBaseDocumentItemResponse;
+  timeline?: RepBaseDocumentTimelineEntryResponse[];
   paymentHistory: ExternalRepBaseDocumentPaymentHistoryResponse[];
   paymentApplications: ExternalRepBaseDocumentPaymentApplicationResponse[];
   issuedReps: ExternalRepBaseDocumentPaymentComplementResponse[];
+}
+
+export interface RepBaseDocumentTimelineEntryResponse {
+  eventType: string;
+  occurredAtUtc: string;
+  sourceType: string;
+  severity?: string | null;
+  title: string;
+  description: string;
+  status?: string | null;
+  referenceId?: number | null;
+  referenceUuid?: string | null;
+  metadata: Record<string, string | null>;
 }
 
 export interface ExternalRepBaseDocumentFilters {
@@ -849,6 +863,7 @@ export interface InternalRepBaseDocumentOperationalStateResponse {
 export interface InternalRepBaseDocumentDetailResponse {
   summary: InternalRepBaseDocumentItemResponse;
   operationalState?: InternalRepBaseDocumentOperationalStateResponse | null;
+  timeline?: RepBaseDocumentTimelineEntryResponse[];
   paymentHistory: InternalRepBaseDocumentPaymentHistoryResponse[];
   paymentApplications: InternalRepBaseDocumentPaymentApplicationResponse[];
   issuedReps: InternalRepBaseDocumentPaymentComplementResponse[];

@@ -164,8 +164,16 @@ public class RepBaseDocumentServicesTests
                         Status = "Stamped",
                         Uuid = "UUID-REP-1",
                         PaymentDateUtc = new DateTime(2026, 4, 1, 0, 0, 0, DateTimeKind.Utc),
+                        CreatedAtUtc = new DateTime(2026, 4, 1, 0, 55, 0, DateTimeKind.Utc),
+                        UpdatedAtUtc = new DateTime(2026, 4, 1, 1, 5, 0, DateTimeKind.Utc),
                         IssuedAtUtc = new DateTime(2026, 4, 1, 1, 0, 0, DateTimeKind.Utc),
+                        StampCreatedAtUtc = new DateTime(2026, 4, 1, 1, 1, 0, DateTimeKind.Utc),
+                        StampUpdatedAtUtc = new DateTime(2026, 4, 1, 1, 10, 0, DateTimeKind.Utc),
                         StampedAtUtc = new DateTime(2026, 4, 1, 1, 5, 0, DateTimeKind.Utc),
+                        LastStatusCheckAtUtc = new DateTime(2026, 4, 1, 2, 0, 0, DateTimeKind.Utc),
+                        LastKnownExternalStatus = "VIGENTE",
+                        LastStatusProviderCode = "200",
+                        LastStatusProviderMessage = "Estatus vigente",
                         CancelledAtUtc = null,
                         ProviderName = "FacturaloPlus",
                         InstallmentNumber = 1,
@@ -185,6 +193,16 @@ public class RepBaseDocumentServicesTests
         Assert.Single(result.Document!.PaymentHistory);
         Assert.Single(result.Document!.PaymentApplications);
         Assert.Single(result.Document.PaymentComplements);
+        Assert.Equal(
+            [
+                RepBaseDocumentTimelineEventTypes.PaymentRegistered,
+                RepBaseDocumentTimelineEventTypes.PaymentApplied,
+                RepBaseDocumentTimelineEventTypes.RepPrepared,
+                RepBaseDocumentTimelineEventTypes.RepStamped,
+                RepBaseDocumentTimelineEventTypes.RepStatusRefreshed
+            ],
+            result.Document.Timeline.Select(x => x.EventType).ToArray());
+        Assert.True(result.Document.Timeline.SequenceEqual(result.Document.Timeline.OrderBy(x => x.OccurredAtUtc)));
         Assert.True(result.Document.Summary.IsEligible);
         Assert.NotNull(result.Document.OperationalState);
     }

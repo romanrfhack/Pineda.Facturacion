@@ -249,6 +249,44 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
             createdAtUtc: '2026-04-02T10:00:00Z'
           }
         ],
+        timeline: [
+          {
+            eventType: 'PaymentRegistered',
+            occurredAtUtc: '2026-04-02T10:00:00Z',
+            sourceType: 'AccountsReceivablePayment',
+            severity: 'info',
+            title: 'Pago registrado',
+            description: 'Se registró el pago #9001 por 40.00 MXN.',
+            status: 'Stamped',
+            referenceId: 9001,
+            referenceUuid: 'UUID-PC-1',
+            metadata: { paymentFormSat: '03' }
+          },
+          {
+            eventType: 'RepPrepared',
+            occurredAtUtc: '2026-04-02T12:00:00Z',
+            sourceType: 'PaymentComplementDocument',
+            severity: 'info',
+            title: 'REP preparado',
+            description: 'Se preparó el REP #7001 para el pago #9001 por 40.00 MXN.',
+            status: 'Stamped',
+            referenceId: 7001,
+            referenceUuid: 'UUID-PC-1',
+            metadata: { accountsReceivablePaymentId: '9001' }
+          },
+          {
+            eventType: 'RepStamped',
+            occurredAtUtc: '2026-04-02T12:05:00Z',
+            sourceType: 'PaymentComplementStamp',
+            severity: 'info',
+            title: 'REP timbrado',
+            description: 'El REP #7001 quedó timbrado para el receptor BBB010101BBB.',
+            status: 'Stamped',
+            referenceId: 7001,
+            referenceUuid: 'UUID-PC-1',
+            metadata: { providerName: 'FacturaloPlus' }
+          }
+        ],
         issuedReps: [
           {
             paymentComplementId: 7001,
@@ -491,6 +529,7 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Contexto del CFDI base');
     expect(fixture.nativeElement.textContent).toContain('Explicación de elegibilidad');
     expect(fixture.nativeElement.textContent).toContain('Snapshot operativo persistido');
+    expect(fixture.nativeElement.textContent).toContain('Timeline operativo');
     expect(fixture.nativeElement.textContent).toContain('Historial de pagos registrados');
     expect(fixture.nativeElement.textContent).toContain('Aplicaciones de pago');
     expect(fixture.nativeElement.textContent).toContain('REP emitidos y relacionados');
@@ -498,6 +537,8 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('UUID-PC-1');
     expect(fixture.nativeElement.textContent).toContain('EligibleInternalRep');
     expect(fixture.nativeElement.textContent).toContain('FacturaloPlus');
+    expect(fixture.nativeElement.textContent).toContain('Pago registrado');
+    expect(fixture.nativeElement.textContent).toContain('REP timbrado');
   });
 
   it('renders operational alerts and refresh/cancel actions in detail', async () => {

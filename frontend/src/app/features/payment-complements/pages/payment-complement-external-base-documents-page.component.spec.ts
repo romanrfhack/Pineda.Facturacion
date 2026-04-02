@@ -130,6 +130,32 @@ describe('PaymentComplementExternalBaseDocumentsPageComponent', () => {
                   { code: 'StampedRepAvailable', severity: 'info', message: 'El CFDI externo ya cuenta con REP timbrado y sólo requiere seguimiento o refresh de estatus.' }
                 ]
               },
+              timeline: [
+                {
+                  eventType: 'ExternalXmlImported',
+                  occurredAtUtc: '2026-04-01T11:00:00Z',
+                  sourceType: 'ExternalRepBaseDocument',
+                  severity: 'info',
+                  title: 'XML externo importado',
+                  description: 'Se importó el CFDI externo UUID-EXT-123 desde external.xml.',
+                  status: 'Accepted',
+                  referenceId: 123,
+                  referenceUuid: 'UUID-EXT-123',
+                  metadata: { sourceFileName: 'external.xml' }
+                },
+                {
+                  eventType: 'RepStamped',
+                  occurredAtUtc: '2026-04-01T12:12:00Z',
+                  sourceType: 'PaymentComplementStamp',
+                  severity: 'info',
+                  title: 'REP timbrado',
+                  description: 'El REP #7001 quedó timbrado para el receptor BBB010101BBB.',
+                  status: 'Stamped',
+                  referenceId: 7001,
+                  referenceUuid: 'UUID-REP-1',
+                  metadata: { providerName: 'FacturaloPlus' }
+                }
+              ],
               paymentHistory: [],
               paymentApplications: [],
               issuedReps: [
@@ -269,6 +295,8 @@ describe('PaymentComplementExternalBaseDocumentsPageComponent', () => {
 
     expect(fixture.nativeElement.textContent).toContain('Detalle operativo del CFDI importado');
     expect(fixture.nativeElement.textContent).toContain('Emisor externo');
+    expect(fixture.nativeElement.textContent).toContain('Timeline operativo');
+    expect(fixture.nativeElement.textContent).toContain('XML externo importado');
   });
 
   it('renders external operation actions in detail', async () => {

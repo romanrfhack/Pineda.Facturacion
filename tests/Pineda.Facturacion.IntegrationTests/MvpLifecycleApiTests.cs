@@ -1359,6 +1359,10 @@ public class MvpLifecycleApiTests
         Assert.Equal(40m, application.GetProperty("appliedAmount").GetDecimal());
         Assert.Equal("Pago parcial REP detalle", application.GetProperty("notes").GetString());
 
+        var timeline = root.GetProperty("timeline").EnumerateArray().ToList();
+        Assert.Equal("PaymentRegistered", timeline[0].GetProperty("eventType").GetString());
+        Assert.Equal("RepStamped", timeline[^1].GetProperty("eventType").GetString());
+
         var issuedReps = root.GetProperty("issuedReps").EnumerateArray().ToList();
         var issuedRep = Assert.Single(issuedReps);
         Assert.Equal(paymentComplementId, issuedRep.GetProperty("paymentComplementId").GetInt64());
@@ -1754,6 +1758,9 @@ public class MvpLifecycleApiTests
         Assert.Equal("MXN", summary.GetProperty("currencyCode").GetString());
         Assert.Equal("ReadyForPayment", summary.GetProperty("operationalStatus").GetString());
         Assert.True(summary.GetProperty("isEligible").GetBoolean());
+        var timeline = detailJson.RootElement.GetProperty("timeline").EnumerateArray().ToList();
+        Assert.Equal("ExternalXmlImported", timeline[0].GetProperty("eventType").GetString());
+        Assert.Equal("ExternalValidationAccepted", timeline[1].GetProperty("eventType").GetString());
         Assert.Empty(detailJson.RootElement.GetProperty("paymentHistory").EnumerateArray());
         Assert.Empty(detailJson.RootElement.GetProperty("paymentApplications").EnumerateArray());
         Assert.Empty(detailJson.RootElement.GetProperty("issuedReps").EnumerateArray());
@@ -2572,6 +2579,10 @@ public class MvpLifecycleApiTests
         var detailResponse = await client.GetAsync($"/api/payment-complements/external-base-documents/{externalId}");
         Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
         using var detailJson = await JsonDocument.ParseAsync(await detailResponse.Content.ReadAsStreamAsync());
+        var timeline = detailJson.RootElement.GetProperty("timeline").EnumerateArray().ToList();
+        Assert.Equal("ExternalXmlImported", timeline[0].GetProperty("eventType").GetString());
+        Assert.Contains(timeline, item => item.GetProperty("eventType").GetString() == "RepCancellationRequested");
+        Assert.Equal("RepStatusRefreshed", timeline[^1].GetProperty("eventType").GetString());
         var issuedRep = Assert.Single(detailJson.RootElement.GetProperty("issuedReps").EnumerateArray().ToList());
         Assert.Equal("Cancelled", issuedRep.GetProperty("status").GetString());
     }
