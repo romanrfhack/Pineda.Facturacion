@@ -1166,6 +1166,9 @@ public class PaymentComplementServicesTests
         public Task<IReadOnlyList<AccountsReceivablePayment>> SearchAsync(SearchAccountsReceivablePaymentsFilter filter, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<AccountsReceivablePayment>>(SearchResults.ToList());
 
+        public Task<IReadOnlyList<AccountsReceivablePayment>> ListByInvoiceIdAsync(long accountsReceivableInvoiceId, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<AccountsReceivablePayment>>(SearchResults.Where(x => x.Applications.Any(a => a.AccountsReceivableInvoiceId == accountsReceivableInvoiceId)).ToList());
+
         public Task AddAsync(AccountsReceivablePayment accountsReceivablePayment, CancellationToken cancellationToken = default)
         {
             Added = accountsReceivablePayment;

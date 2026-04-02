@@ -15,6 +15,11 @@ export interface AccountsReceivableInvoiceResponse {
   fiscalDocumentId: number;
   fiscalStampId: number;
   fiscalReceiverId?: number | null;
+  receiverRfc?: string | null;
+  receiverLegalName?: string | null;
+  fiscalSeries?: string | null;
+  fiscalFolio?: string | null;
+  fiscalUuid?: string | null;
   status: string;
   paymentMethodSat: string;
   paymentFormSatInitial: string;
@@ -35,6 +40,9 @@ export interface AccountsReceivableInvoiceResponse {
   followUpPending: boolean;
   collectionCommitments: CollectionCommitmentResponse[];
   collectionNotes: CollectionNoteResponse[];
+  relatedPayments: AccountsReceivablePaymentResponse[];
+  relatedPaymentComplements: AccountsReceivablePaymentComplementSummaryResponse[];
+  timeline: AccountsReceivableTimelineEntryResponse[];
   applications: AccountsReceivablePaymentApplicationResponse[];
 }
 
@@ -121,6 +129,28 @@ export interface CollectionNoteResponse {
   nextFollowUpAtUtc?: string | null;
   createdAtUtc: string;
   createdByUsername?: string | null;
+}
+
+export interface AccountsReceivablePaymentComplementSummaryResponse {
+  paymentComplementId: number;
+  accountsReceivablePaymentId: number;
+  status: string;
+  totalPaymentsAmount: number;
+  issuedAtUtc: string;
+  paymentDateUtc: string;
+  uuid?: string | null;
+  stampedAtUtc?: string | null;
+  cancelledAtUtc?: string | null;
+}
+
+export interface AccountsReceivableTimelineEntryResponse {
+  atUtc: string;
+  kind: string;
+  title: string;
+  description?: string | null;
+  sourceType: string;
+  sourceId: number;
+  status?: string | null;
 }
 
 export interface CreateCollectionNoteResponse {

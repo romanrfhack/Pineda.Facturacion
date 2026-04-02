@@ -5,6 +5,11 @@ namespace Pineda.Facturacion.Application.Abstractions.Persistence;
 
 public interface IAccountsReceivableInvoiceRepository
 {
+    Task<AccountsReceivableInvoice?> GetByIdAsync(long accountsReceivableInvoiceId, CancellationToken cancellationToken = default)
+    {
+        return GetTrackedByIdAsync(accountsReceivableInvoiceId, cancellationToken);
+    }
+
     Task<AccountsReceivableInvoice?> GetByFiscalDocumentIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default);
 
     Task<AccountsReceivableInvoice?> GetByExternalRepBaseDocumentIdAsync(long externalRepBaseDocumentId, CancellationToken cancellationToken = default);

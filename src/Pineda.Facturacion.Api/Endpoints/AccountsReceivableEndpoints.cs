@@ -57,6 +57,12 @@ public static class AccountsReceivableEndpoints
             .WithSummary("List minimal accounts receivable portfolio rows")
             .Produces<AccountsReceivablePortfolioResponse>(StatusCodes.Status200OK);
 
+        group.MapGet("/invoices/{accountsReceivableInvoiceId:long}", GetAccountsReceivableInvoiceByIdAsync)
+            .WithName("GetAccountsReceivableInvoiceById")
+            .WithSummary("Get the consolidated detail for an accounts receivable invoice")
+            .Produces<AccountsReceivableInvoiceResponse>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
+
         group.MapGet("/invoices/{accountsReceivableInvoiceId:long}/collection-commitments", ListCollectionCommitmentsAsync)
             .WithName("ListCollectionCommitments")
             .WithSummary("List collection commitments for an accounts receivable invoice")
@@ -171,20 +177,30 @@ public static class AccountsReceivableEndpoints
 
     private static async Task<Results<Ok<AccountsReceivableInvoiceResponse>, NotFound>> GetAccountsReceivableInvoiceByFiscalDocumentIdAsync(
         long fiscalDocumentId,
-        GetAccountsReceivableInvoiceByFiscalDocumentIdService service,
-        ListCollectionCommitmentsByInvoiceIdService listCollectionCommitmentsByInvoiceIdService,
-        ListCollectionNotesByInvoiceIdService listCollectionNotesByInvoiceIdService,
+        GetAccountsReceivableInvoiceDetailService service,
         CancellationToken cancellationToken)
     {
-        var result = await service.ExecuteAsync(fiscalDocumentId, cancellationToken);
-        if (result.Outcome == GetAccountsReceivableInvoiceByFiscalDocumentIdOutcome.NotFound || result.AccountsReceivableInvoice is null)
+        var result = await service.ExecuteByFiscalDocumentIdAsync(fiscalDocumentId, cancellationToken);
+        if (result.Outcome == GetAccountsReceivableInvoiceDetailOutcome.NotFound || result.Detail is null)
         {
             return TypedResults.NotFound();
         }
 
-        var commitments = await listCollectionCommitmentsByInvoiceIdService.ExecuteAsync(result.AccountsReceivableInvoice.Id, cancellationToken);
-        var notes = await listCollectionNotesByInvoiceIdService.ExecuteAsync(result.AccountsReceivableInvoice.Id, cancellationToken);
-        return TypedResults.Ok(MapInvoice(result.AccountsReceivableInvoice, commitments, notes));
+        return TypedResults.Ok(MapInvoice(result.Detail));
+    }
+
+    private static async Task<Results<Ok<AccountsReceivableInvoiceResponse>, NotFound>> GetAccountsReceivableInvoiceByIdAsync(
+        long accountsReceivableInvoiceId,
+        GetAccountsReceivableInvoiceDetailService service,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteByInvoiceIdAsync(accountsReceivableInvoiceId, cancellationToken);
+        if (result.Outcome == GetAccountsReceivableInvoiceDetailOutcome.NotFound || result.Detail is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        return TypedResults.Ok(MapInvoice(result.Detail));
     }
 
     private static async Task<Results<Ok<CreateAccountsReceivableInvoiceResponse>, BadRequest<CreateAccountsReceivableInvoiceResponse>, NotFound<CreateAccountsReceivableInvoiceResponse>>> EnsureAccountsReceivableInvoiceAsync(
@@ -629,6 +645,26 @@ public static class AccountsReceivableEndpoints
         };
     }
 
+    private static AccountsReceivableInvoiceResponse MapInvoice(AccountsReceivableInvoiceDetailProjection detail)
+    {
+        var response = MapInvoice(detail.Invoice, detail.Commitments, detail.Notes);
+        response.ReceiverRfc = detail.ReceiverRfc;
+        response.ReceiverLegalName = detail.ReceiverLegalName;
+        response.FiscalSeries = detail.FiscalSeries;
+        response.FiscalFolio = detail.FiscalFolio;
+        response.FiscalUuid = detail.FiscalUuid;
+        response.RelatedPayments = detail.RelatedPaymentEntities
+            .Select(payment =>
+            {
+                var projection = detail.RelatedPayments.FirstOrDefault(x => x.PaymentId == payment.Id);
+                return MapPayment(payment, projection);
+            })
+            .ToList();
+        response.RelatedPaymentComplements = detail.RelatedPaymentComplements.Select(MapPaymentComplementSummary).ToList();
+        response.Timeline = detail.Timeline.Select(MapTimelineEntry).ToList();
+        return response;
+    }
+
     private static AccountsReceivablePaymentResponse MapPayment(
         AccountsReceivablePayment payment,
         AccountsReceivablePaymentOperationalProjection? projection = null)
@@ -758,6 +794,36 @@ public static class AccountsReceivableEndpoints
         };
     }
 
+    private static AccountsReceivablePaymentComplementSummaryResponse MapPaymentComplementSummary(AccountsReceivableInvoiceRepSummary item)
+    {
+        return new AccountsReceivablePaymentComplementSummaryResponse
+        {
+            PaymentComplementId = item.PaymentComplementId,
+            AccountsReceivablePaymentId = item.AccountsReceivablePaymentId,
+            Status = item.Status,
+            TotalPaymentsAmount = item.TotalPaymentsAmount,
+            IssuedAtUtc = item.IssuedAtUtc,
+            PaymentDateUtc = item.PaymentDateUtc,
+            Uuid = item.Uuid,
+            StampedAtUtc = item.StampedAtUtc,
+            CancelledAtUtc = item.CancelledAtUtc
+        };
+    }
+
+    private static AccountsReceivableTimelineEntryResponse MapTimelineEntry(AccountsReceivableTimelineEntry item)
+    {
+        return new AccountsReceivableTimelineEntryResponse
+        {
+            AtUtc = item.AtUtc,
+            Kind = item.Kind,
+            Title = item.Title,
+            Description = item.Description,
+            SourceType = item.SourceType,
+            SourceId = item.SourceId,
+            Status = item.Status
+        };
+    }
+
     private static AccountsReceivablePaymentSummaryItemResponse MapPaymentProjection(AccountsReceivablePaymentOperationalProjection item)
     {
         return new AccountsReceivablePaymentSummaryItemResponse
@@ -812,6 +878,16 @@ public class AccountsReceivableInvoiceResponse
 
     public long? FiscalReceiverId { get; set; }
 
+    public string? ReceiverRfc { get; set; }
+
+    public string? ReceiverLegalName { get; set; }
+
+    public string? FiscalSeries { get; set; }
+
+    public string? FiscalFolio { get; set; }
+
+    public string? FiscalUuid { get; set; }
+
     public string Status { get; set; } = string.Empty;
 
     public string PaymentMethodSat { get; set; } = string.Empty;
@@ -851,6 +927,12 @@ public class AccountsReceivableInvoiceResponse
     public List<CollectionCommitmentResponse> CollectionCommitments { get; set; } = [];
 
     public List<CollectionNoteResponse> CollectionNotes { get; set; } = [];
+
+    public List<AccountsReceivablePaymentResponse> RelatedPayments { get; set; } = [];
+
+    public List<AccountsReceivablePaymentComplementSummaryResponse> RelatedPaymentComplements { get; set; } = [];
+
+    public List<AccountsReceivableTimelineEntryResponse> Timeline { get; set; } = [];
 
     public List<AccountsReceivablePaymentApplicationResponse> Applications { get; set; } = [];
 }
@@ -989,6 +1071,44 @@ public class CollectionNoteResponse
     public DateTime CreatedAtUtc { get; set; }
 
     public string? CreatedByUsername { get; set; }
+}
+
+public class AccountsReceivablePaymentComplementSummaryResponse
+{
+    public long PaymentComplementId { get; set; }
+
+    public long AccountsReceivablePaymentId { get; set; }
+
+    public string Status { get; set; } = string.Empty;
+
+    public decimal TotalPaymentsAmount { get; set; }
+
+    public DateTime IssuedAtUtc { get; set; }
+
+    public DateTime PaymentDateUtc { get; set; }
+
+    public string? Uuid { get; set; }
+
+    public DateTime? StampedAtUtc { get; set; }
+
+    public DateTime? CancelledAtUtc { get; set; }
+}
+
+public class AccountsReceivableTimelineEntryResponse
+{
+    public DateTime AtUtc { get; set; }
+
+    public string Kind { get; set; } = string.Empty;
+
+    public string Title { get; set; } = string.Empty;
+
+    public string? Description { get; set; }
+
+    public string SourceType { get; set; } = string.Empty;
+
+    public long SourceId { get; set; }
+
+    public string? Status { get; set; }
 }
 
 public class CreateAccountsReceivablePaymentRequest

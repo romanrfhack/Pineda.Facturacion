@@ -4,6 +4,8 @@ public sealed class SearchAccountsReceivablePaymentsFilter
 {
     public long? PaymentId { get; init; }
 
+    public IReadOnlyCollection<long>? PaymentIds { get; init; }
+
     public long? FiscalReceiverId { get; init; }
 
     public string? OperationalStatus { get; init; }

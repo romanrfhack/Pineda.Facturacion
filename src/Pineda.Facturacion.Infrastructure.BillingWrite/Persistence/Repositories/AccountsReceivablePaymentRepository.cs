@@ -43,6 +43,11 @@ public class AccountsReceivablePaymentRepository : IAccountsReceivablePaymentRep
             query = query.Where(x => x.Id == filter.PaymentId.Value);
         }
 
+        if (filter.PaymentIds is { Count: > 0 })
+        {
+            query = query.Where(x => filter.PaymentIds.Contains(x.Id));
+        }
+
         if (filter.FiscalReceiverId.HasValue)
         {
             query = query.Where(x => x.ReceivedFromFiscalReceiverId == filter.FiscalReceiverId.Value);
@@ -68,6 +73,17 @@ public class AccountsReceivablePaymentRepository : IAccountsReceivablePaymentRep
         }
 
         return await query
+            .OrderByDescending(x => x.PaymentDateUtc)
+            .ThenByDescending(x => x.Id)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<AccountsReceivablePayment>> ListByInvoiceIdAsync(long accountsReceivableInvoiceId, CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.AccountsReceivablePayments
+            .AsNoTracking()
+            .Include(x => x.Applications)
+            .Where(x => x.Applications.Any(a => a.AccountsReceivableInvoiceId == accountsReceivableInvoiceId))
             .OrderByDescending(x => x.PaymentDateUtc)
             .ThenByDescending(x => x.Id)
             .ToListAsync(cancellationToken);

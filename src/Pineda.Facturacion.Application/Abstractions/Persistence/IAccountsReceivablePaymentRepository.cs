@@ -11,5 +11,7 @@ public interface IAccountsReceivablePaymentRepository
 
     Task<IReadOnlyList<AccountsReceivablePayment>> SearchAsync(SearchAccountsReceivablePaymentsFilter filter, CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<AccountsReceivablePayment>> ListByInvoiceIdAsync(long accountsReceivableInvoiceId, CancellationToken cancellationToken = default);
+
     Task AddAsync(AccountsReceivablePayment accountsReceivablePayment, CancellationToken cancellationToken = default);
 }

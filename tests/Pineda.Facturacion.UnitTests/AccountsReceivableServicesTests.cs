@@ -992,7 +992,20 @@ public class AccountsReceivableServicesTests
                 query = query.Where(x => x.Id == filter.PaymentId.Value);
             }
 
+            if (filter.PaymentIds is { Count: > 0 })
+            {
+                query = query.Where(x => filter.PaymentIds.Contains(x.Id));
+            }
+
             return Task.FromResult<IReadOnlyList<AccountsReceivablePayment>>(query.ToList());
+        }
+
+        public Task<IReadOnlyList<AccountsReceivablePayment>> ListByInvoiceIdAsync(long accountsReceivableInvoiceId, CancellationToken cancellationToken = default)
+        {
+            IReadOnlyList<AccountsReceivablePayment> items = SearchResults
+                .Where(x => x.Applications.Any(a => a.AccountsReceivableInvoiceId == accountsReceivableInvoiceId))
+                .ToList();
+            return Task.FromResult(items);
         }
 
         public Task AddAsync(AccountsReceivablePayment accountsReceivablePayment, CancellationToken cancellationToken = default)

@@ -171,9 +171,7 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
                         }
                       </td>
                       <td>
-                        @if (item.fiscalDocumentId) {
-                          <a [routerLink]="['/app/accounts-receivable']" [queryParams]="{ fiscalDocumentId: item.fiscalDocumentId }">Ver detalle</a>
-                        }
+                        <a [routerLink]="['/app/accounts-receivable']" [queryParams]="{ invoiceId: item.accountsReceivableInvoiceId }">Ver detalle</a>
                       </td>
                     </tr>
                   }
@@ -304,6 +302,101 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
 
         <section class="card">
           <div class="section-head compact">
+            <h3>Resumen consolidado</h3>
+            <p class="helper">Cuenta #{{ currentInvoice.id }} · CFDI {{ formatInvoiceFiscalLabel(currentInvoice) }}</p>
+          </div>
+          <div class="filter-grid">
+            <div>
+              <strong>{{ currentInvoice.receiverLegalName || 'Sin receptor' }}</strong>
+              <div class="subtle">{{ currentInvoice.receiverRfc || 'Sin RFC' }}</div>
+            </div>
+            <div>
+              <strong>Total</strong>
+              <div class="subtle">{{ currentInvoice.total | currency:'MXN':'symbol':'1.2-2' }}</div>
+            </div>
+            <div>
+              <strong>Pagado</strong>
+              <div class="subtle">{{ currentInvoice.paidTotal | currency:'MXN':'symbol':'1.2-2' }}</div>
+            </div>
+            <div>
+              <strong>Saldo</strong>
+              <div class="subtle">{{ currentInvoice.outstandingBalance | currency:'MXN':'symbol':'1.2-2' }}</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="section-head compact">
+            <h3>Pagos y aplicaciones relacionados</h3>
+            <p class="helper">{{ currentInvoice.relatedPayments.length }} pago(s)</p>
+          </div>
+          @if (!currentInvoice.relatedPayments.length) {
+            <p class="helper">No hay pagos relacionados con esta cuenta.</p>
+          } @else {
+            <table class="applications">
+              <thead>
+                <tr>
+                  <th>Pago</th>
+                  <th>Monto</th>
+                  <th>Aplicado</th>
+                  <th>Disponible</th>
+                  <th>Estatus</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (relatedPayment of currentInvoice.relatedPayments; track relatedPayment.id) {
+                  <tr>
+                    <td>
+                      <a [routerLink]="['/app/accounts-receivable']" [queryParams]="{ paymentId: relatedPayment.id }">#{{ relatedPayment.id }}</a>
+                      <div class="subtle">{{ relatedPayment.paymentDateUtc | date:'yyyy-MM-dd' }}</div>
+                    </td>
+                    <td>{{ relatedPayment.amount | currency:'MXN':'symbol':'1.2-2' }}</td>
+                    <td>{{ relatedPayment.appliedTotal | currency:'MXN':'symbol':'1.2-2' }}</td>
+                    <td>{{ relatedPayment.remainingAmount | currency:'MXN':'symbol':'1.2-2' }}</td>
+                    <td>
+                      <span class="badge" [attr.data-status]="relatedPayment.operationalStatus">{{ relatedPayment.operationalStatus }}</span>
+                      <div class="subtle"><span class="badge" [attr.data-status]="relatedPayment.repStatus">{{ relatedPayment.repStatus }}</span></div>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          }
+        </section>
+
+        <section class="card">
+          <div class="section-head compact">
+            <h3>REP relacionados</h3>
+            <p class="helper">{{ currentInvoice.relatedPaymentComplements.length }} REP(s)</p>
+          </div>
+          @if (!currentInvoice.relatedPaymentComplements.length) {
+            <p class="helper">No hay REP relacionados con esta cuenta.</p>
+          } @else {
+            <table class="applications">
+              <thead>
+                <tr>
+                  <th>REP</th>
+                  <th>Pago</th>
+                  <th>Estado</th>
+                  <th>UUID</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (rep of currentInvoice.relatedPaymentComplements; track rep.paymentComplementId) {
+                  <tr>
+                    <td>#{{ rep.paymentComplementId }}<div class="subtle">{{ rep.issuedAtUtc | date:'yyyy-MM-dd' }}</div></td>
+                    <td>#{{ rep.accountsReceivablePaymentId }}</td>
+                    <td><span class="badge" [attr.data-status]="rep.status">{{ rep.status }}</span></td>
+                    <td>{{ rep.uuid || 'Pendiente' }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          }
+        </section>
+
+        <section class="card">
+          <div class="section-head compact">
             <h3>Seguimiento de cobranza</h3>
             <div class="detail-badges">
               <span class="badge" [attr.data-status]="currentInvoice.agingBucket">{{ currentInvoice.agingBucket }}</span>
@@ -423,6 +516,33 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
             </div>
           </div>
         </section>
+
+        <section class="card">
+          <div class="section-head compact">
+            <h3>Timeline operativo</h3>
+            <p class="helper">{{ currentInvoice.timeline.length }} evento(s)</p>
+          </div>
+          @if (!currentInvoice.timeline.length) {
+            <p class="helper">Sin eventos relacionados.</p>
+          } @else {
+            <div class="timeline">
+              @for (entry of currentInvoice.timeline; track entry.sourceType + '-' + entry.sourceId + '-' + entry.kind) {
+                <article class="timeline-entry">
+                  <div>
+                    <strong>{{ entry.title }}</strong>
+                    <div class="subtle">{{ entry.atUtc | date:'yyyy-MM-dd HH:mm' }}</div>
+                  </div>
+                  <div>
+                    @if (entry.status) {
+                      <span class="badge" [attr.data-status]="entry.status">{{ entry.status }}</span>
+                    }
+                    <div class="subtle">{{ entry.description || entry.kind }}</div>
+                  </div>
+                </article>
+              }
+            </div>
+          }
+        </section>
       }
 
       @if (detailMode() && permissionService.canManagePayments()) {
@@ -524,6 +644,8 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
     .collection-forms { display:grid; gap:1rem; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); margin-top:1rem; }
     .nested { background:#fffdf8; }
     .collection-history { display:grid; gap:1rem; margin-top:1rem; }
+    .timeline { display:grid; gap:0.75rem; }
+    .timeline-entry { border-top:1px solid #ece3d3; padding-top:0.75rem; display:grid; gap:0.35rem; }
     @media (max-width: 720px) {
       .actions { flex-direction:column; }
     }
@@ -537,8 +659,9 @@ export class AccountsReceivablePageComponent {
   protected readonly permissionService = inject(PermissionService);
 
   protected readonly fiscalDocumentId = signal<number | null>(parseNumber(this.route.snapshot.queryParamMap.get('fiscalDocumentId')));
+  protected readonly accountsReceivableInvoiceId = signal<number | null>(parseNumber(this.route.snapshot.queryParamMap.get('invoiceId')));
   protected readonly paymentId = signal<number | null>(parseNumber(this.route.snapshot.queryParamMap.get('paymentId')));
-  protected readonly detailMode = computed(() => this.fiscalDocumentId() !== null || this.paymentId() !== null);
+  protected readonly detailMode = computed(() => this.accountsReceivableInvoiceId() !== null || this.fiscalDocumentId() !== null || this.paymentId() !== null);
   protected readonly invoice = signal<AccountsReceivableInvoiceResponse | null>(null);
   protected readonly payment = signal<AccountsReceivablePaymentResponse | null>(null);
   protected readonly portfolioItems = signal<AccountsReceivablePortfolioItemResponse[]>([]);
@@ -576,8 +699,10 @@ export class AccountsReceivablePageComponent {
 
   constructor() {
     if (this.detailMode()) {
-      if (this.fiscalDocumentId()) {
-        void this.loadInvoice(this.fiscalDocumentId()!);
+      if (this.accountsReceivableInvoiceId()) {
+        void this.loadInvoiceById(this.accountsReceivableInvoiceId()!);
+      } else if (this.fiscalDocumentId()) {
+        void this.loadInvoiceByFiscalDocumentId(this.fiscalDocumentId()!);
       }
       if (this.paymentId()) {
         void this.loadPayment(this.paymentId()!);
@@ -600,6 +725,20 @@ export class AccountsReceivablePageComponent {
     }
 
     return `CxC #${item.accountsReceivableInvoiceId}`;
+  }
+
+  protected formatInvoiceFiscalLabel(item: AccountsReceivableInvoiceResponse): string {
+    const series = item.fiscalSeries?.trim();
+    const folio = item.fiscalFolio?.trim();
+    if (series || folio) {
+      return [series, folio].filter(Boolean).join('-');
+    }
+
+    if (item.fiscalDocumentId) {
+      return `#${item.fiscalDocumentId}`;
+    }
+
+    return `#${item.id}`;
   }
 
   protected async applyPortfolioFilters(): Promise<void> {
@@ -647,6 +786,7 @@ export class AccountsReceivablePageComponent {
       const response = await firstValueFrom(this.api.createInvoiceFromFiscalDocument(fiscalDocumentId));
       if (response.accountsReceivableInvoice) {
         this.invoice.set(response.accountsReceivableInvoice);
+        this.accountsReceivableInvoiceId.set(response.accountsReceivableInvoice.id);
         this.feedbackService.show('success', 'Cuenta por cobrar creada.');
       }
     });
@@ -679,9 +819,7 @@ export class AccountsReceivablePageComponent {
         this.payment.set(response.payment);
       }
 
-      if (this.fiscalDocumentId()) {
-        await this.loadInvoice(this.fiscalDocumentId()!);
-      }
+      await this.reloadCurrentInvoice();
 
       this.feedbackService.show('success', 'Aplicación de pago registrada.');
     });
@@ -700,7 +838,7 @@ export class AccountsReceivablePageComponent {
         notes: this.collectionCommitmentForm.notes || null
       };
       await firstValueFrom(this.api.createCollectionCommitment(currentInvoice.id, payload));
-      await this.loadInvoice(this.fiscalDocumentId()!);
+      await this.reloadCurrentInvoice();
       this.collectionCommitmentForm.promisedAmount = '';
       this.collectionCommitmentForm.promisedDateUtc = '';
       this.collectionCommitmentForm.notes = '';
@@ -723,7 +861,7 @@ export class AccountsReceivablePageComponent {
           : null
       };
       await firstValueFrom(this.api.createCollectionNote(currentInvoice.id, payload));
-      await this.loadInvoice(this.fiscalDocumentId()!);
+      await this.reloadCurrentInvoice();
       this.collectionNoteForm.noteType = 'Call';
       this.collectionNoteForm.content = '';
       this.collectionNoteForm.nextFollowUpAtUtc = '';
@@ -771,9 +909,18 @@ export class AccountsReceivablePageComponent {
     };
   }
 
-  private async loadInvoice(fiscalDocumentId: number): Promise<void> {
+  private async loadInvoiceByFiscalDocumentId(fiscalDocumentId: number): Promise<void> {
     try {
       this.invoice.set(await firstValueFrom(this.api.getInvoiceByFiscalDocumentId(fiscalDocumentId)));
+      this.accountsReceivableInvoiceId.set(this.invoice()?.id ?? null);
+    } catch {
+      this.invoice.set(null);
+    }
+  }
+
+  private async loadInvoiceById(accountsReceivableInvoiceId: number): Promise<void> {
+    try {
+      this.invoice.set(await firstValueFrom(this.api.getInvoiceById(accountsReceivableInvoiceId)));
     } catch {
       this.invoice.set(null);
     }
@@ -784,6 +931,17 @@ export class AccountsReceivablePageComponent {
       this.payment.set(await firstValueFrom(this.api.getPaymentById(paymentId)));
     } catch {
       this.payment.set(null);
+    }
+  }
+
+  private async reloadCurrentInvoice(): Promise<void> {
+    if (this.accountsReceivableInvoiceId()) {
+      await this.loadInvoiceById(this.accountsReceivableInvoiceId()!);
+      return;
+    }
+
+    if (this.fiscalDocumentId()) {
+      await this.loadInvoiceByFiscalDocumentId(this.fiscalDocumentId()!);
     }
   }
 

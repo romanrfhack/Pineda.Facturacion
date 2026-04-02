@@ -42,6 +42,10 @@ export class AccountsReceivableApiService {
     return this.http.get<AccountsReceivableInvoiceResponse>(buildApiUrl(`/fiscal-documents/${fiscalDocumentId}/accounts-receivable`));
   }
 
+  getInvoiceById(accountsReceivableInvoiceId: number): Observable<AccountsReceivableInvoiceResponse> {
+    return this.http.get<AccountsReceivableInvoiceResponse>(buildApiUrl(`/accounts-receivable/invoices/${accountsReceivableInvoiceId}`));
+  }
+
   searchPortfolio(request: SearchAccountsReceivablePortfolioRequest = {}): Observable<AccountsReceivablePortfolioResponse> {
     let params = new HttpParams();
 
