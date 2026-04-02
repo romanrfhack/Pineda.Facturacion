@@ -376,6 +376,14 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
                         : null,
                     NumRegIdTrib = request.ReceiverForeignTaxRegistration
                 },
+                InformacionGlobal = ShouldIncludeGlobalInformation(request)
+                    ? new FacturaloPlusComprobanteInformacionGlobal
+                    {
+                        Periodicidad = request.GlobalInformation!.Periodicity,
+                        Meses = request.GlobalInformation.Months,
+                        Anio = request.GlobalInformation.Year
+                    }
+                    : null,
                 Conceptos = itemPayloads,
                 Impuestos = traslados.Count == 0
                     ? null
@@ -600,6 +608,14 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
             request.DiscountTotal,
             request.TaxTotal,
             request.Total,
+            GlobalInformation = request.GlobalInformation is null
+                ? null
+                : new
+                {
+                    Periodicidad = request.GlobalInformation.Periodicity,
+                    Meses = request.GlobalInformation.Months,
+                    Año = request.GlobalInformation.Year
+                },
             HasCertificateReference = !string.IsNullOrWhiteSpace(request.CertificateReference),
             HasPrivateKeyReference = !string.IsNullOrWhiteSpace(request.PrivateKeyReference),
             HasPrivateKeyPasswordReference = !string.IsNullOrWhiteSpace(request.PrivateKeyPasswordReference),
@@ -624,6 +640,44 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
                 })
                 .ToList()
         };
+    }
+
+    private static bool ShouldIncludeGlobalInformation(FiscalStampingRequest request)
+    {
+        return request.GlobalInformation is not null
+            && IsIncomeDocumentType(request.DocumentType)
+            && string.Equals(request.ReceiverRfc, "XAXX010101000", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(NormalizePublicGeneralName(request.ReceiverLegalName), "PUBLICO EN GENERAL", StringComparison.Ordinal);
+    }
+
+    private static bool IsIncomeDocumentType(string? documentType)
+    {
+        return string.Equals(documentType, "I", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(documentType, "INVOICE", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizePublicGeneralName(string value)
+    {
+        var collapsedWhitespace = string.Join(' ', value.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        return RemoveDiacritics(collapsedWhitespace).ToUpperInvariant();
+    }
+
+    private static string RemoveDiacritics(string value)
+    {
+        var normalized = value.Normalize(NormalizationForm.FormD);
+        var builder = new StringBuilder(normalized.Length);
+
+        foreach (var character in normalized)
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(character) != UnicodeCategory.NonSpacingMark)
+            {
+                builder.Append(character);
+            }
+        }
+
+        return builder
+            .ToString()
+            .Normalize(NormalizationForm.FormC);
     }
 
     private static string BuildRawResponseSummary(HttpStatusCode statusCode, FacturaloPlusStampingResponse? response, string rawContent)
@@ -1133,6 +1187,8 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
         public FacturaloPlusComprobanteEmisor Emisor { get; init; } = new();
         [JsonPropertyName("Receptor")]
         public FacturaloPlusComprobanteReceptor Receptor { get; init; } = new();
+        [JsonPropertyName("InformacionGlobal")]
+        public FacturaloPlusComprobanteInformacionGlobal? InformacionGlobal { get; init; }
         [JsonPropertyName("Conceptos")]
         public List<FacturaloPlusComprobanteConcepto> Conceptos { get; init; } = [];
         [JsonPropertyName("Impuestos")]
@@ -1165,6 +1221,16 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
         public string? ResidenciaFiscal { get; init; }
         [JsonPropertyName("NumRegIdTrib")]
         public string? NumRegIdTrib { get; init; }
+    }
+
+    private sealed class FacturaloPlusComprobanteInformacionGlobal
+    {
+        [JsonPropertyName("Periodicidad")]
+        public string Periodicidad { get; init; } = string.Empty;
+        [JsonPropertyName("Meses")]
+        public string Meses { get; init; } = string.Empty;
+        [JsonPropertyName("Año")]
+        public string Anio { get; init; } = string.Empty;
     }
 
     private sealed class FacturaloPlusComprobanteConcepto

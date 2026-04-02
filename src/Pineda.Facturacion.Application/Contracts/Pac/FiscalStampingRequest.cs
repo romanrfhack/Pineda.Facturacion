@@ -66,5 +66,7 @@ public class FiscalStampingRequest
 
     public decimal Total { get; set; }
 
+    public FiscalStampingGlobalInformation? GlobalInformation { get; set; }
+
     public List<FiscalStampingRequestItem> Items { get; set; } = [];
 }

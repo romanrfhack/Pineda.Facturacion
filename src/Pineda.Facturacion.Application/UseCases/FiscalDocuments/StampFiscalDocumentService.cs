@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using Pineda.Facturacion.Application.Abstractions.Pac;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Common;
@@ -9,6 +11,28 @@ namespace Pineda.Facturacion.Application.UseCases.FiscalDocuments;
 
 public class StampFiscalDocumentService
 {
+    private static readonly string[] GlobalPeriodicityFieldCodes =
+    [
+        "INFORMACION_GLOBAL_PERIODICIDAD",
+        "GLOBAL_PERIODICIDAD",
+        "PERIODICIDAD"
+    ];
+    private static readonly string[] GlobalMonthsFieldCodes =
+    [
+        "INFORMACION_GLOBAL_MESES",
+        "GLOBAL_MESES",
+        "MESES"
+    ];
+    private static readonly string[] GlobalYearFieldCodes =
+    [
+        "INFORMACION_GLOBAL_ANIO",
+        "INFORMACION_GLOBAL_ANO",
+        "GLOBAL_ANIO",
+        "GLOBAL_ANO",
+        "ANIO",
+        "ANO"
+    ];
+
     private readonly IFiscalDocumentRepository _fiscalDocumentRepository;
     private readonly IFiscalStampRepository _fiscalStampRepository;
     private readonly IFiscalStampingGateway _fiscalStampingGateway;
@@ -305,6 +329,15 @@ public class StampFiscalDocumentService
             });
         }
 
+        FiscalStampingGlobalInformation? globalInformation = null;
+        if (RequiresGlobalInformation(fiscalDocument))
+        {
+            if (!TryBuildGlobalInformation(fiscalDocument.SpecialFieldValues, out globalInformation, out validationError))
+            {
+                return false;
+            }
+        }
+
         request = new FiscalStampingRequest
         {
             FiscalDocumentId = fiscalDocument.Id,
@@ -339,10 +372,120 @@ public class StampFiscalDocumentService
             DiscountTotal = fiscalDocument.DiscountTotal,
             TaxTotal = fiscalDocument.TaxTotal,
             Total = fiscalDocument.Total,
+            GlobalInformation = globalInformation,
             Items = items
         };
 
         return true;
+    }
+
+    private static bool RequiresGlobalInformation(FiscalDocument fiscalDocument)
+    {
+        return IsIncomeDocumentType(fiscalDocument.DocumentType)
+            && string.Equals(FiscalMasterDataNormalization.NormalizeRfc(fiscalDocument.ReceiverRfc), "XAXX010101000", StringComparison.Ordinal)
+            && string.Equals(NormalizePublicGeneralName(fiscalDocument.ReceiverLegalName), "PUBLICO EN GENERAL", StringComparison.Ordinal);
+    }
+
+    private static bool TryBuildGlobalInformation(
+        IReadOnlyList<FiscalDocumentSpecialFieldValue> specialFieldValues,
+        out FiscalStampingGlobalInformation? globalInformation,
+        out string? validationError)
+    {
+        globalInformation = null;
+        validationError = null;
+
+        var periodicity = ResolveSpecialFieldValue(specialFieldValues, GlobalPeriodicityFieldCodes);
+        var months = ResolveSpecialFieldValue(specialFieldValues, GlobalMonthsFieldCodes);
+        var year = ResolveSpecialFieldValue(specialFieldValues, GlobalYearFieldCodes);
+
+        var missingFields = new List<string>();
+        if (string.IsNullOrWhiteSpace(periodicity))
+        {
+            missingFields.Add("Periodicidad");
+        }
+
+        if (string.IsNullOrWhiteSpace(months))
+        {
+            missingFields.Add("Meses");
+        }
+
+        if (string.IsNullOrWhiteSpace(year))
+        {
+            missingFields.Add("Año");
+        }
+
+        if (missingFields.Count > 0)
+        {
+            validationError = $"El CFDI global para PUBLICO EN GENERAL requiere InformacionGlobal. Faltan los campos: {string.Join(", ", missingFields)}.";
+            return false;
+        }
+
+        globalInformation = new FiscalStampingGlobalInformation
+        {
+            Periodicity = periodicity!,
+            Months = months!,
+            Year = year!
+        };
+
+        return true;
+    }
+
+    private static string? ResolveSpecialFieldValue(
+        IReadOnlyList<FiscalDocumentSpecialFieldValue> specialFieldValues,
+        IReadOnlyCollection<string> acceptedCodes)
+    {
+        foreach (var specialFieldValue in specialFieldValues)
+        {
+            if (!acceptedCodes.Contains(NormalizeSpecialFieldCode(specialFieldValue.FieldCode), StringComparer.Ordinal))
+            {
+                continue;
+            }
+
+            var value = FiscalMasterDataNormalization.NormalizeOptionalText(specialFieldValue.Value);
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+        }
+
+        return null;
+    }
+
+    private static string NormalizeSpecialFieldCode(string value)
+    {
+        return RemoveDiacritics(FiscalMasterDataNormalization.NormalizeRequiredText(value)).ToUpperInvariant();
+    }
+
+    private static bool IsIncomeDocumentType(string? documentType)
+    {
+        var normalizedDocumentType = FiscalMasterDataNormalization.NormalizeRequiredCode(documentType ?? string.Empty);
+        return string.Equals(normalizedDocumentType, "I", StringComparison.Ordinal)
+            || string.Equals(normalizedDocumentType, "INVOICE", StringComparison.Ordinal);
+    }
+
+    private static string NormalizePublicGeneralName(string value)
+    {
+        var trimmed = FiscalMasterDataNormalization.NormalizeRequiredText(value);
+        var collapsedWhitespace = string.Join(' ', trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        return RemoveDiacritics(collapsedWhitespace).ToUpperInvariant();
+    }
+
+    private static string RemoveDiacritics(string value)
+    {
+        var normalized = value.Normalize(NormalizationForm.FormD);
+        var builder = new StringBuilder(normalized.Length);
+
+        foreach (var character in normalized)
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(character) != UnicodeCategory.NonSpacingMark)
+            {
+                builder.Append(character);
+            }
+        }
+
+        return builder
+            .ToString()
+            .Normalize(NormalizationForm.FormC);
     }
 
     private static StampFiscalDocumentResult Success(FiscalDocument fiscalDocument, FiscalStamp fiscalStamp)
