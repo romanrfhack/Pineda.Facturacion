@@ -31,6 +31,18 @@ export async function mockFiscalEvidenceBackend(page: Page): Promise<void> {
     });
   });
 
+  await page.route('**/api/audit-events**', async (route) => {
+    await route.fulfill({
+      json: {
+        page: 1,
+        pageSize: 25,
+        totalCount: 0,
+        totalPages: 0,
+        items: []
+      }
+    });
+  });
+
   await page.route('**/api/fiscal/issuer-profile/active', async (route) => {
     await route.fulfill({
       json: {
@@ -45,6 +57,86 @@ export async function mockFiscalEvidenceBackend(page: Page): Promise<void> {
         hasPrivateKeyPasswordReference: true,
         pacEnvironment: 'Sandbox',
         isActive: true
+      }
+    });
+  });
+
+  await page.route('**/api/fiscal/receivers/sat-catalogs', async (route) => {
+    await route.fulfill({
+      json: {
+        regimenFiscal: [
+          { code: '601', description: 'General de Ley Personas Morales' }
+        ],
+        usoCfdi: [
+          { code: 'G03', description: 'Gastos en general' }
+        ],
+        paymentMethods: [
+          { code: 'PUE', description: 'Pago en una sola exhibición' },
+          { code: 'PPD', description: 'Pago en parcialidades o diferido' }
+        ],
+        paymentForms: [
+          { code: '03', description: 'Transferencia electrónica de fondos' },
+          { code: '28', description: 'Tarjeta de débito' },
+          { code: '99', description: 'Por definir' }
+        ],
+        byRegimenFiscal: [
+          {
+            code: '601',
+            description: 'General de Ley Personas Morales',
+            allowedUsoCfdi: [{ code: 'G03', description: 'Gastos en general' }]
+          }
+        ]
+      }
+    });
+  });
+
+  await page.route('**/api/fiscal/receivers/by-rfc/BBB010101BBB', async (route) => {
+    await route.fulfill({
+      json: {
+        id: 9,
+        rfc: 'BBB010101BBB',
+        legalName: 'Receiver One',
+        postalCode: '02000',
+        fiscalRegimeCode: '601',
+        cfdiUseCodeDefault: 'G03',
+        countryCode: 'MX',
+        foreignTaxRegistration: null,
+        email: 'receiver.one@example.com',
+        phone: '5550000001',
+        searchAlias: 'Receiver One',
+        isActive: true,
+        specialFields: []
+      }
+    });
+  });
+
+  await page.route('**/api/billing-documents/30', async (route) => {
+    await route.fulfill({
+      json: {
+        billingDocumentId: 30,
+        salesOrderId: 20,
+        legacyOrderId: 'LEG-7001',
+        status: 'Draft',
+        documentType: 'I',
+        currencyCode: 'MXN',
+        total: 100,
+        createdAtUtc: '2026-03-20T12:00:00Z',
+        fiscalDocumentId: 40,
+        fiscalDocumentStatus: 'Stamped'
+      }
+    });
+  });
+
+  await page.route('**/api/billing-documents/pending-items', async (route) => {
+    await route.fulfill({ json: [] });
+  });
+
+  await page.route('**/api/fiscal-documents/cancellation-authorizations/pending', async (route) => {
+    await route.fulfill({
+      json: {
+        outcome: 'Retrieved',
+        isSuccess: true,
+        items: []
       }
     });
   });

@@ -114,6 +114,32 @@ export async function mockHappyPathBackend(page: Page): Promise<void> {
     });
   });
 
+  await page.route('**/api/audit-events**', async (route) => {
+    await route.fulfill({
+      json: {
+        page: 1,
+        pageSize: 25,
+        totalCount: 0,
+        totalPages: 0,
+        items: []
+      }
+    });
+  });
+
+  await page.route('**/api/billing-documents/pending-items', async (route) => {
+    await route.fulfill({ json: [] });
+  });
+
+  await page.route('**/api/fiscal-documents/cancellation-authorizations/pending', async (route) => {
+    await route.fulfill({
+      json: {
+        outcome: 'Retrieved',
+        isSuccess: true,
+        items: []
+      }
+    });
+  });
+
   await page.route('**/api/orders/legacy**', async (route) => {
     await route.fulfill({
       json: {
@@ -264,6 +290,18 @@ export async function mockHappyPathBackend(page: Page): Promise<void> {
 
   await page.route('**/api/fiscal-documents/40/stamp', async (route) => {
     await route.fulfill({ status: 404, json: { errorMessage: 'No encontrado.' } });
+  });
+
+  await page.route('**/api/fiscal-documents/40/special-fields/sync', async (route) => {
+    await route.fulfill({
+      json: {
+        outcome: 'Updated',
+        isSuccess: true,
+        fiscalDocumentId: 40,
+        fiscalDocumentStatus: 'ReadyForStamping',
+        specialFieldCount: 0
+      }
+    });
   });
 
   await page.route('**/api/fiscal-documents/40/cancellation', async (route) => {
