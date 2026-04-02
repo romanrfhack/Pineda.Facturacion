@@ -12,6 +12,7 @@ public class CancelFiscalDocumentService
     private readonly IFiscalDocumentRepository _fiscalDocumentRepository;
     private readonly IFiscalStampRepository _fiscalStampRepository;
     private readonly IFiscalCancellationRepository _fiscalCancellationRepository;
+    private readonly IAccountsReceivableInvoiceRepository _accountsReceivableInvoiceRepository;
     private readonly IFiscalCancellationGateway _fiscalCancellationGateway;
     private readonly IUnitOfWork _unitOfWork;
 
@@ -19,12 +20,14 @@ public class CancelFiscalDocumentService
         IFiscalDocumentRepository fiscalDocumentRepository,
         IFiscalStampRepository fiscalStampRepository,
         IFiscalCancellationRepository fiscalCancellationRepository,
+        IAccountsReceivableInvoiceRepository accountsReceivableInvoiceRepository,
         IFiscalCancellationGateway fiscalCancellationGateway,
         IUnitOfWork unitOfWork)
     {
         _fiscalDocumentRepository = fiscalDocumentRepository;
         _fiscalStampRepository = fiscalStampRepository;
         _fiscalCancellationRepository = fiscalCancellationRepository;
+        _accountsReceivableInvoiceRepository = accountsReceivableInvoiceRepository;
         _fiscalCancellationGateway = fiscalCancellationGateway;
         _unitOfWork = unitOfWork;
     }
@@ -159,6 +162,7 @@ public class CancelFiscalDocumentService
         {
             case FiscalCancellationGatewayOutcome.Cancelled:
                 fiscalDocument.Status = FiscalDocumentStatus.Cancelled;
+                await CancelAccountsReceivableInvoiceIfPresentAsync(fiscalDocument.Id, now, cancellationToken);
                 result = Success(fiscalDocument, fiscalCancellation);
                 break;
             case FiscalCancellationGatewayOutcome.Rejected:
@@ -198,6 +202,18 @@ public class CancelFiscalDocumentService
         result.IsRetryable = FiscalOperationRobustnessPolicy.IsRetryable(result.Outcome);
         result.RetryAdvice = FiscalOperationRobustnessPolicy.BuildRetryAdvice(result.Outcome);
         return result;
+    }
+
+    private async Task CancelAccountsReceivableInvoiceIfPresentAsync(long fiscalDocumentId, DateTime now, CancellationToken cancellationToken)
+    {
+        var accountsReceivableInvoice = await _accountsReceivableInvoiceRepository.GetTrackedByFiscalDocumentIdAsync(fiscalDocumentId, cancellationToken);
+        if (accountsReceivableInvoice is null || accountsReceivableInvoice.Status == AccountsReceivableInvoiceStatus.Cancelled)
+        {
+            return;
+        }
+
+        accountsReceivableInvoice.Status = AccountsReceivableInvoiceStatus.Cancelled;
+        accountsReceivableInvoice.UpdatedAtUtc = now;
     }
 
     private static bool TryBuildCancellationRequest(

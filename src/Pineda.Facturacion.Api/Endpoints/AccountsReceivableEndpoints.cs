@@ -52,6 +52,11 @@ public static class AccountsReceivableEndpoints
             .Produces<CreateAccountsReceivablePaymentResponse>(StatusCodes.Status200OK)
             .Produces<CreateAccountsReceivablePaymentResponse>(StatusCodes.Status400BadRequest);
 
+        group.MapGet("/invoices", SearchAccountsReceivablePortfolioAsync)
+            .WithName("SearchAccountsReceivablePortfolio")
+            .WithSummary("List minimal accounts receivable portfolio rows")
+            .Produces<AccountsReceivablePortfolioResponse>(StatusCodes.Status200OK);
+
         group.MapGet("/payments/{paymentId:long}", GetAccountsReceivablePaymentByIdAsync)
             .WithName("GetAccountsReceivablePaymentById")
             .WithSummary("Get an accounts receivable payment and its applications")
@@ -231,6 +236,34 @@ public static class AccountsReceivableEndpoints
             : TypedResults.BadRequest(response);
     }
 
+    private static async Task<Ok<AccountsReceivablePortfolioResponse>> SearchAccountsReceivablePortfolioAsync(
+        long? fiscalReceiverId,
+        string? receiverQuery,
+        string? status,
+        DateOnly? dueDateFrom,
+        DateOnly? dueDateTo,
+        bool? hasPendingBalance,
+        SearchAccountsReceivablePortfolioService service,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(
+            new SearchAccountsReceivablePortfolioFilter
+            {
+                FiscalReceiverId = fiscalReceiverId,
+                ReceiverQuery = receiverQuery,
+                Status = status,
+                DueDateFromUtc = dueDateFrom?.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
+                DueDateToUtcInclusive = dueDateTo?.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
+                HasPendingBalance = hasPendingBalance
+            },
+            cancellationToken);
+
+        return TypedResults.Ok(new AccountsReceivablePortfolioResponse
+        {
+            Items = result.Items.Select(MapPortfolioItem).ToList()
+        });
+    }
+
     private static async Task<Results<Ok<AccountsReceivablePaymentResponse>, NotFound>> GetAccountsReceivablePaymentByIdAsync(
         long paymentId,
         GetAccountsReceivablePaymentByIdService service,
@@ -372,6 +405,7 @@ public static class AccountsReceivableEndpoints
             BillingDocumentId = invoice.BillingDocumentId,
             FiscalDocumentId = invoice.FiscalDocumentId,
             FiscalStampId = invoice.FiscalStampId,
+            FiscalReceiverId = invoice.FiscalReceiverId,
             Status = invoice.Status.ToString(),
             PaymentMethodSat = invoice.PaymentMethodSat,
             PaymentFormSatInitial = invoice.PaymentFormSatInitial,
@@ -431,6 +465,28 @@ public static class AccountsReceivableEndpoints
             CreatedAtUtc = application.CreatedAtUtc
         };
     }
+
+    private static AccountsReceivablePortfolioItemResponse MapPortfolioItem(AccountsReceivablePortfolioItem item)
+    {
+        return new AccountsReceivablePortfolioItemResponse
+        {
+            AccountsReceivableInvoiceId = item.AccountsReceivableInvoiceId,
+            FiscalDocumentId = item.FiscalDocumentId,
+            FiscalReceiverId = item.FiscalReceiverId,
+            ReceiverRfc = item.ReceiverRfc,
+            ReceiverLegalName = item.ReceiverLegalName,
+            FiscalSeries = item.FiscalSeries,
+            FiscalFolio = item.FiscalFolio,
+            FiscalUuid = item.FiscalUuid,
+            Total = item.Total,
+            PaidTotal = item.PaidTotal,
+            OutstandingBalance = item.OutstandingBalance,
+            IssuedAtUtc = item.IssuedAtUtc,
+            DueAtUtc = item.DueAtUtc,
+            Status = item.Status,
+            DaysPastDue = item.DaysPastDue
+        };
+    }
 }
 
 public class CreateAccountsReceivableInvoiceRequest
@@ -461,6 +517,8 @@ public class AccountsReceivableInvoiceResponse
 
     public long? FiscalStampId { get; set; }
 
+    public long? FiscalReceiverId { get; set; }
+
     public string Status { get; set; } = string.Empty;
 
     public string PaymentMethodSat { get; set; } = string.Empty;
@@ -488,6 +546,44 @@ public class AccountsReceivableInvoiceResponse
     public DateTime UpdatedAtUtc { get; set; }
 
     public List<AccountsReceivablePaymentApplicationResponse> Applications { get; set; } = [];
+}
+
+public class AccountsReceivablePortfolioResponse
+{
+    public List<AccountsReceivablePortfolioItemResponse> Items { get; set; } = [];
+}
+
+public class AccountsReceivablePortfolioItemResponse
+{
+    public long AccountsReceivableInvoiceId { get; set; }
+
+    public long? FiscalDocumentId { get; set; }
+
+    public long? FiscalReceiverId { get; set; }
+
+    public string? ReceiverRfc { get; set; }
+
+    public string? ReceiverLegalName { get; set; }
+
+    public string? FiscalSeries { get; set; }
+
+    public string? FiscalFolio { get; set; }
+
+    public string? FiscalUuid { get; set; }
+
+    public decimal Total { get; set; }
+
+    public decimal PaidTotal { get; set; }
+
+    public decimal OutstandingBalance { get; set; }
+
+    public DateTime IssuedAtUtc { get; set; }
+
+    public DateTime? DueAtUtc { get; set; }
+
+    public string Status { get; set; } = string.Empty;
+
+    public int DaysPastDue { get; set; }
 }
 
 public class CreateAccountsReceivablePaymentRequest

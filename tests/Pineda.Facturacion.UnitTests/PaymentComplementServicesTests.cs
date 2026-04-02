@@ -1197,6 +1197,9 @@ public class PaymentComplementServicesTests
         public Task<AccountsReceivableInvoice?> GetTrackedByExternalRepBaseDocumentIdAsync(long externalRepBaseDocumentId, CancellationToken cancellationToken = default)
             => Task.FromResult(TrackedById.Values.FirstOrDefault(x => x.ExternalRepBaseDocumentId == externalRepBaseDocumentId));
 
+        public Task<IReadOnlyList<AccountsReceivablePortfolioItem>> SearchPortfolioAsync(SearchAccountsReceivablePortfolioFilter filter, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<AccountsReceivablePortfolioItem>>([]);
+
         public Task AddAsync(AccountsReceivableInvoice accountsReceivableInvoice, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 

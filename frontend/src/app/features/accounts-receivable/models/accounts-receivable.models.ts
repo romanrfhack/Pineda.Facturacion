@@ -14,6 +14,7 @@ export interface AccountsReceivableInvoiceResponse {
   billingDocumentId: number;
   fiscalDocumentId: number;
   fiscalStampId: number;
+  fiscalReceiverId?: number | null;
   status: string;
   paymentMethodSat: string;
   paymentFormSatInitial: string;
@@ -28,6 +29,37 @@ export interface AccountsReceivableInvoiceResponse {
   createdAtUtc: string;
   updatedAtUtc: string;
   applications: AccountsReceivablePaymentApplicationResponse[];
+}
+
+export interface AccountsReceivablePortfolioItemResponse {
+  accountsReceivableInvoiceId: number;
+  fiscalDocumentId?: number | null;
+  fiscalReceiverId?: number | null;
+  receiverRfc?: string | null;
+  receiverLegalName?: string | null;
+  fiscalSeries?: string | null;
+  fiscalFolio?: string | null;
+  fiscalUuid?: string | null;
+  total: number;
+  paidTotal: number;
+  outstandingBalance: number;
+  issuedAtUtc: string;
+  dueAtUtc?: string | null;
+  status: string;
+  daysPastDue: number;
+}
+
+export interface AccountsReceivablePortfolioResponse {
+  items: AccountsReceivablePortfolioItemResponse[];
+}
+
+export interface SearchAccountsReceivablePortfolioRequest {
+  fiscalReceiverId?: number | null;
+  receiverQuery?: string | null;
+  status?: string | null;
+  dueDateFrom?: string | null;
+  dueDateTo?: string | null;
+  hasPendingBalance?: boolean | null;
 }
 
 export interface CreateAccountsReceivableInvoiceRequest {

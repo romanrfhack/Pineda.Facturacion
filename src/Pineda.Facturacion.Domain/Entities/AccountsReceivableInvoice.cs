@@ -14,6 +14,8 @@ public class AccountsReceivableInvoice
 
     public long? ExternalRepBaseDocumentId { get; set; }
 
+    public long? FiscalReceiverId { get; set; }
+
     public AccountsReceivableInvoiceStatus Status { get; set; }
 
     public string PaymentMethodSat { get; set; } = string.Empty;

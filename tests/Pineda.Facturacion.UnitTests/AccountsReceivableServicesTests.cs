@@ -27,6 +27,7 @@ public class AccountsReceivableServicesTests
         Assert.True(result.IsSuccess);
         Assert.Equal(CreateAccountsReceivableInvoiceFromFiscalDocumentOutcome.Created, result.Outcome);
         Assert.Equal(AccountsReceivableInvoiceStatus.Open, repository.Added!.Status);
+        Assert.Equal(fiscalDocument.FiscalReceiverId, repository.Added.FiscalReceiverId);
         Assert.Equal(fiscalDocument.Total, repository.Added.OutstandingBalance);
         Assert.Equal(fiscalDocument.IssuedAtUtc.AddDays(fiscalDocument.CreditDays!.Value), repository.Added.DueAtUtc);
     }
@@ -553,6 +554,8 @@ public class AccountsReceivableServicesTests
 
         public Dictionary<long, AccountsReceivableInvoice> TrackedById { get; set; } = [];
 
+        public IReadOnlyList<AccountsReceivablePortfolioItem> PortfolioItems { get; set; } = [];
+
         public AccountsReceivableInvoice? Added { get; private set; }
 
         public Task<AccountsReceivableInvoice?> GetByFiscalDocumentIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default)
@@ -579,6 +582,11 @@ public class AccountsReceivableServicesTests
         public Task<AccountsReceivableInvoice?> GetTrackedByExternalRepBaseDocumentIdAsync(long externalRepBaseDocumentId, CancellationToken cancellationToken = default)
         {
             return Task.FromResult(ExistingByExternalRepBaseDocumentId);
+        }
+
+        public Task<IReadOnlyList<AccountsReceivablePortfolioItem>> SearchPortfolioAsync(SearchAccountsReceivablePortfolioFilter filter, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(PortfolioItems);
         }
 
         public Task AddAsync(AccountsReceivableInvoice accountsReceivableInvoice, CancellationToken cancellationToken = default)

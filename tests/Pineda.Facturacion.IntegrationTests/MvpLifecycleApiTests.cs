@@ -1146,6 +1146,150 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
+    public async Task FiscalDocumentCancellation_CancelsAccountsReceivableInvoice_AndBlocksFurtherApplications()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-AR-CANCEL-1001", uuid: "UUID-AR-CANCEL-1001");
+        var invoiceBody = await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId);
+        var invoiceId = invoiceBody.AccountsReceivableInvoice!.Id;
+
+        var cancelResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/cancel", new FiscalDocumentsEndpoints.CancelFiscalDocumentRequest
+        {
+            CancellationReasonCode = "02"
+        });
+        Assert.Equal(HttpStatusCode.OK, cancelResponse.StatusCode);
+
+        var getInvoiceResponse = await client.GetAsync($"/api/fiscal-documents/{fiscalDocumentId}/accounts-receivable");
+        Assert.Equal(HttpStatusCode.OK, getInvoiceResponse.StatusCode);
+        using (var invoiceJson = await JsonDocument.ParseAsync(await getInvoiceResponse.Content.ReadAsStreamAsync()))
+        {
+            Assert.Equal("Cancelled", invoiceJson.RootElement.GetProperty("status").GetString());
+        }
+
+        var paymentBody = await (await client.PostAsJsonAsync("/api/accounts-receivable/payments", new CreateAccountsReceivablePaymentRequest
+        {
+            PaymentDateUtc = DateTime.UtcNow,
+            PaymentFormSat = "03",
+            Amount = 10m,
+            Reference = "AR-CANCEL-BLOCK-1"
+        })).Content.ReadFromJsonAsync<CreateAccountsReceivablePaymentResponse>();
+
+        var applyResponse = await client.PostAsJsonAsync($"/api/accounts-receivable/payments/{paymentBody!.Payment!.Id}/apply", new ApplyAccountsReceivablePaymentRequest
+        {
+            Applications =
+            [
+                new ApplyAccountsReceivablePaymentRowRequest
+                {
+                    AccountsReceivableInvoiceId = invoiceId,
+                    AppliedAmount = 10m
+                }
+            ]
+        });
+        Assert.Equal(HttpStatusCode.Conflict, applyResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task FiscalDocumentRefreshStatus_CancelsAccountsReceivableInvoice_WhenProviderReportsCancelled()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-AR-REFRESH-1001", uuid: "UUID-AR-REFRESH-1001");
+        await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId);
+
+        factory.FiscalStatusQueryGateway.ResponseFactory = _ => new FiscalStatusQueryGatewayResult
+        {
+            Outcome = FiscalStatusQueryGatewayOutcome.Refreshed,
+            ProviderName = "FacturaloPlus",
+            ProviderOperation = "consultarEstadoSAT",
+            ExternalStatus = "CANCELLED",
+            CheckedAtUtc = DateTime.UtcNow
+        };
+
+        var refreshResponse = await client.PostAsync($"/api/fiscal-documents/{fiscalDocumentId}/refresh-status", null);
+        Assert.Equal(HttpStatusCode.OK, refreshResponse.StatusCode);
+
+        var getInvoiceResponse = await client.GetAsync($"/api/fiscal-documents/{fiscalDocumentId}/accounts-receivable");
+        Assert.Equal(HttpStatusCode.OK, getInvoiceResponse.StatusCode);
+        using var invoiceJson = await JsonDocument.ParseAsync(await getInvoiceResponse.Content.ReadAsStreamAsync());
+        Assert.Equal("Cancelled", invoiceJson.RootElement.GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public async Task AccountsReceivablePortfolio_List_ReturnsAndFiltersOpenPaidAndCancelledInvoices()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        var seed = await factory.SeedStandardFiscalMasterDataAsync();
+        var secondReceiverId = await factory.SeedFiscalReceiverAsync("CCC010101CCC", "Receiver Two");
+
+        var openFiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-AR-PORT-1001", seed.ReceiverId, "SKU-1", "UUID-AR-PORT-1001");
+        var paidFiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-AR-PORT-1002", seed.ReceiverId, "SKU-1", "UUID-AR-PORT-1002");
+        var cancelledFiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-AR-PORT-1003", secondReceiverId, "SKU-1", "UUID-AR-PORT-1003");
+
+        var openInvoice = await EnsureAccountsReceivableInvoiceThroughApiAsync(client, openFiscalDocumentId);
+        var paidInvoice = await EnsureAccountsReceivableInvoiceThroughApiAsync(client, paidFiscalDocumentId);
+        await EnsureAccountsReceivableInvoiceThroughApiAsync(client, cancelledFiscalDocumentId);
+
+        var paidPayment = await (await client.PostAsJsonAsync("/api/accounts-receivable/payments", new CreateAccountsReceivablePaymentRequest
+        {
+            PaymentDateUtc = DateTime.UtcNow,
+            PaymentFormSat = "03",
+            Amount = 116m,
+            Reference = "AR-PORT-PAID-1"
+        })).Content.ReadFromJsonAsync<CreateAccountsReceivablePaymentResponse>();
+
+        var paidApplyResponse = await client.PostAsJsonAsync($"/api/accounts-receivable/payments/{paidPayment!.Payment!.Id}/apply", new ApplyAccountsReceivablePaymentRequest
+        {
+            Applications =
+            [
+                new ApplyAccountsReceivablePaymentRowRequest
+                {
+                    AccountsReceivableInvoiceId = paidInvoice.AccountsReceivableInvoice!.Id,
+                    AppliedAmount = 116m
+                }
+            ]
+        });
+        Assert.Equal(HttpStatusCode.OK, paidApplyResponse.StatusCode);
+
+        var cancelResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{cancelledFiscalDocumentId}/cancel", new FiscalDocumentsEndpoints.CancelFiscalDocumentRequest
+        {
+            CancellationReasonCode = "02"
+        });
+        Assert.Equal(HttpStatusCode.OK, cancelResponse.StatusCode);
+
+        var listResponse = await client.GetAsync("/api/accounts-receivable/invoices");
+        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+        using (var listJson = await JsonDocument.ParseAsync(await listResponse.Content.ReadAsStreamAsync()))
+        {
+            var items = listJson.RootElement.GetProperty("items");
+            Assert.True(items.GetArrayLength() >= 3);
+            Assert.Contains(items.EnumerateArray(), x => x.GetProperty("fiscalDocumentId").GetInt64() == openFiscalDocumentId && x.GetProperty("status").GetString() == "Open");
+            Assert.Contains(items.EnumerateArray(), x => x.GetProperty("fiscalDocumentId").GetInt64() == paidFiscalDocumentId && x.GetProperty("status").GetString() == "Paid");
+            Assert.Contains(items.EnumerateArray(), x => x.GetProperty("fiscalDocumentId").GetInt64() == cancelledFiscalDocumentId && x.GetProperty("status").GetString() == "Cancelled");
+            Assert.Contains(items.EnumerateArray(), x => x.GetProperty("fiscalDocumentId").GetInt64() == openFiscalDocumentId && x.GetProperty("fiscalReceiverId").GetInt64() == seed.ReceiverId);
+        }
+
+        var receiverFilterResponse = await client.GetAsync($"/api/accounts-receivable/invoices?fiscalReceiverId={secondReceiverId}");
+        Assert.Equal(HttpStatusCode.OK, receiverFilterResponse.StatusCode);
+        using (var receiverJson = await JsonDocument.ParseAsync(await receiverFilterResponse.Content.ReadAsStreamAsync()))
+        {
+            var items = receiverJson.RootElement.GetProperty("items");
+            var item = Assert.Single(items.EnumerateArray());
+            Assert.Equal(cancelledFiscalDocumentId, item.GetProperty("fiscalDocumentId").GetInt64());
+        }
+
+        var statusFilterResponse = await client.GetAsync("/api/accounts-receivable/invoices?status=Paid");
+        Assert.Equal(HttpStatusCode.OK, statusFilterResponse.StatusCode);
+        using var statusJson = await JsonDocument.ParseAsync(await statusFilterResponse.Content.ReadAsStreamAsync());
+        var statusItems = statusJson.RootElement.GetProperty("items");
+        var statusItem = Assert.Single(statusItems.EnumerateArray());
+        Assert.Equal(paidFiscalDocumentId, statusItem.GetProperty("fiscalDocumentId").GetInt64());
+    }
+
+    [Fact]
     public async Task InternalRepBaseDocument_EnsureAccountsReceivable_UnblocksDocument_WhenInvoiceWasMissing()
     {
         await using var factory = new MvpApiFactory();

@@ -98,6 +98,7 @@ public class CreateAccountsReceivableInvoiceFromFiscalDocumentService
             BillingDocumentId = fiscalDocument.BillingDocumentId,
             FiscalDocumentId = fiscalDocument.Id,
             FiscalStampId = fiscalStamp.Id,
+            FiscalReceiverId = fiscalDocument.FiscalReceiverId,
             Status = AccountsReceivableInvoiceStatus.Open,
             PaymentMethodSat = FiscalMasterDataNormalization.NormalizeRequiredCode(fiscalDocument.PaymentMethodSat),
             PaymentFormSatInitial = FiscalMasterDataNormalization.NormalizeRequiredCode(fiscalDocument.PaymentFormSat),

@@ -40,6 +40,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<CreateAccountsReceivableInvoiceFromFiscalDocumentService>();
         services.AddScoped<EnsureAccountsReceivableInvoiceForFiscalDocumentService>();
         services.AddScoped<GetAccountsReceivableInvoiceByFiscalDocumentIdService>();
+        services.AddScoped<SearchAccountsReceivablePortfolioService>();
         services.AddScoped<CreateAccountsReceivablePaymentService>();
         services.AddScoped<GetAccountsReceivablePaymentByIdService>();
         services.AddScoped<ApplyAccountsReceivablePaymentService>();

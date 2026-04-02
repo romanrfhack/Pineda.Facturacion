@@ -1,9 +1,10 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { buildApiUrl } from '../../../core/config/api-url';
 import {
   AccountsReceivableInvoiceResponse,
+  AccountsReceivablePortfolioResponse,
   AccountsReceivablePaymentResponse,
   ApplyAccountsReceivablePaymentRequest,
   ApplyAccountsReceivablePaymentResponse,
@@ -11,6 +12,7 @@ import {
   CreateAccountsReceivableInvoiceResponse,
   CreateAccountsReceivablePaymentRequest,
   CreateAccountsReceivablePaymentResponse,
+  SearchAccountsReceivablePortfolioRequest,
   PreparePaymentComplementRequest,
   PreparePaymentComplementResponse
 } from '../models/accounts-receivable.models';
@@ -30,6 +32,31 @@ export class AccountsReceivableApiService {
 
   getInvoiceByFiscalDocumentId(fiscalDocumentId: number): Observable<AccountsReceivableInvoiceResponse> {
     return this.http.get<AccountsReceivableInvoiceResponse>(buildApiUrl(`/fiscal-documents/${fiscalDocumentId}/accounts-receivable`));
+  }
+
+  searchPortfolio(request: SearchAccountsReceivablePortfolioRequest = {}): Observable<AccountsReceivablePortfolioResponse> {
+    let params = new HttpParams();
+
+    if (request.fiscalReceiverId != null) {
+      params = params.set('fiscalReceiverId', request.fiscalReceiverId);
+    }
+    if (request.receiverQuery) {
+      params = params.set('receiverQuery', request.receiverQuery);
+    }
+    if (request.status) {
+      params = params.set('status', request.status);
+    }
+    if (request.dueDateFrom) {
+      params = params.set('dueDateFrom', request.dueDateFrom);
+    }
+    if (request.dueDateTo) {
+      params = params.set('dueDateTo', request.dueDateTo);
+    }
+    if (request.hasPendingBalance != null) {
+      params = params.set('hasPendingBalance', request.hasPendingBalance);
+    }
+
+    return this.http.get<AccountsReceivablePortfolioResponse>(buildApiUrl('/accounts-receivable/invoices'), { params });
   }
 
   createPayment(request: CreateAccountsReceivablePaymentRequest): Observable<CreateAccountsReceivablePaymentResponse> {
