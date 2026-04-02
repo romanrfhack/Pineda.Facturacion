@@ -562,6 +562,134 @@ public class FiscalDocumentServicesTests
     }
 
     [Fact]
+    public async Task SyncFiscalDocumentSpecialFields_RefreshesSnapshotFromCurrentReceiverDefinitions()
+    {
+        var receiver = CreateReceiver();
+        receiver.SpecialFieldDefinitions =
+        [
+            new FiscalReceiverSpecialFieldDefinition
+            {
+                Id = 71,
+                FiscalReceiverId = receiver.Id,
+                Code = "PERIODICIDAD",
+                Label = "Periodicidad",
+                DataType = "text",
+                IsRequired = true,
+                IsActive = true,
+                DisplayOrder = 1,
+                CreatedAtUtc = DateTime.UtcNow,
+                UpdatedAtUtc = DateTime.UtcNow
+            },
+            new FiscalReceiverSpecialFieldDefinition
+            {
+                Id = 72,
+                FiscalReceiverId = receiver.Id,
+                Code = "MESES",
+                Label = "Meses",
+                DataType = "text",
+                IsRequired = true,
+                IsActive = true,
+                DisplayOrder = 2,
+                CreatedAtUtc = DateTime.UtcNow,
+                UpdatedAtUtc = DateTime.UtcNow
+            },
+            new FiscalReceiverSpecialFieldDefinition
+            {
+                Id = 73,
+                FiscalReceiverId = receiver.Id,
+                Code = "AÑO",
+                Label = "Año",
+                DataType = "text",
+                IsRequired = true,
+                IsActive = true,
+                DisplayOrder = 3,
+                CreatedAtUtc = DateTime.UtcNow,
+                UpdatedAtUtc = DateTime.UtcNow
+            }
+        ];
+
+        var fiscalDocument = new FiscalDocument
+        {
+            Id = 88,
+            FiscalReceiverId = receiver.Id,
+            Status = FiscalDocumentStatus.StampingRejected,
+            UpdatedAtUtc = DateTime.UtcNow.AddDays(-1),
+            SpecialFieldValues =
+            [
+                new FiscalDocumentSpecialFieldValue
+                {
+                    Id = 501,
+                    FiscalDocumentId = 88,
+                    FiscalReceiverSpecialFieldDefinitionId = 71,
+                    FieldCode = "periodicidad",
+                    FieldLabelSnapshot = "Periodicidad",
+                    DataType = "text",
+                    Value = "01",
+                    DisplayOrder = 1,
+                    CreatedAtUtc = DateTime.UtcNow.AddDays(-2)
+                }
+            ]
+        };
+
+        var service = new SyncFiscalDocumentSpecialFieldsService(
+            new FakeFiscalDocumentRepository { ExistingById = fiscalDocument },
+            new FakeFiscalReceiverRepository { ExistingById = receiver },
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new SyncFiscalDocumentSpecialFieldsCommand
+        {
+            FiscalDocumentId = fiscalDocument.Id,
+            SpecialFields =
+            [
+                new SyncFiscalDocumentSpecialFieldValueCommand { FieldCode = "meses", Value = "03" },
+                new SyncFiscalDocumentSpecialFieldValueCommand { FieldCode = "ano", Value = "2026" }
+            ]
+        });
+
+        Assert.Equal(SyncFiscalDocumentSpecialFieldsOutcome.Updated, result.Outcome);
+        Assert.Collection(
+            fiscalDocument.SpecialFieldValues.OrderBy(x => x.DisplayOrder),
+            first =>
+            {
+                Assert.Equal("PERIODICIDAD", first.FieldCode);
+                Assert.Equal("01", first.Value);
+            },
+            second =>
+            {
+                Assert.Equal("MESES", second.FieldCode);
+                Assert.Equal("03", second.Value);
+            },
+            third =>
+            {
+                Assert.Equal("AÑO", third.FieldCode);
+                Assert.Equal("2026", third.Value);
+            });
+    }
+
+    [Fact]
+    public async Task SyncFiscalDocumentSpecialFields_ReturnsConflict_WhenDocumentIsAlreadyStamped()
+    {
+        var fiscalDocument = new FiscalDocument
+        {
+            Id = 89,
+            FiscalReceiverId = 11,
+            Status = FiscalDocumentStatus.Stamped
+        };
+
+        var service = new SyncFiscalDocumentSpecialFieldsService(
+            new FakeFiscalDocumentRepository { ExistingById = fiscalDocument },
+            new FakeFiscalReceiverRepository { ExistingById = CreateReceiver() },
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new SyncFiscalDocumentSpecialFieldsCommand
+        {
+            FiscalDocumentId = fiscalDocument.Id
+        });
+
+        Assert.Equal(SyncFiscalDocumentSpecialFieldsOutcome.Conflict, result.Outcome);
+    }
+
+    [Fact]
     public void PrepareFiscalDocumentService_DoesNotDependOnPacServices()
     {
         var dependencyNames = typeof(PrepareFiscalDocumentService)

@@ -200,6 +200,13 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         cancellationStatus: 'Requested',
         authorizationStatus: 'Accepted'
       })),
+      syncFiscalDocumentSpecialFields: vi.fn().mockReturnValue(of({
+        outcome: 'Updated',
+        isSuccess: true,
+        fiscalDocumentId: 40,
+        fiscalDocumentStatus: 'ReadyForStamping',
+        specialFieldCount: 0
+      })),
       stampFiscalDocument: vi.fn(),
       cancelFiscalDocument: vi.fn(),
       refreshStatus: vi.fn(),
@@ -416,6 +423,8 @@ describe('FiscalDocumentOperationsPageComponent', () => {
 
   it('opens the email composer with preloaded recipient and suggested content', async () => {
     const fixture = await configure();
+    await fixture.componentInstance['loadFiscalDocument'](40);
+    fixture.detectChanges();
 
     await fixture.componentInstance['openEmailComposer']();
     fixture.detectChanges();
@@ -454,6 +463,8 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     const fixture = await configure({
       sendByEmail: vi.fn().mockReturnValue(throwError(() => ({ error: { errorMessage: 'SMTP no disponible.' } })))
     });
+    await fixture.componentInstance['loadFiscalDocument'](40);
+    fixture.detectChanges();
 
     await fixture.componentInstance['openEmailComposer']();
     fixture.componentInstance['emailRecipientsInput'] = 'cliente@example.com';
@@ -1015,6 +1026,246 @@ describe('FiscalDocumentOperationsPageComponent', () => {
 
     expect(fixture.componentInstance['canStampCurrentFiscalDocument']()).toBe(false);
     expect(fixture.nativeElement.textContent).toContain('Timbrar solo está disponible para documentos listos para timbrar o reintentos explícitos de rechazo.');
+  });
+
+  it('syncs special fields and retries a rejected stamp with retryRejected=true', async () => {
+    const rejectedDocument = {
+      id: 40,
+      billingDocumentId: 30,
+      issuerProfileId: 1,
+      fiscalReceiverId: 9,
+      status: 'StampingRejected',
+      cfdiVersion: '4.0',
+      documentType: 'I',
+      series: 'A',
+      folio: '31787',
+      issuedAtUtc: '2026-03-20T12:00:00Z',
+      currencyCode: 'MXN',
+      exchangeRate: 1,
+      paymentMethodSat: 'PPD',
+      paymentFormSat: '99',
+      paymentCondition: 'CREDITO',
+      isCreditSale: true,
+      creditDays: 7,
+      issuerRfc: 'AAA010101AAA',
+      issuerLegalName: 'Issuer SA',
+      issuerFiscalRegimeCode: '601',
+      issuerPostalCode: '01000',
+      pacEnvironment: 'Sandbox',
+      hasCertificateReference: true,
+      hasPrivateKeyReference: true,
+      hasPrivateKeyPasswordReference: true,
+      receiverRfc: 'XAXX010101000',
+      receiverLegalName: 'PUBLICO EN GENERAL',
+      receiverFiscalRegimeCode: '616',
+      receiverCfdiUseCode: 'S01',
+      receiverPostalCode: '02000',
+      receiverCountryCode: 'MX',
+      receiverForeignTaxRegistration: null,
+      subtotal: 100,
+      discountTotal: 0,
+      taxTotal: 0,
+      total: 100,
+      specialFields: [],
+      items: []
+    };
+    const syncFiscalDocumentSpecialFields = vi.fn().mockReturnValue(of({
+      outcome: 'Updated',
+      isSuccess: true,
+      fiscalDocumentId: 40,
+      fiscalDocumentStatus: 'StampingRejected',
+      specialFieldCount: 3
+    }));
+    const stampFiscalDocument = vi.fn().mockReturnValue(of({
+      outcome: 'Stamped',
+      isSuccess: true,
+      fiscalDocumentId: 40,
+      fiscalDocumentStatus: 'Stamped',
+      fiscalStampId: 80,
+      uuid: 'UUID-123'
+    }));
+
+    const fixture = await configure(
+      {
+        getFiscalDocumentById: vi.fn().mockReturnValue(of(rejectedDocument)),
+        syncFiscalDocumentSpecialFields,
+        stampFiscalDocument
+      },
+      undefined,
+      undefined,
+      {
+        getByRfc: vi.fn().mockReturnValue(of({
+          id: 9,
+          rfc: 'XAXX010101000',
+          legalName: 'PUBLICO EN GENERAL',
+          postalCode: '02000',
+          fiscalRegimeCode: '616',
+          cfdiUseCodeDefault: 'S01',
+          countryCode: 'MX',
+          foreignTaxRegistration: null,
+          email: null,
+          phone: null,
+          searchAlias: null,
+          isActive: true,
+          createdAtUtc: '2026-03-20T12:00:00Z',
+          updatedAtUtc: '2026-03-20T12:00:00Z',
+          specialFields: [
+            {
+              id: 31,
+              code: 'PERIODICIDAD',
+              label: 'Periodicidad',
+              dataType: 'text',
+              maxLength: 2,
+              helpText: null,
+              isRequired: true,
+              isActive: true,
+              displayOrder: 1
+            },
+            {
+              id: 32,
+              code: 'MESES',
+              label: 'Meses',
+              dataType: 'text',
+              maxLength: 2,
+              helpText: null,
+              isRequired: true,
+              isActive: true,
+              displayOrder: 2
+            },
+            {
+              id: 33,
+              code: 'AÑO',
+              label: 'Año',
+              dataType: 'text',
+              maxLength: 4,
+              helpText: null,
+              isRequired: true,
+              isActive: true,
+              displayOrder: 3
+            }
+          ]
+        }))
+      }
+    );
+
+    fixture.componentInstance['specialFieldDrafts'].set([
+      {
+        fieldCode: 'PERIODICIDAD',
+        label: 'Periodicidad',
+        dataType: 'text',
+        isRequired: true,
+        isActive: true,
+        maxLength: 2,
+        helpText: null,
+        value: '01'
+      },
+      {
+        fieldCode: 'MESES',
+        label: 'Meses',
+        dataType: 'text',
+        isRequired: true,
+        isActive: true,
+        maxLength: 2,
+        helpText: null,
+        value: '03'
+      },
+      {
+        fieldCode: 'AÑO',
+        label: 'Año',
+        dataType: 'text',
+        isRequired: true,
+        isActive: true,
+        maxLength: 4,
+        helpText: null,
+        value: '2026'
+      }
+    ]);
+
+    await fixture.componentInstance['stamp']();
+
+    expect(syncFiscalDocumentSpecialFields).toHaveBeenCalledWith(40, {
+      specialFields: [
+        { fieldCode: 'PERIODICIDAD', value: '01' },
+        { fieldCode: 'MESES', value: '03' },
+        { fieldCode: 'AÑO', value: '2026' }
+      ]
+    });
+    expect(stampFiscalDocument).toHaveBeenCalledWith(40, { retryRejected: true });
+  });
+
+  it('syncs current fiscal document special fields on demand', async () => {
+    const syncFiscalDocumentSpecialFields = vi.fn().mockReturnValue(of({
+      outcome: 'Updated',
+      isSuccess: true,
+      fiscalDocumentId: 40,
+      fiscalDocumentStatus: 'ReadyForStamping',
+      specialFieldCount: 1
+    }));
+    const fixture = await configure({
+      syncFiscalDocumentSpecialFields,
+      getFiscalDocumentById: vi.fn().mockReturnValue(of({
+        id: 40,
+        billingDocumentId: 30,
+        issuerProfileId: 1,
+        fiscalReceiverId: 9,
+        status: 'ReadyForStamping',
+        cfdiVersion: '4.0',
+        documentType: 'I',
+        series: 'A',
+        folio: '31787',
+        issuedAtUtc: '2026-03-20T12:00:00Z',
+        currencyCode: 'MXN',
+        exchangeRate: 1,
+        paymentMethodSat: 'PPD',
+        paymentFormSat: '99',
+        paymentCondition: 'CREDITO',
+        isCreditSale: true,
+        creditDays: 7,
+        issuerRfc: 'AAA010101AAA',
+        issuerLegalName: 'Issuer SA',
+        issuerFiscalRegimeCode: '601',
+        issuerPostalCode: '01000',
+        pacEnvironment: 'Sandbox',
+        hasCertificateReference: true,
+        hasPrivateKeyReference: true,
+        hasPrivateKeyPasswordReference: true,
+        receiverRfc: 'BBB010101BBB',
+        receiverLegalName: 'Receiver One',
+        receiverFiscalRegimeCode: '601',
+        receiverCfdiUseCode: 'G03',
+        receiverPostalCode: '02000',
+        receiverCountryCode: 'MX',
+        receiverForeignTaxRegistration: null,
+        subtotal: 100,
+        discountTotal: 0,
+        taxTotal: 0,
+        total: 100,
+        items: []
+      }))
+    });
+    await fixture.componentInstance['loadFiscalDocument'](40);
+    fixture.detectChanges();
+
+    fixture.componentInstance['specialFieldDrafts'].set([
+      {
+        fieldCode: 'PERIODICIDAD',
+        label: 'Periodicidad',
+        dataType: 'text',
+        isRequired: false,
+        isActive: true,
+        maxLength: 2,
+        helpText: null,
+        value: '01'
+      }
+    ]);
+
+    await fixture.componentInstance['syncCurrentFiscalDocumentSpecialFields']();
+
+    expect(syncFiscalDocumentSpecialFields).toHaveBeenCalledWith(40, {
+      specialFields: [
+        { fieldCode: 'PERIODICIDAD', value: '01' }
+      ]
+    });
   });
 
   it('renders dynamic special billing fields for the selected receiver', async () => {
@@ -1743,6 +1994,8 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         items: []
       }))
     }, undefined, undefined, undefined, { importLegacyOrder });
+    await fixture.componentInstance['loadFiscalDocument'](40);
+    fixture.detectChanges();
 
     fixture.componentInstance['additionalLegacyOrderId'] = 'LEG-2002';
     await fixture.componentInstance['addLegacyOrderToBillingDocument']();
@@ -1824,6 +2077,8 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         items: []
       }))
     });
+    await fixture.componentInstance['loadFiscalDocument'](40);
+    fixture.detectChanges();
 
     await fixture.componentInstance['removeAssociatedOrder'](21);
 
@@ -1886,6 +2141,8 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         items: []
       }))
     });
+    await fixture.componentInstance['loadFiscalDocument'](40);
+    fixture.detectChanges();
 
     fixture.componentInstance['openRemoveBillingItemDialog']({
       billingDocumentItemId: 501,

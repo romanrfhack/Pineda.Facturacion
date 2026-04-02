@@ -150,4 +150,28 @@ describe('FiscalDocumentsApiService', () => {
     expect(req.request.body).toEqual({});
     httpTesting.verify();
   });
+
+  it('posts fiscal-document special-field synchronization', () => {
+    const service = TestBed.inject(FiscalDocumentsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.syncFiscalDocumentSpecialFields(40, {
+      specialFields: [
+        { fieldCode: 'PERIODICIDAD', value: '01' },
+        { fieldCode: 'MESES', value: '03' },
+        { fieldCode: 'AÑO', value: '2026' }
+      ]
+    }).subscribe();
+
+    const req = httpTesting.expectOne('/api/fiscal-documents/40/special-fields/sync');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({
+      specialFields: [
+        { fieldCode: 'PERIODICIDAD', value: '01' },
+        { fieldCode: 'MESES', value: '03' },
+        { fieldCode: 'AÑO', value: '2026' }
+      ]
+    });
+    httpTesting.verify();
+  });
 });

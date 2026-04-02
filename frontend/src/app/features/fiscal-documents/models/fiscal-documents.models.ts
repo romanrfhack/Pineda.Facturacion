@@ -329,6 +329,15 @@ export interface StampFiscalDocumentRequest {
   retryRejected: boolean;
 }
 
+export interface SyncFiscalDocumentSpecialFieldsRequest {
+  specialFields: SyncFiscalDocumentSpecialFieldValueRequest[];
+}
+
+export interface SyncFiscalDocumentSpecialFieldValueRequest {
+  fieldCode: string;
+  value: string;
+}
+
 export interface StampFiscalDocumentResponse {
   outcome: string;
   isSuccess: boolean;
@@ -347,6 +356,15 @@ export interface StampFiscalDocumentResponse {
   rawResponseSummaryJson?: string | null;
   isRetryable?: boolean | null;
   retryAdvice?: string | null;
+}
+
+export interface SyncFiscalDocumentSpecialFieldsResponse {
+  outcome: string;
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  fiscalDocumentId: number;
+  fiscalDocumentStatus?: string | null;
+  specialFieldCount: number;
 }
 
 export interface FiscalStampResponse {

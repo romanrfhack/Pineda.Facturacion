@@ -103,6 +103,7 @@ public class FacturaloPlusStampingGatewayTests
         Assert.Equal("AAA010101AAA", comprobante.GetProperty("Emisor").GetProperty("Rfc").GetString());
         Assert.Equal("Receiver SA", comprobante.GetProperty("Receptor").GetProperty("Nombre").GetString());
         Assert.Equal("G03", comprobante.GetProperty("Receptor").GetProperty("UsoCFDI").GetString());
+        Assert.False(comprobante.TryGetProperty("InformacionGlobal", out _));
         Assert.Equal("01010101", comprobante.GetProperty("Conceptos")[0].GetProperty("ClaveProdServ").GetString());
         Assert.Equal("02", comprobante.GetProperty("Conceptos")[0].GetProperty("ObjetoImp").GetString());
         Assert.Equal(848m, comprobante.GetProperty("Conceptos")[0].GetProperty("Importe").GetDecimal());
@@ -133,6 +134,155 @@ public class FacturaloPlusStampingGatewayTests
         Assert.Contains("CERT_REF", secretResolver.RequestedKeys);
         Assert.Contains("KEY_REF", secretResolver.RequestedKeys);
         Assert.DoesNotContain("PWD_REF", secretResolver.RequestedKeys);
+    }
+
+    [Fact]
+    public async Task StampAsync_Includes_InformacionGlobal_For_Global_PublicoEnGeneral_Income()
+    {
+        using var rsa = RSA.Create(2048);
+        var request = new CertificateRequest(
+            "CN=FacturaloPlus Test",
+            rsa,
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
+        var serialBytes = Encoding.ASCII.GetBytes("30001000000500003416");
+        var certificate = request.Create(
+            new X500DistinguishedName("CN=FacturaloPlus Test"),
+            X509SignatureGenerator.CreateForRSA(rsa, RSASignaturePadding.Pkcs1),
+            DateTimeOffset.UtcNow.AddDays(-1),
+            DateTimeOffset.UtcNow.AddYears(1),
+            serialBytes);
+        var certificatePem = new string(PemEncoding.Write("CERTIFICATE", certificate.Export(X509ContentType.Cert)));
+
+        var handler = new RecordingHandler(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""
+                {
+                  "success": true,
+                  "trackingId": "TRACK-1",
+                  "uuid": "UUID-1",
+                  "stampedAtUtc": "2026-03-21T12:00:00Z",
+                  "xmlContent": "<cfdi:Comprobante Version=\"4.0\" />"
+                }
+                """, Encoding.UTF8, "application/json")
+        });
+
+        var client = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://dev.facturaloplus.com/api/rest/servicio/")
+        };
+        var secretResolver = new RecordingSecretResolver(new Dictionary<string, string?>
+        {
+            ["FACTURALOPLUS_API_KEY_REFERENCE"] = "APIKEY-TEST",
+            ["CERT_REF"] = certificatePem,
+            ["KEY_REF"] = "PRIVATE-KEY-PEM"
+        });
+
+        var gateway = new FacturaloPlusStampingGateway(
+            client,
+            Options.Create(new FacturaloPlusOptions
+            {
+                BaseUrl = "https://dev.facturaloplus.com/api/rest/servicio/",
+                StampPath = "timbrarJSON3",
+                ApiKeyReference = "FACTURALOPLUS_API_KEY_REFERENCE"
+            }),
+            secretResolver);
+
+        var requestPayload = CreateRequest();
+        requestPayload.ReceiverRfc = "XAXX010101000";
+        requestPayload.ReceiverLegalName = "PÚBLICO EN GENERAL";
+        requestPayload.GlobalInformation = new FiscalStampingGlobalInformation
+        {
+            Periodicity = "01",
+            Months = "03",
+            Year = "2026"
+        };
+
+        await gateway.StampAsync(requestPayload);
+
+        var form = ParseFormBody(handler.LastBody!);
+        var decodedJson = Encoding.UTF8.GetString(Convert.FromBase64String(form["jsonB64"]));
+        using var json = JsonDocument.Parse(decodedJson);
+        var informacionGlobal = json.RootElement
+            .GetProperty("Comprobante")
+            .GetProperty("InformacionGlobal");
+
+        Assert.Equal("01", informacionGlobal.GetProperty("Periodicidad").GetString());
+        Assert.Equal("03", informacionGlobal.GetProperty("Meses").GetString());
+        Assert.Equal("2026", informacionGlobal.GetProperty("Año").GetString());
+    }
+
+    [Fact]
+    public async Task StampAsync_DoesNot_Include_InformacionGlobal_For_NonIncome_Documents()
+    {
+        using var rsa = RSA.Create(2048);
+        var request = new CertificateRequest(
+            "CN=FacturaloPlus Test",
+            rsa,
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
+        var serialBytes = Encoding.ASCII.GetBytes("30001000000500003416");
+        var certificate = request.Create(
+            new X500DistinguishedName("CN=FacturaloPlus Test"),
+            X509SignatureGenerator.CreateForRSA(rsa, RSASignaturePadding.Pkcs1),
+            DateTimeOffset.UtcNow.AddDays(-1),
+            DateTimeOffset.UtcNow.AddYears(1),
+            serialBytes);
+        var certificatePem = new string(PemEncoding.Write("CERTIFICATE", certificate.Export(X509ContentType.Cert)));
+
+        var handler = new RecordingHandler(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""
+                {
+                  "success": true,
+                  "trackingId": "TRACK-1",
+                  "uuid": "UUID-1",
+                  "stampedAtUtc": "2026-03-21T12:00:00Z",
+                  "xmlContent": "<cfdi:Comprobante Version=\"4.0\" />"
+                }
+                """, Encoding.UTF8, "application/json")
+        });
+
+        var client = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://dev.facturaloplus.com/api/rest/servicio/")
+        };
+        var secretResolver = new RecordingSecretResolver(new Dictionary<string, string?>
+        {
+            ["FACTURALOPLUS_API_KEY_REFERENCE"] = "APIKEY-TEST",
+            ["CERT_REF"] = certificatePem,
+            ["KEY_REF"] = "PRIVATE-KEY-PEM"
+        });
+
+        var gateway = new FacturaloPlusStampingGateway(
+            client,
+            Options.Create(new FacturaloPlusOptions
+            {
+                BaseUrl = "https://dev.facturaloplus.com/api/rest/servicio/",
+                StampPath = "timbrarJSON3",
+                ApiKeyReference = "FACTURALOPLUS_API_KEY_REFERENCE"
+            }),
+            secretResolver);
+
+        var requestPayload = CreateRequest();
+        requestPayload.DocumentType = "E";
+        requestPayload.ReceiverRfc = "XAXX010101000";
+        requestPayload.ReceiverLegalName = "PUBLICO EN GENERAL";
+        requestPayload.GlobalInformation = new FiscalStampingGlobalInformation
+        {
+            Periodicity = "01",
+            Months = "03",
+            Year = "2026"
+        };
+
+        await gateway.StampAsync(requestPayload);
+
+        var form = ParseFormBody(handler.LastBody!);
+        var decodedJson = Encoding.UTF8.GetString(Convert.FromBase64String(form["jsonB64"]));
+        using var json = JsonDocument.Parse(decodedJson);
+        var comprobante = json.RootElement.GetProperty("Comprobante");
+
+        Assert.False(comprobante.TryGetProperty("InformacionGlobal", out _));
     }
 
     [Fact]

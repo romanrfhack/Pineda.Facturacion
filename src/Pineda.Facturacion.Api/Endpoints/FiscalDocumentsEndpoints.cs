@@ -44,6 +44,15 @@ public static class FiscalDocumentsEndpoints
             .Produces<StampFiscalDocumentResponse>(StatusCodes.Status409Conflict)
             .Produces<StampFiscalDocumentResponse>(StatusCodes.Status503ServiceUnavailable);
 
+        group.MapPost("/{fiscalDocumentId:long}/special-fields/sync", SyncFiscalDocumentSpecialFieldsAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
+            .WithName("SyncFiscalDocumentSpecialFields")
+            .WithSummary("Synchronize persisted fiscal-document special fields from the current receiver definition")
+            .Produces<SyncFiscalDocumentSpecialFieldsResponse>(StatusCodes.Status200OK)
+            .Produces<SyncFiscalDocumentSpecialFieldsResponse>(StatusCodes.Status400BadRequest)
+            .Produces<SyncFiscalDocumentSpecialFieldsResponse>(StatusCodes.Status404NotFound)
+            .Produces<SyncFiscalDocumentSpecialFieldsResponse>(StatusCodes.Status409Conflict);
+
         group.MapGet("/{fiscalDocumentId:long}/stamp", GetFiscalStampByFiscalDocumentIdAsync)
             .WithName("GetFiscalStampByFiscalDocumentId")
             .WithSummary("Get persisted stamp evidence for a fiscal document")
@@ -299,6 +308,66 @@ public static class FiscalDocumentsEndpoints
             StampFiscalDocumentOutcome.ProviderRejected => TypedResults.Conflict(response),
             StampFiscalDocumentOutcome.ProviderUnavailable => TypedResults.Json(response, statusCode: StatusCodes.Status503ServiceUnavailable),
             StampFiscalDocumentOutcome.ValidationFailed => TypedResults.BadRequest(response),
+            _ => TypedResults.BadRequest(response)
+        };
+    }
+
+    private static async Task<Results<Ok<SyncFiscalDocumentSpecialFieldsResponse>, BadRequest<SyncFiscalDocumentSpecialFieldsResponse>, NotFound<SyncFiscalDocumentSpecialFieldsResponse>, Conflict<SyncFiscalDocumentSpecialFieldsResponse>>> SyncFiscalDocumentSpecialFieldsAsync(
+        long fiscalDocumentId,
+        SyncFiscalDocumentSpecialFieldsRequest? request,
+        SyncFiscalDocumentSpecialFieldsService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(
+            new SyncFiscalDocumentSpecialFieldsCommand
+            {
+                FiscalDocumentId = fiscalDocumentId,
+                SpecialFields = request?.SpecialFields?
+                    .Select(x => new SyncFiscalDocumentSpecialFieldValueCommand
+                    {
+                        FieldCode = x.FieldCode,
+                        Value = x.Value
+                    })
+                    .ToArray()
+                    ?? []
+            },
+            cancellationToken);
+
+        var response = new SyncFiscalDocumentSpecialFieldsResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            FiscalDocumentId = result.FiscalDocumentId,
+            FiscalDocumentStatus = result.FiscalDocumentStatus?.ToString(),
+            SpecialFieldCount = result.SpecialFieldCount
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "FiscalDocument.SyncSpecialFields",
+            "FiscalDocument",
+            fiscalDocumentId.ToString(),
+            result.Outcome.ToString(),
+            new
+            {
+                fiscalDocumentId,
+                specialFields = request?.SpecialFields?.Select(x => new { x.FieldCode, x.Value }).ToArray() ?? []
+            },
+            new
+            {
+                result.FiscalDocumentStatus,
+                result.SpecialFieldCount
+            },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            SyncFiscalDocumentSpecialFieldsOutcome.Updated => TypedResults.Ok(response),
+            SyncFiscalDocumentSpecialFieldsOutcome.NotFound => TypedResults.NotFound(response),
+            SyncFiscalDocumentSpecialFieldsOutcome.Conflict => TypedResults.Conflict(response),
             _ => TypedResults.BadRequest(response)
         };
     }
@@ -1069,6 +1138,17 @@ public static class FiscalDocumentsEndpoints
         public bool RetryRejected { get; init; }
     }
 
+    public sealed class SyncFiscalDocumentSpecialFieldsRequest
+    {
+        public IReadOnlyList<SyncFiscalDocumentSpecialFieldValueRequest> SpecialFields { get; init; } = [];
+    }
+
+    public sealed class SyncFiscalDocumentSpecialFieldValueRequest
+    {
+        public string FieldCode { get; init; } = string.Empty;
+        public string Value { get; init; } = string.Empty;
+    }
+
     public sealed class IssuedFiscalDocumentListResponse
     {
         public int Page { get; init; }
@@ -1129,6 +1209,16 @@ public static class FiscalDocumentsEndpoints
         public string? RawResponseSummaryJson { get; init; }
         public bool IsRetryable { get; init; }
         public string? RetryAdvice { get; init; }
+    }
+
+    public sealed class SyncFiscalDocumentSpecialFieldsResponse
+    {
+        public string Outcome { get; init; } = string.Empty;
+        public bool IsSuccess { get; init; }
+        public string? ErrorMessage { get; init; }
+        public long FiscalDocumentId { get; init; }
+        public string? FiscalDocumentStatus { get; init; }
+        public int SpecialFieldCount { get; init; }
     }
 
     public sealed class FiscalStampResponse

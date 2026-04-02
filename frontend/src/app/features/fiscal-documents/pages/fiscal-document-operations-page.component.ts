@@ -569,11 +569,52 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
       @if (fiscalDocument(); as currentDocument) {
         <app-fiscal-document-card [document]="currentDocument" />
 
+        @if (canSyncCurrentFiscalDocument()) {
+          @if (selectedReceiver(); as currentReceiver) {
+            <section class="card">
+              <h3>Campos especiales del documento fiscal</h3>
+              <p class="helper">
+                Receptor actual: <strong>{{ currentReceiver.rfc }} · {{ currentReceiver.legalName }}</strong>.
+                Puedes refrescar el snapshot de campos especiales del CFDI antes de timbrar o reintentar.
+              </p>
+
+              @if (activeReceiverSpecialFields().length) {
+                <div class="form-grid">
+                  @for (field of activeReceiverSpecialFields(); track field.fieldCode) {
+                    <label>
+                      <span>{{ field.label }} @if (field.isRequired) { <strong>*</strong> }</span>
+                      <input
+                        [(ngModel)]="field.value"
+                        [name]="'document-specialField-' + field.fieldCode"
+                        [attr.maxLength]="field.maxLength ?? null"
+                        [attr.placeholder]="field.helpText || null"
+                        [type]="resolveSpecialFieldInputType(field.dataType)"
+                      />
+                      @if (field.helpText) {
+                        <small class="helper">{{ field.helpText }}</small>
+                      }
+                    </label>
+                  }
+                </div>
+              } @else {
+                <p class="helper">El receptor actual no tiene campos especiales activos para sincronizar.</p>
+              }
+
+              <div class="button-row">
+                <button type="button" class="secondary" (click)="syncCurrentFiscalDocumentSpecialFields()" [disabled]="loadingOperation() || !canSyncCurrentFiscalDocument()">
+                  Sincronizar campos especiales
+                </button>
+                <a [routerLink]="['/app/catalogs/receivers']">Abrir catálogo de receptores</a>
+              </div>
+            </section>
+          }
+        }
+
         <section class="card actions">
           <h3>Operaciones</h3>
           <div class="button-row">
             @if (permissionService.canStampFiscal()) {
-              <button type="button" (click)="stamp()" [disabled]="loadingOperation() || !canStampCurrentFiscalDocument()">Timbrar</button>
+              <button type="button" (click)="stamp()" [disabled]="loadingOperation() || !canStampCurrentFiscalDocument()">{{ stampActionLabel() }}</button>
             }
             @if (permissionService.canCancelFiscal()) {
               <button type="button" class="danger" (click)="openCancelDialog()" [disabled]="loadingOperation() || !canCancelCurrentFiscalDocument()">Cancelar</button>
@@ -1538,6 +1579,16 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     }
   }
 
+  protected async syncCurrentFiscalDocumentSpecialFields(): Promise<void> {
+    if (!this.fiscalDocumentId() || !this.canSyncCurrentFiscalDocument()) {
+      return;
+    }
+
+    await this.runOperation(async () => {
+      await this.syncCurrentFiscalDocumentSpecialFieldsCore(true);
+    });
+  }
+
   private async searchReceivers(query: string): Promise<void> {
     this.searchingReceivers.set(true);
     this.receiverSearchError.set(null);
@@ -1562,21 +1613,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     this.receiverResults.set([]);
     this.receiverSearchError.set(null);
     this.receiverSearchTouched.set(false);
-    this.specialFieldDrafts.set(
-      (receiver.specialFields ?? [])
-        .filter((field) => field.isActive)
-        .sort((left, right) => left.displayOrder - right.displayOrder)
-        .map((field) => ({
-          fieldCode: field.code,
-          label: field.label,
-          dataType: field.dataType,
-          isRequired: field.isRequired,
-          isActive: field.isActive,
-          maxLength: field.maxLength ?? null,
-          helpText: field.helpText ?? null,
-          value: ''
-        }))
-    );
+    this.specialFieldDrafts.set(this.buildSpecialFieldDrafts(receiver, this.fiscalDocument()));
   }
 
   private validateSpecialFields(): string | null {
@@ -1592,6 +1629,83 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     }
 
     return null;
+  }
+
+  private async syncCurrentFiscalDocumentSpecialFieldsCore(showSuccessMessage: boolean): Promise<boolean> {
+    const fiscalDocumentId = this.fiscalDocumentId();
+    if (!fiscalDocumentId || !this.canSyncCurrentFiscalDocument()) {
+      return true;
+    }
+
+    const specialFieldValidationError = this.validateSpecialFields();
+    if (specialFieldValidationError) {
+      this.feedbackService.show('error', specialFieldValidationError);
+      return false;
+    }
+
+    const response = await firstValueFrom(this.api.syncFiscalDocumentSpecialFields(fiscalDocumentId, {
+      specialFields: this.activeReceiverSpecialFields().map((field) => ({
+        fieldCode: field.fieldCode,
+        value: field.value.trim()
+      }))
+    }));
+
+    this.lastOperationMessage.set(
+      (response.isSuccess ? 'Campos especiales sincronizados correctamente.' : null)
+        || response.errorMessage
+        || `Resultado de la sincronización: ${getDisplayLabel(response.outcome)}`
+    );
+
+    await this.loadFiscalDocument(fiscalDocumentId);
+
+    if (response.isSuccess) {
+      if (showSuccessMessage) {
+        this.feedbackService.show('success', 'Campos especiales del documento fiscal sincronizados.');
+      }
+    } else {
+      this.feedbackService.show('error', response.errorMessage || 'No fue posible sincronizar los campos especiales del documento fiscal.');
+    }
+
+    return response.isSuccess;
+  }
+
+  private async loadReceiverForFiscalDocument(document: FiscalDocumentResponse): Promise<void> {
+    try {
+      const receiver = await firstValueFrom(this.fiscalReceiversApi.getByRfc(document.receiverRfc));
+      this.selectedReceiver.set(receiver);
+      this.selectedReceiverId = receiver.id;
+      this.receiverQuery.set(`${receiver.rfc} · ${receiver.legalName}`);
+      this.receiverResults.set([]);
+      this.receiverSearchError.set(null);
+      this.receiverSearchTouched.set(false);
+      this.specialFieldDrafts.set(this.buildSpecialFieldDrafts(receiver, document));
+    } catch {
+      this.selectedReceiver.set(null);
+      this.selectedReceiverId = document.fiscalReceiverId;
+      this.specialFieldDrafts.set([]);
+    }
+  }
+
+  private buildSpecialFieldDrafts(receiver: FiscalReceiver, fiscalDocument: FiscalDocumentResponse | null): ReceiverSpecialFieldDraft[] {
+    const valuesByCode = new Map(
+      (fiscalDocument?.specialFields ?? [])
+        .filter((field) => !!field.fieldCode?.trim())
+        .map((field) => [normalizeSpecialFieldCode(field.fieldCode), field.value ?? ''])
+    );
+
+    return (receiver.specialFields ?? [])
+      .filter((field) => field.isActive)
+      .sort((left, right) => left.displayOrder - right.displayOrder)
+      .map((field) => ({
+        fieldCode: field.code,
+        label: field.label,
+        dataType: field.dataType,
+        isRequired: field.isRequired,
+        isActive: field.isActive,
+        maxLength: field.maxLength ?? null,
+        helpText: field.helpText ?? null,
+        value: valuesByCode.get(normalizeSpecialFieldCode(field.code)) ?? ''
+      }));
   }
 
   protected async saveReceiver(request: UpsertFiscalReceiverRequest): Promise<void> {
@@ -1736,14 +1850,24 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
 
   protected async stamp(): Promise<void> {
     const fiscalDocumentId = this.fiscalDocumentId();
+    const retryRejected = this.fiscalDocument()?.status === 'StampingRejected';
     if (!fiscalDocumentId) {
       return;
     }
 
     await this.runOperation(async () => {
-      const response = await firstValueFrom(this.api.stampFiscalDocument(fiscalDocumentId, { retryRejected: false }));
+      const synchronized = await this.syncCurrentFiscalDocumentSpecialFieldsCore(false);
+      if (!synchronized) {
+        return;
+      }
+
+      const response = await firstValueFrom(this.api.stampFiscalDocument(fiscalDocumentId, { retryRejected }));
       this.lastOperationMessage.set(
-        (response.isSuccess ? 'Documento fiscal timbrado correctamente.' : null)
+        (response.isSuccess
+          ? retryRejected
+            ? 'Reintento de timbrado ejecutado correctamente.'
+            : 'Documento fiscal timbrado correctamente.'
+          : null)
           || response.providerMessage
           || response.supportMessage
           || response.retryAdvice
@@ -2027,6 +2151,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     this.closeRemoveBillingItemDialog();
     const document = await firstValueFrom(this.api.getFiscalDocumentById(fiscalDocumentId));
     this.fiscalDocument.set(document);
+    await this.loadReceiverForFiscalDocument(document);
     await this.loadBillingDocumentContext(document.billingDocumentId, false);
 
     if (syncRoute) {
@@ -2245,6 +2370,17 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     return status === 'ReadyForStamping' || status === 'StampingRejected';
   }
 
+  protected canSyncCurrentFiscalDocument(): boolean {
+    const status = this.fiscalDocument()?.status;
+    return status === 'ReadyForStamping' || status === 'StampingRejected';
+  }
+
+  protected stampActionLabel(): string {
+    return this.fiscalDocument()?.status === 'StampingRejected'
+      ? 'Reintentar timbrado'
+      : 'Timbrar';
+  }
+
   protected canRefreshCurrentFiscalDocument(): boolean {
     return !!this.stampEvidence()?.uuid;
   }
@@ -2408,6 +2544,14 @@ function buildCreditPaymentCondition(creditDays: number | null): string {
   return creditDays && creditDays > 0
     ? `Crédito a ${creditDays} días`
     : 'Crédito';
+}
+
+function normalizeSpecialFieldCode(value: string): string {
+  return value
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase();
 }
 
 interface ReceiverSpecialFieldDraft {
