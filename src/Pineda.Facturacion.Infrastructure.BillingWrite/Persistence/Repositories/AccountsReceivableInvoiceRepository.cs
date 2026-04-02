@@ -51,6 +51,20 @@ public class AccountsReceivableInvoiceRepository : IAccountsReceivableInvoiceRep
             .FirstOrDefaultAsync(x => x.ExternalRepBaseDocumentId == externalRepBaseDocumentId, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<AccountsReceivableInvoice>> GetByIdsAsync(IReadOnlyCollection<long> accountsReceivableInvoiceIds, CancellationToken cancellationToken = default)
+    {
+        if (accountsReceivableInvoiceIds.Count == 0)
+        {
+            return [];
+        }
+
+        return await _dbContext.AccountsReceivableInvoices
+            .AsNoTracking()
+            .Include(x => x.Applications)
+            .Where(x => accountsReceivableInvoiceIds.Contains(x.Id))
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<AccountsReceivablePortfolioItem>> SearchPortfolioAsync(SearchAccountsReceivablePortfolioFilter filter, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(filter);

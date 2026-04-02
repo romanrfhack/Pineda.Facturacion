@@ -1003,6 +1003,12 @@ public class FiscalCancellationAndStatusServicesTests
         public Task<AccountsReceivableInvoice?> GetTrackedByExternalRepBaseDocumentIdAsync(long externalRepBaseDocumentId, CancellationToken cancellationToken = default)
             => Task.FromResult<AccountsReceivableInvoice?>(null);
 
+        public Task<IReadOnlyList<AccountsReceivableInvoice>> GetByIdsAsync(IReadOnlyCollection<long> accountsReceivableInvoiceIds, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<AccountsReceivableInvoice>>(
+                ExistingTrackedByFiscalDocumentId is not null && accountsReceivableInvoiceIds.Contains(ExistingTrackedByFiscalDocumentId.Id)
+                    ? [ExistingTrackedByFiscalDocumentId]
+                    : []);
+
         public Task<IReadOnlyList<AccountsReceivablePortfolioItem>> SearchPortfolioAsync(SearchAccountsReceivablePortfolioFilter filter, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<AccountsReceivablePortfolioItem>>([]);
 

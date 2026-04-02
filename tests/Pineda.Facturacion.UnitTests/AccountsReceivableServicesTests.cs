@@ -268,6 +268,46 @@ public class AccountsReceivableServicesTests
     }
 
     [Fact]
+    public async Task ApplyAccountsReceivablePayment_ReturnsConflict_WhenPaymentAlreadyHasRep()
+    {
+        var payment = CreatePayment(amount: 100m);
+        var invoice = CreateInvoice(total: 100m);
+        var service = new ApplyAccountsReceivablePaymentService(
+            new ArFakeAccountsReceivablePaymentRepository { ExistingTracked = payment },
+            new ArFakeAccountsReceivableInvoiceRepository
+            {
+                TrackedById = new Dictionary<long, AccountsReceivableInvoice> { [invoice.Id] = invoice }
+            },
+            new ArFakeAccountsReceivablePaymentApplicationRepository(),
+            new ArFakePaymentComplementDocumentRepository
+            {
+                ExistingByPaymentId = new PaymentComplementDocument
+                {
+                    Id = 501,
+                    AccountsReceivablePaymentId = payment.Id,
+                    Status = PaymentComplementDocumentStatus.Stamped
+                }
+            },
+            new ArFakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new ApplyAccountsReceivablePaymentCommand
+        {
+            AccountsReceivablePaymentId = payment.Id,
+            Applications =
+            [
+                new ApplyAccountsReceivablePaymentApplicationInput
+                {
+                    AccountsReceivableInvoiceId = invoice.Id,
+                    AppliedAmount = 25m
+                }
+            ]
+        });
+
+        Assert.Equal(ApplyAccountsReceivablePaymentOutcome.Conflict, result.Outcome);
+        Assert.Contains("append-only", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task ApplyAccountsReceivablePayment_CanApplyOnePaymentAcrossMultipleInvoices()
     {
         var payment = CreatePayment(amount: 150m);
@@ -365,6 +405,7 @@ public class AccountsReceivableServicesTests
                 }
             },
             appRepository,
+            new ArFakePaymentComplementDocumentRepository(),
             new ArFakeUnitOfWork());
 
         var result = await service.ExecuteAsync(new ApplyAccountsReceivablePaymentCommand
@@ -424,14 +465,108 @@ public class AccountsReceivableServicesTests
             new ArFakeAccountsReceivableInvoiceRepository { ExistingByFiscalDocumentId = invoice })
             .ExecuteAsync(invoice.FiscalDocumentId!.Value);
 
+        var paymentRepository = new ArFakeAccountsReceivablePaymentRepository
+        {
+            ExistingById = payment,
+            SearchResults = [payment]
+        };
         var paymentResult = await new GetAccountsReceivablePaymentByIdService(
-            new ArFakeAccountsReceivablePaymentRepository { ExistingById = payment })
+            paymentRepository,
+            new SearchAccountsReceivablePaymentsService(
+                paymentRepository,
+                new ArFakeAccountsReceivableInvoiceRepository
+                {
+                    TrackedById = new Dictionary<long, AccountsReceivableInvoice> { [invoice.Id] = invoice }
+                },
+                new ArFakeFiscalReceiverRepository(),
+                new ArFakePaymentComplementDocumentRepository()))
             .ExecuteAsync(payment.Id);
 
         Assert.True(invoiceResult.IsSuccess);
         Assert.Single(invoiceResult.AccountsReceivableInvoice!.Applications);
         Assert.True(paymentResult.IsSuccess);
         Assert.Single(paymentResult.AccountsReceivablePayment!.Applications);
+        Assert.Equal(AccountsReceivablePaymentOperationalStatus.PartiallyApplied, paymentResult.OperationalProjection!.OperationalStatus);
+    }
+
+    [Fact]
+    public async Task SearchAccountsReceivablePayments_ProjectsCapturedPartialFullAndRepStates()
+    {
+        var receiver = new FiscalReceiver
+        {
+            Id = 77,
+            LegalName = "Receiver One",
+            Rfc = "BBB010101BBB"
+        };
+
+        var captured = CreatePayment(id: 1, amount: 120m, receiverId: receiver.Id);
+        var partial = CreatePayment(id: 2, amount: 100m, receiverId: receiver.Id);
+        partial.Applications.Add(new AccountsReceivablePaymentApplication
+        {
+            Id = 9001,
+            AccountsReceivablePaymentId = partial.Id,
+            AccountsReceivableInvoiceId = 501,
+            ApplicationSequence = 1,
+            AppliedAmount = 40m,
+            PreviousBalance = 100m,
+            NewBalance = 60m,
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
+        var full = CreatePayment(id: 3, amount: 80m, receiverId: receiver.Id);
+        full.Applications.Add(new AccountsReceivablePaymentApplication
+        {
+            Id = 9002,
+            AccountsReceivablePaymentId = full.Id,
+            AccountsReceivableInvoiceId = 502,
+            ApplicationSequence = 1,
+            AppliedAmount = 80m,
+            PreviousBalance = 80m,
+            NewBalance = 0m,
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
+        var invoice501 = CreateInvoice(id: 501, total: 100m);
+        invoice501.FiscalReceiverId = receiver.Id;
+        invoice501.FiscalDocumentId = 8001;
+
+        var invoice502 = CreateInvoice(id: 502, total: 80m);
+        invoice502.FiscalReceiverId = receiver.Id;
+        invoice502.FiscalDocumentId = 8002;
+
+        var service = new SearchAccountsReceivablePaymentsService(
+            new ArFakeAccountsReceivablePaymentRepository { SearchResults = [captured, partial, full] },
+            new ArFakeAccountsReceivableInvoiceRepository
+            {
+                TrackedById = new Dictionary<long, AccountsReceivableInvoice>
+                {
+                    [501] = invoice501,
+                    [502] = invoice502
+                }
+            },
+            new ArFakeFiscalReceiverRepository { ExistingById = receiver },
+            new ArFakePaymentComplementDocumentRepository
+            {
+                ExistingByPaymentIds =
+                [
+                    new PaymentComplementDocument
+                    {
+                        Id = 7001,
+                        AccountsReceivablePaymentId = full.Id,
+                        Status = PaymentComplementDocumentStatus.Stamped
+                    }
+                ]
+            });
+
+        var result = await service.ExecuteAsync(new SearchAccountsReceivablePaymentsFilter());
+
+        Assert.Equal(3, result.Items.Count);
+        Assert.Equal(AccountsReceivablePaymentOperationalStatus.CapturedUnapplied, result.Items.Single(x => x.PaymentId == 1).OperationalStatus);
+        Assert.Equal(AccountsReceivablePaymentOperationalStatus.PartiallyApplied, result.Items.Single(x => x.PaymentId == 2).OperationalStatus);
+        Assert.Equal(AccountsReceivablePaymentOperationalStatus.FullyApplied, result.Items.Single(x => x.PaymentId == 3).OperationalStatus);
+        Assert.Equal(AccountsReceivablePaymentRepStatus.NoApplications, result.Items.Single(x => x.PaymentId == 1).RepStatus);
+        Assert.Equal(AccountsReceivablePaymentRepStatus.PendingApplications, result.Items.Single(x => x.PaymentId == 2).RepStatus);
+        Assert.Equal(AccountsReceivablePaymentRepStatus.Stamped, result.Items.Single(x => x.PaymentId == 3).RepStatus);
     }
 
     private static ApplyAccountsReceivablePaymentService CreateApplyService(
@@ -445,6 +580,7 @@ public class AccountsReceivableServicesTests
                 TrackedById = invoices.ToDictionary(x => x.Id, x => x)
             },
             new ArFakeAccountsReceivablePaymentApplicationRepository(),
+            new ArFakePaymentComplementDocumentRepository(),
             new ArFakeUnitOfWork());
     }
 
@@ -500,7 +636,7 @@ public class AccountsReceivableServicesTests
         };
     }
 
-    private static AccountsReceivablePayment CreatePayment(long id = 400, decimal amount = 100m)
+    private static AccountsReceivablePayment CreatePayment(long id = 400, decimal amount = 100m, long? receiverId = null)
     {
         return new AccountsReceivablePayment
         {
@@ -509,6 +645,7 @@ public class AccountsReceivableServicesTests
             PaymentFormSat = "03",
             CurrencyCode = "MXN",
             Amount = amount,
+            ReceivedFromFiscalReceiverId = receiverId,
             CreatedAtUtc = DateTime.UtcNow,
             UpdatedAtUtc = DateTime.UtcNow
         };
@@ -584,6 +721,15 @@ public class AccountsReceivableServicesTests
             return Task.FromResult(ExistingByExternalRepBaseDocumentId);
         }
 
+        public Task<IReadOnlyList<AccountsReceivableInvoice>> GetByIdsAsync(IReadOnlyCollection<long> accountsReceivableInvoiceIds, CancellationToken cancellationToken = default)
+        {
+            IReadOnlyList<AccountsReceivableInvoice> invoices = TrackedById
+                .Where(x => accountsReceivableInvoiceIds.Contains(x.Key))
+                .Select(x => x.Value)
+                .ToList();
+            return Task.FromResult(invoices);
+        }
+
         public Task<IReadOnlyList<AccountsReceivablePortfolioItem>> SearchPortfolioAsync(SearchAccountsReceivablePortfolioFilter filter, CancellationToken cancellationToken = default)
         {
             return Task.FromResult(PortfolioItems);
@@ -607,6 +753,8 @@ public class AccountsReceivableServicesTests
 
         public AccountsReceivablePayment? ExistingTracked { get; set; }
 
+        public IReadOnlyList<AccountsReceivablePayment> SearchResults { get; set; } = [];
+
         public AccountsReceivablePayment? Added { get; private set; }
 
         public Task<AccountsReceivablePayment?> GetByIdAsync(long accountsReceivablePaymentId, CancellationToken cancellationToken = default)
@@ -617,6 +765,17 @@ public class AccountsReceivableServicesTests
         public Task<AccountsReceivablePayment?> GetTrackedByIdAsync(long accountsReceivablePaymentId, CancellationToken cancellationToken = default)
         {
             return Task.FromResult(ExistingTracked ?? ExistingById);
+        }
+
+        public Task<IReadOnlyList<AccountsReceivablePayment>> SearchAsync(SearchAccountsReceivablePaymentsFilter filter, CancellationToken cancellationToken = default)
+        {
+            IEnumerable<AccountsReceivablePayment> query = SearchResults;
+            if (filter.PaymentId.HasValue)
+            {
+                query = query.Where(x => x.Id == filter.PaymentId.Value);
+            }
+
+            return Task.FromResult<IReadOnlyList<AccountsReceivablePayment>>(query.ToList());
         }
 
         public Task AddAsync(AccountsReceivablePayment accountsReceivablePayment, CancellationToken cancellationToken = default)
@@ -647,5 +806,55 @@ public class AccountsReceivableServicesTests
     private sealed class ArFakeUnitOfWork : IUnitOfWork
     {
         public Task SaveChangesAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private sealed class ArFakePaymentComplementDocumentRepository : IPaymentComplementDocumentRepository
+    {
+        public PaymentComplementDocument? ExistingByPaymentId { get; set; }
+
+        public IReadOnlyList<PaymentComplementDocument> ExistingByPaymentIds { get; set; } = [];
+
+        public Task<PaymentComplementDocument?> GetByIdAsync(long paymentComplementDocumentId, CancellationToken cancellationToken = default)
+            => Task.FromResult<PaymentComplementDocument?>(null);
+
+        public Task<PaymentComplementDocument?> GetTrackedByIdAsync(long paymentComplementDocumentId, CancellationToken cancellationToken = default)
+            => Task.FromResult<PaymentComplementDocument?>(null);
+
+        public Task<PaymentComplementDocument?> GetByPaymentIdAsync(long accountsReceivablePaymentId, CancellationToken cancellationToken = default)
+            => Task.FromResult(ExistingByPaymentId);
+
+        public Task<PaymentComplementDocument?> GetTrackedByPaymentIdAsync(long accountsReceivablePaymentId, CancellationToken cancellationToken = default)
+            => Task.FromResult(ExistingByPaymentId);
+
+        public Task<IReadOnlyList<PaymentComplementDocument>> GetByPaymentIdsAsync(IReadOnlyCollection<long> accountsReceivablePaymentIds, CancellationToken cancellationToken = default)
+        {
+            IReadOnlyList<PaymentComplementDocument> items = ExistingByPaymentIds
+                .Where(x => accountsReceivablePaymentIds.Contains(x.AccountsReceivablePaymentId))
+                .ToList();
+            return Task.FromResult(items);
+        }
+
+        public Task AddAsync(PaymentComplementDocument paymentComplementDocument, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class ArFakeFiscalReceiverRepository : IFiscalReceiverRepository
+    {
+        public FiscalReceiver? ExistingById { get; set; }
+
+        public Task<IReadOnlyList<FiscalReceiver>> SearchAsync(string query, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<FiscalReceiver>>(ExistingById is null ? [] : [ExistingById]);
+
+        public Task<FiscalReceiver?> GetByRfcAsync(string normalizedRfc, CancellationToken cancellationToken = default)
+            => Task.FromResult(ExistingById);
+
+        public Task<FiscalReceiver?> GetByIdAsync(long fiscalReceiverId, CancellationToken cancellationToken = default)
+            => Task.FromResult(ExistingById?.Id == fiscalReceiverId ? ExistingById : null);
+
+        public Task<IReadOnlyList<FiscalReceiverSpecialFieldDefinition>> GetActiveSpecialFieldDefinitionsAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<FiscalReceiverSpecialFieldDefinition>>([]);
+
+        public Task AddAsync(FiscalReceiver fiscalReceiver, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task UpdateAsync(FiscalReceiver fiscalReceiver, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 }

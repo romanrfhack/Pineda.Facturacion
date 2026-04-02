@@ -10,9 +10,11 @@ import {
   AccountsReceivableInvoiceResponse,
   AccountsReceivablePaymentResponse,
   AccountsReceivablePortfolioItemResponse,
+  AccountsReceivablePaymentSummaryItemResponse,
   ApplyAccountsReceivablePaymentRequest,
   CreateAccountsReceivablePaymentRequest,
-  SearchAccountsReceivablePortfolioRequest
+  SearchAccountsReceivablePortfolioRequest,
+  SearchAccountsReceivablePaymentsRequest
 } from '../models/accounts-receivable.models';
 import { AccountsReceivableCardComponent } from '../components/accounts-receivable-card.component';
 import { PaymentCreateFormComponent } from '../components/payment-create-form.component';
@@ -130,6 +132,112 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
             </div>
           }
         </section>
+
+        <section class="card filters">
+          <div class="section-head compact">
+            <h3>Pagos</h3>
+            <p class="helper">{{ paymentItems().length }} pago(s)</p>
+          </div>
+
+          <div class="filter-grid">
+            <label>
+              <span>FiscalReceiverId</span>
+              <input type="number" [(ngModel)]="paymentFilters.fiscalReceiverIdText" placeholder="Id receptor" />
+            </label>
+
+            <label>
+              <span>Estatus pago</span>
+              <select [(ngModel)]="paymentFilters.operationalStatus">
+                <option value="">Todos</option>
+                <option value="CapturedUnapplied">CapturedUnapplied</option>
+                <option value="PartiallyApplied">PartiallyApplied</option>
+                <option value="FullyApplied">FullyApplied</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Recibido desde</span>
+              <input type="date" [(ngModel)]="paymentFilters.receivedFrom" />
+            </label>
+
+            <label>
+              <span>Recibido hasta</span>
+              <input type="date" [(ngModel)]="paymentFilters.receivedTo" />
+            </label>
+
+            <label>
+              <span>Disponible</span>
+              <select [(ngModel)]="paymentFilters.hasUnappliedAmount">
+                <option value="">Todos</option>
+                <option value="true">Con disponible</option>
+                <option value="false">Sin disponible</option>
+              </select>
+            </label>
+
+            <label>
+              <span>FiscalDocumentId</span>
+              <input type="number" [(ngModel)]="paymentFilters.linkedFiscalDocumentIdText" placeholder="Documento ligado" />
+            </label>
+          </div>
+
+          <div class="actions">
+            <button type="button" (click)="applyPaymentFilters()" [disabled]="loading()">Filtrar pagos</button>
+            <button type="button" class="secondary" (click)="resetPaymentFilters()" [disabled]="loading()">Limpiar pagos</button>
+          </div>
+
+          @if (!paymentItems().length) {
+            <p class="helper">No hay pagos con los filtros actuales.</p>
+          } @else {
+            <div class="table-wrap">
+              <table class="portfolio">
+                <thead>
+                  <tr>
+                    <th>Pago</th>
+                    <th>Monto</th>
+                    <th>Aplicado</th>
+                    <th>Disponible</th>
+                    <th>Estatus</th>
+                    <th>REP</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (item of paymentItems(); track item.paymentId) {
+                    <tr>
+                      <td>
+                        <strong>#{{ item.paymentId }}</strong>
+                        <div class="subtle">{{ item.receivedAtUtc | date:'yyyy-MM-dd' }}</div>
+                        <div class="subtle">{{ item.reference || 'Sin referencia' }}</div>
+                      </td>
+                      <td>{{ item.amount | currency:'MXN':'symbol':'1.2-2' }}</td>
+                      <td>{{ item.appliedAmount | currency:'MXN':'symbol':'1.2-2' }}</td>
+                      <td>{{ item.unappliedAmount | currency:'MXN':'symbol':'1.2-2' }}</td>
+                      <td>
+                        <span class="badge" [attr.data-status]="item.operationalStatus">{{ item.operationalStatus }}</span>
+                        <div class="subtle">{{ item.applicationsCount }} aplicacion(es)</div>
+                      </td>
+                      <td>
+                        <span class="badge" [attr.data-status]="item.repStatus">{{ item.repStatus }}</span>
+                        <div class="subtle">
+                          @if (item.repFiscalizedAmount > 0) {
+                            Fiscalizado {{ item.repFiscalizedAmount | currency:'MXN':'symbol':'1.2-2' }}
+                          } @else if (item.repReservedAmount > 0) {
+                            Reservado {{ item.repReservedAmount | currency:'MXN':'symbol':'1.2-2' }}
+                          } @else {
+                            Sin REP
+                          }
+                        </div>
+                      </td>
+                      <td>
+                        <a [routerLink]="['/app/accounts-receivable']" [queryParams]="{ paymentId: item.paymentId }">Ver detalle</a>
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+        </section>
       }
 
       @if (detailMode() && fiscalDocumentId()) {
@@ -153,6 +261,15 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
         <section class="card">
           <h3>Pago #{{ currentPayment.id }}</h3>
           <p class="helper">Monto {{ currentPayment.amount }} MXN · Remanente {{ currentPayment.remainingAmount }} MXN</p>
+          <div class="detail-badges">
+            <span class="badge" [attr.data-status]="currentPayment.operationalStatus">{{ currentPayment.operationalStatus }}</span>
+            <span class="badge" [attr.data-status]="currentPayment.repStatus">{{ currentPayment.repStatus }}</span>
+          </div>
+          @if (currentPayment.repFiscalizedAmount > 0 || currentPayment.repReservedAmount > 0) {
+            <p class="helper">
+              Fiscalizado {{ currentPayment.repFiscalizedAmount }} MXN · Reservado REP {{ currentPayment.repReservedAmount }} MXN
+            </p>
+          }
           @if (currentPayment.applications.length) {
             <table class="applications">
               <thead>
@@ -192,6 +309,7 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
     h2, h3 { margin:0; }
     .helper { color:#5f6b76; margin:0.35rem 0 0; }
     .section-head { display:flex; justify-content:space-between; gap:1rem; align-items:flex-end; margin-bottom:1rem; }
+    .section-head.compact { margin-bottom:0.75rem; }
     .filter-grid { display:grid; gap:0.9rem; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); }
     label { display:grid; gap:0.35rem; }
     label span { font-size:0.82rem; color:#495766; }
@@ -208,6 +326,15 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
     .badge[data-status='PartiallyPaid'] { background:#dff2ea; color:#116149; }
     .badge[data-status='Paid'] { background:#dde8ff; color:#24498a; }
     .badge[data-status='Cancelled'] { background:#fde3e3; color:#8a2d2d; }
+    .badge[data-status='CapturedUnapplied'] { background:#fff2d8; color:#8a5a00; }
+    .badge[data-status='PartiallyApplied'] { background:#dff2ea; color:#116149; }
+    .badge[data-status='FullyApplied'] { background:#dde8ff; color:#24498a; }
+    .badge[data-status='NoApplications'] { background:#f1ece2; color:#745b31; }
+    .badge[data-status='PendingApplications'] { background:#fff2d8; color:#8a5a00; }
+    .badge[data-status='ReadyToPrepare'] { background:#dff2ea; color:#116149; }
+    .badge[data-status='Prepared'] { background:#e5ebff; color:#324d8f; }
+    .badge[data-status='Stamped'] { background:#dde8ff; color:#24498a; }
+    .detail-badges { display:flex; gap:0.5rem; margin-top:0.75rem; flex-wrap:wrap; }
     .links { margin-top:1rem; }
     @media (max-width: 720px) {
       .actions { flex-direction:column; }
@@ -227,6 +354,7 @@ export class AccountsReceivablePageComponent {
   protected readonly invoice = signal<AccountsReceivableInvoiceResponse | null>(null);
   protected readonly payment = signal<AccountsReceivablePaymentResponse | null>(null);
   protected readonly portfolioItems = signal<AccountsReceivablePortfolioItemResponse[]>([]);
+  protected readonly paymentItems = signal<AccountsReceivablePaymentSummaryItemResponse[]>([]);
   protected readonly loading = signal(false);
   protected readonly filters = {
     receiverQuery: '',
@@ -235,6 +363,14 @@ export class AccountsReceivablePageComponent {
     dueDateFrom: '',
     dueDateTo: '',
     pendingBalance: 'true'
+  };
+  protected readonly paymentFilters = {
+    fiscalReceiverIdText: '',
+    operationalStatus: '',
+    receivedFrom: '',
+    receivedTo: '',
+    hasUnappliedAmount: '',
+    linkedFiscalDocumentIdText: ''
   };
 
   constructor() {
@@ -247,6 +383,7 @@ export class AccountsReceivablePageComponent {
       }
     } else {
       void this.loadPortfolio();
+      void this.loadPayments();
     }
   }
 
@@ -278,6 +415,22 @@ export class AccountsReceivablePageComponent {
     this.filters.dueDateTo = '';
     this.filters.pendingBalance = 'true';
     await this.applyPortfolioFilters();
+  }
+
+  protected async applyPaymentFilters(): Promise<void> {
+    await this.run(async () => {
+      await this.loadPayments();
+    });
+  }
+
+  protected async resetPaymentFilters(): Promise<void> {
+    this.paymentFilters.fiscalReceiverIdText = '';
+    this.paymentFilters.operationalStatus = '';
+    this.paymentFilters.receivedFrom = '';
+    this.paymentFilters.receivedTo = '';
+    this.paymentFilters.hasUnappliedAmount = '';
+    this.paymentFilters.linkedFiscalDocumentIdText = '';
+    await this.applyPaymentFilters();
   }
 
   protected async createInvoice(): Promise<void> {
@@ -336,6 +489,11 @@ export class AccountsReceivablePageComponent {
     this.portfolioItems.set(response.items);
   }
 
+  private async loadPayments(): Promise<void> {
+    const response = await firstValueFrom(this.api.searchPayments(this.buildPaymentRequest()));
+    this.paymentItems.set(response.items);
+  }
+
   private buildPortfolioRequest(): SearchAccountsReceivablePortfolioRequest {
     const fiscalReceiverId = parseNumber(this.filters.fiscalReceiverIdText);
     const hasPendingBalance = parseNullableBoolean(this.filters.pendingBalance);
@@ -347,6 +505,17 @@ export class AccountsReceivablePageComponent {
       dueDateFrom: this.filters.dueDateFrom || null,
       dueDateTo: this.filters.dueDateTo || null,
       hasPendingBalance
+    };
+  }
+
+  private buildPaymentRequest(): SearchAccountsReceivablePaymentsRequest {
+    return {
+      fiscalReceiverId: parseNumber(this.paymentFilters.fiscalReceiverIdText),
+      operationalStatus: this.paymentFilters.operationalStatus || null,
+      receivedFrom: this.paymentFilters.receivedFrom || null,
+      receivedTo: this.paymentFilters.receivedTo || null,
+      hasUnappliedAmount: parseNullableBoolean(this.paymentFilters.hasUnappliedAmount),
+      linkedFiscalDocumentId: parseNumber(this.paymentFilters.linkedFiscalDocumentIdText)
     };
   }
 

@@ -312,7 +312,7 @@ public class PaymentComplementServicesTests
                 {
                     [invoice.Id] = invoice
                 }
-            }, applicationRepository, new PcFakeUnitOfWork()),
+            }, applicationRepository, new PcFakePaymentComplementDocumentRepository(), new PcFakeUnitOfWork()),
             detailService);
 
         var result = await service.ExecuteAsync(new RegisterInternalRepBaseDocumentPaymentCommand
@@ -913,7 +913,7 @@ public class PaymentComplementServicesTests
                 }
             },
             new CreateAccountsReceivablePaymentService(paymentRepository, new PcFakeUnitOfWork()),
-            new ApplyAccountsReceivablePaymentService(paymentRepository, invoiceRepository, applicationRepository, new PcFakeUnitOfWork()),
+            new ApplyAccountsReceivablePaymentService(paymentRepository, invoiceRepository, applicationRepository, new PcFakePaymentComplementDocumentRepository(), new PcFakeUnitOfWork()),
             CreateInternalRepDetailService(invoice, fiscalDocument, fiscalStamp));
     }
 
@@ -1153,6 +1153,8 @@ public class PaymentComplementServicesTests
 
         public AccountsReceivablePayment? ExistingTracked { get; set; }
 
+        public IReadOnlyList<AccountsReceivablePayment> SearchResults { get; set; } = [];
+
         public AccountsReceivablePayment? Added { get; private set; }
 
         public Task<AccountsReceivablePayment?> GetByIdAsync(long accountsReceivablePaymentId, CancellationToken cancellationToken = default)
@@ -1160,6 +1162,9 @@ public class PaymentComplementServicesTests
 
         public Task<AccountsReceivablePayment?> GetTrackedByIdAsync(long accountsReceivablePaymentId, CancellationToken cancellationToken = default)
             => Task.FromResult(ExistingTracked ?? ExistingById);
+
+        public Task<IReadOnlyList<AccountsReceivablePayment>> SearchAsync(SearchAccountsReceivablePaymentsFilter filter, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<AccountsReceivablePayment>>(SearchResults.ToList());
 
         public Task AddAsync(AccountsReceivablePayment accountsReceivablePayment, CancellationToken cancellationToken = default)
         {
@@ -1196,6 +1201,9 @@ public class PaymentComplementServicesTests
 
         public Task<AccountsReceivableInvoice?> GetTrackedByExternalRepBaseDocumentIdAsync(long externalRepBaseDocumentId, CancellationToken cancellationToken = default)
             => Task.FromResult(TrackedById.Values.FirstOrDefault(x => x.ExternalRepBaseDocumentId == externalRepBaseDocumentId));
+
+        public Task<IReadOnlyList<AccountsReceivableInvoice>> GetByIdsAsync(IReadOnlyCollection<long> accountsReceivableInvoiceIds, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<AccountsReceivableInvoice>>(TrackedById.Where(x => accountsReceivableInvoiceIds.Contains(x.Key)).Select(x => x.Value).ToList());
 
         public Task<IReadOnlyList<AccountsReceivablePortfolioItem>> SearchPortfolioAsync(SearchAccountsReceivablePortfolioFilter filter, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<AccountsReceivablePortfolioItem>>([]);
@@ -1418,6 +1426,9 @@ public class PaymentComplementServicesTests
 
         public Task<PaymentComplementDocument?> GetTrackedByPaymentIdAsync(long accountsReceivablePaymentId, CancellationToken cancellationToken = default)
             => Task.FromResult(ExistingByPaymentId);
+
+        public Task<IReadOnlyList<PaymentComplementDocument>> GetByPaymentIdsAsync(IReadOnlyCollection<long> accountsReceivablePaymentIds, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<PaymentComplementDocument>>(ExistingByPaymentId is null ? [] : [ExistingByPaymentId]);
 
         public Task AddAsync(PaymentComplementDocument paymentComplementDocument, CancellationToken cancellationToken = default)
         {

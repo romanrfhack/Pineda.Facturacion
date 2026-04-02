@@ -57,6 +57,11 @@ public static class AccountsReceivableEndpoints
             .WithSummary("List minimal accounts receivable portfolio rows")
             .Produces<AccountsReceivablePortfolioResponse>(StatusCodes.Status200OK);
 
+        group.MapGet("/payments", SearchAccountsReceivablePaymentsAsync)
+            .WithName("SearchAccountsReceivablePayments")
+            .WithSummary("List minimal accounts receivable payment rows with operational status")
+            .Produces<AccountsReceivablePaymentsResponse>(StatusCodes.Status200OK);
+
         group.MapGet("/payments/{paymentId:long}", GetAccountsReceivablePaymentByIdAsync)
             .WithName("GetAccountsReceivablePaymentById")
             .WithSummary("Get an accounts receivable payment and its applications")
@@ -275,7 +280,35 @@ public static class AccountsReceivableEndpoints
             return TypedResults.NotFound();
         }
 
-        return TypedResults.Ok(MapPayment(result.AccountsReceivablePayment));
+        return TypedResults.Ok(MapPayment(result.AccountsReceivablePayment, result.OperationalProjection));
+    }
+
+    private static async Task<Ok<AccountsReceivablePaymentsResponse>> SearchAccountsReceivablePaymentsAsync(
+        long? fiscalReceiverId,
+        string? operationalStatus,
+        DateOnly? receivedFrom,
+        DateOnly? receivedTo,
+        bool? hasUnappliedAmount,
+        long? linkedFiscalDocumentId,
+        SearchAccountsReceivablePaymentsService service,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(
+            new SearchAccountsReceivablePaymentsFilter
+            {
+                FiscalReceiverId = fiscalReceiverId,
+                OperationalStatus = operationalStatus,
+                ReceivedFromUtc = receivedFrom?.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
+                ReceivedToUtcInclusive = receivedTo?.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
+                HasUnappliedAmount = hasUnappliedAmount,
+                LinkedFiscalDocumentId = linkedFiscalDocumentId
+            },
+            cancellationToken);
+
+        return TypedResults.Ok(new AccountsReceivablePaymentsResponse
+        {
+            Items = result.Items.Select(MapPaymentProjection).ToList()
+        });
     }
 
     private static async Task<Results<Ok<ApplyAccountsReceivablePaymentResponse>, BadRequest<ApplyAccountsReceivablePaymentResponse>, NotFound<ApplyAccountsReceivablePaymentResponse>, Conflict<ApplyAccountsReceivablePaymentResponse>>> ApplyAccountsReceivablePaymentAsync(
@@ -426,12 +459,37 @@ public static class AccountsReceivableEndpoints
         };
     }
 
-    private static AccountsReceivablePaymentResponse MapPayment(AccountsReceivablePayment payment)
+    private static AccountsReceivablePaymentResponse MapPayment(
+        AccountsReceivablePayment payment,
+        AccountsReceivablePaymentOperationalProjection? projection = null)
     {
         var applications = payment.Applications
             .OrderBy(x => x.ApplicationSequence)
             .Select(MapApplication)
             .ToList();
+        var appliedTotal = payment.Applications.Sum(x => x.AppliedAmount);
+        projection ??= new AccountsReceivablePaymentOperationalProjection
+        {
+            PaymentId = payment.Id,
+            ReceivedAtUtc = payment.PaymentDateUtc,
+            Amount = payment.Amount,
+            AppliedAmount = appliedTotal,
+            UnappliedAmount = payment.Amount - appliedTotal,
+            CurrencyCode = payment.CurrencyCode,
+            Reference = payment.Reference,
+            FiscalReceiverId = payment.ReceivedFromFiscalReceiverId,
+            OperationalStatus = payment.Applications.Count == 0
+                ? AccountsReceivablePaymentOperationalStatus.CapturedUnapplied
+                : appliedTotal < payment.Amount
+                    ? AccountsReceivablePaymentOperationalStatus.PartiallyApplied
+                    : AccountsReceivablePaymentOperationalStatus.FullyApplied,
+            RepStatus = payment.Applications.Count == 0
+                ? AccountsReceivablePaymentRepStatus.NoApplications
+                : appliedTotal == payment.Amount
+                    ? AccountsReceivablePaymentRepStatus.ReadyToPrepare
+                    : AccountsReceivablePaymentRepStatus.PendingApplications,
+            ApplicationsCount = payment.Applications.Count
+        };
 
         return new AccountsReceivablePaymentResponse
         {
@@ -440,11 +498,18 @@ public static class AccountsReceivableEndpoints
             PaymentFormSat = payment.PaymentFormSat,
             CurrencyCode = payment.CurrencyCode,
             Amount = payment.Amount,
-            AppliedTotal = payment.Applications.Sum(x => x.AppliedAmount),
-            RemainingAmount = payment.Amount - payment.Applications.Sum(x => x.AppliedAmount),
+            AppliedTotal = projection.AppliedAmount,
+            RemainingAmount = projection.UnappliedAmount,
             Reference = payment.Reference,
             Notes = payment.Notes,
             ReceivedFromFiscalReceiverId = payment.ReceivedFromFiscalReceiverId,
+            OperationalStatus = projection.OperationalStatus.ToString(),
+            RepStatus = projection.RepStatus.ToString(),
+            RepDocumentStatus = projection.RepDocumentStatus,
+            RepReservedAmount = projection.RepReservedAmount,
+            RepFiscalizedAmount = projection.RepFiscalizedAmount,
+            ApplicationsCount = projection.ApplicationsCount,
+            LinkedFiscalDocumentId = projection.LinkedFiscalDocumentId,
             CreatedAtUtc = payment.CreatedAtUtc,
             UpdatedAtUtc = payment.UpdatedAtUtc,
             Applications = applications
@@ -485,6 +550,29 @@ public static class AccountsReceivableEndpoints
             DueAtUtc = item.DueAtUtc,
             Status = item.Status,
             DaysPastDue = item.DaysPastDue
+        };
+    }
+
+    private static AccountsReceivablePaymentSummaryItemResponse MapPaymentProjection(AccountsReceivablePaymentOperationalProjection item)
+    {
+        return new AccountsReceivablePaymentSummaryItemResponse
+        {
+            PaymentId = item.PaymentId,
+            ReceivedAtUtc = item.ReceivedAtUtc,
+            Amount = item.Amount,
+            AppliedAmount = item.AppliedAmount,
+            UnappliedAmount = item.UnappliedAmount,
+            CurrencyCode = item.CurrencyCode,
+            Reference = item.Reference,
+            PayerName = item.PayerName,
+            FiscalReceiverId = item.FiscalReceiverId,
+            OperationalStatus = item.OperationalStatus.ToString(),
+            RepStatus = item.RepStatus.ToString(),
+            RepDocumentStatus = item.RepDocumentStatus,
+            ApplicationsCount = item.ApplicationsCount,
+            LinkedFiscalDocumentId = item.LinkedFiscalDocumentId,
+            RepReservedAmount = item.RepReservedAmount,
+            RepFiscalizedAmount = item.RepFiscalizedAmount
         };
     }
 }
@@ -632,6 +720,20 @@ public class AccountsReceivablePaymentResponse
 
     public long? ReceivedFromFiscalReceiverId { get; set; }
 
+    public string OperationalStatus { get; set; } = string.Empty;
+
+    public string RepStatus { get; set; } = string.Empty;
+
+    public string? RepDocumentStatus { get; set; }
+
+    public decimal RepReservedAmount { get; set; }
+
+    public decimal RepFiscalizedAmount { get; set; }
+
+    public int ApplicationsCount { get; set; }
+
+    public long? LinkedFiscalDocumentId { get; set; }
+
     public DateTime CreatedAtUtc { get; set; }
 
     public DateTime UpdatedAtUtc { get; set; }
@@ -668,6 +770,46 @@ public class ApplyAccountsReceivablePaymentResponse
     public AccountsReceivablePaymentResponse? Payment { get; set; }
 
     public List<AccountsReceivablePaymentApplicationResponse> Applications { get; set; } = [];
+}
+
+public class AccountsReceivablePaymentsResponse
+{
+    public List<AccountsReceivablePaymentSummaryItemResponse> Items { get; set; } = [];
+}
+
+public class AccountsReceivablePaymentSummaryItemResponse
+{
+    public long PaymentId { get; set; }
+
+    public DateTime ReceivedAtUtc { get; set; }
+
+    public decimal Amount { get; set; }
+
+    public decimal AppliedAmount { get; set; }
+
+    public decimal UnappliedAmount { get; set; }
+
+    public string CurrencyCode { get; set; } = string.Empty;
+
+    public string? Reference { get; set; }
+
+    public string? PayerName { get; set; }
+
+    public long? FiscalReceiverId { get; set; }
+
+    public string OperationalStatus { get; set; } = string.Empty;
+
+    public string RepStatus { get; set; } = string.Empty;
+
+    public string? RepDocumentStatus { get; set; }
+
+    public int ApplicationsCount { get; set; }
+
+    public long? LinkedFiscalDocumentId { get; set; }
+
+    public decimal RepReservedAmount { get; set; }
+
+    public decimal RepFiscalizedAmount { get; set; }
 }
 
 public class PreparePaymentComplementRequest

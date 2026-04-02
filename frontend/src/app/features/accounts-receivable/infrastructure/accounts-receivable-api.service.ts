@@ -5,6 +5,7 @@ import { buildApiUrl } from '../../../core/config/api-url';
 import {
   AccountsReceivableInvoiceResponse,
   AccountsReceivablePortfolioResponse,
+  AccountsReceivablePaymentsResponse,
   AccountsReceivablePaymentResponse,
   ApplyAccountsReceivablePaymentRequest,
   ApplyAccountsReceivablePaymentResponse,
@@ -13,6 +14,7 @@ import {
   CreateAccountsReceivablePaymentRequest,
   CreateAccountsReceivablePaymentResponse,
   SearchAccountsReceivablePortfolioRequest,
+  SearchAccountsReceivablePaymentsRequest,
   PreparePaymentComplementRequest,
   PreparePaymentComplementResponse
 } from '../models/accounts-receivable.models';
@@ -65,6 +67,31 @@ export class AccountsReceivableApiService {
 
   getPaymentById(paymentId: number): Observable<AccountsReceivablePaymentResponse> {
     return this.http.get<AccountsReceivablePaymentResponse>(buildApiUrl(`/accounts-receivable/payments/${paymentId}`));
+  }
+
+  searchPayments(request: SearchAccountsReceivablePaymentsRequest = {}): Observable<AccountsReceivablePaymentsResponse> {
+    let params = new HttpParams();
+
+    if (request.fiscalReceiverId != null) {
+      params = params.set('fiscalReceiverId', request.fiscalReceiverId);
+    }
+    if (request.operationalStatus) {
+      params = params.set('operationalStatus', request.operationalStatus);
+    }
+    if (request.receivedFrom) {
+      params = params.set('receivedFrom', request.receivedFrom);
+    }
+    if (request.receivedTo) {
+      params = params.set('receivedTo', request.receivedTo);
+    }
+    if (request.hasUnappliedAmount != null) {
+      params = params.set('hasUnappliedAmount', request.hasUnappliedAmount);
+    }
+    if (request.linkedFiscalDocumentId != null) {
+      params = params.set('linkedFiscalDocumentId', request.linkedFiscalDocumentId);
+    }
+
+    return this.http.get<AccountsReceivablePaymentsResponse>(buildApiUrl('/accounts-receivable/payments'), { params });
   }
 
   applyPayment(paymentId: number, request: ApplyAccountsReceivablePaymentRequest): Observable<ApplyAccountsReceivablePaymentResponse> {

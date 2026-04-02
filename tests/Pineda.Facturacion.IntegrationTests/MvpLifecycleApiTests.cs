@@ -1290,6 +1290,174 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
+    public async Task AccountsReceivablePayments_List_ReturnsOperationalStatusesAndFilters()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        var seed = await factory.SeedStandardFiscalMasterDataAsync();
+
+        factory.PaymentComplementStampingGateway.ResponseFactory = _ => new PaymentComplementStampingGatewayResult
+        {
+            Outcome = PaymentComplementStampingGatewayOutcome.Stamped,
+            ProviderName = "FacturaloPlus",
+            ProviderOperation = "payment-complement-stamp",
+            Uuid = "UUID-REP-PAYMENTS-1001",
+            XmlContent = "<xml/>",
+            XmlHash = "HASH-REP-PAYMENTS-1001",
+            StampedAtUtc = DateTime.UtcNow
+        };
+
+        var fiscalDocumentId1 = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-AR-PAY-1001", seed.ReceiverId, "SKU-1", "UUID-AR-PAY-1001");
+        var fiscalDocumentId2 = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-AR-PAY-1002", seed.ReceiverId, "SKU-1", "UUID-AR-PAY-1002");
+        var invoice1 = await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId1);
+        var invoice2 = await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId2);
+
+        var capturedPayment = await (await client.PostAsJsonAsync("/api/accounts-receivable/payments", new CreateAccountsReceivablePaymentRequest
+        {
+            PaymentDateUtc = DateTime.UtcNow,
+            PaymentFormSat = "03",
+            Amount = 30m,
+            Reference = "PAY-CAP-1"
+        })).Content.ReadFromJsonAsync<CreateAccountsReceivablePaymentResponse>();
+
+        var partialPayment = await (await client.PostAsJsonAsync("/api/accounts-receivable/payments", new CreateAccountsReceivablePaymentRequest
+        {
+            PaymentDateUtc = DateTime.UtcNow,
+            PaymentFormSat = "03",
+            Amount = 100m,
+            Reference = "PAY-PART-1"
+        })).Content.ReadFromJsonAsync<CreateAccountsReceivablePaymentResponse>();
+
+        var partialApplyResponse = await client.PostAsJsonAsync($"/api/accounts-receivable/payments/{partialPayment!.Payment!.Id}/apply", new ApplyAccountsReceivablePaymentRequest
+        {
+            Applications =
+            [
+                new ApplyAccountsReceivablePaymentRowRequest
+                {
+                    AccountsReceivableInvoiceId = invoice1.AccountsReceivableInvoice!.Id,
+                    AppliedAmount = 40m
+                }
+            ]
+        });
+        Assert.Equal(HttpStatusCode.OK, partialApplyResponse.StatusCode);
+
+        var stampedPayment = await (await client.PostAsJsonAsync("/api/accounts-receivable/payments", new CreateAccountsReceivablePaymentRequest
+        {
+            PaymentDateUtc = DateTime.UtcNow,
+            PaymentFormSat = "03",
+            Amount = 116m,
+            Reference = "PAY-STAMPED-1"
+        })).Content.ReadFromJsonAsync<CreateAccountsReceivablePaymentResponse>();
+
+        var stampedApplyResponse = await client.PostAsJsonAsync($"/api/accounts-receivable/payments/{stampedPayment!.Payment!.Id}/apply", new ApplyAccountsReceivablePaymentRequest
+        {
+            Applications =
+            [
+                new ApplyAccountsReceivablePaymentRowRequest
+                {
+                    AccountsReceivableInvoiceId = invoice2.AccountsReceivableInvoice!.Id,
+                    AppliedAmount = 116m
+                }
+            ]
+        });
+        Assert.Equal(HttpStatusCode.OK, stampedApplyResponse.StatusCode);
+
+        var prepareRepResponse = await client.PostAsJsonAsync($"/api/accounts-receivable/payments/{stampedPayment.Payment.Id}/payment-complements", new PreparePaymentComplementRequest());
+        Assert.Equal(HttpStatusCode.OK, prepareRepResponse.StatusCode);
+        var preparedRep = await prepareRepResponse.Content.ReadFromJsonAsync<PreparePaymentComplementResponse>();
+        var stampRepResponse = await client.PostAsJsonAsync($"/api/payment-complements/{preparedRep!.PaymentComplementId}/stamp", new StampPaymentComplementRequest());
+        Assert.Equal(HttpStatusCode.OK, stampRepResponse.StatusCode);
+
+        var listResponse = await client.GetAsync("/api/accounts-receivable/payments");
+        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+        using (var listJson = await JsonDocument.ParseAsync(await listResponse.Content.ReadAsStreamAsync()))
+        {
+            var items = listJson.RootElement.GetProperty("items");
+            Assert.Contains(items.EnumerateArray(), x => x.GetProperty("paymentId").GetInt64() == capturedPayment!.Payment!.Id && x.GetProperty("operationalStatus").GetString() == "CapturedUnapplied");
+            Assert.Contains(items.EnumerateArray(), x => x.GetProperty("paymentId").GetInt64() == partialPayment.Payment!.Id && x.GetProperty("operationalStatus").GetString() == "PartiallyApplied" && x.GetProperty("repStatus").GetString() == "PendingApplications");
+            Assert.Contains(items.EnumerateArray(), x => x.GetProperty("paymentId").GetInt64() == stampedPayment.Payment!.Id && x.GetProperty("operationalStatus").GetString() == "FullyApplied" && x.GetProperty("repStatus").GetString() == "Stamped");
+        }
+
+        var capturedOnlyResponse = await client.GetAsync("/api/accounts-receivable/payments?operationalStatus=CapturedUnapplied");
+        Assert.Equal(HttpStatusCode.OK, capturedOnlyResponse.StatusCode);
+        using (var capturedJson = await JsonDocument.ParseAsync(await capturedOnlyResponse.Content.ReadAsStreamAsync()))
+        {
+            var capturedItem = Assert.Single(capturedJson.RootElement.GetProperty("items").EnumerateArray());
+            Assert.Equal(capturedPayment!.Payment!.Id, capturedItem.GetProperty("paymentId").GetInt64());
+        }
+
+        var noUnappliedResponse = await client.GetAsync("/api/accounts-receivable/payments?hasUnappliedAmount=false");
+        Assert.Equal(HttpStatusCode.OK, noUnappliedResponse.StatusCode);
+        using (var noUnappliedJson = await JsonDocument.ParseAsync(await noUnappliedResponse.Content.ReadAsStreamAsync()))
+        {
+            var item = Assert.Single(noUnappliedJson.RootElement.GetProperty("items").EnumerateArray());
+            Assert.Equal(stampedPayment.Payment!.Id, item.GetProperty("paymentId").GetInt64());
+        }
+
+        var linkedFilterResponse = await client.GetAsync($"/api/accounts-receivable/payments?linkedFiscalDocumentId={fiscalDocumentId1}");
+        Assert.Equal(HttpStatusCode.OK, linkedFilterResponse.StatusCode);
+        using var linkedFilterJson = await JsonDocument.ParseAsync(await linkedFilterResponse.Content.ReadAsStreamAsync());
+        var linkedItem = Assert.Single(linkedFilterJson.RootElement.GetProperty("items").EnumerateArray());
+        Assert.Equal(partialPayment.Payment!.Id, linkedItem.GetProperty("paymentId").GetInt64());
+    }
+
+    [Fact]
+    public async Task AccountsReceivablePayment_Detail_ReturnsOperationalAndRepSummary()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        var seed = await factory.SeedStandardFiscalMasterDataAsync();
+
+        factory.PaymentComplementStampingGateway.ResponseFactory = _ => new PaymentComplementStampingGatewayResult
+        {
+            Outcome = PaymentComplementStampingGatewayOutcome.Stamped,
+            ProviderName = "FacturaloPlus",
+            ProviderOperation = "payment-complement-stamp",
+            Uuid = "UUID-REP-PAYMENTS-DETAIL-1001",
+            XmlContent = "<xml/>",
+            XmlHash = "HASH-REP-PAYMENTS-DETAIL-1001",
+            StampedAtUtc = DateTime.UtcNow
+        };
+
+        var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-AR-PAY-DETAIL-1001", seed.ReceiverId, "SKU-1", "UUID-AR-PAY-DETAIL-1001");
+        var invoice = await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId);
+        var payment = await (await client.PostAsJsonAsync("/api/accounts-receivable/payments", new CreateAccountsReceivablePaymentRequest
+        {
+            PaymentDateUtc = DateTime.UtcNow,
+            PaymentFormSat = "03",
+            Amount = 116m,
+            Reference = "PAY-DETAIL-1"
+        })).Content.ReadFromJsonAsync<CreateAccountsReceivablePaymentResponse>();
+
+        var applyResponse = await client.PostAsJsonAsync($"/api/accounts-receivable/payments/{payment!.Payment!.Id}/apply", new ApplyAccountsReceivablePaymentRequest
+        {
+            Applications =
+            [
+                new ApplyAccountsReceivablePaymentRowRequest
+                {
+                    AccountsReceivableInvoiceId = invoice.AccountsReceivableInvoice!.Id,
+                    AppliedAmount = 116m
+                }
+            ]
+        });
+        Assert.Equal(HttpStatusCode.OK, applyResponse.StatusCode);
+
+        var prepareResponse = await client.PostAsJsonAsync($"/api/accounts-receivable/payments/{payment.Payment.Id}/payment-complements", new PreparePaymentComplementRequest());
+        Assert.Equal(HttpStatusCode.OK, prepareResponse.StatusCode);
+        var prepared = await prepareResponse.Content.ReadFromJsonAsync<PreparePaymentComplementResponse>();
+        var stampResponse = await client.PostAsJsonAsync($"/api/payment-complements/{prepared!.PaymentComplementId}/stamp", new StampPaymentComplementRequest());
+        Assert.Equal(HttpStatusCode.OK, stampResponse.StatusCode);
+
+        var detailResponse = await client.GetAsync($"/api/accounts-receivable/payments/{payment.Payment.Id}");
+        Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
+        using var detailJson = await JsonDocument.ParseAsync(await detailResponse.Content.ReadAsStreamAsync());
+        Assert.Equal("FullyApplied", detailJson.RootElement.GetProperty("operationalStatus").GetString());
+        Assert.Equal("Stamped", detailJson.RootElement.GetProperty("repStatus").GetString());
+        Assert.Equal(116m, detailJson.RootElement.GetProperty("repFiscalizedAmount").GetDecimal());
+        Assert.Equal(fiscalDocumentId, detailJson.RootElement.GetProperty("linkedFiscalDocumentId").GetInt64());
+    }
+
+    [Fact]
     public async Task InternalRepBaseDocument_EnsureAccountsReceivable_UnblocksDocument_WhenInvoiceWasMissing()
     {
         await using var factory = new MvpApiFactory();

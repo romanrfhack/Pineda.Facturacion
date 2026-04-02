@@ -10,17 +10,20 @@ public class ApplyAccountsReceivablePaymentService
     private readonly IAccountsReceivablePaymentRepository _accountsReceivablePaymentRepository;
     private readonly IAccountsReceivableInvoiceRepository _accountsReceivableInvoiceRepository;
     private readonly IAccountsReceivablePaymentApplicationRepository _accountsReceivablePaymentApplicationRepository;
+    private readonly IPaymentComplementDocumentRepository _paymentComplementDocumentRepository;
     private readonly IUnitOfWork _unitOfWork;
 
     public ApplyAccountsReceivablePaymentService(
         IAccountsReceivablePaymentRepository accountsReceivablePaymentRepository,
         IAccountsReceivableInvoiceRepository accountsReceivableInvoiceRepository,
         IAccountsReceivablePaymentApplicationRepository accountsReceivablePaymentApplicationRepository,
+        IPaymentComplementDocumentRepository paymentComplementDocumentRepository,
         IUnitOfWork unitOfWork)
     {
         _accountsReceivablePaymentRepository = accountsReceivablePaymentRepository;
         _accountsReceivableInvoiceRepository = accountsReceivableInvoiceRepository;
         _accountsReceivablePaymentApplicationRepository = accountsReceivablePaymentApplicationRepository;
+        _paymentComplementDocumentRepository = paymentComplementDocumentRepository;
         _unitOfWork = unitOfWork;
     }
 
@@ -76,6 +79,14 @@ public class ApplyAccountsReceivablePaymentService
         if (!string.Equals(FiscalMasterDataNormalization.NormalizeRequiredCode(payment.CurrencyCode), "MXN", StringComparison.Ordinal))
         {
             return ValidationFailure(command.AccountsReceivablePaymentId, $"Current MVP payment application supports MXN only. Payment currency '{payment.CurrencyCode}' is not supported yet.");
+        }
+
+        var existingPaymentComplement = await _paymentComplementDocumentRepository.GetByPaymentIdAsync(payment.Id, cancellationToken);
+        if (existingPaymentComplement is not null)
+        {
+            return Conflict(
+                command.AccountsReceivablePaymentId,
+                $"Accounts receivable payment '{payment.Id}' already has a REP snapshot with status '{existingPaymentComplement.Status}' and its applications are append-only.");
         }
 
         var appliedSoFar = payment.Applications.Sum(x => x.AppliedAmount);

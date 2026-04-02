@@ -43,6 +43,20 @@ public class PaymentComplementDocumentRepository : IPaymentComplementDocumentRep
             .FirstOrDefaultAsync(x => x.AccountsReceivablePaymentId == accountsReceivablePaymentId, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<PaymentComplementDocument>> GetByPaymentIdsAsync(IReadOnlyCollection<long> accountsReceivablePaymentIds, CancellationToken cancellationToken = default)
+    {
+        if (accountsReceivablePaymentIds.Count == 0)
+        {
+            return [];
+        }
+
+        return await _dbContext.PaymentComplementDocuments
+            .AsNoTracking()
+            .Include(x => x.RelatedDocuments)
+            .Where(x => accountsReceivablePaymentIds.Contains(x.AccountsReceivablePaymentId))
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task AddAsync(PaymentComplementDocument paymentComplementDocument, CancellationToken cancellationToken = default)
     {
         await _dbContext.PaymentComplementDocuments.AddAsync(paymentComplementDocument, cancellationToken);

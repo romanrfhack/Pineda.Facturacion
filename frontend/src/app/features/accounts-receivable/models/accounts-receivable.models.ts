@@ -93,9 +93,48 @@ export interface AccountsReceivablePaymentResponse {
   reference?: string | null;
   notes?: string | null;
   receivedFromFiscalReceiverId?: number | null;
+  operationalStatus: string;
+  repStatus: string;
+  repDocumentStatus?: string | null;
+  repReservedAmount: number;
+  repFiscalizedAmount: number;
+  applicationsCount: number;
+  linkedFiscalDocumentId?: number | null;
   createdAtUtc: string;
   updatedAtUtc: string;
   applications: AccountsReceivablePaymentApplicationResponse[];
+}
+
+export interface AccountsReceivablePaymentSummaryItemResponse {
+  paymentId: number;
+  receivedAtUtc: string;
+  amount: number;
+  appliedAmount: number;
+  unappliedAmount: number;
+  currencyCode: string;
+  reference?: string | null;
+  payerName?: string | null;
+  fiscalReceiverId?: number | null;
+  operationalStatus: string;
+  repStatus: string;
+  repDocumentStatus?: string | null;
+  applicationsCount: number;
+  linkedFiscalDocumentId?: number | null;
+  repReservedAmount: number;
+  repFiscalizedAmount: number;
+}
+
+export interface AccountsReceivablePaymentsResponse {
+  items: AccountsReceivablePaymentSummaryItemResponse[];
+}
+
+export interface SearchAccountsReceivablePaymentsRequest {
+  fiscalReceiverId?: number | null;
+  operationalStatus?: string | null;
+  receivedFrom?: string | null;
+  receivedTo?: string | null;
+  hasUnappliedAmount?: boolean | null;
+  linkedFiscalDocumentId?: number | null;
 }
 
 export interface CreateAccountsReceivablePaymentResponse {
