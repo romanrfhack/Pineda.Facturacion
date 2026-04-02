@@ -1,4 +1,5 @@
 using Pineda.Facturacion.Application.Abstractions.Persistence;
+using Pineda.Facturacion.Application.Abstractions.Documents;
 using Pineda.Facturacion.Application.Common;
 using Pineda.Facturacion.Domain.Entities;
 
@@ -7,13 +8,16 @@ namespace Pineda.Facturacion.Application.UseCases.AccountsReceivable;
 public class CreateAccountsReceivablePaymentService
 {
     private readonly IAccountsReceivablePaymentRepository _accountsReceivablePaymentRepository;
+    private readonly ISatCatalogDescriptionProvider _satCatalogDescriptionProvider;
     private readonly IUnitOfWork _unitOfWork;
 
     public CreateAccountsReceivablePaymentService(
         IAccountsReceivablePaymentRepository accountsReceivablePaymentRepository,
+        ISatCatalogDescriptionProvider satCatalogDescriptionProvider,
         IUnitOfWork unitOfWork)
     {
         _accountsReceivablePaymentRepository = accountsReceivablePaymentRepository;
+        _satCatalogDescriptionProvider = satCatalogDescriptionProvider;
         _unitOfWork = unitOfWork;
     }
 
@@ -26,6 +30,17 @@ public class CreateAccountsReceivablePaymentService
             return Failure("Payment form SAT is required.");
         }
 
+        var paymentFormSat = FiscalMasterDataNormalization.NormalizeRequiredCode(command.PaymentFormSat);
+        if (!_satCatalogDescriptionProvider.GetPaymentForms().ContainsKey(paymentFormSat))
+        {
+            return Failure($"Payment form SAT '{paymentFormSat}' is not valid.");
+        }
+
+        if (string.Equals(paymentFormSat, "99", StringComparison.OrdinalIgnoreCase))
+        {
+            return Failure("Payment form SAT '99' is not valid for received payments that will feed REP.");
+        }
+
         if (command.Amount <= 0)
         {
             return Failure("Payment amount must be greater than zero.");
@@ -35,7 +50,7 @@ public class CreateAccountsReceivablePaymentService
         var payment = new AccountsReceivablePayment
         {
             PaymentDateUtc = command.PaymentDateUtc,
-            PaymentFormSat = FiscalMasterDataNormalization.NormalizeRequiredCode(command.PaymentFormSat),
+            PaymentFormSat = paymentFormSat,
             CurrencyCode = "MXN",
             Amount = command.Amount,
             Reference = FiscalMasterDataNormalization.NormalizeOptionalText(command.Reference),

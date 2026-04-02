@@ -1,5 +1,6 @@
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Abstractions.Security;
+using Pineda.Facturacion.Application.Abstractions.Documents;
 using Pineda.Facturacion.Application.Security;
 using Pineda.Facturacion.Application.UseCases.AccountsReceivable;
 using Pineda.Facturacion.Domain.Entities;
@@ -203,7 +204,7 @@ public class AccountsReceivableServicesTests
     public async Task CreateAccountsReceivablePayment_Succeeds_WithValidAmountAndPaymentForm()
     {
         var repository = new ArFakeAccountsReceivablePaymentRepository();
-        var service = new CreateAccountsReceivablePaymentService(repository, new ArFakeUnitOfWork());
+        var service = new CreateAccountsReceivablePaymentService(repository, new ArFakeSatCatalogDescriptionProvider(), new ArFakeUnitOfWork());
 
         var result = await service.ExecuteAsync(new CreateAccountsReceivablePaymentCommand
         {
@@ -216,6 +217,31 @@ public class AccountsReceivableServicesTests
         Assert.Equal(CreateAccountsReceivablePaymentOutcome.Created, result.Outcome);
         Assert.Equal("MXN", repository.Added!.CurrencyCode);
         Assert.Equal(250m, repository.Added.Amount);
+    }
+
+    [Fact]
+    public async Task CreateAccountsReceivablePayment_Rejects_InvalidOrPorDefinirPaymentForm()
+    {
+        var repository = new ArFakeAccountsReceivablePaymentRepository();
+        var service = new CreateAccountsReceivablePaymentService(repository, new ArFakeSatCatalogDescriptionProvider(), new ArFakeUnitOfWork());
+
+        var invalidCodeResult = await service.ExecuteAsync(new CreateAccountsReceivablePaymentCommand
+        {
+            PaymentDateUtc = new DateTime(2026, 3, 20, 12, 0, 0, DateTimeKind.Utc),
+            PaymentFormSat = "ZZ",
+            Amount = 250m
+        });
+
+        var porDefinirResult = await service.ExecuteAsync(new CreateAccountsReceivablePaymentCommand
+        {
+            PaymentDateUtc = new DateTime(2026, 3, 20, 12, 0, 0, DateTimeKind.Utc),
+            PaymentFormSat = "99",
+            Amount = 250m
+        });
+
+        Assert.Equal(CreateAccountsReceivablePaymentOutcome.ValidationFailed, invalidCodeResult.Outcome);
+        Assert.Equal(CreateAccountsReceivablePaymentOutcome.ValidationFailed, porDefinirResult.Outcome);
+        Assert.Null(repository.Added);
     }
 
     [Fact]
@@ -1143,5 +1169,33 @@ public class AccountsReceivableServicesTests
 
         public Task<IReadOnlyList<CollectionNote>> ListNotesByInvoiceIdsAsync(IReadOnlyCollection<long> accountsReceivableInvoiceIds, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<CollectionNote>>(NoteItems.Where(x => accountsReceivableInvoiceIds.Contains(x.AccountsReceivableInvoiceId)).ToList());
+    }
+
+    private sealed class ArFakeSatCatalogDescriptionProvider : ISatCatalogDescriptionProvider
+    {
+        private static readonly IReadOnlyDictionary<string, string> PaymentForms = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["03"] = "Transferencia",
+            ["28"] = "Tarjeta de debito",
+            ["99"] = "Por definir"
+        };
+
+        public IReadOnlyDictionary<string, string> GetPaymentForms() => PaymentForms;
+
+        public IReadOnlyDictionary<string, string> GetPaymentMethods() => new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["PUE"] = "Pago en una sola exhibicion",
+            ["PPD"] = "Pago en parcialidades o diferido"
+        };
+
+        public string FormatCfdiUse(string? code) => code ?? string.Empty;
+
+        public string FormatExportCode(string? code) => code ?? string.Empty;
+
+        public string FormatFiscalRegime(string? code) => code ?? string.Empty;
+
+        public string FormatPaymentForm(string? code) => code ?? string.Empty;
+
+        public string FormatPaymentMethod(string? code) => code ?? string.Empty;
     }
 }

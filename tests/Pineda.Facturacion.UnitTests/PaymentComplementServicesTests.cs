@@ -1,4 +1,5 @@
 using Pineda.Facturacion.Application.Abstractions.Pac;
+using Pineda.Facturacion.Application.Abstractions.Documents;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Contracts.Pac;
 using Pineda.Facturacion.Application.UseCases.AccountsReceivable;
@@ -305,7 +306,7 @@ public class PaymentComplementServicesTests
                     [fiscalDocument.Id] = CreateFiscalStamp()
                 }
             },
-            new CreateAccountsReceivablePaymentService(paymentRepository, new PcFakeUnitOfWork()),
+            new CreateAccountsReceivablePaymentService(paymentRepository, new PcFakeSatCatalogDescriptionProvider(), new PcFakeUnitOfWork()),
             new ApplyAccountsReceivablePaymentService(paymentRepository, new PcFakeAccountsReceivableInvoiceRepository
             {
                 TrackedById =
@@ -912,7 +913,7 @@ public class PaymentComplementServicesTests
                     [fiscalDocument.Id] = fiscalStamp
                 }
             },
-            new CreateAccountsReceivablePaymentService(paymentRepository, new PcFakeUnitOfWork()),
+            new CreateAccountsReceivablePaymentService(paymentRepository, new PcFakeSatCatalogDescriptionProvider(), new PcFakeUnitOfWork()),
             new ApplyAccountsReceivablePaymentService(paymentRepository, invoiceRepository, applicationRepository, new PcFakePaymentComplementDocumentRepository(), new PcFakeUnitOfWork()),
             CreateInternalRepDetailService(invoice, fiscalDocument, fiscalStamp));
     }
@@ -1492,5 +1493,33 @@ public class PaymentComplementServicesTests
     private sealed class PcFakeUnitOfWork : IUnitOfWork
     {
         public Task SaveChangesAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private sealed class PcFakeSatCatalogDescriptionProvider : ISatCatalogDescriptionProvider
+    {
+        private static readonly IReadOnlyDictionary<string, string> PaymentForms = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["03"] = "Transferencia",
+            ["28"] = "Tarjeta de debito",
+            ["99"] = "Por definir"
+        };
+
+        public IReadOnlyDictionary<string, string> GetPaymentForms() => PaymentForms;
+
+        public IReadOnlyDictionary<string, string> GetPaymentMethods() => new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["PUE"] = "Pago en una sola exhibicion",
+            ["PPD"] = "Pago en parcialidades o diferido"
+        };
+
+        public string FormatCfdiUse(string? code) => code ?? string.Empty;
+
+        public string FormatExportCode(string? code) => code ?? string.Empty;
+
+        public string FormatFiscalRegime(string? code) => code ?? string.Empty;
+
+        public string FormatPaymentForm(string? code) => code ?? string.Empty;
+
+        public string FormatPaymentMethod(string? code) => code ?? string.Empty;
     }
 }
