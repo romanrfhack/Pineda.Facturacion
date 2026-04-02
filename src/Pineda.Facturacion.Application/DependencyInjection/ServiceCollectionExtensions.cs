@@ -47,6 +47,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<SearchInternalRepBaseDocumentsService>();
         services.AddScoped<SearchExternalRepBaseDocumentsService>();
         services.AddScoped<SearchRepBaseDocumentsService>();
+        services.AddScoped<SearchRepAttentionItemsService>();
         services.AddScoped<BulkRefreshInternalRepBaseDocumentsService>();
         services.AddScoped<BulkRefreshExternalRepBaseDocumentsService>();
         services.AddScoped<BulkRefreshRepBaseDocumentsService>();

@@ -2044,6 +2044,71 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
+    public async Task RepAttentionItems_Returns_BlockedAndUnavailableDocuments_RequiringAttention()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        await factory.SeedStandardFiscalMasterDataAsync();
+
+        var healthyFiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-REP-ATTN-OK-1001", uuid: "UUID-REP-ATTN-OK-1001");
+        var healthyArResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{healthyFiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest());
+        Assert.Equal(HttpStatusCode.OK, healthyArResponse.StatusCode);
+
+        var blockedFiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-REP-ATTN-BLOCK-1002", uuid: "UUID-REP-ATTN-BLOCK-1002");
+        var blockedArResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{blockedFiscalDocumentId}/accounts-receivable", new CreateAccountsReceivableInvoiceRequest());
+        Assert.Equal(HttpStatusCode.OK, blockedArResponse.StatusCode);
+
+        var cancelFiscalResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{blockedFiscalDocumentId}/cancel", new FiscalDocumentsEndpoints.CancelFiscalDocumentRequest
+        {
+            CancellationReasonCode = "02"
+        });
+        Assert.Equal(HttpStatusCode.OK, cancelFiscalResponse.StatusCode);
+
+        factory.FiscalStatusQueryGateway.ResponseFactory = _ => new FiscalStatusQueryGatewayResult
+        {
+            Outcome = FiscalStatusQueryGatewayOutcome.Unavailable,
+            ErrorMessage = "Provider unavailable."
+        };
+
+        long externalId;
+        using (var content = new MultipartFormDataContent())
+        {
+            var file = new ByteArrayContent(Encoding.UTF8.GetBytes(CreateExternalRepXmlContent(uuid: "UUID-EXT-ATTN-1001")));
+            file.Headers.ContentType = new MediaTypeHeaderValue("application/xml");
+            content.Add(file, "file", "external-attention.xml");
+
+            var importResponse = await client.PostAsync("/api/payment-complements/external-base-documents/import-xml", content);
+            Assert.Equal(HttpStatusCode.OK, importResponse.StatusCode);
+            using var importJson = await JsonDocument.ParseAsync(await importResponse.Content.ReadAsStreamAsync());
+            externalId = importJson.RootElement.GetProperty("externalRepBaseDocumentId").GetInt64();
+        }
+
+        var response = await client.GetAsync("/api/payment-complements/attention-items?page=1&pageSize=25");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var json = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+        var root = json.RootElement;
+        var items = root.GetProperty("items").EnumerateArray().ToList();
+        Assert.Equal(2, items.Count);
+
+        var internalItem = Assert.Single(items, x => x.GetProperty("sourceType").GetString() == "Internal");
+        Assert.Equal(blockedFiscalDocumentId, internalItem.GetProperty("fiscalDocumentId").GetInt64());
+        Assert.Equal("Blocked", internalItem.GetProperty("nextRecommendedAction").GetString());
+        Assert.Contains(
+            internalItem.GetProperty("attentionAlerts").EnumerateArray().Select(x => x.GetProperty("alertCode").GetString()).ToList(),
+            x => x == "CancelledBaseDocument");
+
+        var externalItem = Assert.Single(items, x => x.GetProperty("sourceType").GetString() == "External");
+        Assert.Equal(externalId, externalItem.GetProperty("externalRepBaseDocumentId").GetInt64());
+        Assert.Equal("Blocked", externalItem.GetProperty("nextRecommendedAction").GetString());
+        Assert.Contains(
+            externalItem.GetProperty("attentionAlerts").EnumerateArray().Select(x => x.GetProperty("hookKey").GetString()).ToList(),
+            x => x == "rep.sat-validation-unavailable");
+
+        Assert.DoesNotContain(items, x => string.Equals(x.GetProperty("uuid").GetString(), "UUID-REP-ATTN-OK-1001", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task InternalRepBaseDocuments_BulkRefreshStatus_FilteredQuery_ReturnsPerDocumentResults()
     {
         await using var factory = new MvpApiFactory();

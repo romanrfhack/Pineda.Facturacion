@@ -695,6 +695,64 @@ export interface RepBaseDocumentFilters {
   quickView?: string | null;
 }
 
+export interface RepAttentionItemsFilters {
+  page: number;
+  pageSize: number;
+  fromDate?: string | null;
+  toDate?: string | null;
+  receiverRfc?: string | null;
+  query?: string | null;
+  sourceType?: string | null;
+  alertCode?: string | null;
+  severity?: string | null;
+  nextRecommendedAction?: string | null;
+}
+
+export interface RepOperationalAttentionCandidateResponse {
+  alertCode: string;
+  severity: string;
+  title: string;
+  message: string;
+  hookKey: string;
+}
+
+export interface RepAttentionItemResponse {
+  sourceType: string;
+  sourceId: number;
+  fiscalDocumentId?: number | null;
+  externalRepBaseDocumentId?: number | null;
+  billingDocumentId?: number | null;
+  uuid?: string | null;
+  series: string;
+  folio: string;
+  issuedAtUtc: string;
+  importedAtUtc?: string | null;
+  issuerRfc?: string | null;
+  issuerLegalName?: string | null;
+  receiverRfc: string;
+  receiverLegalName: string;
+  currencyCode: string;
+  total: number;
+  outstandingBalance?: number | null;
+  operationalStatus: string;
+  isBlocked: boolean;
+  primaryReasonCode: string;
+  primaryReasonMessage: string;
+  nextRecommendedAction: string;
+  availableActions: string[];
+  attentionSeverity: string;
+  attentionAlerts: RepOperationalAttentionCandidateResponse[];
+}
+
+export interface RepAttentionItemsResponse {
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+  items: RepAttentionItemResponse[];
+  summaryCounts?: RepOperationalSummaryCountsResponse;
+}
+
 export interface RepBaseDocumentItemResponse {
   sourceType: string;
   sourceId: number;

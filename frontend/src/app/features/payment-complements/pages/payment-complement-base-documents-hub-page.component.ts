@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
+import { PaymentComplementAttentionItemsPageComponent } from './payment-complement-attention-items-page.component';
 import { PaymentComplementBaseDocumentsPageComponent } from './payment-complement-base-documents-page.component';
 import { PaymentComplementExternalBaseDocumentsPageComponent } from './payment-complement-external-base-documents-page.component';
 import { PaymentComplementUnifiedBaseDocumentsPageComponent } from './payment-complement-unified-base-documents-page.component';
@@ -6,6 +7,7 @@ import { PaymentComplementUnifiedBaseDocumentsPageComponent } from './payment-co
 @Component({
   selector: 'app-payment-complement-base-documents-hub-page',
   imports: [
+    PaymentComplementAttentionItemsPageComponent,
     PaymentComplementBaseDocumentsPageComponent,
     PaymentComplementExternalBaseDocumentsPageComponent,
     PaymentComplementUnifiedBaseDocumentsPageComponent
@@ -21,12 +23,16 @@ import { PaymentComplementUnifiedBaseDocumentsPageComponent } from './payment-co
       </header>
 
       <nav class="tabs" aria-label="Bandejas REP">
+        <button type="button" [class.active]="activeTab() === 'attention'" (click)="activeTab.set('attention')">Atención</button>
         <button type="button" [class.active]="activeTab() === 'unified'" (click)="activeTab.set('unified')">Unificada</button>
         <button type="button" [class.active]="activeTab() === 'internal'" (click)="activeTab.set('internal')">Internos</button>
         <button type="button" [class.active]="activeTab() === 'external'" (click)="activeTab.set('external')">Externos</button>
       </nav>
 
       @switch (activeTab()) {
+        @case ('attention') {
+          <app-payment-complement-attention-items-page />
+        }
         @case ('internal') {
           <app-payment-complement-base-documents-page />
         }
@@ -51,5 +57,5 @@ import { PaymentComplementUnifiedBaseDocumentsPageComponent } from './payment-co
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class PaymentComplementBaseDocumentsHubPageComponent {
-  protected readonly activeTab = signal<'unified' | 'internal' | 'external'>('unified');
+  protected readonly activeTab = signal<'attention' | 'unified' | 'internal' | 'external'>('attention');
 }
