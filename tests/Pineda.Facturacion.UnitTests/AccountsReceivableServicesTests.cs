@@ -368,6 +368,8 @@ public class AccountsReceivableServicesTests
         var payment = CreatePayment(amount: 150m);
         var invoice1 = CreateInvoice(id: 201, total: 100m);
         var invoice2 = CreateInvoice(id: 202, total: 100m);
+        invoice1.FiscalReceiverId = 77;
+        invoice2.FiscalReceiverId = 77;
         var service = CreateApplyService(payment, invoice1, invoice2);
 
         var result = await service.ExecuteAsync(new ApplyAccountsReceivablePaymentCommand
@@ -392,6 +394,40 @@ public class AccountsReceivableServicesTests
         Assert.Equal(AccountsReceivableInvoiceStatus.Paid, invoice1.Status);
         Assert.Equal(AccountsReceivableInvoiceStatus.PartiallyPaid, invoice2.Status);
         Assert.Equal(0m, result.RemainingPaymentAmount);
+        Assert.Equal(77, payment.ReceivedFromFiscalReceiverId);
+    }
+
+    [Fact]
+    public async Task ApplyAccountsReceivablePayment_RejectsInvoicesFromDifferentReceivers()
+    {
+        var payment = CreatePayment(amount: 150m, receiverId: 77);
+        var invoice1 = CreateInvoice(id: 201, total: 100m);
+        var invoice2 = CreateInvoice(id: 202, total: 100m);
+        invoice1.FiscalReceiverId = 77;
+        invoice2.FiscalReceiverId = 88;
+        var service = CreateApplyService(payment, invoice1, invoice2);
+
+        var result = await service.ExecuteAsync(new ApplyAccountsReceivablePaymentCommand
+        {
+            AccountsReceivablePaymentId = payment.Id,
+            Applications =
+            [
+                new ApplyAccountsReceivablePaymentApplicationInput
+                {
+                    AccountsReceivableInvoiceId = invoice1.Id,
+                    AppliedAmount = 50m
+                },
+                new ApplyAccountsReceivablePaymentApplicationInput
+                {
+                    AccountsReceivableInvoiceId = invoice2.Id,
+                    AppliedAmount = 50m
+                }
+            ]
+        });
+
+        Assert.Equal(ApplyAccountsReceivablePaymentOutcome.Conflict, result.Outcome);
+        Assert.Contains("different receiver", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(150m, result.RemainingPaymentAmount);
     }
 
     [Fact]
@@ -946,6 +982,7 @@ public class AccountsReceivableServicesTests
             BillingDocumentId = 5,
             FiscalDocumentId = id + 100,
             FiscalStampId = id + 200,
+            FiscalReceiverId = 77,
             Status = AccountsReceivableInvoiceStatus.Open,
             PaymentMethodSat = "PPD",
             PaymentFormSatInitial = "99",

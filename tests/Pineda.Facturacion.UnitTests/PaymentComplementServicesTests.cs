@@ -1032,6 +1032,7 @@ public class PaymentComplementServicesTests
             BillingDocumentId = 5,
             FiscalDocumentId = 301,
             FiscalStampId = 401,
+            FiscalReceiverId = 11,
             Status = AccountsReceivableInvoiceStatus.PartiallyPaid,
             PaymentMethodSat = "PPD",
             PaymentFormSatInitial = "99",

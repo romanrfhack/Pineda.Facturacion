@@ -259,7 +259,8 @@ public static class AccountsReceivableEndpoints
                 PaymentFormSat = request.PaymentFormSat,
                 Amount = request.Amount,
                 Reference = request.Reference,
-                Notes = request.Notes
+                Notes = request.Notes,
+                ReceivedFromFiscalReceiverId = request.ReceivedFromFiscalReceiverId
             },
             cancellationToken);
 
@@ -1122,6 +1123,8 @@ public class CreateAccountsReceivablePaymentRequest
     public string? Reference { get; set; }
 
     public string? Notes { get; set; }
+
+    public long? ReceivedFromFiscalReceiverId { get; set; }
 }
 
 public class CreateAccountsReceivablePaymentResponse

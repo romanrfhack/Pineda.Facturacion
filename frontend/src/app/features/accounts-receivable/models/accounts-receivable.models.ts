@@ -182,6 +182,7 @@ export interface CreateAccountsReceivablePaymentRequest {
   amount: number;
   reference?: string | null;
   notes?: string | null;
+  receivedFromFiscalReceiverId?: number | null;
 }
 
 export interface AccountsReceivablePaymentResponse {

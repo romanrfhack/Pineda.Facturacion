@@ -22,11 +22,12 @@ import {
 import { AccountsReceivableCardComponent } from '../components/accounts-receivable-card.component';
 import { PaymentCreateFormComponent } from '../components/payment-create-form.component';
 import { PaymentApplicationFormComponent } from '../components/payment-application-form.component';
+import { PaymentRemainderApplicationFormComponent } from '../components/payment-remainder-application-form.component';
 import { extractApiErrorMessage } from '../../../core/http/api-error-message';
 
 @Component({
   selector: 'app-accounts-receivable-page',
-  imports: [RouterLink, FormsModule, CurrencyPipe, DatePipe, AccountsReceivableCardComponent, PaymentCreateFormComponent, PaymentApplicationFormComponent],
+  imports: [RouterLink, FormsModule, CurrencyPipe, DatePipe, AccountsReceivableCardComponent, PaymentCreateFormComponent, PaymentApplicationFormComponent, PaymentRemainderApplicationFormComponent],
   template: `
     <section class="page">
       <header>
@@ -601,6 +602,15 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
               [appliedAmount]="currentPayment.appliedTotal"
               [remainingAmount]="currentPayment.remainingAmount"
               (submit)="applyPayment($event)" />
+            @if (showRemainderApplicationSection()) {
+              <app-payment-remainder-application-form
+                [loading]="loading()"
+                [eligibleInvoices]="eligibleReceiverInvoices()"
+                [paymentAmount]="currentPayment.amount"
+                [appliedAmount]="currentPayment.appliedTotal"
+                [remainingAmount]="currentPayment.remainingAmount"
+                (submit)="applyPayment($event)" />
+            }
             <div class="links">
               <a [routerLink]="['/app/payment-complements']" [queryParams]="{ paymentId: currentPayment.id }">Abrir flujo de complemento de pago</a>
             </div>
@@ -681,6 +691,7 @@ export class AccountsReceivablePageComponent {
   protected readonly payment = signal<AccountsReceivablePaymentResponse | null>(null);
   protected readonly portfolioItems = signal<AccountsReceivablePortfolioItemResponse[]>([]);
   protected readonly paymentItems = signal<AccountsReceivablePaymentSummaryItemResponse[]>([]);
+  protected readonly eligibleReceiverInvoices = signal<AccountsReceivablePortfolioItemResponse[]>([]);
   protected readonly loading = signal(false);
   protected readonly filters = {
     receiverQuery: '',
@@ -719,6 +730,11 @@ export class AccountsReceivablePageComponent {
 
     return this.formatInvoiceFiscalLabel(currentInvoice);
   });
+  protected readonly showRemainderApplicationSection = computed(() =>
+    !!this.payment()
+    && !!this.invoice()?.fiscalReceiverId
+    && (this.payment()?.remainingAmount ?? 0) > 0
+    && this.eligibleReceiverInvoices().length > 0);
 
   constructor() {
     this.route.queryParamMap
@@ -752,6 +768,7 @@ export class AccountsReceivablePageComponent {
 
         this.invoice.set(null);
         this.payment.set(null);
+        this.eligibleReceiverInvoices.set([]);
         void this.loadPortfolio();
         void this.loadPayments();
       });
@@ -840,11 +857,13 @@ export class AccountsReceivablePageComponent {
     await this.run(async () => {
       const payload = {
         ...request,
-        paymentDateUtc: new Date(request.paymentDateUtc).toISOString()
+        paymentDateUtc: new Date(request.paymentDateUtc).toISOString(),
+        receivedFromFiscalReceiverId: this.invoice()?.fiscalReceiverId ?? null
       };
       const response = await firstValueFrom(this.api.createPayment(payload));
       if (response.payment) {
         this.payment.set(response.payment);
+        await this.loadEligibleReceiverInvoices();
         this.feedbackService.show('success', 'Pago registrado.');
       }
     });
@@ -864,6 +883,7 @@ export class AccountsReceivablePageComponent {
       }
 
       await this.reloadCurrentInvoice();
+      await this.loadEligibleReceiverInvoices();
 
       this.feedbackService.show('success', 'Aplicación de pago registrada.');
     });
@@ -957,24 +977,30 @@ export class AccountsReceivablePageComponent {
     try {
       this.invoice.set(await firstValueFrom(this.api.getInvoiceByFiscalDocumentId(fiscalDocumentId)));
       this.accountsReceivableInvoiceId.set(this.invoice()?.id ?? null);
+      await this.loadEligibleReceiverInvoices();
     } catch {
       this.invoice.set(null);
+      this.eligibleReceiverInvoices.set([]);
     }
   }
 
   private async loadInvoiceById(accountsReceivableInvoiceId: number): Promise<void> {
     try {
       this.invoice.set(await firstValueFrom(this.api.getInvoiceById(accountsReceivableInvoiceId)));
+      await this.loadEligibleReceiverInvoices();
     } catch {
       this.invoice.set(null);
+      this.eligibleReceiverInvoices.set([]);
     }
   }
 
   private async loadPayment(paymentId: number): Promise<void> {
     try {
       this.payment.set(await firstValueFrom(this.api.getPaymentById(paymentId)));
+      await this.loadEligibleReceiverInvoices();
     } catch {
       this.payment.set(null);
+      await this.loadEligibleReceiverInvoices();
     }
   }
 
@@ -998,6 +1024,28 @@ export class AccountsReceivablePageComponent {
     } finally {
       this.loading.set(false);
     }
+  }
+
+  private async loadEligibleReceiverInvoices(): Promise<void> {
+    const currentInvoice = this.invoice();
+    if (!currentInvoice?.fiscalReceiverId) {
+      this.eligibleReceiverInvoices.set([]);
+      return;
+    }
+
+    const response = await firstValueFrom(this.api.searchPortfolio({
+      fiscalReceiverId: currentInvoice.fiscalReceiverId,
+      hasPendingBalance: true
+    }));
+
+    const items = response.items.filter((item) =>
+      item.accountsReceivableInvoiceId !== currentInvoice.id
+      && item.fiscalReceiverId === currentInvoice.fiscalReceiverId
+      && item.outstandingBalance > 0
+      && item.status !== 'Cancelled'
+      && item.status !== 'Paid');
+
+    this.eligibleReceiverInvoices.set(items);
   }
 }
 

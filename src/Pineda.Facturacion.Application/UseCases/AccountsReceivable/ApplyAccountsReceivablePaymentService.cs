@@ -117,10 +117,12 @@ public class ApplyAccountsReceivablePaymentService
 
         var appliedSoFar = NormalizeMoney(payment.Applications.Sum(x => x.AppliedAmount));
         var remainingPaymentAmount = NormalizeMoney(payment.Amount - appliedSoFar);
+        var remainingPaymentAmountForValidation = remainingPaymentAmount;
         var nextSequence = await _accountsReceivablePaymentApplicationRepository.GetNextSequenceForPaymentAsync(payment.Id, cancellationToken);
         var now = DateTime.UtcNow;
         var createdApplications = new List<AccountsReceivablePaymentApplication>();
         var validationPlans = new List<(AccountsReceivableInvoice Invoice, decimal AppliedAmount, decimal PreviousBalance, decimal NewBalance)>();
+        long? targetFiscalReceiverId = null;
 
         foreach (var requestedApplication in command.Applications)
         {
@@ -156,11 +158,41 @@ public class ApplyAccountsReceivablePaymentService
                     remainingPaymentAmount);
             }
 
+            if (!invoice.FiscalReceiverId.HasValue)
+            {
+                return Conflict(
+                    command.AccountsReceivablePaymentId,
+                    $"Accounts receivable invoice '{invoice.Id}' does not have an operational fiscal receiver and cannot participate in a same-receiver payment distribution.",
+                    payment,
+                    remainingPaymentAmount);
+            }
+
+            if (payment.ReceivedFromFiscalReceiverId.HasValue
+                && payment.ReceivedFromFiscalReceiverId.Value != invoice.FiscalReceiverId.Value)
+            {
+                return Conflict(
+                    command.AccountsReceivablePaymentId,
+                    $"Accounts receivable invoice '{invoice.Id}' belongs to a different receiver and cannot be mixed in this payment.",
+                    payment,
+                    remainingPaymentAmount);
+            }
+
+            if (targetFiscalReceiverId.HasValue && targetFiscalReceiverId.Value != invoice.FiscalReceiverId.Value)
+            {
+                return Conflict(
+                    command.AccountsReceivablePaymentId,
+                    "All invoices in the same apply command must belong to the same fiscal receiver.",
+                    payment,
+                    remainingPaymentAmount);
+            }
+
+            targetFiscalReceiverId ??= invoice.FiscalReceiverId.Value;
+
             var normalizedAppliedAmount = NormalizeMoney(requestedApplication.AppliedAmount);
             var normalizedOutstandingBalance = NormalizeMoney(invoice.OutstandingBalance);
             var normalizedPaidTotal = NormalizeMoney(invoice.PaidTotal);
 
-            if (normalizedAppliedAmount > remainingPaymentAmount)
+            if (normalizedAppliedAmount > remainingPaymentAmountForValidation)
             {
                 return Conflict(
                     command.AccountsReceivablePaymentId,
@@ -182,10 +214,17 @@ public class ApplyAccountsReceivablePaymentService
             var newBalance = NormalizeMoney(previousBalance - normalizedAppliedAmount);
             validationPlans.Add((invoice, normalizedAppliedAmount, previousBalance, newBalance));
 
-            remainingPaymentAmount = NormalizeMoney(remainingPaymentAmount - normalizedAppliedAmount);
+            remainingPaymentAmountForValidation = NormalizeMoney(remainingPaymentAmountForValidation - normalizedAppliedAmount);
             invoice.PaidTotal = normalizedPaidTotal;
             invoice.OutstandingBalance = normalizedOutstandingBalance;
         }
+
+        if (!payment.ReceivedFromFiscalReceiverId.HasValue && targetFiscalReceiverId.HasValue)
+        {
+            payment.ReceivedFromFiscalReceiverId = targetFiscalReceiverId.Value;
+        }
+
+        remainingPaymentAmount = remainingPaymentAmountForValidation;
 
         foreach (var plan in validationPlans)
         {
