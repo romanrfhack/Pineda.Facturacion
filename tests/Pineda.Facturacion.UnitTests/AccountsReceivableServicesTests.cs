@@ -443,6 +443,62 @@ public class AccountsReceivableServicesTests
     }
 
     [Fact]
+    public async Task ApplyAccountsReceivablePayment_AllowsExactApply_AgainstOutstandingBalanceWithPrecisionResidue()
+    {
+        var payment = CreatePayment(amount: 5000m);
+        var invoice = CreateInvoice(total: 1722m);
+        invoice.OutstandingBalance = 1721.999999m;
+        invoice.PaidTotal = 0.000001m;
+        var service = CreateApplyService(payment, invoice);
+
+        var result = await service.ExecuteAsync(new ApplyAccountsReceivablePaymentCommand
+        {
+            AccountsReceivablePaymentId = payment.Id,
+            Applications =
+            [
+                new ApplyAccountsReceivablePaymentApplicationInput
+                {
+                    AccountsReceivableInvoiceId = invoice.Id,
+                    AppliedAmount = 1722m
+                }
+            ]
+        });
+
+        Assert.Equal(ApplyAccountsReceivablePaymentOutcome.Applied, result.Outcome);
+        Assert.Equal(0m, invoice.OutstandingBalance);
+        Assert.Equal(1722m, invoice.PaidTotal);
+        Assert.Equal(3278m, result.RemainingPaymentAmount);
+    }
+
+    [Fact]
+    public async Task ApplyAccountsReceivablePayment_ConflictResponseIncludesPaymentAndRemainingAmount()
+    {
+        var payment = CreatePayment(amount: 5000m);
+        var invoice = CreateInvoice(total: 1722m);
+        invoice.OutstandingBalance = 100m;
+        var service = CreateApplyService(payment, invoice);
+
+        var result = await service.ExecuteAsync(new ApplyAccountsReceivablePaymentCommand
+        {
+            AccountsReceivablePaymentId = payment.Id,
+            Applications =
+            [
+                new ApplyAccountsReceivablePaymentApplicationInput
+                {
+                    AccountsReceivableInvoiceId = invoice.Id,
+                    AppliedAmount = 1722m
+                }
+            ]
+        });
+
+        Assert.Equal(ApplyAccountsReceivablePaymentOutcome.Conflict, result.Outcome);
+        Assert.NotNull(result.AccountsReceivablePayment);
+        Assert.Equal(payment.Id, result.AccountsReceivablePayment!.Id);
+        Assert.Equal(5000m, result.RemainingPaymentAmount);
+        Assert.Empty(result.Applications);
+    }
+
+    [Fact]
     public async Task ApplyAccountsReceivablePayment_IsAtomic_ForMultipleRequestedRows()
     {
         var payment = CreatePayment(amount: 120m);

@@ -7,6 +7,7 @@ namespace Pineda.Facturacion.Application.UseCases.AccountsReceivable;
 
 public class ApplyAccountsReceivablePaymentService
 {
+    private const int MoneyScale = 2;
     private readonly IAccountsReceivablePaymentRepository _accountsReceivablePaymentRepository;
     private readonly IAccountsReceivableInvoiceRepository _accountsReceivableInvoiceRepository;
     private readonly IAccountsReceivablePaymentApplicationRepository _accountsReceivablePaymentApplicationRepository;
@@ -97,7 +98,11 @@ public class ApplyAccountsReceivablePaymentService
 
         if (!string.Equals(FiscalMasterDataNormalization.NormalizeRequiredCode(payment.CurrencyCode), "MXN", StringComparison.Ordinal))
         {
-            return ValidationFailure(command.AccountsReceivablePaymentId, $"Current MVP payment application supports MXN only. Payment currency '{payment.CurrencyCode}' is not supported yet.");
+            return ValidationFailure(
+                command.AccountsReceivablePaymentId,
+                $"Current MVP payment application supports MXN only. Payment currency '{payment.CurrencyCode}' is not supported yet.",
+                payment,
+                NormalizeMoney(payment.Amount - payment.Applications.Sum(x => x.AppliedAmount)));
         }
 
         var existingPaymentComplement = await _paymentComplementDocumentRepository.GetByPaymentIdAsync(payment.Id, cancellationToken);
@@ -105,11 +110,13 @@ public class ApplyAccountsReceivablePaymentService
         {
             return Conflict(
                 command.AccountsReceivablePaymentId,
-                $"Accounts receivable payment '{payment.Id}' already has a REP snapshot with status '{existingPaymentComplement.Status}' and its applications are append-only.");
+                $"Accounts receivable payment '{payment.Id}' already has a REP snapshot with status '{existingPaymentComplement.Status}' and its applications are append-only.",
+                payment,
+                NormalizeMoney(payment.Amount - payment.Applications.Sum(x => x.AppliedAmount)));
         }
 
-        var appliedSoFar = payment.Applications.Sum(x => x.AppliedAmount);
-        var remainingPaymentAmount = payment.Amount - appliedSoFar;
+        var appliedSoFar = NormalizeMoney(payment.Applications.Sum(x => x.AppliedAmount));
+        var remainingPaymentAmount = NormalizeMoney(payment.Amount - appliedSoFar);
         var nextSequence = await _accountsReceivablePaymentApplicationRepository.GetNextSequenceForPaymentAsync(payment.Id, cancellationToken);
         var now = DateTime.UtcNow;
         var createdApplications = new List<AccountsReceivablePaymentApplication>();
@@ -125,35 +132,59 @@ public class ApplyAccountsReceivablePaymentService
                     Outcome = ApplyAccountsReceivablePaymentOutcome.NotFound,
                     IsSuccess = false,
                     AccountsReceivablePaymentId = command.AccountsReceivablePaymentId,
+                    RemainingPaymentAmount = remainingPaymentAmount,
+                    AccountsReceivablePayment = payment,
                     ErrorMessage = $"Accounts receivable invoice '{requestedApplication.AccountsReceivableInvoiceId}' was not found."
                 };
             }
 
             if (!string.Equals(FiscalMasterDataNormalization.NormalizeRequiredCode(invoice.CurrencyCode), "MXN", StringComparison.Ordinal))
             {
-                return ValidationFailure(command.AccountsReceivablePaymentId, $"Current MVP payment application supports MXN only. Invoice currency '{invoice.CurrencyCode}' is not supported yet.");
+                return ValidationFailure(
+                    command.AccountsReceivablePaymentId,
+                    $"Current MVP payment application supports MXN only. Invoice currency '{invoice.CurrencyCode}' is not supported yet.",
+                    payment,
+                    remainingPaymentAmount);
             }
 
             if (invoice.Status == AccountsReceivableInvoiceStatus.Cancelled)
             {
-                return Conflict(command.AccountsReceivablePaymentId, $"Accounts receivable invoice '{invoice.Id}' is cancelled and cannot receive payments.");
+                return Conflict(
+                    command.AccountsReceivablePaymentId,
+                    $"Accounts receivable invoice '{invoice.Id}' is cancelled and cannot receive payments.",
+                    payment,
+                    remainingPaymentAmount);
             }
 
-            if (requestedApplication.AppliedAmount > remainingPaymentAmount)
+            var normalizedAppliedAmount = NormalizeMoney(requestedApplication.AppliedAmount);
+            var normalizedOutstandingBalance = NormalizeMoney(invoice.OutstandingBalance);
+            var normalizedPaidTotal = NormalizeMoney(invoice.PaidTotal);
+
+            if (normalizedAppliedAmount > remainingPaymentAmount)
             {
-                return Conflict(command.AccountsReceivablePaymentId, "Applied amount cannot exceed the remaining unapplied payment amount.");
+                return Conflict(
+                    command.AccountsReceivablePaymentId,
+                    "Applied amount cannot exceed the remaining unapplied payment amount.",
+                    payment,
+                    remainingPaymentAmount);
             }
 
-            if (requestedApplication.AppliedAmount > invoice.OutstandingBalance)
+            if (normalizedAppliedAmount > normalizedOutstandingBalance)
             {
-                return Conflict(command.AccountsReceivablePaymentId, $"Applied amount cannot exceed the outstanding balance for invoice '{invoice.Id}'.");
+                return Conflict(
+                    command.AccountsReceivablePaymentId,
+                    $"Applied amount cannot exceed the outstanding balance for invoice '{invoice.Id}'.",
+                    payment,
+                    remainingPaymentAmount);
             }
 
-            var previousBalance = invoice.OutstandingBalance;
-            var newBalance = previousBalance - requestedApplication.AppliedAmount;
-            validationPlans.Add((invoice, requestedApplication.AppliedAmount, previousBalance, newBalance));
+            var previousBalance = normalizedOutstandingBalance;
+            var newBalance = NormalizeMoney(previousBalance - normalizedAppliedAmount);
+            validationPlans.Add((invoice, normalizedAppliedAmount, previousBalance, newBalance));
 
-            remainingPaymentAmount -= requestedApplication.AppliedAmount;
+            remainingPaymentAmount = NormalizeMoney(remainingPaymentAmount - normalizedAppliedAmount);
+            invoice.PaidTotal = normalizedPaidTotal;
+            invoice.OutstandingBalance = normalizedOutstandingBalance;
         }
 
         foreach (var plan in validationPlans)
@@ -171,7 +202,7 @@ public class ApplyAccountsReceivablePaymentService
 
             createdApplications.Add(application);
 
-            plan.Invoice.PaidTotal += plan.AppliedAmount;
+            plan.Invoice.PaidTotal = NormalizeMoney(plan.Invoice.PaidTotal + plan.AppliedAmount);
             plan.Invoice.OutstandingBalance = plan.NewBalance;
             plan.Invoice.Status = ResolveInvoiceStatus(plan.Invoice.Total, plan.Invoice.OutstandingBalance);
             plan.Invoice.UpdatedAtUtc = now;
@@ -207,6 +238,9 @@ public class ApplyAccountsReceivablePaymentService
 
     private static AccountsReceivableInvoiceStatus ResolveInvoiceStatus(decimal total, decimal outstandingBalance)
     {
+        total = NormalizeMoney(total);
+        outstandingBalance = NormalizeMoney(outstandingBalance);
+
         if (outstandingBalance == total)
         {
             return AccountsReceivableInvoiceStatus.Open;
@@ -225,25 +259,40 @@ public class ApplyAccountsReceivablePaymentService
         return AccountsReceivableInvoiceStatus.Overpaid;
     }
 
-    private static ApplyAccountsReceivablePaymentResult ValidationFailure(long paymentId, string errorMessage)
+    private static ApplyAccountsReceivablePaymentResult ValidationFailure(
+        long paymentId,
+        string errorMessage,
+        AccountsReceivablePayment? payment = null,
+        decimal remainingPaymentAmount = 0m)
     {
         return new ApplyAccountsReceivablePaymentResult
         {
             Outcome = ApplyAccountsReceivablePaymentOutcome.ValidationFailed,
             IsSuccess = false,
             AccountsReceivablePaymentId = paymentId,
+            RemainingPaymentAmount = NormalizeMoney(remainingPaymentAmount),
+            AccountsReceivablePayment = payment,
             ErrorMessage = errorMessage
         };
     }
 
-    private static ApplyAccountsReceivablePaymentResult Conflict(long paymentId, string errorMessage)
+    private static ApplyAccountsReceivablePaymentResult Conflict(
+        long paymentId,
+        string errorMessage,
+        AccountsReceivablePayment? payment = null,
+        decimal remainingPaymentAmount = 0m)
     {
         return new ApplyAccountsReceivablePaymentResult
         {
             Outcome = ApplyAccountsReceivablePaymentOutcome.Conflict,
             IsSuccess = false,
             AccountsReceivablePaymentId = paymentId,
+            RemainingPaymentAmount = NormalizeMoney(remainingPaymentAmount),
+            AccountsReceivablePayment = payment,
             ErrorMessage = errorMessage
         };
     }
+
+    private static decimal NormalizeMoney(decimal value)
+        => decimal.Round(value, MoneyScale, MidpointRounding.AwayFromZero);
 }
