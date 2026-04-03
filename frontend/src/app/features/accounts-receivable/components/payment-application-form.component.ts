@@ -47,16 +47,19 @@ import { ApplyAccountsReceivablePaymentRequest, ApplyAccountsReceivablePaymentRo
 
       <label class="amount-field">
         <span>Monto a aplicar a esta cuenta</span>
-        <input
-          [(ngModel)]="draftAppliedAmount"
-          name="appliedAmount"
-          type="number"
-          min="0.01"
-          step="0.01"
-          [max]="maxApplicable()"
-          [disabled]="loading() || maxApplicable() <= 0"
-          (ngModelChange)="onAmountChange($event)"
-          required />
+        <div class="amount-input-wrap">
+          <input
+            [(ngModel)]="draftAppliedAmountText"
+            name="appliedAmount"
+            type="text"
+            inputmode="decimal"
+            autocomplete="off"
+            [disabled]="loading() || maxApplicable() <= 0"
+            (ngModelChange)="onAmountChange($event)"
+            (blur)="normalizeOnBlur()"
+            required />
+          <span class="currency-suffix">MXN</span>
+        </div>
       </label>
 
       @if (maxApplicable() <= 0) {
@@ -79,8 +82,10 @@ import { ApplyAccountsReceivablePaymentRequest, ApplyAccountsReceivablePaymentRo
     .context-grid span { font-size:0.8rem; color:#5f6b76; }
     .context-grid strong { color:#182533; }
     .amount-field { display:grid; gap:0.35rem; }
+    .amount-input-wrap { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:0.55rem; align-items:center; }
     input, button { font:inherit; }
     input { border:1px solid #c9d1da; border-radius:0.8rem; padding:0.75rem 0.9rem; }
+    .currency-suffix { color:#5f6b76; font-size:0.84rem; font-weight:600; }
     .actions { display:flex; gap:0.75rem; flex-wrap:wrap; }
     button { border:none; border-radius:0.8rem; padding:0.75rem 1rem; background:#182533; color:#fff; cursor:pointer; }
   `],
@@ -97,6 +102,7 @@ export class PaymentApplicationFormComponent {
   readonly submit = output<ApplyAccountsReceivablePaymentRequest>();
   protected readonly requestedAmountExceeded = signal(false);
   protected draftAppliedAmount = 0;
+  protected draftAppliedAmountText = '0.00';
 
   protected readonly maxApplicable = computed(() =>
     this.roundMoney(Math.max(0, Math.min(this.outstandingBalance(), this.remainingAmount()))));
@@ -106,9 +112,11 @@ export class PaymentApplicationFormComponent {
   }
 
   protected onAmountChange(value: string | number): void {
-    const numericValue = Number(value);
+    const sanitizedValue = String(value ?? '').replace(/,/g, '').trim();
+    const numericValue = Number(sanitizedValue);
     if (!Number.isFinite(numericValue) || numericValue <= 0) {
       this.draftAppliedAmount = 0;
+      this.draftAppliedAmountText = sanitizedValue;
       this.requestedAmountExceeded.set(false);
       return;
     }
@@ -116,6 +124,15 @@ export class PaymentApplicationFormComponent {
     const cappedValue = this.roundMoney(Math.min(numericValue, this.maxApplicable()));
     this.requestedAmountExceeded.set(numericValue > cappedValue);
     this.draftAppliedAmount = cappedValue;
+    this.draftAppliedAmountText = numericValue > cappedValue
+      ? this.formatEditableAmount(cappedValue)
+      : sanitizedValue;
+  }
+
+  protected normalizeOnBlur(): void {
+    this.draftAppliedAmountText = this.draftAppliedAmount > 0
+      ? this.formatEditableAmount(this.draftAppliedAmount)
+      : '0.00';
   }
 
   protected submitRows(): void {
@@ -148,10 +165,15 @@ export class PaymentApplicationFormComponent {
 
   private resetDraftAmount(): void {
     this.draftAppliedAmount = this.maxApplicable();
+    this.draftAppliedAmountText = this.formatEditableAmount(this.draftAppliedAmount);
     this.requestedAmountExceeded.set(false);
   }
 
   private roundMoney(value: number): number {
     return Math.round((value + Number.EPSILON) * 100) / 100;
+  }
+
+  private formatEditableAmount(value: number): string {
+    return this.roundMoney(value).toFixed(2);
   }
 }
