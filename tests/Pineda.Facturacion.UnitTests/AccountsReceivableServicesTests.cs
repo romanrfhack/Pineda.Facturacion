@@ -712,7 +712,7 @@ public class AccountsReceivableServicesTests
         Assert.Equal(AccountsReceivablePaymentOperationalStatus.PartiallyApplied, result.Items.Single(x => x.PaymentId == 2).OperationalStatus);
         Assert.Equal(AccountsReceivablePaymentOperationalStatus.FullyApplied, result.Items.Single(x => x.PaymentId == 3).OperationalStatus);
         Assert.Equal(AccountsReceivablePaymentRepStatus.NoApplications, result.Items.Single(x => x.PaymentId == 1).RepStatus);
-        Assert.Equal(AccountsReceivablePaymentRepStatus.PendingApplications, result.Items.Single(x => x.PaymentId == 2).RepStatus);
+        Assert.Equal(AccountsReceivablePaymentRepStatus.ReadyToPrepare, result.Items.Single(x => x.PaymentId == 2).RepStatus);
         Assert.Equal(AccountsReceivablePaymentRepStatus.Stamped, result.Items.Single(x => x.PaymentId == 3).RepStatus);
     }
 

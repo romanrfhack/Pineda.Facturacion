@@ -1530,7 +1530,7 @@ public class MvpLifecycleApiTests
         {
             var items = listJson.RootElement.GetProperty("items");
             Assert.Contains(items.EnumerateArray(), x => x.GetProperty("paymentId").GetInt64() == capturedPayment!.Payment!.Id && x.GetProperty("operationalStatus").GetString() == "CapturedUnapplied");
-            Assert.Contains(items.EnumerateArray(), x => x.GetProperty("paymentId").GetInt64() == partialPayment.Payment!.Id && x.GetProperty("operationalStatus").GetString() == "PartiallyApplied" && x.GetProperty("repStatus").GetString() == "PendingApplications");
+            Assert.Contains(items.EnumerateArray(), x => x.GetProperty("paymentId").GetInt64() == partialPayment.Payment!.Id && x.GetProperty("operationalStatus").GetString() == "PartiallyApplied" && x.GetProperty("repStatus").GetString() == "ReadyToPrepare");
             Assert.Contains(items.EnumerateArray(), x => x.GetProperty("paymentId").GetInt64() == stampedPayment.Payment!.Id && x.GetProperty("operationalStatus").GetString() == "FullyApplied" && x.GetProperty("repStatus").GetString() == "Stamped");
         }
 

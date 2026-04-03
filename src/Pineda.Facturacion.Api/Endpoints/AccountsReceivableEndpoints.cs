@@ -126,6 +126,12 @@ public static class AccountsReceivableEndpoints
             .Produces<PreparePaymentComplementResponse>(StatusCodes.Status404NotFound)
             .Produces<PreparePaymentComplementResponse>(StatusCodes.Status409Conflict);
 
+        group.MapGet("/payments/{paymentId:long}/payment-complements", GetPaymentComplementByPaymentIdAsync)
+            .WithName("GetPaymentComplementByPaymentIdPlural")
+            .WithSummary("Get the persisted payment complement snapshot for a payment event using the collection route")
+            .Produces<PaymentComplementDocumentResponse>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
+
         group.MapGet("/payments/{paymentId:long}/payment-complement", GetPaymentComplementByPaymentIdAsync)
             .WithName("GetPaymentComplementByPaymentId")
             .WithSummary("Get the persisted payment complement snapshot for a payment event")

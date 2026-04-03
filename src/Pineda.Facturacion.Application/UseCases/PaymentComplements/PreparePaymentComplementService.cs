@@ -68,10 +68,10 @@ public class PreparePaymentComplementService
             return ValidationFailure(command.AccountsReceivablePaymentId, "A payment complement requires at least one persisted payment application.");
         }
 
-        var appliedTotal = payment.Applications.Sum(x => x.AppliedAmount);
-        if (appliedTotal != payment.Amount)
+        var appliedTotal = NormalizeMoney(payment.Applications.Sum(x => x.AppliedAmount));
+        if (appliedTotal <= 0m)
         {
-            return ValidationFailure(command.AccountsReceivablePaymentId, "Current MVP payment complement preparation requires the payment amount to be fully allocated across persisted applications.");
+            return ValidationFailure(command.AccountsReceivablePaymentId, "A payment complement requires at least one persisted payment application with a positive applied amount.");
         }
 
         var existingDocument = await _paymentComplementDocumentRepository.GetByPaymentIdAsync(command.AccountsReceivablePaymentId, cancellationToken);
@@ -261,9 +261,9 @@ public class PreparePaymentComplementService
             }
 
             relatedDocument.InstallmentNumber = index + 1;
-            relatedDocument.PreviousBalance = application.PreviousBalance;
-            relatedDocument.PaidAmount = application.AppliedAmount;
-            relatedDocument.RemainingBalance = application.NewBalance;
+            relatedDocument.PreviousBalance = NormalizeMoney(application.PreviousBalance);
+            relatedDocument.PaidAmount = NormalizeMoney(application.AppliedAmount);
+            relatedDocument.RemainingBalance = NormalizeMoney(application.NewBalance);
             relatedDocuments.Add(relatedDocument);
         }
 
@@ -281,7 +281,7 @@ public class PreparePaymentComplementService
             IssuedAtUtc = command.IssuedAtUtc ?? now,
             PaymentDateUtc = payment.PaymentDateUtc,
             CurrencyCode = "MXN",
-            TotalPaymentsAmount = payment.Amount,
+            TotalPaymentsAmount = appliedTotal,
             IssuerProfileId = anchor.IssuerProfileId,
             FiscalReceiverId = anchor.FiscalReceiverId,
             IssuerRfc = anchor.IssuerRfc,
@@ -326,6 +326,11 @@ public class PreparePaymentComplementService
             AccountsReceivablePaymentId = paymentId,
             ErrorMessage = errorMessage
         };
+    }
+
+    private static decimal NormalizeMoney(decimal amount)
+    {
+        return decimal.Round(amount, 2, MidpointRounding.AwayFromZero);
     }
 
     private sealed class AnchorSnapshot

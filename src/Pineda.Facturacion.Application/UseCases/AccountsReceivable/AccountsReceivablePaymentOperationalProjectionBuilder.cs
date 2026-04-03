@@ -24,8 +24,10 @@ internal static class AccountsReceivablePaymentOperationalProjectionBuilder
 
         var operationalStatus = ResolveOperationalStatus(payment.Amount, appliedAmount);
         var repStatus = ResolveRepStatus(payment, linkedInvoices, paymentComplementDocument, appliedAmount);
-        var repReservedAmount = paymentComplementDocument is null ? 0m : payment.Amount;
-        var repFiscalizedAmount = paymentComplementDocument?.Status == PaymentComplementDocumentStatus.Stamped ? payment.Amount : 0m;
+        var repReservedAmount = paymentComplementDocument?.TotalPaymentsAmount ?? 0m;
+        var repFiscalizedAmount = paymentComplementDocument?.Status == PaymentComplementDocumentStatus.Stamped
+            ? paymentComplementDocument.TotalPaymentsAmount
+            : 0m;
 
         return new AccountsReceivablePaymentOperationalProjection
         {
@@ -99,17 +101,14 @@ internal static class AccountsReceivablePaymentOperationalProjectionBuilder
             return AccountsReceivablePaymentRepStatus.NoApplications;
         }
 
-        if (appliedAmount != payment.Amount)
-        {
-            return AccountsReceivablePaymentRepStatus.PendingApplications;
-        }
-
         if (!IsEligibleForRep(linkedInvoices))
         {
             return AccountsReceivablePaymentRepStatus.NotEligible;
         }
 
-        return AccountsReceivablePaymentRepStatus.ReadyToPrepare;
+        return appliedAmount > 0m
+            ? AccountsReceivablePaymentRepStatus.ReadyToPrepare
+            : AccountsReceivablePaymentRepStatus.PendingApplications;
     }
 
     private static bool IsEligibleForRep(IReadOnlyCollection<AccountsReceivableInvoice> linkedInvoices)

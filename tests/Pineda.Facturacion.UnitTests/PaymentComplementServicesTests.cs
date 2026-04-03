@@ -101,6 +101,77 @@ public class PaymentComplementServicesTests
     }
 
     [Fact]
+    public async Task PreparePaymentComplement_Succeeds_ForPartiallyAppliedPayment_WithRemainingUnappliedAmount()
+    {
+        var payment = CreatePayment(amount: 5000m);
+        payment.Applications =
+        [
+            CreateApplication(id: 11, paymentId: 10, invoiceId: 201, appliedAmount: 1722m, previousBalance: 1722m, newBalance: 0m),
+            CreateApplication(id: 12, paymentId: 10, invoiceId: 202, appliedAmount: 1000m, previousBalance: 1000m, newBalance: 0m)
+        ];
+
+        var invoice1 = CreateInvoice(id: 201);
+        invoice1.Total = 1722m;
+        invoice1.PaidTotal = 1722m;
+        invoice1.OutstandingBalance = 0m;
+        invoice1.Applications.Clear();
+        invoice1.Applications.Add(payment.Applications[0]);
+        var invoice2 = CreateInvoice(id: 202);
+        invoice2.Total = 1000m;
+        invoice2.PaidTotal = 1000m;
+        invoice2.OutstandingBalance = 0m;
+        invoice2.FiscalDocumentId = 302;
+        invoice2.FiscalStampId = 402;
+        invoice2.Applications.Clear();
+        invoice2.Applications.Add(payment.Applications[1]);
+
+        var repository = new PcFakePaymentComplementDocumentRepository();
+        var service = new PreparePaymentComplementService(
+            new PcFakeAccountsReceivablePaymentRepository { ExistingById = payment },
+            new PcFakeAccountsReceivableInvoiceRepository
+            {
+                TrackedById =
+                {
+                    [invoice1.Id] = invoice1,
+                    [invoice2.Id] = invoice2
+                }
+            },
+            new PcFakeExternalRepBaseDocumentRepository(),
+            new PcFakeFiscalDocumentRepository
+            {
+                ById =
+                {
+                    [invoice1.FiscalDocumentId!.Value] = CreateFiscalDocument(id: invoice1.FiscalDocumentId.Value, receiverRfc: "BBB010101BBB"),
+                    [invoice2.FiscalDocumentId!.Value] = CreateFiscalDocument(id: invoice2.FiscalDocumentId.Value, receiverRfc: "BBB010101BBB")
+                }
+            },
+            new PcFakeFiscalStampRepository
+            {
+                ByFiscalDocumentId =
+                {
+                    [invoice1.FiscalDocumentId!.Value] = CreateFiscalStamp(id: 401, fiscalDocumentId: invoice1.FiscalDocumentId.Value, uuid: "UUID-1"),
+                    [invoice2.FiscalDocumentId!.Value] = CreateFiscalStamp(id: 402, fiscalDocumentId: invoice2.FiscalDocumentId.Value, uuid: "UUID-2")
+                }
+            },
+            new PcFakeIssuerProfileRepository(),
+            new PcFakeFiscalReceiverRepository(),
+            repository,
+            new PcFakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new PreparePaymentComplementCommand
+        {
+            AccountsReceivablePaymentId = payment.Id
+        });
+
+        Assert.Equal(PreparePaymentComplementOutcome.Created, result.Outcome);
+        Assert.NotNull(repository.Added);
+        Assert.Equal(2722m, repository.Added!.TotalPaymentsAmount);
+        Assert.Equal(2, repository.Added.RelatedDocuments.Count);
+        Assert.Equal(1722m, repository.Added.RelatedDocuments[0].PaidAmount);
+        Assert.Equal(1000m, repository.Added.RelatedDocuments[1].PaidAmount);
+    }
+
+    [Fact]
     public async Task PreparePaymentComplement_ReturnsConflict_ForDuplicatePayment()
     {
         var payment = CreatePayment();
@@ -1008,6 +1079,8 @@ public class PaymentComplementServicesTests
         long paymentId,
         long invoiceId,
         decimal appliedAmount,
+        decimal previousBalance = 100m,
+        decimal? newBalance = null,
         int applicationSequence = 1,
         DateTime? createdAtUtc = null)
     {
@@ -1018,8 +1091,8 @@ public class PaymentComplementServicesTests
             AccountsReceivableInvoiceId = invoiceId,
             ApplicationSequence = applicationSequence,
             AppliedAmount = appliedAmount,
-            PreviousBalance = 100m,
-            NewBalance = 100m - appliedAmount,
+            PreviousBalance = previousBalance,
+            NewBalance = newBalance ?? (previousBalance - appliedAmount),
             CreatedAtUtc = createdAtUtc ?? new DateTime(2026, 3, 22, 0, 0, 0, DateTimeKind.Utc)
         };
     }

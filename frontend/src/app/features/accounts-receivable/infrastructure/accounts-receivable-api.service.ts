@@ -146,6 +146,6 @@ export class AccountsReceivableApiService {
   }
 
   getPaymentComplementByPaymentId(paymentId: number): Observable<PaymentComplementDocumentResponse> {
-    return this.http.get<PaymentComplementDocumentResponse>(buildApiUrl(`/accounts-receivable/payments/${paymentId}/payment-complement`));
+    return this.http.get<PaymentComplementDocumentResponse>(buildApiUrl(`/accounts-receivable/payments/${paymentId}/payment-complements`));
   }
 }
