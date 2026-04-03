@@ -5,6 +5,7 @@ import { buildApiUrl } from '../../../core/config/api-url';
 import {
   AccountsReceivableInvoiceResponse,
   AccountsReceivablePortfolioResponse,
+  AccountsReceivableReceiverWorkspaceResponse,
   AccountsReceivablePaymentsResponse,
   AccountsReceivablePaymentResponse,
   ApplyAccountsReceivablePaymentRequest,
@@ -81,6 +82,10 @@ export class AccountsReceivableApiService {
     }
 
     return this.http.get<AccountsReceivablePortfolioResponse>(buildApiUrl('/accounts-receivable/invoices'), { params });
+  }
+
+  getReceiverWorkspace(fiscalReceiverId: number): Observable<AccountsReceivableReceiverWorkspaceResponse> {
+    return this.http.get<AccountsReceivableReceiverWorkspaceResponse>(buildApiUrl(`/accounts-receivable/receivers/${fiscalReceiverId}/workspace`));
   }
 
   listCollectionCommitments(accountsReceivableInvoiceId: number): Observable<CollectionCommitmentsResponse> {

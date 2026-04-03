@@ -73,6 +73,55 @@ export interface AccountsReceivablePortfolioResponse {
   items: AccountsReceivablePortfolioItemResponse[];
 }
 
+export interface AccountsReceivableReceiverWorkspaceSummaryResponse {
+  pendingBalanceTotal: number;
+  overdueBalanceTotal: number;
+  currentBalanceTotal: number;
+  openInvoicesCount: number;
+  overdueInvoicesCount: number;
+  paymentsCount: number;
+  paymentsWithUnappliedAmountCount: number;
+  paymentsPendingRepCount: number;
+  nextFollowUpAtUtc?: string | null;
+  hasPendingCommitment: boolean;
+  pendingCommitmentsCount: number;
+  recentNotesCount: number;
+  paymentsReadyToPrepareRepCount: number;
+  paymentsPreparedRepCount: number;
+  paymentsStampedRepCount: number;
+}
+
+export interface AccountsReceivableReceiverWorkspaceCommitmentResponse {
+  id: number;
+  accountsReceivableInvoiceId: number;
+  promisedAmount: number;
+  promisedDateUtc: string;
+  status: string;
+  notes?: string | null;
+  createdAtUtc: string;
+}
+
+export interface AccountsReceivableReceiverWorkspaceNoteResponse {
+  id: number;
+  accountsReceivableInvoiceId: number;
+  noteType: string;
+  content: string;
+  nextFollowUpAtUtc?: string | null;
+  createdAtUtc: string;
+  createdByUsername?: string | null;
+}
+
+export interface AccountsReceivableReceiverWorkspaceResponse {
+  fiscalReceiverId: number;
+  rfc: string;
+  legalName: string;
+  summary: AccountsReceivableReceiverWorkspaceSummaryResponse;
+  invoices: AccountsReceivablePortfolioItemResponse[];
+  payments: AccountsReceivablePaymentSummaryItemResponse[];
+  pendingCommitments: AccountsReceivableReceiverWorkspaceCommitmentResponse[];
+  recentNotes: AccountsReceivableReceiverWorkspaceNoteResponse[];
+}
+
 export interface SearchAccountsReceivablePortfolioRequest {
   fiscalReceiverId?: number | null;
   receiverQuery?: string | null;

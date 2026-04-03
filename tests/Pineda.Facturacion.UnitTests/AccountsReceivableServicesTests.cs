@@ -931,6 +931,152 @@ public class AccountsReceivableServicesTests
         Assert.True(followUpResult.Items.Single().FollowUpPending);
     }
 
+    [Fact]
+    public async Task GetAccountsReceivableReceiverWorkspace_ReturnsConsolidatedProjection_ForReceiver()
+    {
+        var today = DateTime.UtcNow.Date;
+        var receiver = new FiscalReceiver
+        {
+            Id = 77,
+            Rfc = "AAA010101AAA",
+            LegalName = "Receiver One"
+        };
+
+        var invoice1 = new AccountsReceivablePortfolioItem
+        {
+            AccountsReceivableInvoiceId = 201,
+            FiscalDocumentId = 9001,
+            FiscalReceiverId = receiver.Id,
+            ReceiverRfc = receiver.Rfc,
+            ReceiverLegalName = receiver.LegalName,
+            OutstandingBalance = 100m,
+            Total = 150m,
+            PaidTotal = 50m,
+            IssuedAtUtc = today.AddDays(-10),
+            DueAtUtc = today.AddDays(-3),
+            Status = AccountsReceivableInvoiceStatus.Open.ToString()
+        };
+        var invoice2 = new AccountsReceivablePortfolioItem
+        {
+            AccountsReceivableInvoiceId = 202,
+            FiscalDocumentId = 9002,
+            FiscalReceiverId = receiver.Id,
+            ReceiverRfc = receiver.Rfc,
+            ReceiverLegalName = receiver.LegalName,
+            OutstandingBalance = 80m,
+            Total = 80m,
+            PaidTotal = 0m,
+            IssuedAtUtc = today.AddDays(-2),
+            DueAtUtc = today.AddDays(2),
+            Status = AccountsReceivableInvoiceStatus.Open.ToString()
+        };
+
+        var payment = CreatePayment(id: 301, amount: 200m, receiverId: receiver.Id);
+        payment.Applications.Add(new AccountsReceivablePaymentApplication
+        {
+            Id = 401,
+            AccountsReceivablePaymentId = payment.Id,
+            AccountsReceivableInvoiceId = invoice1.AccountsReceivableInvoiceId,
+            ApplicationSequence = 1,
+            AppliedAmount = 100m,
+            PreviousBalance = 100m,
+            NewBalance = 0m,
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
+        var workspaceService = new GetAccountsReceivableReceiverWorkspaceService(
+            new SearchAccountsReceivablePortfolioService(
+                new ArFakeAccountsReceivableInvoiceRepository { PortfolioItems = [invoice1, invoice2] },
+                new ArFakeAccountsReceivableCollectionRepository
+                {
+                    CommitmentItems =
+                    [
+                        new CollectionCommitment
+                        {
+                            Id = 1,
+                            AccountsReceivableInvoiceId = invoice2.AccountsReceivableInvoiceId,
+                            PromisedAmount = 80m,
+                            PromisedDateUtc = today.AddDays(1),
+                            Status = CollectionCommitmentStatus.Pending,
+                            CreatedAtUtc = DateTime.UtcNow,
+                            UpdatedAtUtc = DateTime.UtcNow
+                        }
+                    ],
+                    NoteItems =
+                    [
+                        new CollectionNote
+                        {
+                            Id = 2,
+                            AccountsReceivableInvoiceId = invoice1.AccountsReceivableInvoiceId,
+                            NoteType = CollectionNoteType.Call,
+                            Content = "Seguimiento",
+                            NextFollowUpAtUtc = DateTime.UtcNow.AddDays(1),
+                            CreatedAtUtc = DateTime.UtcNow
+                        }
+                    ]
+                }),
+            new SearchAccountsReceivablePaymentsService(
+                new ArFakeAccountsReceivablePaymentRepository { SearchResults = [payment] },
+                new ArFakeAccountsReceivableInvoiceRepository
+                {
+                    TrackedById = new Dictionary<long, AccountsReceivableInvoice>
+                    {
+                        [invoice1.AccountsReceivableInvoiceId] = new AccountsReceivableInvoice
+                        {
+                            Id = invoice1.AccountsReceivableInvoiceId,
+                            FiscalReceiverId = receiver.Id,
+                            FiscalDocumentId = invoice1.FiscalDocumentId
+                        }
+                    }
+                },
+                new ArFakeFiscalReceiverRepository { ExistingById = receiver },
+                new ArFakePaymentComplementDocumentRepository()),
+            new ArFakeFiscalReceiverRepository { ExistingById = receiver },
+            new ArFakeAccountsReceivableCollectionRepository
+            {
+                CommitmentItems =
+                [
+                    new CollectionCommitment
+                    {
+                        Id = 1,
+                        AccountsReceivableInvoiceId = invoice2.AccountsReceivableInvoiceId,
+                        PromisedAmount = 80m,
+                        PromisedDateUtc = today.AddDays(1),
+                        Status = CollectionCommitmentStatus.Pending,
+                        CreatedAtUtc = DateTime.UtcNow,
+                        UpdatedAtUtc = DateTime.UtcNow
+                    }
+                ],
+                NoteItems =
+                [
+                    new CollectionNote
+                    {
+                        Id = 2,
+                        AccountsReceivableInvoiceId = invoice1.AccountsReceivableInvoiceId,
+                        NoteType = CollectionNoteType.Call,
+                        Content = "Seguimiento",
+                        NextFollowUpAtUtc = DateTime.UtcNow.AddDays(1),
+                        CreatedAtUtc = DateTime.UtcNow
+                    }
+                ]
+            });
+
+        var result = await workspaceService.ExecuteAsync(receiver.Id);
+
+        Assert.Equal(GetAccountsReceivableReceiverWorkspaceOutcome.Found, result.Outcome);
+        Assert.NotNull(result.Workspace);
+        Assert.Equal(receiver.Id, result.Workspace!.FiscalReceiverId);
+        Assert.Equal(receiver.Rfc, result.Workspace.Rfc);
+        Assert.Equal(2, result.Workspace.Invoices.Count);
+        Assert.Single(result.Workspace.Payments);
+        Assert.Equal(180m, result.Workspace.Summary.PendingBalanceTotal);
+        Assert.Equal(100m, result.Workspace.Summary.OverdueBalanceTotal);
+        Assert.Equal(1, result.Workspace.Summary.PaymentsWithUnappliedAmountCount);
+        Assert.True(result.Workspace.Summary.HasPendingCommitment);
+        Assert.Single(result.Workspace.PendingCommitments);
+        Assert.Single(result.Workspace.RecentNotes);
+    }
+
     private static ApplyAccountsReceivablePaymentService CreateApplyService(
         AccountsReceivablePayment payment,
         params AccountsReceivableInvoice[] invoices)

@@ -7,11 +7,14 @@ import { firstValueFrom } from 'rxjs';
 import { FeedbackService } from '../../../core/ui/feedback.service';
 import { PermissionService } from '../../../core/auth/permission.service';
 import { AccountsReceivableApiService } from '../infrastructure/accounts-receivable-api.service';
+import { FiscalReceiversApiService } from '../../catalogs/infrastructure/fiscal-receivers-api.service';
+import { FiscalReceiverSearchItem } from '../../catalogs/models/catalogs.models';
 import {
   AccountsReceivableInvoiceResponse,
   AccountsReceivablePaymentResponse,
   AccountsReceivablePortfolioItemResponse,
   AccountsReceivablePaymentSummaryItemResponse,
+  AccountsReceivableReceiverWorkspaceResponse,
   ApplyAccountsReceivablePaymentRequest,
   CreateCollectionCommitmentRequest,
   CreateCollectionNoteRequest,
@@ -32,10 +35,47 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
     <section class="page">
       <header>
         <p class="eyebrow">Cuentas por cobrar</p>
-        <h2>{{ detailMode() ? 'Cuenta por cobrar, pagos y aplicaciones' : 'Cartera operativa mínima' }}</h2>
+        <h2>{{ detailMode() ? 'Cuenta por cobrar, pagos y aplicaciones' : receiverWorkspaceMode() ? 'Workspace del receptor' : 'Cartera operativa mínima' }}</h2>
       </header>
 
       @if (!detailMode()) {
+        <section class="card filters">
+          <div class="section-head compact">
+            <h3>Workspace del receptor</h3>
+            <p class="helper">Busca por RFC o razón social para abrir una vista consolidada por receptor.</p>
+          </div>
+
+          <div class="filter-grid">
+            <label class="wide-field">
+              <span>Buscar receptor</span>
+              <input type="text" [(ngModel)]="receiverLookupQuery" placeholder="RFC o razón social" />
+            </label>
+          </div>
+
+          <div class="actions">
+            <button type="button" (click)="searchReceiverWorkspace()" [disabled]="loading()">Buscar receptor</button>
+            @if (receiverWorkspaceMode()) {
+              <a class="secondary" [routerLink]="['/app/accounts-receivable']">Volver a cartera</a>
+            }
+          </div>
+
+          @if (receiverLookupResults().length) {
+            <div class="lookup-results">
+              @for (receiver of receiverLookupResults(); track receiver.id) {
+                <article class="lookup-item">
+                  <div>
+                    <strong>{{ receiver.legalName }}</strong>
+                    <div class="subtle">{{ receiver.rfc }} · #{{ receiver.id }}</div>
+                  </div>
+                  <a [routerLink]="['/app/accounts-receivable']" [queryParams]="{ fiscalReceiverId: receiver.id }">Abrir workspace</a>
+                </article>
+              }
+            </div>
+          }
+        </section>
+      }
+
+      @if (!detailMode() && !receiverWorkspaceMode()) {
         <section class="card filters">
           <div class="filter-grid">
             <label>
@@ -173,7 +213,12 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
                         }
                       </td>
                       <td>
-                        <a [routerLink]="['/app/accounts-receivable']" [queryParams]="{ invoiceId: item.accountsReceivableInvoiceId }">Ver detalle</a>
+                        <div class="link-stack">
+                          <a [routerLink]="['/app/accounts-receivable']" [queryParams]="{ invoiceId: item.accountsReceivableInvoiceId }">Ver detalle</a>
+                          @if (item.fiscalReceiverId) {
+                            <a class="secondary-link" [routerLink]="['/app/accounts-receivable']" [queryParams]="{ fiscalReceiverId: item.fiscalReceiverId }">Workspace</a>
+                          }
+                        </div>
                       </td>
                     </tr>
                   }
@@ -279,6 +324,166 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
                         </div>
                       </td>
                       <td>
+                        <div class="link-stack">
+                          <a [routerLink]="['/app/accounts-receivable']" [queryParams]="{ paymentId: item.paymentId }">Ver detalle</a>
+                          @if (item.fiscalReceiverId) {
+                            <a class="secondary-link" [routerLink]="['/app/accounts-receivable']" [queryParams]="{ fiscalReceiverId: item.fiscalReceiverId }">Workspace</a>
+                          }
+                        </div>
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+        </section>
+      }
+
+      @if (receiverWorkspaceMode() && receiverWorkspace(); as workspace) {
+        <section class="card">
+          <div class="section-head compact">
+            <div>
+              <h3>{{ workspace.legalName || 'Receptor sin nombre' }}</h3>
+              <p class="helper">{{ workspace.rfc || 'RFC no disponible' }} · FiscalReceiver #{{ workspace.fiscalReceiverId }}</p>
+            </div>
+            <div class="detail-badges">
+              @if (workspace.summary.hasPendingCommitment) {
+                <span class="badge" data-status="PendingCommitment">Compromiso pendiente</span>
+              }
+              @if (workspace.summary.overdueInvoicesCount > 0) {
+                <span class="badge" data-status="Overdue">{{ workspace.summary.overdueInvoicesCount }} vencida(s)</span>
+              }
+            </div>
+          </div>
+
+          <div class="summary-grid">
+            <article class="summary-card">
+              <strong>Saldo pendiente</strong>
+              <div>{{ workspace.summary.pendingBalanceTotal | currency:'MXN':'symbol':'1.2-2' }}</div>
+            </article>
+            <article class="summary-card">
+              <strong>Total vencido</strong>
+              <div>{{ workspace.summary.overdueBalanceTotal | currency:'MXN':'symbol':'1.2-2' }}</div>
+            </article>
+            <article class="summary-card">
+              <strong>Vigente / por vencer</strong>
+              <div>{{ workspace.summary.currentBalanceTotal | currency:'MXN':'symbol':'1.2-2' }}</div>
+            </article>
+            <article class="summary-card">
+              <strong>Facturas abiertas</strong>
+              <div>{{ workspace.summary.openInvoicesCount }}</div>
+            </article>
+            <article class="summary-card">
+              <strong>Pagos con remanente</strong>
+              <div>{{ workspace.summary.paymentsWithUnappliedAmountCount }}</div>
+            </article>
+            <article class="summary-card">
+              <strong>Siguiente seguimiento</strong>
+              <div>{{ workspace.summary.nextFollowUpAtUtc ? (workspace.summary.nextFollowUpAtUtc | date:'yyyy-MM-dd HH:mm') : 'Sin fecha' }}</div>
+            </article>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="section-head compact">
+            <h3>Facturas del receptor</h3>
+            <p class="helper">{{ workspace.invoices.length }} cuenta(s) abierta(s)</p>
+          </div>
+          @if (!workspace.invoices.length) {
+            <p class="helper">No hay facturas abiertas para este receptor.</p>
+          } @else {
+            <div class="table-wrap">
+              <table class="portfolio">
+                <thead>
+                  <tr>
+                    <th>Factura</th>
+                    <th>Emisión</th>
+                    <th>Vencimiento</th>
+                    <th>Total</th>
+                    <th>Pagado</th>
+                    <th>Saldo</th>
+                    <th>Estatus</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (item of workspace.invoices; track item.accountsReceivableInvoiceId) {
+                    <tr>
+                      <td>
+                        <div>{{ formatFiscalLabel(item) }}</div>
+                        <div class="subtle">{{ item.fiscalUuid || 'UUID pendiente' }}</div>
+                        <div class="subtle">CxC #{{ item.accountsReceivableInvoiceId }}</div>
+                      </td>
+                      <td>{{ item.issuedAtUtc | date:'yyyy-MM-dd' }}</td>
+                      <td>{{ item.dueAtUtc ? (item.dueAtUtc | date:'yyyy-MM-dd') : 'Sin vencimiento' }}</td>
+                      <td>{{ item.total | currency:'MXN':'symbol':'1.2-2' }}</td>
+                      <td>{{ item.paidTotal | currency:'MXN':'symbol':'1.2-2' }}</td>
+                      <td>{{ item.outstandingBalance | currency:'MXN':'symbol':'1.2-2' }}</td>
+                      <td>
+                        <span class="badge" [attr.data-status]="item.status">{{ item.status }}</span>
+                        <div class="subtle"><span class="badge" [attr.data-status]="item.agingBucket">{{ item.agingBucket }}</span></div>
+                      </td>
+                      <td>
+                        <a [routerLink]="['/app/accounts-receivable']" [queryParams]="{ invoiceId: item.accountsReceivableInvoiceId }">Ver detalle</a>
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+        </section>
+
+        <section class="card">
+          <div class="section-head compact">
+            <h3>Pagos del receptor</h3>
+            <p class="helper">{{ workspace.payments.length }} pago(s)</p>
+          </div>
+          @if (!workspace.payments.length) {
+            <p class="helper">No hay pagos asociados a este receptor.</p>
+          } @else {
+            <div class="table-wrap">
+              <table class="portfolio">
+                <thead>
+                  <tr>
+                    <th>Pago</th>
+                    <th>Monto</th>
+                    <th>Aplicado</th>
+                    <th>Disponible</th>
+                    <th>Estatus</th>
+                    <th>REP</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (item of workspace.payments; track item.paymentId) {
+                    <tr>
+                      <td>
+                        <strong>#{{ item.paymentId }}</strong>
+                        <div class="subtle">{{ item.receivedAtUtc | date:'yyyy-MM-dd' }}</div>
+                        <div class="subtle">{{ item.reference || 'Sin referencia' }}</div>
+                      </td>
+                      <td>{{ item.amount | currency:'MXN':'symbol':'1.2-2' }}</td>
+                      <td>{{ item.appliedAmount | currency:'MXN':'symbol':'1.2-2' }}</td>
+                      <td>{{ item.unappliedAmount | currency:'MXN':'symbol':'1.2-2' }}</td>
+                      <td>
+                        <span class="badge" [attr.data-status]="item.operationalStatus">{{ item.operationalStatus }}</span>
+                        <div class="subtle">{{ item.applicationsCount }} aplicacion(es)</div>
+                      </td>
+                      <td>
+                        <span class="badge" [attr.data-status]="item.repStatus">{{ item.repStatus }}</span>
+                        <div class="subtle">
+                          @if (item.repFiscalizedAmount > 0) {
+                            Fiscalizado {{ item.repFiscalizedAmount | currency:'MXN':'symbol':'1.2-2' }}
+                          } @else if (item.repReservedAmount > 0) {
+                            Reservado {{ item.repReservedAmount | currency:'MXN':'symbol':'1.2-2' }}
+                          } @else {
+                            Sin REP
+                          }
+                        </div>
+                      </td>
+                      <td>
                         <a [routerLink]="['/app/accounts-receivable']" [queryParams]="{ paymentId: item.paymentId }">Ver detalle</a>
                       </td>
                     </tr>
@@ -287,6 +492,102 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
               </table>
             </div>
           }
+        </section>
+
+        <section class="card">
+          <div class="workspace-split">
+            <div>
+              <div class="section-head compact">
+                <h3>Cobranza</h3>
+                <p class="helper">{{ workspace.pendingCommitments.length }} compromiso(s) pendiente(s)</p>
+              </div>
+              @if (!workspace.pendingCommitments.length) {
+                <p class="helper">Sin compromisos pendientes.</p>
+              } @else {
+                <table class="applications">
+                  <thead>
+                    <tr>
+                      <th>Cuenta</th>
+                      <th>Fecha</th>
+                      <th>Monto</th>
+                      <th>Estatus</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (item of workspace.pendingCommitments; track item.id) {
+                      <tr>
+                        <td><a [routerLink]="['/app/accounts-receivable']" [queryParams]="{ invoiceId: item.accountsReceivableInvoiceId }">#{{ item.accountsReceivableInvoiceId }}</a></td>
+                        <td>{{ item.promisedDateUtc | date:'yyyy-MM-dd' }}</td>
+                        <td>{{ item.promisedAmount | currency:'MXN':'symbol':'1.2-2' }}</td>
+                        <td><span class="badge" [attr.data-status]="item.status">{{ item.status }}</span></td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              }
+            </div>
+
+            <div>
+              <div class="section-head compact">
+                <h3>Notas recientes</h3>
+                <p class="helper">{{ workspace.recentNotes.length }} nota(s)</p>
+              </div>
+              @if (!workspace.recentNotes.length) {
+                <p class="helper">Sin notas recientes.</p>
+              } @else {
+                <table class="applications">
+                  <thead>
+                    <tr>
+                      <th>Cuenta</th>
+                      <th>Fecha</th>
+                      <th>Tipo</th>
+                      <th>Contenido</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (item of workspace.recentNotes; track item.id) {
+                      <tr>
+                        <td><a [routerLink]="['/app/accounts-receivable']" [queryParams]="{ invoiceId: item.accountsReceivableInvoiceId }">#{{ item.accountsReceivableInvoiceId }}</a></td>
+                        <td>{{ item.createdAtUtc | date:'yyyy-MM-dd HH:mm' }}</td>
+                        <td><span class="badge" [attr.data-status]="item.noteType">{{ item.noteType }}</span></td>
+                        <td>
+                          {{ item.content }}
+                          <div class="subtle">
+                            {{ item.nextFollowUpAtUtc ? ('Siguiente seguimiento ' + (item.nextFollowUpAtUtc | date:'yyyy-MM-dd HH:mm')) : 'Sin seguimiento' }}
+                          </div>
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              }
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="section-head compact">
+            <h3>Resumen REP</h3>
+            <p class="helper">Vista operativa mínima por receptor.</p>
+          </div>
+          <div class="summary-grid">
+            <article class="summary-card">
+              <strong>Pagos pendientes REP</strong>
+              <div>{{ workspace.summary.paymentsPendingRepCount }}</div>
+            </article>
+            <article class="summary-card">
+              <strong>Listos para preparar</strong>
+              <div>{{ workspace.summary.paymentsReadyToPrepareRepCount }}</div>
+            </article>
+            <article class="summary-card">
+              <strong>Preparados</strong>
+              <div>{{ workspace.summary.paymentsPreparedRepCount }}</div>
+            </article>
+            <article class="summary-card">
+              <strong>Timbrados</strong>
+              <div>{{ workspace.summary.paymentsStampedRepCount }}</div>
+            </article>
+          </div>
         </section>
       }
 
@@ -632,7 +933,7 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
     label span { font-size:0.82rem; color:#495766; }
     input, select { border:1px solid #d8d1c2; border-radius:0.75rem; padding:0.7rem 0.85rem; background:#fffdf8; }
     button, a { border:none; border-radius:0.8rem; padding:0.75rem 1rem; background:#182533; color:#fff; cursor:pointer; text-decoration:none; display:inline-flex; justify-content:center; }
-    button.secondary { background:#eef1f4; color:#182533; }
+    button.secondary, a.secondary { background:#eef1f4; color:#182533; }
     .actions { display:flex; gap:0.75rem; margin-top:1rem; }
     .table-wrap { overflow:auto; }
     .portfolio, .applications { width:100%; border-collapse:collapse; }
@@ -671,14 +972,24 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
     .collection-history { display:grid; gap:1rem; margin-top:1rem; }
     .timeline { display:grid; gap:0.75rem; }
     .timeline-entry { border-top:1px solid #ece3d3; padding-top:0.75rem; display:grid; gap:0.35rem; }
+    .wide-field { grid-column:1 / -1; }
+    .lookup-results { display:grid; gap:0.75rem; margin-top:1rem; }
+    .lookup-item { display:flex; justify-content:space-between; gap:1rem; align-items:center; border-top:1px solid #ece3d3; padding-top:0.75rem; }
+    .summary-grid { display:grid; gap:0.75rem; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); }
+    .summary-card { border:1px solid #ece3d3; border-radius:0.85rem; padding:0.85rem; background:#fffdf8; display:grid; gap:0.35rem; }
+    .workspace-split { display:grid; gap:1rem; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); }
+    .link-stack { display:grid; gap:0.5rem; }
+    .secondary-link { background:#eef1f4; color:#182533; }
     @media (max-width: 720px) {
       .actions { flex-direction:column; }
+      .lookup-item { align-items:stretch; flex-direction:column; }
     }
   `],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class AccountsReceivablePageComponent {
   private readonly api = inject(AccountsReceivableApiService);
+  private readonly fiscalReceiversApi = inject(FiscalReceiversApiService);
   private readonly route = inject(ActivatedRoute);
   private readonly feedbackService = inject(FeedbackService);
   protected readonly permissionService = inject(PermissionService);
@@ -686,13 +997,18 @@ export class AccountsReceivablePageComponent {
   protected readonly fiscalDocumentId = signal<number | null>(parseNumber(this.route.snapshot.queryParamMap.get('fiscalDocumentId')));
   protected readonly accountsReceivableInvoiceId = signal<number | null>(parseNumber(this.route.snapshot.queryParamMap.get('invoiceId')));
   protected readonly paymentId = signal<number | null>(parseNumber(this.route.snapshot.queryParamMap.get('paymentId')));
+  protected readonly receiverWorkspaceId = signal<number | null>(parseNumber(this.route.snapshot.queryParamMap.get('fiscalReceiverId')));
   protected readonly detailMode = computed(() => this.accountsReceivableInvoiceId() !== null || this.fiscalDocumentId() !== null || this.paymentId() !== null);
+  protected readonly receiverWorkspaceMode = computed(() => !this.detailMode() && this.receiverWorkspaceId() !== null);
   protected readonly invoice = signal<AccountsReceivableInvoiceResponse | null>(null);
   protected readonly payment = signal<AccountsReceivablePaymentResponse | null>(null);
+  protected readonly receiverWorkspace = signal<AccountsReceivableReceiverWorkspaceResponse | null>(null);
+  protected readonly receiverLookupResults = signal<FiscalReceiverSearchItem[]>([]);
   protected readonly portfolioItems = signal<AccountsReceivablePortfolioItemResponse[]>([]);
   protected readonly paymentItems = signal<AccountsReceivablePaymentSummaryItemResponse[]>([]);
   protected readonly eligibleReceiverInvoices = signal<AccountsReceivablePortfolioItemResponse[]>([]);
   protected readonly loading = signal(false);
+  protected receiverLookupQuery = '';
   protected readonly filters = {
     receiverQuery: '',
     fiscalReceiverIdText: '',
@@ -743,12 +1059,17 @@ export class AccountsReceivablePageComponent {
         const accountsReceivableInvoiceId = parseNumber(params.get('invoiceId'));
         const fiscalDocumentId = parseNumber(params.get('fiscalDocumentId'));
         const paymentId = parseNumber(params.get('paymentId'));
+        const receiverWorkspaceId = parseNumber(params.get('fiscalReceiverId'));
 
         this.accountsReceivableInvoiceId.set(accountsReceivableInvoiceId);
         this.fiscalDocumentId.set(fiscalDocumentId);
         this.paymentId.set(paymentId);
+        this.receiverWorkspaceId.set(receiverWorkspaceId);
 
         if (accountsReceivableInvoiceId !== null || fiscalDocumentId !== null || paymentId !== null) {
+          this.receiverWorkspace.set(null);
+          this.receiverLookupResults.set([]);
+
           if (accountsReceivableInvoiceId !== null) {
             void this.loadInvoiceById(accountsReceivableInvoiceId);
           } else if (fiscalDocumentId !== null) {
@@ -766,8 +1087,18 @@ export class AccountsReceivablePageComponent {
           return;
         }
 
+        if (receiverWorkspaceId !== null) {
+          this.invoice.set(null);
+          this.payment.set(null);
+          this.eligibleReceiverInvoices.set([]);
+          void this.loadReceiverWorkspace(receiverWorkspaceId);
+          return;
+        }
+
         this.invoice.set(null);
         this.payment.set(null);
+        this.receiverWorkspace.set(null);
+        this.receiverLookupResults.set([]);
         this.eligibleReceiverInvoices.set([]);
         void this.loadPortfolio();
         void this.loadPayments();
@@ -835,6 +1166,19 @@ export class AccountsReceivablePageComponent {
     this.paymentFilters.hasUnappliedAmount = '';
     this.paymentFilters.linkedFiscalDocumentIdText = '';
     await this.applyPaymentFilters();
+  }
+
+  protected async searchReceiverWorkspace(): Promise<void> {
+    const query = this.receiverLookupQuery.trim();
+    if (!query) {
+      this.receiverLookupResults.set([]);
+      return;
+    }
+
+    await this.run(async () => {
+      const items = await firstValueFrom(this.fiscalReceiversApi.search(query));
+      this.receiverLookupResults.set(items);
+    });
   }
 
   protected async createInvoice(): Promise<void> {
@@ -942,6 +1286,17 @@ export class AccountsReceivablePageComponent {
   private async loadPayments(): Promise<void> {
     const response = await firstValueFrom(this.api.searchPayments(this.buildPaymentRequest()));
     this.paymentItems.set(response.items);
+  }
+
+  private async loadReceiverWorkspace(fiscalReceiverId: number): Promise<void> {
+    try {
+      const workspace = await firstValueFrom(this.api.getReceiverWorkspace(fiscalReceiverId));
+      this.receiverWorkspace.set(workspace);
+      this.receiverLookupResults.set([]);
+      this.receiverLookupQuery = workspace.rfc || workspace.legalName || '';
+    } catch {
+      this.receiverWorkspace.set(null);
+    }
   }
 
   private buildPortfolioRequest(): SearchAccountsReceivablePortfolioRequest {

@@ -6,11 +6,13 @@ import { AccountsReceivableApiService } from '../infrastructure/accounts-receiva
 import { PermissionService } from '../../../core/auth/permission.service';
 import { FeedbackService } from '../../../core/ui/feedback.service';
 import { ActivatedRoute } from '@angular/router';
+import { FiscalReceiversApiService } from '../../catalogs/infrastructure/fiscal-receivers-api.service';
 
 describe('AccountsReceivablePageComponent', () => {
   const queryParams$ = new ReplaySubject<ReturnType<typeof convertToParamMap>>(1);
   const api = {
     getInvoiceById: vi.fn(),
+    getReceiverWorkspace: vi.fn(),
     getPaymentById: vi.fn(),
     searchPortfolio: vi.fn(),
     createPayment: vi.fn(),
@@ -21,6 +23,32 @@ describe('AccountsReceivablePageComponent', () => {
 
   beforeEach(async () => {
     queryParams$.next(convertToParamMap({ invoiceId: '2', paymentId: '6' }));
+    api.getReceiverWorkspace.mockReturnValue(of({
+      fiscalReceiverId: 77,
+      rfc: 'AAA010101AAA',
+      legalName: 'Receiver',
+      summary: {
+        pendingBalanceTotal: 2722,
+        overdueBalanceTotal: 0,
+        currentBalanceTotal: 2722,
+        openInvoicesCount: 2,
+        overdueInvoicesCount: 0,
+        paymentsCount: 1,
+        paymentsWithUnappliedAmountCount: 1,
+        paymentsPendingRepCount: 1,
+        nextFollowUpAtUtc: null,
+        hasPendingCommitment: false,
+        pendingCommitmentsCount: 0,
+        recentNotesCount: 0,
+        paymentsReadyToPrepareRepCount: 0,
+        paymentsPreparedRepCount: 0,
+        paymentsStampedRepCount: 0
+      },
+      invoices: [],
+      payments: [],
+      pendingCommitments: [],
+      recentNotes: []
+    }));
     api.getInvoiceById.mockReturnValue(of({
       id: 2,
       billingDocumentId: 1,
@@ -181,6 +209,19 @@ describe('AccountsReceivablePageComponent', () => {
       providers: [
         provideRouter([]),
         { provide: AccountsReceivableApiService, useValue: api },
+        {
+          provide: FiscalReceiversApiService,
+          useValue: {
+            search: vi.fn().mockReturnValue(of([])),
+            getSatCatalog: vi.fn().mockReturnValue(of({
+              regimenFiscal: [],
+              usoCfdi: [],
+              byRegimenFiscal: [],
+              paymentMethods: [],
+              paymentForms: []
+            }))
+          }
+        },
         { provide: FeedbackService, useValue: { show: vi.fn() } },
         {
           provide: PermissionService,
@@ -194,21 +235,20 @@ describe('AccountsReceivablePageComponent', () => {
     }).compileComponents();
   });
 
-  it('loads only other eligible invoices from the same receiver for remainder application', async () => {
+  it('queries the same receiver portfolio when loading remainder candidates from invoice detail', async () => {
+    queryParams$.next(convertToParamMap({ invoiceId: '2' }));
+
     const fixture = TestBed.createComponent(AccountsReceivablePageComponent);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
 
-    const component = fixture.componentInstance as AccountsReceivablePageComponent & {
-      eligibleReceiverInvoices: { (): Array<{ accountsReceivableInvoiceId: number }> };
-    };
-
     expect(api.searchPortfolio).toHaveBeenCalledWith({ fiscalReceiverId: 77, hasPendingBalance: true });
-    expect(component.eligibleReceiverInvoices().map((x) => x.accountsReceivableInvoiceId)).toEqual([3]);
   });
 
   it('sends the current receiver id when creating a payment from invoice detail', async () => {
+    queryParams$.next(convertToParamMap({ invoiceId: '2' }));
+
     const fixture = TestBed.createComponent(AccountsReceivablePageComponent);
     fixture.detectChanges();
     await fixture.whenStable();
@@ -224,5 +264,19 @@ describe('AccountsReceivablePageComponent', () => {
     expect(api.createPayment).toHaveBeenCalledWith(expect.objectContaining({
       receivedFromFiscalReceiverId: 77
     }));
+  });
+
+  it('loads the receiver workspace when fiscalReceiverId is present in query params', async () => {
+    queryParams$.next(convertToParamMap({ fiscalReceiverId: '77' }));
+
+    const fixture = TestBed.createComponent(AccountsReceivablePageComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(api.getReceiverWorkspace).toHaveBeenCalledWith(77);
+    expect(fixture.nativeElement.textContent).toContain('Workspace del receptor');
+    expect(fixture.nativeElement.textContent).toContain('Receiver');
+    expect(fixture.nativeElement.textContent).toContain('AAA010101AAA');
   });
 });

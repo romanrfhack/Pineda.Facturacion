@@ -57,6 +57,12 @@ public static class AccountsReceivableEndpoints
             .WithSummary("List minimal accounts receivable portfolio rows")
             .Produces<AccountsReceivablePortfolioResponse>(StatusCodes.Status200OK);
 
+        group.MapGet("/receivers/{fiscalReceiverId:long}/workspace", GetAccountsReceivableReceiverWorkspaceAsync)
+            .WithName("GetAccountsReceivableReceiverWorkspace")
+            .WithSummary("Get a lightweight accounts receivable workspace for a fiscal receiver")
+            .Produces<AccountsReceivableReceiverWorkspaceResponse>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
+
         group.MapGet("/invoices/{accountsReceivableInvoiceId:long}", GetAccountsReceivableInvoiceByIdAsync)
             .WithName("GetAccountsReceivableInvoiceById")
             .WithSummary("Get the consolidated detail for an accounts receivable invoice")
@@ -324,6 +330,20 @@ public static class AccountsReceivableEndpoints
         {
             Items = result.Items.Select(MapPortfolioItem).ToList()
         });
+    }
+
+    private static async Task<Results<Ok<AccountsReceivableReceiverWorkspaceResponse>, NotFound>> GetAccountsReceivableReceiverWorkspaceAsync(
+        long fiscalReceiverId,
+        GetAccountsReceivableReceiverWorkspaceService service,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(fiscalReceiverId, cancellationToken);
+        if (result.Outcome == GetAccountsReceivableReceiverWorkspaceOutcome.NotFound || result.Workspace is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        return TypedResults.Ok(MapReceiverWorkspace(result.Workspace));
     }
 
     private static async Task<Ok<CollectionCommitmentsResponse>> ListCollectionCommitmentsAsync(
@@ -847,6 +867,56 @@ public static class AccountsReceivableEndpoints
             RepFiscalizedAmount = item.RepFiscalizedAmount
         };
     }
+
+    private static AccountsReceivableReceiverWorkspaceResponse MapReceiverWorkspace(AccountsReceivableReceiverWorkspaceProjection workspace)
+    {
+        return new AccountsReceivableReceiverWorkspaceResponse
+        {
+            FiscalReceiverId = workspace.FiscalReceiverId,
+            Rfc = workspace.Rfc,
+            LegalName = workspace.LegalName,
+            Summary = new AccountsReceivableReceiverWorkspaceSummaryResponse
+            {
+                PendingBalanceTotal = workspace.Summary.PendingBalanceTotal,
+                OverdueBalanceTotal = workspace.Summary.OverdueBalanceTotal,
+                CurrentBalanceTotal = workspace.Summary.CurrentBalanceTotal,
+                OpenInvoicesCount = workspace.Summary.OpenInvoicesCount,
+                OverdueInvoicesCount = workspace.Summary.OverdueInvoicesCount,
+                PaymentsCount = workspace.Summary.PaymentsCount,
+                PaymentsWithUnappliedAmountCount = workspace.Summary.PaymentsWithUnappliedAmountCount,
+                PaymentsPendingRepCount = workspace.Summary.PaymentsPendingRepCount,
+                NextFollowUpAtUtc = workspace.Summary.NextFollowUpAtUtc,
+                HasPendingCommitment = workspace.Summary.HasPendingCommitment,
+                PendingCommitmentsCount = workspace.Summary.PendingCommitmentsCount,
+                RecentNotesCount = workspace.Summary.RecentNotesCount,
+                PaymentsReadyToPrepareRepCount = workspace.Summary.PaymentsReadyToPrepareRepCount,
+                PaymentsPreparedRepCount = workspace.Summary.PaymentsPreparedRepCount,
+                PaymentsStampedRepCount = workspace.Summary.PaymentsStampedRepCount
+            },
+            Invoices = workspace.Invoices.Select(MapPortfolioItem).ToList(),
+            Payments = workspace.Payments.Select(MapPaymentProjection).ToList(),
+            PendingCommitments = workspace.PendingCommitments.Select(item => new AccountsReceivableReceiverWorkspaceCommitmentResponse
+            {
+                Id = item.Id,
+                AccountsReceivableInvoiceId = item.AccountsReceivableInvoiceId,
+                PromisedAmount = item.PromisedAmount,
+                PromisedDateUtc = item.PromisedDateUtc,
+                Status = item.Status,
+                Notes = item.Notes,
+                CreatedAtUtc = item.CreatedAtUtc
+            }).ToList(),
+            RecentNotes = workspace.RecentNotes.Select(item => new AccountsReceivableReceiverWorkspaceNoteResponse
+            {
+                Id = item.Id,
+                AccountsReceivableInvoiceId = item.AccountsReceivableInvoiceId,
+                NoteType = item.NoteType,
+                Content = item.Content,
+                NextFollowUpAtUtc = item.NextFollowUpAtUtc,
+                CreatedAtUtc = item.CreatedAtUtc,
+                CreatedByUsername = item.CreatedByUsername
+            }).ToList()
+        };
+    }
 }
 
 public class CreateAccountsReceivableInvoiceRequest
@@ -941,6 +1011,92 @@ public class AccountsReceivableInvoiceResponse
 public class AccountsReceivablePortfolioResponse
 {
     public List<AccountsReceivablePortfolioItemResponse> Items { get; set; } = [];
+}
+
+public class AccountsReceivableReceiverWorkspaceResponse
+{
+    public long FiscalReceiverId { get; set; }
+
+    public string Rfc { get; set; } = string.Empty;
+
+    public string LegalName { get; set; } = string.Empty;
+
+    public AccountsReceivableReceiverWorkspaceSummaryResponse Summary { get; set; } = new();
+
+    public List<AccountsReceivablePortfolioItemResponse> Invoices { get; set; } = [];
+
+    public List<AccountsReceivablePaymentSummaryItemResponse> Payments { get; set; } = [];
+
+    public List<AccountsReceivableReceiverWorkspaceCommitmentResponse> PendingCommitments { get; set; } = [];
+
+    public List<AccountsReceivableReceiverWorkspaceNoteResponse> RecentNotes { get; set; } = [];
+}
+
+public class AccountsReceivableReceiverWorkspaceSummaryResponse
+{
+    public decimal PendingBalanceTotal { get; set; }
+
+    public decimal OverdueBalanceTotal { get; set; }
+
+    public decimal CurrentBalanceTotal { get; set; }
+
+    public int OpenInvoicesCount { get; set; }
+
+    public int OverdueInvoicesCount { get; set; }
+
+    public int PaymentsCount { get; set; }
+
+    public int PaymentsWithUnappliedAmountCount { get; set; }
+
+    public int PaymentsPendingRepCount { get; set; }
+
+    public DateTime? NextFollowUpAtUtc { get; set; }
+
+    public bool HasPendingCommitment { get; set; }
+
+    public int PendingCommitmentsCount { get; set; }
+
+    public int RecentNotesCount { get; set; }
+
+    public int PaymentsReadyToPrepareRepCount { get; set; }
+
+    public int PaymentsPreparedRepCount { get; set; }
+
+    public int PaymentsStampedRepCount { get; set; }
+}
+
+public class AccountsReceivableReceiverWorkspaceCommitmentResponse
+{
+    public long Id { get; set; }
+
+    public long AccountsReceivableInvoiceId { get; set; }
+
+    public decimal PromisedAmount { get; set; }
+
+    public DateTime PromisedDateUtc { get; set; }
+
+    public string Status { get; set; } = string.Empty;
+
+    public string? Notes { get; set; }
+
+    public DateTime CreatedAtUtc { get; set; }
+}
+
+public class AccountsReceivableReceiverWorkspaceNoteResponse
+{
+    public long Id { get; set; }
+
+    public long AccountsReceivableInvoiceId { get; set; }
+
+    public string NoteType { get; set; } = string.Empty;
+
+    public string Content { get; set; } = string.Empty;
+
+    public DateTime? NextFollowUpAtUtc { get; set; }
+
+    public DateTime CreatedAtUtc { get; set; }
+
+    public string? CreatedByUsername { get; set; }
 }
 
 public class AccountsReceivablePortfolioItemResponse
