@@ -98,7 +98,8 @@ export class PaymentApplicationFormComponent {
   protected readonly requestedAmountExceeded = signal(false);
   protected draftAppliedAmount = 0;
 
-  protected readonly maxApplicable = computed(() => Math.max(0, Math.min(this.outstandingBalance(), this.remainingAmount())));
+  protected readonly maxApplicable = computed(() =>
+    this.roundMoney(Math.max(0, Math.min(this.outstandingBalance(), this.remainingAmount()))));
 
   constructor() {
     this.resetDraftAmount();
@@ -112,7 +113,7 @@ export class PaymentApplicationFormComponent {
       return;
     }
 
-    const cappedValue = Math.min(numericValue, this.maxApplicable());
+    const cappedValue = this.roundMoney(Math.min(numericValue, this.maxApplicable()));
     this.requestedAmountExceeded.set(numericValue > cappedValue);
     this.draftAppliedAmount = cappedValue;
   }
@@ -127,7 +128,7 @@ export class PaymentApplicationFormComponent {
       applications: [
         {
           accountsReceivableInvoiceId,
-          appliedAmount: Number(this.draftAppliedAmount)
+          appliedAmount: this.roundMoney(this.draftAppliedAmount)
         } satisfies ApplyAccountsReceivablePaymentRowRequest
       ]
     });
@@ -142,11 +143,15 @@ export class PaymentApplicationFormComponent {
   }
 
   protected remainingAfterApply(): number {
-    return Math.max(0, this.remainingAmount() - this.draftAppliedAmount);
+    return this.roundMoney(Math.max(0, this.remainingAmount() - this.draftAppliedAmount));
   }
 
   private resetDraftAmount(): void {
     this.draftAppliedAmount = this.maxApplicable();
     this.requestedAmountExceeded.set(false);
+  }
+
+  private roundMoney(value: number): number {
+    return Math.round((value + Number.EPSILON) * 100) / 100;
   }
 }

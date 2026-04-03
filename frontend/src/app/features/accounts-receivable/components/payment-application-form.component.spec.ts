@@ -9,7 +9,7 @@ describe('PaymentApplicationFormComponent', () => {
     }).compileComponents();
   });
 
-  it('uses the current invoice context and does not ask for an editable invoice id', async () => {
+  it('uses the current invoice context and does not ask for an editable invoice id', () => {
     const fixture = TestBed.createComponent(PaymentApplicationFormComponent);
     fixture.componentRef.setInput('currentInvoiceId', 2);
     fixture.componentRef.setInput('invoiceLabel', 'A-31809 / UUID-1');
@@ -18,7 +18,6 @@ describe('PaymentApplicationFormComponent', () => {
     fixture.componentRef.setInput('appliedAmount', 0);
     fixture.componentRef.setInput('remainingAmount', 2000);
     fixture.detectChanges();
-    await fixture.whenStable();
     fixture.detectChanges();
 
     expect(fixture.debugElement.query(By.css('input[name="invoice-0"]'))).toBeNull();
@@ -27,7 +26,7 @@ describe('PaymentApplicationFormComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('$1,722.00');
   });
 
-  it('caps the applied amount to the current invoice max and emits the current invoice id', async () => {
+  it('caps the applied amount to the current invoice max and emits the current invoice id', () => {
     const fixture = TestBed.createComponent(PaymentApplicationFormComponent);
     fixture.componentRef.setInput('currentInvoiceId', 2);
     fixture.componentRef.setInput('invoiceLabel', 'A-31809 / UUID-1');
@@ -36,7 +35,6 @@ describe('PaymentApplicationFormComponent', () => {
     fixture.componentRef.setInput('appliedAmount', 0);
     fixture.componentRef.setInput('remainingAmount', 2000);
     fixture.detectChanges();
-    await fixture.whenStable();
     fixture.detectChanges();
 
     const emitSpy = vi.spyOn(fixture.componentInstance.submit, 'emit');
@@ -60,5 +58,26 @@ describe('PaymentApplicationFormComponent', () => {
     });
     expect(fixture.nativeElement.textContent).toContain('se ajustó a');
     expect(fixture.nativeElement.textContent).toContain('$278.00');
+  });
+
+  it('rounds suggested and maximum amounts to 2 decimals without float artifacts', () => {
+    const fixture = TestBed.createComponent(PaymentApplicationFormComponent);
+    fixture.componentRef.setInput('currentInvoiceId', 2);
+    fixture.componentRef.setInput('invoiceLabel', 'A-31809 / UUID-1');
+    fixture.componentRef.setInput('outstandingBalance', 1721.999999);
+    fixture.componentRef.setInput('paymentAmount', 2000);
+    fixture.componentRef.setInput('appliedAmount', 0);
+    fixture.componentRef.setInput('remainingAmount', 2000);
+    fixture.detectChanges();
+    fixture.detectChanges();
+
+    const amountInput = fixture.debugElement.query(By.css('input[name="appliedAmount"]')).nativeElement as HTMLInputElement;
+    const component = fixture.componentInstance as PaymentApplicationFormComponent & { draftAppliedAmount: number; maxApplicable: () => number };
+
+    expect(component.draftAppliedAmount).toBe(1722);
+    expect(component.maxApplicable()).toBe(1722);
+    expect(amountInput.getAttribute('max')).toBe('1722');
+    expect(fixture.nativeElement.textContent).toContain('$1,722.00');
+    expect(fixture.nativeElement.textContent).not.toContain('1721.999999');
   });
 });
