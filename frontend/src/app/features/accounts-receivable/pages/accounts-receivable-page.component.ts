@@ -547,13 +547,19 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
       }
 
       @if (detailMode() && permissionService.canManagePayments()) {
-        <app-payment-create-form [loading]="loading()" (submit)="createPayment($event)" />
+        <section class="card">
+          <div class="section-head compact">
+            <h3>Crear pago</h3>
+            <p class="helper">Registra un depósito o pago recibido. Después podrás aplicarlo total o parcialmente a esta cuenta.</p>
+          </div>
+          <app-payment-create-form [loading]="loading()" (submit)="createPayment($event)" />
+        </section>
       }
 
       @if (detailMode() && payment(); as currentPayment) {
         <section class="card">
           <h3>Pago #{{ currentPayment.id }}</h3>
-          <p class="helper">Monto {{ currentPayment.amount }} MXN · Remanente {{ currentPayment.remainingAmount }} MXN</p>
+          <p class="helper">Pago recibido {{ currentPayment.amount }} MXN · Remanente disponible {{ currentPayment.remainingAmount }} MXN</p>
           <div class="detail-badges">
             <span class="badge" [attr.data-status]="currentPayment.operationalStatus">{{ currentPayment.operationalStatus }}</span>
             <span class="badge" [attr.data-status]="currentPayment.repStatus">{{ currentPayment.repStatus }}</span>
@@ -586,7 +592,15 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
             </table>
           }
           @if (permissionService.canManagePayments()) {
-            <app-payment-application-form [loading]="loading()" (submit)="applyPayment($event)" />
+            <app-payment-application-form
+              [loading]="loading()"
+              [currentInvoiceId]="invoice()?.id ?? null"
+              [invoiceLabel]="invoiceApplicationLabel()"
+              [outstandingBalance]="invoice()?.outstandingBalance ?? 0"
+              [paymentAmount]="currentPayment.amount"
+              [appliedAmount]="currentPayment.appliedTotal"
+              [remainingAmount]="currentPayment.remainingAmount"
+              (submit)="applyPayment($event)" />
             <div class="links">
               <a [routerLink]="['/app/payment-complements']" [queryParams]="{ paymentId: currentPayment.id }">Abrir flujo de complemento de pago</a>
             </div>
@@ -697,6 +711,14 @@ export class AccountsReceivablePageComponent {
     content: '',
     nextFollowUpAtUtc: ''
   };
+  protected readonly invoiceApplicationLabel = computed(() => {
+    const currentInvoice = this.invoice();
+    if (!currentInvoice) {
+      return 'Sin CFDI';
+    }
+
+    return this.formatInvoiceFiscalLabel(currentInvoice);
+  });
 
   constructor() {
     this.route.queryParamMap

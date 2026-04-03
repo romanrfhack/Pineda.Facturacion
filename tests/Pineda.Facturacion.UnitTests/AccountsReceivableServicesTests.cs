@@ -296,6 +296,33 @@ public class AccountsReceivableServicesTests
     }
 
     [Fact]
+    public async Task ApplyAccountsReceivablePayment_LeavesRemainingAmountAvailable_WhenPaymentExceedsCurrentInvoiceBalance()
+    {
+        var payment = CreatePayment(amount: 2000m);
+        var invoice = CreateInvoice(total: 1722m);
+        var service = CreateApplyService(payment, invoice);
+
+        var result = await service.ExecuteAsync(new ApplyAccountsReceivablePaymentCommand
+        {
+            AccountsReceivablePaymentId = payment.Id,
+            Applications =
+            [
+                new ApplyAccountsReceivablePaymentApplicationInput
+                {
+                    AccountsReceivableInvoiceId = invoice.Id,
+                    AppliedAmount = 1722m
+                }
+            ]
+        });
+
+        Assert.Equal(ApplyAccountsReceivablePaymentOutcome.Applied, result.Outcome);
+        Assert.Equal(0m, invoice.OutstandingBalance);
+        Assert.Equal(278m, result.RemainingPaymentAmount);
+        Assert.Single(result.Applications);
+        Assert.Equal(1722m, result.Applications.Single().AppliedAmount);
+    }
+
+    [Fact]
     public async Task ApplyAccountsReceivablePayment_ReturnsConflict_WhenPaymentAlreadyHasRep()
     {
         var payment = CreatePayment(amount: 100m);
