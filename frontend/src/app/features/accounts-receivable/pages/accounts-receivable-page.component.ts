@@ -866,6 +866,35 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
             <span class="badge" [attr.data-status]="currentPayment.operationalStatus">{{ currentPayment.operationalStatus }}</span>
             <span class="badge" [attr.data-status]="currentPayment.repStatus">{{ currentPayment.repStatus }}</span>
           </div>
+          @if (showPendingCustomerCreditBalanceAction()) {
+            <section class="status-panel status-panel-warning">
+              <div class="status-panel-copy">
+                <strong>Remanente no aplicado: {{ currentPayment.remainingAmount | currency:'MXN':'symbol':'1.2-2' }}</strong>
+                <p>Este remanente debe decidirse antes de preparar el complemento de pago.</p>
+              </div>
+              <button type="button" class="secondary" (click)="confirmCustomerCreditBalance()" [disabled]="loading()">
+                {{ loading() ? 'Confirmando...' : 'Conservar como saldo a favor del cliente' }}
+              </button>
+            </section>
+          } @else if (showConfirmedCustomerCreditBalance()) {
+            <section class="status-panel status-panel-info">
+              <div class="status-panel-copy">
+                <strong>Saldo a favor confirmado: {{ currentPayment.customerCreditBalanceAmount | currency:'MXN':'symbol':'1.2-2' }}</strong>
+                <p>El remanente de este pago ya quedó conservado como saldo a favor del cliente.</p>
+              </div>
+            </section>
+          }
+          @if (showRepPendingRemainderMessage()) {
+            <section class="status-panel status-panel-warning">
+              <div class="status-panel-copy">
+                <strong>Complemento de pago bloqueado temporalmente</strong>
+                <p>Hay un remanente pendiente de decidir. Confírmalo como saldo a favor del cliente para poder preparar el complemento de pago.</p>
+                @if (currentPayment.repBlockReason) {
+                  <div class="subtle">{{ currentPayment.repBlockReason }}</div>
+                }
+              </div>
+            </section>
+          }
           @if (currentPayment.repFiscalizedAmount > 0 || currentPayment.repReservedAmount > 0) {
             <p class="helper">
               Fiscalizado {{ currentPayment.repFiscalizedAmount }} MXN · Reservado REP {{ currentPayment.repReservedAmount }} MXN
@@ -965,6 +994,11 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
     .badge[data-status='Agreement'] { background:#dff2ea; color:#116149; }
     .badge[data-status='InternalNote'] { background:#e5ebff; color:#324d8f; }
     .detail-badges { display:flex; gap:0.5rem; margin-top:0.75rem; flex-wrap:wrap; }
+    .status-panel { margin-top:1rem; border-radius:0.9rem; padding:0.9rem 1rem; display:flex; justify-content:space-between; gap:1rem; align-items:center; border:1px solid #ece3d3; }
+    .status-panel-copy { display:grid; gap:0.25rem; }
+    .status-panel-copy p { margin:0; color:#41505e; }
+    .status-panel-warning { background:#fff8ea; border-color:#ecd9aa; }
+    .status-panel-info { background:#f4f8ff; border-color:#d3def5; }
     .links { margin-top:1rem; }
     textarea { border:1px solid #d8d1c2; border-radius:0.75rem; padding:0.7rem 0.85rem; background:#fffdf8; font:inherit; }
     .collection-forms { display:grid; gap:1rem; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); margin-top:1rem; }
@@ -1051,6 +1085,27 @@ export class AccountsReceivablePageComponent {
     && !!this.invoice()?.fiscalReceiverId
     && (this.payment()?.remainingAmount ?? 0) > 0
     && this.eligibleReceiverInvoices().length > 0);
+  protected readonly showPendingCustomerCreditBalanceAction = computed(() => {
+    const currentPayment = this.payment();
+    return !!currentPayment
+      && currentPayment.remainingAmount > 0
+      && currentPayment.unappliedDisposition === 'PendingAllocation'
+      && !currentPayment.repDocumentStatus;
+  });
+  protected readonly showConfirmedCustomerCreditBalance = computed(() => {
+    const currentPayment = this.payment();
+    return !!currentPayment
+      && currentPayment.customerCreditBalanceAmount > 0
+      && currentPayment.unappliedDisposition === 'CustomerCreditBalance';
+  });
+  protected readonly showRepPendingRemainderMessage = computed(() => {
+    const currentPayment = this.payment();
+    return !!currentPayment
+      && !currentPayment.readyToPrepareRep
+      && currentPayment.remainingAmount > 0
+      && currentPayment.unappliedDisposition === 'PendingAllocation'
+      && this.isPendingRemainderRepBlockReason(currentPayment.repBlockReason);
+  });
 
   constructor() {
     this.route.queryParamMap
@@ -1233,6 +1288,21 @@ export class AccountsReceivablePageComponent {
     });
   }
 
+  protected async confirmCustomerCreditBalance(): Promise<void> {
+    const currentPayment = this.payment();
+    if (!currentPayment || !this.showPendingCustomerCreditBalanceAction()) {
+      return;
+    }
+
+    await this.run(async () => {
+      await firstValueFrom(this.api.setPaymentUnappliedDisposition(currentPayment.id, {
+        unappliedDisposition: 'CustomerCreditBalance'
+      }));
+      await this.loadPayment(currentPayment.id);
+      this.feedbackService.show('success', 'Remanente confirmado como saldo a favor del cliente.');
+    });
+  }
+
   protected async createCollectionCommitment(): Promise<void> {
     const currentInvoice = this.invoice();
     if (!currentInvoice) {
@@ -1401,6 +1471,10 @@ export class AccountsReceivablePageComponent {
       && item.status !== 'Paid');
 
     this.eligibleReceiverInvoices.set(items);
+  }
+
+  private isPendingRemainderRepBlockReason(reason: string | null | undefined): boolean {
+    return (reason ?? '').toLowerCase().includes('unapplied payment remainder');
   }
 }
 

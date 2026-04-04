@@ -69,4 +69,21 @@ describe('AccountsReceivableApiService', () => {
     });
     httpTesting.verify();
   });
+
+  it('uses the unapplied disposition route to confirm customer credit balance', () => {
+    const service = TestBed.inject(AccountsReceivableApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.setPaymentUnappliedDisposition(7, { unappliedDisposition: 'CustomerCreditBalance' }).subscribe();
+
+    const req = httpTesting.expectOne('/api/accounts-receivable/payments/7/unapplied-disposition');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ unappliedDisposition: 'CustomerCreditBalance' });
+    req.flush({
+      outcome: 'Updated',
+      isSuccess: true,
+      accountsReceivablePaymentId: 7
+    });
+    httpTesting.verify();
+  });
 });

@@ -14,6 +14,7 @@ describe('AccountsReceivablePageComponent', () => {
     getInvoiceById: vi.fn(),
     getReceiverWorkspace: vi.fn(),
     getPaymentById: vi.fn(),
+    setPaymentUnappliedDisposition: vi.fn(),
     searchPortfolio: vi.fn(),
     createPayment: vi.fn(),
     applyPayment: vi.fn(),
@@ -93,11 +94,15 @@ describe('AccountsReceivablePageComponent', () => {
       amount: 5000,
       appliedTotal: 1722,
       remainingAmount: 3278,
+      customerCreditBalanceAmount: 0,
       reference: 'DEP-1',
       notes: null,
       receivedFromFiscalReceiverId: 77,
       operationalStatus: 'PartiallyApplied',
       repStatus: 'PendingApplications',
+      readyToPrepareRep: false,
+      repBlockReason: 'Unapplied payment remainder must be explicitly assigned before preparing REP.',
+      unappliedDisposition: 'PendingAllocation',
       repDocumentStatus: null,
       repReservedAmount: 0,
       repFiscalizedAmount: 0,
@@ -106,6 +111,11 @@ describe('AccountsReceivablePageComponent', () => {
       createdAtUtc: '2026-04-03T00:00:00Z',
       updatedAtUtc: '2026-04-03T00:00:00Z',
       applications: []
+    }));
+    api.setPaymentUnappliedDisposition.mockReturnValue(of({
+      outcome: 'Updated',
+      isSuccess: true,
+      accountsReceivablePaymentId: 6
     }));
     api.searchPortfolio.mockReturnValue(of({
       items: [
@@ -188,11 +198,15 @@ describe('AccountsReceivablePageComponent', () => {
         amount: 5000,
         appliedTotal: 0,
         remainingAmount: 5000,
+        customerCreditBalanceAmount: 0,
         reference: 'DEP-1',
         notes: null,
         receivedFromFiscalReceiverId: 77,
         operationalStatus: 'CapturedUnapplied',
         repStatus: 'NoApplications',
+        readyToPrepareRep: false,
+        repBlockReason: null,
+        unappliedDisposition: 'PendingAllocation',
         repDocumentStatus: null,
         repReservedAmount: 0,
         repFiscalizedAmount: 0,
@@ -244,6 +258,91 @@ describe('AccountsReceivablePageComponent', () => {
     fixture.detectChanges();
 
     expect(api.searchPortfolio).toHaveBeenCalledWith({ fiscalReceiverId: 77, hasPendingBalance: true });
+  });
+
+  it('renders the customer credit balance action when a payment has pending remainder allocation', async () => {
+    queryParams$.next(convertToParamMap({ invoiceId: '2', paymentId: '6' }));
+
+    const fixture = TestBed.createComponent(AccountsReceivablePageComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Remanente no aplicado');
+    expect(fixture.nativeElement.textContent).toContain('Conservar como saldo a favor del cliente');
+    expect(fixture.nativeElement.textContent).toContain('Complemento de pago bloqueado temporalmente');
+  });
+
+  it('confirms customer credit balance and refreshes the payment detail', async () => {
+    queryParams$.next(convertToParamMap({ invoiceId: '2', paymentId: '6' }));
+    api.getPaymentById
+      .mockReset()
+      .mockReturnValueOnce(of({
+        id: 6,
+        paymentDateUtc: '2026-04-03T00:00:00Z',
+        paymentFormSat: '03',
+        currencyCode: 'MXN',
+        amount: 2250,
+        appliedTotal: 2241,
+        remainingAmount: 9,
+        customerCreditBalanceAmount: 0,
+        reference: 'DEP-1',
+        notes: null,
+        receivedFromFiscalReceiverId: 77,
+        operationalStatus: 'PartiallyApplied',
+        repStatus: 'PendingApplications',
+        readyToPrepareRep: false,
+        repBlockReason: 'Unapplied payment remainder must be explicitly assigned before preparing REP.',
+        unappliedDisposition: 'PendingAllocation',
+        repDocumentStatus: null,
+        repReservedAmount: 0,
+        repFiscalizedAmount: 0,
+        applicationsCount: 1,
+        linkedFiscalDocumentId: 31809,
+        createdAtUtc: '2026-04-03T00:00:00Z',
+        updatedAtUtc: '2026-04-03T00:00:00Z',
+        applications: []
+      }))
+      .mockReturnValueOnce(of({
+        id: 6,
+        paymentDateUtc: '2026-04-03T00:00:00Z',
+        paymentFormSat: '03',
+        currencyCode: 'MXN',
+        amount: 2250,
+        appliedTotal: 2241,
+        remainingAmount: 9,
+        customerCreditBalanceAmount: 9,
+        reference: 'DEP-1',
+        notes: null,
+        receivedFromFiscalReceiverId: 77,
+        operationalStatus: 'PartiallyApplied',
+        repStatus: 'ReadyToPrepare',
+        readyToPrepareRep: true,
+        repBlockReason: null,
+        unappliedDisposition: 'CustomerCreditBalance',
+        repDocumentStatus: null,
+        repReservedAmount: 0,
+        repFiscalizedAmount: 0,
+        applicationsCount: 1,
+        linkedFiscalDocumentId: 31809,
+        createdAtUtc: '2026-04-03T00:00:00Z',
+        updatedAtUtc: '2026-04-03T00:00:00Z',
+        applications: []
+      }));
+
+    const fixture = TestBed.createComponent(AccountsReceivablePageComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    await fixture.componentInstance['confirmCustomerCreditBalance']();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(api.setPaymentUnappliedDisposition).toHaveBeenCalledWith(6, { unappliedDisposition: 'CustomerCreditBalance' });
+    expect(api.getPaymentById).toHaveBeenCalledTimes(2);
+    expect(fixture.nativeElement.textContent).toContain('Saldo a favor confirmado');
+    expect(fixture.nativeElement.textContent).not.toContain('Conservar como saldo a favor del cliente');
   });
 
   it('sends the current receiver id when creating a payment from invoice detail', async () => {
