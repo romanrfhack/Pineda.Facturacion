@@ -1,0 +1,116 @@
+name: Deploy Backend DEV (Facturas API)
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-backend-dev
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'dev') }}
+    runs-on: ubuntu-latest
+    environment: facturas-dev
+
+    env:
+      SSH_HOST: ${{ secrets.FACTURAS_SSH_HOST }}
+      SSH_PORT: ${{ secrets.FACTURAS_SSH_PORT }}
+      SSH_USER: ${{ secrets.FACTURAS_SSH_USER }}
+      SSH_KEY: ${{ secrets.FACTURAS_SSH_KEY }}
+      ASPNETCORE_ENVIRONMENT: Sandbox
+      DEPLOY_PATH: /var/www/facturas-dev-backend/publish
+      SERVICE_NAME: facturas-dev-api
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 1
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore Pineda.Facturacion.slnx
+
+      - name: Publish API
+        run: dotnet publish src/Pineda.Facturacion.Api/Pineda.Facturacion.Api.csproj -c Release -o out/api
+
+      - name: Validate publish output
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d out/api
+          test -f out/api/Pineda.Facturacion.Api.dll
+          test -f out/api/appsettings.json
+          echo "Expected VPS environment: $ASPNETCORE_ENVIRONMENT"
+          ls -la out/api
+
+      - name: Validate deploy secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "${SSH_HOST:-}" ] || { echo "ERROR: falta FACTURAS_SSH_HOST"; exit 1; }
+          [ -n "${SSH_PORT:-}" ] || { echo "ERROR: falta FACTURAS_SSH_PORT"; exit 1; }
+          [ -n "${SSH_USER:-}" ] || { echo "ERROR: falta FACTURAS_SSH_USER"; exit 1; }
+          [ -n "${SSH_KEY:-}" ] || { echo "ERROR: falta FACTURAS_SSH_KEY"; exit 1; }
+
+      - name: Setup SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf "%s\n" "$SSH_KEY" | tr -d "\r" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keygen -y -f ~/.ssh/id_ed25519 > /dev/null
+          ssh-keyscan -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts
+
+      - name: Upload API to server
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" \
+            "$SSH_USER@$SSH_HOST" \
+            "mkdir -p '$DEPLOY_PATH'"
+          rsync -az --delete -O --no-perms --no-owner --no-group \
+            out/api/ \
+            -e "ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p $SSH_PORT" \
+            "$SSH_USER@$SSH_HOST:$DEPLOY_PATH/"
+
+      - name: Verify remote publish content
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" \
+            "$SSH_USER@$SSH_HOST" \
+            "ls -la '$DEPLOY_PATH' && test -f '$DEPLOY_PATH/Pineda.Facturacion.Api.dll' && test -f '$DEPLOY_PATH/appsettings.json'"
+
+      - name: Set ownership and permissions
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" \
+            "$SSH_USER@$SSH_HOST" \
+            "sudo chown -R www-data:www-data /var/www/facturas-dev-backend && sudo chmod -R 755 /var/www/facturas-dev-backend"
+
+      - name: Restart service
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" \
+            "$SSH_USER@$SSH_HOST" \
+            "sudo systemctl daemon-reload && \
+             sudo systemctl restart $SERVICE_NAME && \
+             systemctl is-active --quiet $SERVICE_NAME && \
+             systemctl status $SERVICE_NAME --no-pager -l"

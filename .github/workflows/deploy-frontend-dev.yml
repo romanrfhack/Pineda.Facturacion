@@ -1,0 +1,118 @@
+name: Deploy Frontend DEV (Facturas)
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-frontend-dev
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'dev') }}
+    runs-on: ubuntu-latest
+    environment: facturas-dev
+
+    env:
+      SSH_HOST: ${{ secrets.FACTURAS_SSH_HOST }}
+      SSH_PORT: ${{ secrets.FACTURAS_SSH_PORT }}
+      SSH_USER: ${{ secrets.FACTURAS_SSH_USER }}
+      SSH_KEY: ${{ secrets.FACTURAS_SSH_KEY }}
+      WEB_PATH: /var/www/facturas-dev-frontend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 1
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: "frontend/package-lock.json"
+
+      - name: Install deps
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build (production)
+        working-directory: frontend
+        run: npm run build -- --configuration production
+
+      - name: Resolve build output
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f "frontend/dist/frontend/browser/index.html" ]; then
+            echo "DIST_DIR=frontend/dist/frontend/browser" >> $GITHUB_ENV
+          elif [ -f "frontend/dist/frontend/index.html" ]; then
+            echo "DIST_DIR=frontend/dist/frontend" >> $GITHUB_ENV
+          else
+            echo "ERROR: No se encontró un artefacto válido del frontend."
+            find frontend/dist -maxdepth 3 \( -type d -o -type f \) | sort
+            exit 1
+          fi
+
+      - name: Validate build artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "DIST_DIR=$DIST_DIR"
+          test -d "$DIST_DIR"
+          test -f "$DIST_DIR/index.html"
+          ls -la "$DIST_DIR"
+
+      - name: Validate deploy secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "${SSH_HOST:-}" ] || { echo "ERROR: falta FACTURAS_SSH_HOST"; exit 1; }
+          [ -n "${SSH_PORT:-}" ] || { echo "ERROR: falta FACTURAS_SSH_PORT"; exit 1; }
+          [ -n "${SSH_USER:-}" ] || { echo "ERROR: falta FACTURAS_SSH_USER"; exit 1; }
+          [ -n "${SSH_KEY:-}" ] || { echo "ERROR: falta FACTURAS_SSH_KEY"; exit 1; }
+
+      - name: Setup SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf "%s\n" "$SSH_KEY" | tr -d "\r" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keygen -y -f ~/.ssh/id_ed25519 > /dev/null
+          ssh-keyscan -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts
+
+      - name: Deploy via rsync
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "mkdir -p '$WEB_PATH'"
+          rsync -az --delete -O --no-perms --no-owner --no-group \
+            "$DIST_DIR"/ \
+            -e "ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p $SSH_PORT" \
+            "$SSH_USER@$SSH_HOST:$WEB_PATH/"
+
+      - name: Set ownership and permissions
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" \
+            "$SSH_USER@$SSH_HOST" \
+            "sudo chown -R www-data:www-data $WEB_PATH && sudo chmod -R 755 $WEB_PATH"
+
+      - name: Verify remote frontend content
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" \
+            "$SSH_USER@$SSH_HOST" \
+            "ls -la '$WEB_PATH' && test -f '$WEB_PATH/index.html'"
