@@ -62,6 +62,7 @@ describe('AppShellComponent', () => {
     fixture.detectChanges();
 
     expect(fixture.debugElement.query(By.css('.sidebar.mobile-open'))).toBeNull();
+    expect(fixture.debugElement.query(By.css('.mobile-topbar'))).not.toBeNull();
 
     clickButton(fixture, 'Abrir menú de navegación');
     fixture.detectChanges();
@@ -105,6 +106,7 @@ describe('AppShellComponent', () => {
     fixture.detectChanges();
 
     expect(fixture.debugElement.query(By.css('.shell.desktop-collapsed'))).toBeNull();
+    expect(fixture.debugElement.query(By.css('.topbar'))).toBeNull();
 
     clickButton(fixture, 'Colapsar menú lateral');
     fixture.detectChanges();

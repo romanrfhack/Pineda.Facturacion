@@ -20,9 +20,20 @@ const SIDEBAR_COLLAPSED_STORAGE_KEY = 'app-shell-sidebar-collapsed';
       }
 
       <aside class="sidebar" [class.mobile-open]="isMobileMenuOpen()" [attr.aria-hidden]="isMobile() && !isMobileMenuOpen()">
-        <div class="brand">
-          <p class="eyebrow">Pineda Facturacion</p>
-          <h1>{{ isDesktopCollapsed() ? 'PF' : 'Consola operativa' }}</h1>
+        <div class="sidebar-header">
+          <div class="brand">
+            <p class="eyebrow">Pineda Facturacion</p>
+            <h1>{{ isDesktopCollapsed() ? 'PF' : 'Consola operativa' }}</h1>
+          </div>
+          @if (!isMobile()) {
+            <button
+              type="button"
+              class="icon-button sidebar-toggle"
+              (click)="toggleDesktopSidebar()"
+              [attr.aria-label]="isDesktopCollapsed() ? 'Expandir menú lateral' : 'Colapsar menú lateral'">
+              <span aria-hidden="true">{{ isDesktopCollapsed() ? '>>' : '<<' }}</span>
+            </button>
+          }
         </div>
 
         <nav>
@@ -56,9 +67,9 @@ const SIDEBAR_COLLAPSED_STORAGE_KEY = 'app-shell-sidebar-collapsed';
       </aside>
 
       <main class="content">
-        <header class="topbar">
-          <div class="topbar-actions">
-            @if (isMobile()) {
+        @if (isMobile()) {
+          <header class="topbar mobile-topbar">
+            <div class="topbar-actions">
               <button
                 type="button"
                 class="icon-button"
@@ -66,22 +77,13 @@ const SIDEBAR_COLLAPSED_STORAGE_KEY = 'app-shell-sidebar-collapsed';
                 aria-label="Abrir menú de navegación">
                 <span aria-hidden="true">|||</span>
               </button>
-            } @else {
-              <button
-                type="button"
-                class="icon-button"
-                (click)="toggleDesktopSidebar()"
-                [attr.aria-label]="isDesktopCollapsed() ? 'Expandir menú lateral' : 'Colapsar menú lateral'">
-                <span aria-hidden="true">{{ isDesktopCollapsed() ? '>>' : '<<' }}</span>
-              </button>
-            }
-            <div class="topbar-copy">
-              <p class="eyebrow">Navegación</p>
-              <strong>Consola operativa</strong>
+              <div class="topbar-copy">
+                <p class="eyebrow">Pineda Facturacion</p>
+                <strong>Consola operativa</strong>
+              </div>
             </div>
-          </div>
-          <div class="topbar-user">{{ sessionService.currentUser().displayName || sessionService.currentUser().username }}</div>
-        </header>
+          </header>
+        }
         <app-feedback-banner />
         <router-outlet />
       </main>
@@ -92,6 +94,7 @@ const SIDEBAR_COLLAPSED_STORAGE_KEY = 'app-shell-sidebar-collapsed';
     .shell { min-height:100vh; display:grid; grid-template-columns:280px 1fr; background:linear-gradient(180deg, #f4f0e8 0%, #fffdf8 100%); color:#1f1f1f; position:relative; }
     .shell.desktop-collapsed { grid-template-columns:88px 1fr; }
     .sidebar { padding:1.5rem; background:#1d2a39; color:#f7f2e8; display:flex; flex-direction:column; gap:1.5rem; transition:transform 160ms ease, width 160ms ease, padding 160ms ease; z-index:20; }
+    .sidebar-header { display:flex; align-items:flex-start; justify-content:space-between; gap:0.75rem; }
     .brand h1 { margin:0.25rem 0 0; font-size:1.5rem; }
     .eyebrow { margin:0; text-transform:uppercase; letter-spacing:0.12em; font-size:0.72rem; color:#d4c29c; }
     nav { display:grid; gap:0.5rem; }
@@ -110,11 +113,12 @@ const SIDEBAR_COLLAPSED_STORAGE_KEY = 'app-shell-sidebar-collapsed';
     button { margin-top:0.5rem; width:100%; padding:0.7rem 0.9rem; border:none; border-radius:0.75rem; background:#f7f2e8; color:#1d2a39; cursor:pointer; font:inherit; }
     .content { padding:1.5rem; min-width:0; }
     .topbar { display:flex; align-items:center; justify-content:space-between; gap:1rem; margin-bottom:1rem; padding:0.75rem 1rem; border:1px solid #e8decd; border-radius:1rem; background:rgba(255,253,248,0.84); backdrop-filter:blur(10px); }
+    .mobile-topbar { position:sticky; top:1rem; z-index:5; }
     .topbar-actions { display:flex; align-items:center; gap:0.85rem; min-width:0; }
     .topbar-copy { display:grid; gap:0.1rem; }
-    .topbar-copy strong, .topbar-user { color:#1d2a39; }
-    .topbar-user { font-size:0.95rem; text-align:right; }
+    .topbar-copy strong { color:#1d2a39; }
     .icon-button { margin:0; width:2.8rem; min-width:2.8rem; padding:0; aspect-ratio:1; display:inline-flex; align-items:center; justify-content:center; background:#1d2a39; color:#f7f2e8; }
+    .sidebar-toggle { flex:0 0 auto; background:rgba(255,255,255,0.12); }
     .backdrop { position:fixed; inset:0; background:rgba(10, 16, 24, 0.45); border:none; padding:0; margin:0; border-radius:0; z-index:15; }
     .shell.desktop-collapsed .sidebar { padding-inline:1rem; }
     .shell.desktop-collapsed .brand .eyebrow,
@@ -128,12 +132,11 @@ const SIDEBAR_COLLAPSED_STORAGE_KEY = 'app-shell-sidebar-collapsed';
       .sidebar { position:fixed; top:0; left:0; bottom:0; width:min(84vw, 320px); max-width:320px; transform:translateX(-100%); box-shadow:0 20px 40px rgba(0,0,0,0.24); }
       .sidebar.mobile-open { transform:translateX(0); }
       .content { padding:1rem; }
-      .topbar { position:sticky; top:1rem; z-index:5; }
-      .topbar-user { display:none; }
     }
     @media (min-width: 768px) {
       .backdrop { display:none; }
       .sidebar { position:sticky; top:0; min-height:100vh; }
+      .topbar { display:none; }
     }
   `],
   changeDetection: ChangeDetectionStrategy.OnPush
