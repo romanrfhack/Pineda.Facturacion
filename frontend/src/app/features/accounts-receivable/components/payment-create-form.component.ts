@@ -5,6 +5,11 @@ import { FiscalReceiverSatCatalogService } from '../../catalogs/application/fisc
 import { FiscalReceiverSatCatalogOption } from '../../catalogs/models/catalogs.models';
 import { CreateAccountsReceivablePaymentRequest } from '../models/accounts-receivable.models';
 
+export function formatDateTimeLocalValue(date: Date): string {
+  const localDate = new Date(date.getTime() - (date.getTimezoneOffset() * 60_000));
+  return localDate.toISOString().slice(0, 16);
+}
+
 @Component({
   selector: 'app-payment-create-form',
   imports: [FormsModule],
@@ -70,7 +75,7 @@ export class PaymentCreateFormComponent {
   protected readonly catalogError = signal<string | null>(null);
 
   protected readonly model: CreateAccountsReceivablePaymentRequest = {
-    paymentDateUtc: new Date().toISOString().slice(0, 16),
+    paymentDateUtc: formatDateTimeLocalValue(new Date()),
     paymentFormSat: '03',
     amount: 0,
     reference: '',

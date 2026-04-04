@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { of } from 'rxjs';
-import { PaymentCreateFormComponent } from './payment-create-form.component';
+import { formatDateTimeLocalValue, PaymentCreateFormComponent } from './payment-create-form.component';
 import { FiscalReceiverSatCatalogService } from '../../catalogs/application/fiscal-receiver-sat-catalog.service';
 
 describe('PaymentCreateFormComponent', () => {
@@ -76,5 +76,14 @@ describe('PaymentCreateFormComponent', () => {
       paymentFormSat: '28',
       amount: 125.5
     }));
+  });
+
+  it('formats datetime-local defaults using local time instead of raw UTC text', () => {
+    const utcDate = new Date('2026-04-04T18:45:00.000Z');
+    const offsetSpy = vi.spyOn(utcDate, 'getTimezoneOffset').mockReturnValue(360);
+
+    expect(formatDateTimeLocalValue(utcDate)).toBe('2026-04-04T12:45');
+
+    offsetSpy.mockRestore();
   });
 });
