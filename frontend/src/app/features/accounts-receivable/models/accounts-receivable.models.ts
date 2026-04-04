@@ -333,7 +333,6 @@ export interface SetAccountsReceivablePaymentUnappliedDispositionResponse {
   isSuccess: boolean;
   errorMessage?: string | null;
   accountsReceivablePaymentId: number;
-  payment?: AccountsReceivablePaymentResponse | null;
 }
 
 export interface PreparePaymentComplementRequest {

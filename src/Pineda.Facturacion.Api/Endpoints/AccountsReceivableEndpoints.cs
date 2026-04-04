@@ -1452,8 +1452,6 @@ public class SetAccountsReceivablePaymentUnappliedDispositionResponse
     public string? ErrorMessage { get; set; }
 
     public long AccountsReceivablePaymentId { get; set; }
-
-    public AccountsReceivablePaymentResponse? Payment { get; set; }
 }
 
 public class AccountsReceivablePaymentsResponse
