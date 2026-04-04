@@ -221,6 +221,25 @@ public class AccountsReceivableServicesTests
     }
 
     [Fact]
+    public async Task CreateAccountsReceivablePayment_Normalizes_UnspecifiedMexicoCityLocalDate_ToUtc()
+    {
+        var repository = new ArFakeAccountsReceivablePaymentRepository();
+        var service = new CreateAccountsReceivablePaymentService(repository, new ArFakeSatCatalogDescriptionProvider(), new ArFakeUnitOfWork());
+        var localPaymentDate = new DateTime(2026, 4, 4, 10, 15, 0, DateTimeKind.Unspecified);
+
+        var result = await service.ExecuteAsync(new CreateAccountsReceivablePaymentCommand
+        {
+            PaymentDateUtc = localPaymentDate,
+            PaymentFormSat = "03",
+            Amount = 250m
+        });
+
+        Assert.Equal(CreateAccountsReceivablePaymentOutcome.Created, result.Outcome);
+        Assert.Equal(ConvertMexicoCityLocalToUtc(localPaymentDate), repository.Added!.PaymentDateUtc);
+        Assert.Equal(DateTimeKind.Utc, repository.Added.PaymentDateUtc.Kind);
+    }
+
+    [Fact]
     public async Task CreateAccountsReceivablePayment_Rejects_InvalidOrPorDefinirPaymentForm()
     {
         var repository = new ArFakeAccountsReceivablePaymentRepository();
@@ -1223,6 +1242,27 @@ public class AccountsReceivableServicesTests
             CreatedAtUtc = DateTime.UtcNow,
             UpdatedAtUtc = DateTime.UtcNow
         };
+    }
+
+    private static DateTime ConvertMexicoCityLocalToUtc(DateTime value)
+    {
+        var unspecifiedLocal = DateTime.SpecifyKind(value, DateTimeKind.Unspecified);
+
+        foreach (var timeZoneId in new[] { "America/Mexico_City", "Central Standard Time (Mexico)" })
+        {
+            try
+            {
+                return TimeZoneInfo.ConvertTimeToUtc(unspecifiedLocal, TimeZoneInfo.FindSystemTimeZoneById(timeZoneId));
+            }
+            catch (TimeZoneNotFoundException)
+            {
+            }
+            catch (InvalidTimeZoneException)
+            {
+            }
+        }
+
+        return DateTime.SpecifyKind(value, DateTimeKind.Local).ToUniversalTime();
     }
 
     private sealed class ArFakeFiscalDocumentRepository : IFiscalDocumentRepository

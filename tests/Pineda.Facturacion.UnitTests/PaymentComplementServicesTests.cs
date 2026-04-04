@@ -202,6 +202,28 @@ public class PaymentComplementServicesTests
     }
 
     [Fact]
+    public async Task PreparePaymentComplement_Normalizes_UnspecifiedMexicoCityLocalIssuedAt_ToUtc()
+    {
+        var payment = CreatePayment();
+        var invoice = CreateInvoice();
+        var fiscalDocument = CreateFiscalDocument();
+        var fiscalStamp = CreateFiscalStamp();
+        var repository = new PcFakePaymentComplementDocumentRepository();
+        var service = CreatePrepareService(payment, repository, invoice, fiscalDocument, fiscalStamp);
+        var localIssuedAt = new DateTime(2026, 4, 4, 10, 30, 0, DateTimeKind.Unspecified);
+
+        var result = await service.ExecuteAsync(new PreparePaymentComplementCommand
+        {
+            AccountsReceivablePaymentId = payment.Id,
+            IssuedAtUtc = localIssuedAt
+        });
+
+        Assert.Equal(PreparePaymentComplementOutcome.Created, result.Outcome);
+        Assert.Equal(ConvertMexicoCityLocalToUtc(localIssuedAt), repository.Added!.IssuedAtUtc);
+        Assert.Equal(DateTimeKind.Utc, repository.Added.IssuedAtUtc.Kind);
+    }
+
+    [Fact]
     public async Task PreparePaymentComplement_ReturnsConflict_ForDuplicatePayment()
     {
         var payment = CreatePayment();
@@ -971,6 +993,27 @@ public class PaymentComplementServicesTests
             new PcFakeFiscalReceiverRepository(),
             paymentComplementRepository,
             new PcFakeUnitOfWork());
+    }
+
+    private static DateTime ConvertMexicoCityLocalToUtc(DateTime value)
+    {
+        var unspecifiedLocal = DateTime.SpecifyKind(value, DateTimeKind.Unspecified);
+
+        foreach (var timeZoneId in new[] { "America/Mexico_City", "Central Standard Time (Mexico)" })
+        {
+            try
+            {
+                return TimeZoneInfo.ConvertTimeToUtc(unspecifiedLocal, TimeZoneInfo.FindSystemTimeZoneById(timeZoneId));
+            }
+            catch (TimeZoneNotFoundException)
+            {
+            }
+            catch (InvalidTimeZoneException)
+            {
+            }
+        }
+
+        return DateTime.SpecifyKind(value, DateTimeKind.Local).ToUniversalTime();
     }
 
     private static StampPaymentComplementService CreateStampService(

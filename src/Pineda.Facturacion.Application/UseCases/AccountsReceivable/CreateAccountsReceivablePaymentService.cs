@@ -50,7 +50,7 @@ public class CreateAccountsReceivablePaymentService
         var now = DateTime.UtcNow;
         var payment = new AccountsReceivablePayment
         {
-            PaymentDateUtc = command.PaymentDateUtc,
+            PaymentDateUtc = CfdiDateTimeNormalization.NormalizeIncomingUtc(command.PaymentDateUtc),
             PaymentFormSat = paymentFormSat,
             CurrencyCode = "MXN",
             Amount = command.Amount,

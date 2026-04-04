@@ -283,7 +283,7 @@ public class PreparePaymentComplementService
             Status = PaymentComplementDocumentStatus.ReadyForStamping,
             CfdiVersion = anchor.CfdiVersion,
             DocumentType = "P",
-            IssuedAtUtc = command.IssuedAtUtc ?? now,
+            IssuedAtUtc = CfdiDateTimeNormalization.NormalizeIncomingUtcOrNow(command.IssuedAtUtc, now),
             PaymentDateUtc = payment.PaymentDateUtc,
             CurrencyCode = "MXN",
             TotalPaymentsAmount = NormalizeMoney(payment.Amount),
