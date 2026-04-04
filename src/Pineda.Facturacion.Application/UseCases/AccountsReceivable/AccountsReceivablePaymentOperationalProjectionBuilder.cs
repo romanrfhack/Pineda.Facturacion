@@ -222,7 +222,7 @@ public static class AccountsReceivablePaymentOperationalProjectionBuilder
 
         if (linkedInvoices.Any(x =>
                 !string.Equals(x.CurrencyCode, "MXN", StringComparison.OrdinalIgnoreCase)
-                || !x.FiscalDocumentId.HasValue
+                || (!x.FiscalDocumentId.HasValue && !x.ExternalRepBaseDocumentId.HasValue)
                 || !string.Equals(x.PaymentMethodSat, "PPD", StringComparison.OrdinalIgnoreCase)
                 || !string.Equals(x.PaymentFormSatInitial, "99", StringComparison.OrdinalIgnoreCase)))
         {

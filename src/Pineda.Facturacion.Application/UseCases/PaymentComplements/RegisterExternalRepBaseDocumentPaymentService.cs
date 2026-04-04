@@ -93,16 +93,16 @@ public sealed class RegisterExternalRepBaseDocumentPaymentService
             return Conflict(command.ExternalRepBaseDocumentId, summary.AccountsReceivableInvoiceId, "El CFDI externo no está disponible para registrar pagos en el estado operativo actual.");
         }
 
-        var accountsReceivableInvoice = await EnsureAccountsReceivableInvoiceAsync(externalDocument, cancellationToken);
-        if (command.Amount > accountsReceivableInvoice.OutstandingBalance)
-        {
-            return Conflict(command.ExternalRepBaseDocumentId, accountsReceivableInvoice.Id, "El monto del pago no puede exceder el saldo pendiente del CFDI externo.");
-        }
-
         var fiscalReceiver = await _fiscalReceiverRepository.GetByRfcAsync(externalDocument.ReceiverRfc, cancellationToken);
         if (fiscalReceiver is null || !fiscalReceiver.IsActive)
         {
-            return Conflict(command.ExternalRepBaseDocumentId, accountsReceivableInvoice.Id, "El receptor fiscal del CFDI externo no está activo en la plataforma.");
+            return Conflict(command.ExternalRepBaseDocumentId, summary.AccountsReceivableInvoiceId, "El receptor fiscal del CFDI externo no está activo en la plataforma.");
+        }
+
+        var accountsReceivableInvoice = await EnsureAccountsReceivableInvoiceAsync(externalDocument, fiscalReceiver.Id, cancellationToken);
+        if (command.Amount > accountsReceivableInvoice.OutstandingBalance)
+        {
+            return Conflict(command.ExternalRepBaseDocumentId, accountsReceivableInvoice.Id, "El monto del pago no puede exceder el saldo pendiente del CFDI externo.");
         }
 
         var createPaymentResult = await _createAccountsReceivablePaymentService.ExecuteAsync(
@@ -166,6 +166,7 @@ public sealed class RegisterExternalRepBaseDocumentPaymentService
 
     private async Task<AccountsReceivableInvoice> EnsureAccountsReceivableInvoiceAsync(
         ExternalRepBaseDocument externalDocument,
+        long fiscalReceiverId,
         CancellationToken cancellationToken)
     {
         var existingInvoice = await _accountsReceivableInvoiceRepository.GetTrackedByExternalRepBaseDocumentIdAsync(externalDocument.Id, cancellationToken);
@@ -178,6 +179,7 @@ public sealed class RegisterExternalRepBaseDocumentPaymentService
         var invoice = new AccountsReceivableInvoice
         {
             ExternalRepBaseDocumentId = externalDocument.Id,
+            FiscalReceiverId = fiscalReceiverId,
             Status = AccountsReceivableInvoiceStatus.Open,
             PaymentMethodSat = FiscalMasterDataNormalization.NormalizeRequiredCode(externalDocument.PaymentMethodSat),
             PaymentFormSatInitial = FiscalMasterDataNormalization.NormalizeRequiredCode(externalDocument.PaymentFormSat),

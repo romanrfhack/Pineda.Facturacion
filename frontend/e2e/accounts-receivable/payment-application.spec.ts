@@ -13,22 +13,20 @@ test('operator creates an AR invoice then records and applies a payment', async 
   await page.goto('/app/accounts-receivable?fiscalDocumentId=401');
   await page.getByRole('button', { name: 'Crear cuenta por cobrar' }).click();
 
-  await expect(page.locator('app-accounts-receivable-card').getByText('Abierto')).toBeVisible();
-  await expect(page.getByText('Pendiente100.00')).toBeVisible();
+  await expect(page.getByText('Cuenta #601 · CFDI A-401')).toBeVisible();
+  await expect(page.locator('app-accounts-receivable-card').getByText('100.00 MXN')).toBeVisible();
 
-  await page.getByLabel('Monto').fill('40');
-  await page.getByLabel('Referencia').fill('PAY-701');
+  await page.locator('app-payment-create-form').getByLabel('Monto', { exact: true }).fill('40');
+  await page.locator('app-payment-create-form').getByLabel('Referencia').fill('PAY-701');
   await page.getByRole('button', { name: 'Crear pago' }).click();
 
   await expect(page.getByText('Pago #701')).toBeVisible();
-  await expect(page.getByText('Remanente 40 MXN')).toBeVisible();
+  await expect(page.getByText('Remanente disponible 40 MXN')).toBeVisible();
 
-  await page.getByLabel('Id de cuenta por cobrar').fill('601');
-  await page.getByLabel('Monto aplicado').fill('40');
-  await page.getByRole('button', { name: 'Aplicar pago' }).click();
+  await page.getByRole('textbox', { name: 'Monto a aplicar a esta cuenta MXN' }).fill('40.00');
+  await page.getByRole('button', { name: 'Aplicar pago a esta cuenta' }).click();
 
-  await expect(page.locator('app-accounts-receivable-card').getByText('Parcialmente pagado')).toBeVisible();
-  await expect(page.getByText('Remanente 0 MXN')).toBeVisible();
+  await expect(page.getByText('Remanente disponible 0 MXN')).toBeVisible();
   await expect(page.getByRole('cell', { name: '601', exact: true })).toBeVisible();
   await expect(page.getByRole('cell', { name: '40', exact: true })).toBeVisible();
   await expect(page.getByRole('cell', { name: '60', exact: true })).toBeVisible();
