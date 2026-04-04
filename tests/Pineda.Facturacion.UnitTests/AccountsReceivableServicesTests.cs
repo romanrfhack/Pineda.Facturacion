@@ -217,6 +217,7 @@ public class AccountsReceivableServicesTests
         Assert.Equal(CreateAccountsReceivablePaymentOutcome.Created, result.Outcome);
         Assert.Equal("MXN", repository.Added!.CurrencyCode);
         Assert.Equal(250m, repository.Added.Amount);
+        Assert.Equal(AccountsReceivablePaymentUnappliedDisposition.PendingAllocation, repository.Added.UnappliedDisposition);
     }
 
     [Fact]
@@ -299,6 +300,7 @@ public class AccountsReceivableServicesTests
     public async Task ApplyAccountsReceivablePayment_LeavesRemainingAmountAvailable_WhenPaymentExceedsCurrentInvoiceBalance()
     {
         var payment = CreatePayment(amount: 2000m);
+        payment.UnappliedDisposition = AccountsReceivablePaymentUnappliedDisposition.CustomerCreditBalance;
         var invoice = CreateInvoice(total: 1722m);
         var service = CreateApplyService(payment, invoice);
 
@@ -320,6 +322,38 @@ public class AccountsReceivableServicesTests
         Assert.Equal(278m, result.RemainingPaymentAmount);
         Assert.Single(result.Applications);
         Assert.Equal(1722m, result.Applications.Single().AppliedAmount);
+        Assert.Equal(AccountsReceivablePaymentUnappliedDisposition.PendingAllocation, payment.UnappliedDisposition);
+    }
+
+    [Fact]
+    public async Task SetAccountsReceivablePaymentUnappliedDisposition_ConfirmsCustomerCreditBalance_ForRemainingAmount()
+    {
+        var payment = CreatePayment(amount: 100m);
+        payment.Applications.Add(new AccountsReceivablePaymentApplication
+        {
+            Id = 901,
+            AccountsReceivablePaymentId = payment.Id,
+            AccountsReceivableInvoiceId = 200,
+            ApplicationSequence = 1,
+            AppliedAmount = 99.8m,
+            PreviousBalance = 99.8m,
+            NewBalance = 0m,
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
+        var service = new SetAccountsReceivablePaymentUnappliedDispositionService(
+            new ArFakeAccountsReceivablePaymentRepository { ExistingTracked = payment },
+            new ArFakePaymentComplementDocumentRepository(),
+            new ArFakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new SetAccountsReceivablePaymentUnappliedDispositionCommand
+        {
+            AccountsReceivablePaymentId = payment.Id,
+            UnappliedDisposition = AccountsReceivablePaymentUnappliedDisposition.CustomerCreditBalance
+        });
+
+        Assert.Equal(SetAccountsReceivablePaymentUnappliedDispositionOutcome.Updated, result.Outcome);
+        Assert.Equal(AccountsReceivablePaymentUnappliedDisposition.CustomerCreditBalance, payment.UnappliedDisposition);
     }
 
     [Fact]
@@ -637,7 +671,7 @@ public class AccountsReceivableServicesTests
     }
 
     [Fact]
-    public async Task SearchAccountsReceivablePayments_ProjectsCapturedPartialFullAndRepStates()
+    public async Task SearchAccountsReceivablePayments_ProjectsPendingAndConfirmedUnappliedStates()
     {
         var receiver = new FiscalReceiver
         {
@@ -659,6 +693,21 @@ public class AccountsReceivableServicesTests
             NewBalance = 60m,
             CreatedAtUtc = DateTime.UtcNow
         });
+        partial.UnappliedDisposition = AccountsReceivablePaymentUnappliedDisposition.PendingAllocation;
+
+        var partialCredit = CreatePayment(id: 4, amount: 100m, receiverId: receiver.Id);
+        partialCredit.Applications.Add(new AccountsReceivablePaymentApplication
+        {
+            Id = 9003,
+            AccountsReceivablePaymentId = partialCredit.Id,
+            AccountsReceivableInvoiceId = 503,
+            ApplicationSequence = 1,
+            AppliedAmount = 99.8m,
+            PreviousBalance = 99.8m,
+            NewBalance = 0m,
+            CreatedAtUtc = DateTime.UtcNow
+        });
+        partialCredit.UnappliedDisposition = AccountsReceivablePaymentUnappliedDisposition.CustomerCreditBalance;
 
         var full = CreatePayment(id: 3, amount: 80m, receiverId: receiver.Id);
         full.Applications.Add(new AccountsReceivablePaymentApplication
@@ -681,14 +730,19 @@ public class AccountsReceivableServicesTests
         invoice502.FiscalReceiverId = receiver.Id;
         invoice502.FiscalDocumentId = 8002;
 
+        var invoice503 = CreateInvoice(id: 503, total: 99.8m);
+        invoice503.FiscalReceiverId = receiver.Id;
+        invoice503.FiscalDocumentId = 8003;
+
         var service = new SearchAccountsReceivablePaymentsService(
-            new ArFakeAccountsReceivablePaymentRepository { SearchResults = [captured, partial, full] },
+            new ArFakeAccountsReceivablePaymentRepository { SearchResults = [captured, partial, full, partialCredit] },
             new ArFakeAccountsReceivableInvoiceRepository
             {
                 TrackedById = new Dictionary<long, AccountsReceivableInvoice>
                 {
                     [501] = invoice501,
-                    [502] = invoice502
+                    [502] = invoice502,
+                    [503] = invoice503
                 }
             },
             new ArFakeFiscalReceiverRepository { ExistingById = receiver },
@@ -707,13 +761,19 @@ public class AccountsReceivableServicesTests
 
         var result = await service.ExecuteAsync(new SearchAccountsReceivablePaymentsFilter());
 
-        Assert.Equal(3, result.Items.Count);
+        Assert.Equal(4, result.Items.Count);
         Assert.Equal(AccountsReceivablePaymentOperationalStatus.CapturedUnapplied, result.Items.Single(x => x.PaymentId == 1).OperationalStatus);
         Assert.Equal(AccountsReceivablePaymentOperationalStatus.PartiallyApplied, result.Items.Single(x => x.PaymentId == 2).OperationalStatus);
         Assert.Equal(AccountsReceivablePaymentOperationalStatus.FullyApplied, result.Items.Single(x => x.PaymentId == 3).OperationalStatus);
         Assert.Equal(AccountsReceivablePaymentRepStatus.NoApplications, result.Items.Single(x => x.PaymentId == 1).RepStatus);
-        Assert.Equal(AccountsReceivablePaymentRepStatus.ReadyToPrepare, result.Items.Single(x => x.PaymentId == 2).RepStatus);
+        Assert.Equal(AccountsReceivablePaymentRepStatus.PendingApplications, result.Items.Single(x => x.PaymentId == 2).RepStatus);
         Assert.Equal(AccountsReceivablePaymentRepStatus.Stamped, result.Items.Single(x => x.PaymentId == 3).RepStatus);
+        Assert.Equal(AccountsReceivablePaymentRepStatus.ReadyToPrepare, result.Items.Single(x => x.PaymentId == 4).RepStatus);
+        Assert.False(result.Items.Single(x => x.PaymentId == 2).ReadyToPrepareRep);
+        Assert.Equal("PendingAllocation", result.Items.Single(x => x.PaymentId == 2).UnappliedDisposition);
+        Assert.True(result.Items.Single(x => x.PaymentId == 4).ReadyToPrepareRep);
+        Assert.Equal(0.2m, result.Items.Single(x => x.PaymentId == 4).CustomerCreditBalanceAmount);
+        Assert.Equal("CustomerCreditBalance", result.Items.Single(x => x.PaymentId == 4).UnappliedDisposition);
     }
 
     [Fact]
@@ -1145,7 +1205,11 @@ public class AccountsReceivableServicesTests
         };
     }
 
-    private static AccountsReceivablePayment CreatePayment(long id = 400, decimal amount = 100m, long? receiverId = null)
+    private static AccountsReceivablePayment CreatePayment(
+        long id = 400,
+        decimal amount = 100m,
+        long? receiverId = null,
+        AccountsReceivablePaymentUnappliedDisposition unappliedDisposition = AccountsReceivablePaymentUnappliedDisposition.PendingAllocation)
     {
         return new AccountsReceivablePayment
         {
@@ -1155,6 +1219,7 @@ public class AccountsReceivableServicesTests
             CurrencyCode = "MXN",
             Amount = amount,
             ReceivedFromFiscalReceiverId = receiverId,
+            UnappliedDisposition = unappliedDisposition,
             CreatedAtUtc = DateTime.UtcNow,
             UpdatedAtUtc = DateTime.UtcNow
         };

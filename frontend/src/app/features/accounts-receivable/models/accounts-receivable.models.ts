@@ -242,11 +242,15 @@ export interface AccountsReceivablePaymentResponse {
   amount: number;
   appliedTotal: number;
   remainingAmount: number;
+  customerCreditBalanceAmount: number;
   reference?: string | null;
   notes?: string | null;
   receivedFromFiscalReceiverId?: number | null;
   operationalStatus: string;
   repStatus: string;
+  readyToPrepareRep: boolean;
+  repBlockReason?: string | null;
+  unappliedDisposition: string;
   repDocumentStatus?: string | null;
   repReservedAmount: number;
   repFiscalizedAmount: number;
@@ -263,12 +267,16 @@ export interface AccountsReceivablePaymentSummaryItemResponse {
   amount: number;
   appliedAmount: number;
   unappliedAmount: number;
+  customerCreditBalanceAmount: number;
   currencyCode: string;
   reference?: string | null;
   payerName?: string | null;
   fiscalReceiverId?: number | null;
   operationalStatus: string;
   repStatus: string;
+  readyToPrepareRep: boolean;
+  repBlockReason?: string | null;
+  unappliedDisposition: string;
   repDocumentStatus?: string | null;
   applicationsCount: number;
   linkedFiscalDocumentId?: number | null;
@@ -314,6 +322,18 @@ export interface ApplyAccountsReceivablePaymentResponse {
   remainingPaymentAmount: number;
   payment?: AccountsReceivablePaymentResponse | null;
   applications: AccountsReceivablePaymentApplicationResponse[];
+}
+
+export interface SetAccountsReceivablePaymentUnappliedDispositionRequest {
+  unappliedDisposition: string;
+}
+
+export interface SetAccountsReceivablePaymentUnappliedDispositionResponse {
+  outcome: string;
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  accountsReceivablePaymentId: number;
+  payment?: AccountsReceivablePaymentResponse | null;
 }
 
 export interface PreparePaymentComplementRequest {

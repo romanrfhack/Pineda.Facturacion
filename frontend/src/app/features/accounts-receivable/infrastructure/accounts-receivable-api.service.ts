@@ -23,7 +23,9 @@ import {
   SearchAccountsReceivablePortfolioRequest,
   SearchAccountsReceivablePaymentsRequest,
   PreparePaymentComplementRequest,
-  PreparePaymentComplementResponse
+  PreparePaymentComplementResponse,
+  SetAccountsReceivablePaymentUnappliedDispositionRequest,
+  SetAccountsReceivablePaymentUnappliedDispositionResponse
 } from '../models/accounts-receivable.models';
 import { PaymentComplementDocumentResponse } from '../../payment-complements/models/payment-complements.models';
 
@@ -139,6 +141,16 @@ export class AccountsReceivableApiService {
 
   applyPayment(paymentId: number, request: ApplyAccountsReceivablePaymentRequest): Observable<ApplyAccountsReceivablePaymentResponse> {
     return this.http.post<ApplyAccountsReceivablePaymentResponse>(buildApiUrl(`/accounts-receivable/payments/${paymentId}/apply`), request);
+  }
+
+  setPaymentUnappliedDisposition(
+    paymentId: number,
+    request: SetAccountsReceivablePaymentUnappliedDispositionRequest
+  ): Observable<SetAccountsReceivablePaymentUnappliedDispositionResponse> {
+    return this.http.post<SetAccountsReceivablePaymentUnappliedDispositionResponse>(
+      buildApiUrl(`/accounts-receivable/payments/${paymentId}/unapplied-disposition`),
+      request
+    );
   }
 
   preparePaymentComplement(paymentId: number, request: PreparePaymentComplementRequest = {}): Observable<PreparePaymentComplementResponse> {

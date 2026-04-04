@@ -3,7 +3,7 @@ using Pineda.Facturacion.Domain.Enums;
 
 namespace Pineda.Facturacion.Application.UseCases.AccountsReceivable;
 
-internal static class AccountsReceivablePaymentOperationalProjectionBuilder
+public static class AccountsReceivablePaymentOperationalProjectionBuilder
 {
     public static AccountsReceivablePaymentOperationalProjection Build(
         AccountsReceivablePayment payment,
@@ -14,16 +14,14 @@ internal static class AccountsReceivablePaymentOperationalProjectionBuilder
         ArgumentNullException.ThrowIfNull(payment);
         ArgumentNullException.ThrowIfNull(linkedInvoices);
 
-        var appliedAmount = payment.Applications.Sum(x => x.AppliedAmount);
-        var unappliedAmount = payment.Amount - appliedAmount;
+        var evaluation = EvaluateRepPreparation(payment, linkedInvoices, paymentComplementDocument);
         var linkedFiscalDocumentIds = linkedInvoices
             .Where(x => x.FiscalDocumentId.HasValue)
             .Select(x => x.FiscalDocumentId!.Value)
             .Distinct()
             .ToArray();
 
-        var operationalStatus = ResolveOperationalStatus(payment.Amount, appliedAmount);
-        var repStatus = ResolveRepStatus(payment, linkedInvoices, paymentComplementDocument, appliedAmount);
+        var operationalStatus = ResolveOperationalStatus(payment.Amount, evaluation.AppliedAmount);
         var repReservedAmount = paymentComplementDocument?.TotalPaymentsAmount ?? 0m;
         var repFiscalizedAmount = paymentComplementDocument?.Status == PaymentComplementDocumentStatus.Stamped
             ? paymentComplementDocument.TotalPaymentsAmount
@@ -34,19 +32,159 @@ internal static class AccountsReceivablePaymentOperationalProjectionBuilder
             PaymentId = payment.Id,
             ReceivedAtUtc = payment.PaymentDateUtc,
             Amount = payment.Amount,
-            AppliedAmount = appliedAmount,
-            UnappliedAmount = unappliedAmount,
+            AppliedAmount = evaluation.AppliedAmount,
+            UnappliedAmount = evaluation.UnappliedAmount,
+            CustomerCreditBalanceAmount = evaluation.CustomerCreditBalanceAmount,
             CurrencyCode = payment.CurrencyCode,
             Reference = payment.Reference,
             PayerName = payerName,
             FiscalReceiverId = payment.ReceivedFromFiscalReceiverId,
             OperationalStatus = operationalStatus,
-            RepStatus = repStatus,
+            RepStatus = evaluation.RepStatus,
+            ReadyToPrepareRep = evaluation.ReadyToPrepareRep,
+            RepBlockReason = evaluation.RepBlockReason,
+            UnappliedDisposition = payment.UnappliedDisposition.ToString(),
             RepDocumentStatus = paymentComplementDocument?.Status.ToString(),
             RepReservedAmount = repReservedAmount,
             RepFiscalizedAmount = repFiscalizedAmount,
             ApplicationsCount = payment.Applications.Count,
             LinkedFiscalDocumentId = linkedFiscalDocumentIds.Length == 1 ? linkedFiscalDocumentIds[0] : null
+        };
+    }
+
+    public static AccountsReceivablePaymentRepPreparationEvaluation EvaluateRepPreparation(
+        AccountsReceivablePayment payment,
+        IReadOnlyCollection<AccountsReceivableInvoice> linkedInvoices,
+        PaymentComplementDocument? paymentComplementDocument)
+    {
+        ArgumentNullException.ThrowIfNull(payment);
+        ArgumentNullException.ThrowIfNull(linkedInvoices);
+
+        var appliedAmount = NormalizeMoney(payment.Applications.Sum(x => x.AppliedAmount));
+        var unappliedAmount = NormalizeMoney(payment.Amount - appliedAmount);
+        var customerCreditBalanceAmount = payment.UnappliedDisposition == AccountsReceivablePaymentUnappliedDisposition.CustomerCreditBalance
+            ? unappliedAmount
+            : 0m;
+
+        if (paymentComplementDocument is not null)
+        {
+            return new AccountsReceivablePaymentRepPreparationEvaluation
+            {
+                AppliedAmount = appliedAmount,
+                UnappliedAmount = unappliedAmount,
+                CustomerCreditBalanceAmount = customerCreditBalanceAmount,
+                UnappliedDisposition = payment.UnappliedDisposition,
+                RepStatus = paymentComplementDocument.Status switch
+                {
+                    PaymentComplementDocumentStatus.ReadyForStamping or PaymentComplementDocumentStatus.Draft or PaymentComplementDocumentStatus.StampingRequested
+                        => AccountsReceivablePaymentRepStatus.Prepared,
+                    PaymentComplementDocumentStatus.Stamped
+                        => AccountsReceivablePaymentRepStatus.Stamped,
+                    PaymentComplementDocumentStatus.StampingRejected
+                        => AccountsReceivablePaymentRepStatus.StampingRejected,
+                    PaymentComplementDocumentStatus.CancellationRequested
+                        => AccountsReceivablePaymentRepStatus.CancellationRequested,
+                    PaymentComplementDocumentStatus.Cancelled
+                        => AccountsReceivablePaymentRepStatus.Cancelled,
+                    PaymentComplementDocumentStatus.CancellationRejected
+                        => AccountsReceivablePaymentRepStatus.CancellationRejected,
+                    _ => AccountsReceivablePaymentRepStatus.Prepared
+                },
+                ReadyToPrepareRep = false
+            };
+        }
+
+        if (!payment.Applications.Any())
+        {
+            return new AccountsReceivablePaymentRepPreparationEvaluation
+            {
+                AppliedAmount = appliedAmount,
+                UnappliedAmount = unappliedAmount,
+                CustomerCreditBalanceAmount = customerCreditBalanceAmount,
+                UnappliedDisposition = payment.UnappliedDisposition,
+                RepStatus = AccountsReceivablePaymentRepStatus.NoApplications,
+                ReadyToPrepareRep = false,
+                RepBlockReason = "A payment complement requires at least one persisted payment application."
+            };
+        }
+
+        if (appliedAmount <= 0m)
+        {
+            return new AccountsReceivablePaymentRepPreparationEvaluation
+            {
+                AppliedAmount = appliedAmount,
+                UnappliedAmount = unappliedAmount,
+                CustomerCreditBalanceAmount = customerCreditBalanceAmount,
+                UnappliedDisposition = payment.UnappliedDisposition,
+                RepStatus = AccountsReceivablePaymentRepStatus.PendingApplications,
+                ReadyToPrepareRep = false,
+                RepBlockReason = "A payment complement requires at least one positive applied amount."
+            };
+        }
+
+        if (unappliedAmount < 0m)
+        {
+            return new AccountsReceivablePaymentRepPreparationEvaluation
+            {
+                AppliedAmount = appliedAmount,
+                UnappliedAmount = unappliedAmount,
+                CustomerCreditBalanceAmount = customerCreditBalanceAmount,
+                UnappliedDisposition = payment.UnappliedDisposition,
+                RepStatus = AccountsReceivablePaymentRepStatus.PendingApplications,
+                ReadyToPrepareRep = false,
+                RepBlockReason = "Applied amount cannot exceed payment amount."
+            };
+        }
+
+        if (!IsEligibleForRep(linkedInvoices))
+        {
+            return new AccountsReceivablePaymentRepPreparationEvaluation
+            {
+                AppliedAmount = appliedAmount,
+                UnappliedAmount = unappliedAmount,
+                CustomerCreditBalanceAmount = customerCreditBalanceAmount,
+                UnappliedDisposition = payment.UnappliedDisposition,
+                RepStatus = AccountsReceivablePaymentRepStatus.NotEligible,
+                ReadyToPrepareRep = false,
+                RepBlockReason = "Linked invoices are not eligible to participate in the same REP."
+            };
+        }
+
+        if (unappliedAmount == 0m)
+        {
+            return new AccountsReceivablePaymentRepPreparationEvaluation
+            {
+                AppliedAmount = appliedAmount,
+                UnappliedAmount = unappliedAmount,
+                CustomerCreditBalanceAmount = customerCreditBalanceAmount,
+                UnappliedDisposition = payment.UnappliedDisposition,
+                RepStatus = AccountsReceivablePaymentRepStatus.ReadyToPrepare,
+                ReadyToPrepareRep = true
+            };
+        }
+
+        if (payment.UnappliedDisposition == AccountsReceivablePaymentUnappliedDisposition.CustomerCreditBalance)
+        {
+            return new AccountsReceivablePaymentRepPreparationEvaluation
+            {
+                AppliedAmount = appliedAmount,
+                UnappliedAmount = unappliedAmount,
+                CustomerCreditBalanceAmount = customerCreditBalanceAmount,
+                UnappliedDisposition = payment.UnappliedDisposition,
+                RepStatus = AccountsReceivablePaymentRepStatus.ReadyToPrepare,
+                ReadyToPrepareRep = true
+            };
+        }
+
+        return new AccountsReceivablePaymentRepPreparationEvaluation
+        {
+            AppliedAmount = appliedAmount,
+            UnappliedAmount = unappliedAmount,
+            CustomerCreditBalanceAmount = customerCreditBalanceAmount,
+            UnappliedDisposition = payment.UnappliedDisposition,
+            RepStatus = AccountsReceivablePaymentRepStatus.PendingApplications,
+            ReadyToPrepareRep = false,
+            RepBlockReason = "Unapplied payment remainder must be explicitly assigned before preparing REP."
         };
     }
 
@@ -68,47 +206,6 @@ internal static class AccountsReceivablePaymentOperationalProjectionBuilder
         }
 
         return AccountsReceivablePaymentOperationalStatus.OverApplied;
-    }
-
-    private static AccountsReceivablePaymentRepStatus ResolveRepStatus(
-        AccountsReceivablePayment payment,
-        IReadOnlyCollection<AccountsReceivableInvoice> linkedInvoices,
-        PaymentComplementDocument? paymentComplementDocument,
-        decimal appliedAmount)
-    {
-        if (paymentComplementDocument is not null)
-        {
-            return paymentComplementDocument.Status switch
-            {
-                PaymentComplementDocumentStatus.ReadyForStamping or PaymentComplementDocumentStatus.Draft or PaymentComplementDocumentStatus.StampingRequested
-                    => AccountsReceivablePaymentRepStatus.Prepared,
-                PaymentComplementDocumentStatus.Stamped
-                    => AccountsReceivablePaymentRepStatus.Stamped,
-                PaymentComplementDocumentStatus.StampingRejected
-                    => AccountsReceivablePaymentRepStatus.StampingRejected,
-                PaymentComplementDocumentStatus.CancellationRequested
-                    => AccountsReceivablePaymentRepStatus.CancellationRequested,
-                PaymentComplementDocumentStatus.Cancelled
-                    => AccountsReceivablePaymentRepStatus.Cancelled,
-                PaymentComplementDocumentStatus.CancellationRejected
-                    => AccountsReceivablePaymentRepStatus.CancellationRejected,
-                _ => AccountsReceivablePaymentRepStatus.Prepared
-            };
-        }
-
-        if (!payment.Applications.Any())
-        {
-            return AccountsReceivablePaymentRepStatus.NoApplications;
-        }
-
-        if (!IsEligibleForRep(linkedInvoices))
-        {
-            return AccountsReceivablePaymentRepStatus.NotEligible;
-        }
-
-        return appliedAmount > 0m
-            ? AccountsReceivablePaymentRepStatus.ReadyToPrepare
-            : AccountsReceivablePaymentRepStatus.PendingApplications;
     }
 
     private static bool IsEligibleForRep(IReadOnlyCollection<AccountsReceivableInvoice> linkedInvoices)
@@ -140,4 +237,7 @@ internal static class AccountsReceivablePaymentOperationalProjectionBuilder
 
         return distinctReceivers <= 1;
     }
+
+    private static decimal NormalizeMoney(decimal value)
+        => decimal.Round(value, 2, MidpointRounding.AwayFromZero);
 }

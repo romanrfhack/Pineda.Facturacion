@@ -5,6 +5,7 @@ using Pineda.Facturacion.Application.Security;
 using Pineda.Facturacion.Application.UseCases.AccountsReceivable;
 using Pineda.Facturacion.Application.UseCases.PaymentComplements;
 using Pineda.Facturacion.Domain.Entities;
+using Pineda.Facturacion.Domain.Enums;
 
 namespace Pineda.Facturacion.Api.Endpoints;
 
@@ -116,6 +117,15 @@ public static class AccountsReceivableEndpoints
             .Produces<ApplyAccountsReceivablePaymentResponse>(StatusCodes.Status400BadRequest)
             .Produces<ApplyAccountsReceivablePaymentResponse>(StatusCodes.Status404NotFound)
             .Produces<ApplyAccountsReceivablePaymentResponse>(StatusCodes.Status409Conflict);
+
+        group.MapPost("/payments/{paymentId:long}/unapplied-disposition", SetAccountsReceivablePaymentUnappliedDispositionAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.OperatorOrAbove)
+            .WithName("SetAccountsReceivablePaymentUnappliedDisposition")
+            .WithSummary("Set how the unapplied remainder of a payment should be treated before preparing REP")
+            .Produces<SetAccountsReceivablePaymentUnappliedDispositionResponse>(StatusCodes.Status200OK)
+            .Produces<SetAccountsReceivablePaymentUnappliedDispositionResponse>(StatusCodes.Status400BadRequest)
+            .Produces<SetAccountsReceivablePaymentUnappliedDispositionResponse>(StatusCodes.Status404NotFound)
+            .Produces<SetAccountsReceivablePaymentUnappliedDispositionResponse>(StatusCodes.Status409Conflict);
 
         group.MapPost("/payments/{paymentId:long}/payment-complements", PreparePaymentComplementAsync)
             .RequireAuthorization(AuthorizationPolicyNames.OperatorOrAbove)
@@ -564,6 +574,66 @@ public static class AccountsReceivableEndpoints
         };
     }
 
+    private static async Task<Results<Ok<SetAccountsReceivablePaymentUnappliedDispositionResponse>, BadRequest<SetAccountsReceivablePaymentUnappliedDispositionResponse>, NotFound<SetAccountsReceivablePaymentUnappliedDispositionResponse>, Conflict<SetAccountsReceivablePaymentUnappliedDispositionResponse>>> SetAccountsReceivablePaymentUnappliedDispositionAsync(
+        long paymentId,
+        SetAccountsReceivablePaymentUnappliedDispositionRequest request,
+        SetAccountsReceivablePaymentUnappliedDispositionService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        if (!Enum.TryParse<AccountsReceivablePaymentUnappliedDisposition>(request.UnappliedDisposition, true, out var unappliedDisposition))
+        {
+            var invalidResponse = new SetAccountsReceivablePaymentUnappliedDispositionResponse
+            {
+                Outcome = SetAccountsReceivablePaymentUnappliedDispositionOutcome.ValidationFailed.ToString(),
+                IsSuccess = false,
+                AccountsReceivablePaymentId = paymentId,
+                ErrorMessage = $"Unknown unapplied disposition '{request.UnappliedDisposition}'."
+            };
+
+            return TypedResults.BadRequest(invalidResponse);
+        }
+
+        var result = await service.ExecuteAsync(
+            new SetAccountsReceivablePaymentUnappliedDispositionCommand
+            {
+                AccountsReceivablePaymentId = paymentId,
+                UnappliedDisposition = unappliedDisposition
+            },
+            cancellationToken);
+
+        var response = new SetAccountsReceivablePaymentUnappliedDispositionResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            AccountsReceivablePaymentId = result.AccountsReceivablePaymentId
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "AccountsReceivablePayment.SetUnappliedDisposition",
+            "AccountsReceivablePayment",
+            paymentId.ToString(),
+            result.Outcome.ToString(),
+            new { paymentId, request.UnappliedDisposition },
+            new
+            {
+                payment = result.AccountsReceivablePayment?.Id,
+                unappliedDisposition = result.AccountsReceivablePayment?.UnappliedDisposition.ToString()
+            },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            SetAccountsReceivablePaymentUnappliedDispositionOutcome.Updated => TypedResults.Ok(response),
+            SetAccountsReceivablePaymentUnappliedDispositionOutcome.NotFound => TypedResults.NotFound(response),
+            SetAccountsReceivablePaymentUnappliedDispositionOutcome.Conflict => TypedResults.Conflict(response),
+            _ => TypedResults.BadRequest(response)
+        };
+    }
+
     private static async Task<Results<Ok<PreparePaymentComplementResponse>, BadRequest<PreparePaymentComplementResponse>, NotFound<PreparePaymentComplementResponse>, Conflict<PreparePaymentComplementResponse>>> PreparePaymentComplementAsync(
         long paymentId,
         PreparePaymentComplementRequest? request,
@@ -700,29 +770,7 @@ public static class AccountsReceivableEndpoints
             .OrderBy(x => x.ApplicationSequence)
             .Select(MapApplication)
             .ToList();
-        var appliedTotal = payment.Applications.Sum(x => x.AppliedAmount);
-        projection ??= new AccountsReceivablePaymentOperationalProjection
-        {
-            PaymentId = payment.Id,
-            ReceivedAtUtc = payment.PaymentDateUtc,
-            Amount = payment.Amount,
-            AppliedAmount = appliedTotal,
-            UnappliedAmount = payment.Amount - appliedTotal,
-            CurrencyCode = payment.CurrencyCode,
-            Reference = payment.Reference,
-            FiscalReceiverId = payment.ReceivedFromFiscalReceiverId,
-            OperationalStatus = payment.Applications.Count == 0
-                ? AccountsReceivablePaymentOperationalStatus.CapturedUnapplied
-                : appliedTotal < payment.Amount
-                    ? AccountsReceivablePaymentOperationalStatus.PartiallyApplied
-                    : AccountsReceivablePaymentOperationalStatus.FullyApplied,
-            RepStatus = payment.Applications.Count == 0
-                ? AccountsReceivablePaymentRepStatus.NoApplications
-                : appliedTotal == payment.Amount
-                    ? AccountsReceivablePaymentRepStatus.ReadyToPrepare
-                    : AccountsReceivablePaymentRepStatus.PendingApplications,
-            ApplicationsCount = payment.Applications.Count
-        };
+        projection ??= AccountsReceivablePaymentOperationalProjectionBuilder.Build(payment, [], null, null);
 
         return new AccountsReceivablePaymentResponse
         {
@@ -733,11 +781,15 @@ public static class AccountsReceivableEndpoints
             Amount = payment.Amount,
             AppliedTotal = projection.AppliedAmount,
             RemainingAmount = projection.UnappliedAmount,
+            CustomerCreditBalanceAmount = projection.CustomerCreditBalanceAmount,
             Reference = payment.Reference,
             Notes = payment.Notes,
             ReceivedFromFiscalReceiverId = payment.ReceivedFromFiscalReceiverId,
             OperationalStatus = projection.OperationalStatus.ToString(),
             RepStatus = projection.RepStatus.ToString(),
+            ReadyToPrepareRep = projection.ReadyToPrepareRep,
+            RepBlockReason = projection.RepBlockReason,
+            UnappliedDisposition = projection.UnappliedDisposition,
             RepDocumentStatus = projection.RepDocumentStatus,
             RepReservedAmount = projection.RepReservedAmount,
             RepFiscalizedAmount = projection.RepFiscalizedAmount,
@@ -860,12 +912,16 @@ public static class AccountsReceivableEndpoints
             Amount = item.Amount,
             AppliedAmount = item.AppliedAmount,
             UnappliedAmount = item.UnappliedAmount,
+            CustomerCreditBalanceAmount = item.CustomerCreditBalanceAmount,
             CurrencyCode = item.CurrencyCode,
             Reference = item.Reference,
             PayerName = item.PayerName,
             FiscalReceiverId = item.FiscalReceiverId,
             OperationalStatus = item.OperationalStatus.ToString(),
             RepStatus = item.RepStatus.ToString(),
+            ReadyToPrepareRep = item.ReadyToPrepareRep,
+            RepBlockReason = item.RepBlockReason,
+            UnappliedDisposition = item.UnappliedDisposition,
             RepDocumentStatus = item.RepDocumentStatus,
             ApplicationsCount = item.ApplicationsCount,
             LinkedFiscalDocumentId = item.LinkedFiscalDocumentId,
@@ -1316,6 +1372,8 @@ public class AccountsReceivablePaymentResponse
 
     public decimal RemainingAmount { get; set; }
 
+    public decimal CustomerCreditBalanceAmount { get; set; }
+
     public string? Reference { get; set; }
 
     public string? Notes { get; set; }
@@ -1325,6 +1383,12 @@ public class AccountsReceivablePaymentResponse
     public string OperationalStatus { get; set; } = string.Empty;
 
     public string RepStatus { get; set; } = string.Empty;
+
+    public bool ReadyToPrepareRep { get; set; }
+
+    public string? RepBlockReason { get; set; }
+
+    public string UnappliedDisposition { get; set; } = string.Empty;
 
     public string? RepDocumentStatus { get; set; }
 
@@ -1374,6 +1438,24 @@ public class ApplyAccountsReceivablePaymentResponse
     public List<AccountsReceivablePaymentApplicationResponse> Applications { get; set; } = [];
 }
 
+public class SetAccountsReceivablePaymentUnappliedDispositionRequest
+{
+    public string UnappliedDisposition { get; set; } = string.Empty;
+}
+
+public class SetAccountsReceivablePaymentUnappliedDispositionResponse
+{
+    public string Outcome { get; set; } = string.Empty;
+
+    public bool IsSuccess { get; set; }
+
+    public string? ErrorMessage { get; set; }
+
+    public long AccountsReceivablePaymentId { get; set; }
+
+    public AccountsReceivablePaymentResponse? Payment { get; set; }
+}
+
 public class AccountsReceivablePaymentsResponse
 {
     public List<AccountsReceivablePaymentSummaryItemResponse> Items { get; set; } = [];
@@ -1391,6 +1473,8 @@ public class AccountsReceivablePaymentSummaryItemResponse
 
     public decimal UnappliedAmount { get; set; }
 
+    public decimal CustomerCreditBalanceAmount { get; set; }
+
     public string CurrencyCode { get; set; } = string.Empty;
 
     public string? Reference { get; set; }
@@ -1402,6 +1486,12 @@ public class AccountsReceivablePaymentSummaryItemResponse
     public string OperationalStatus { get; set; } = string.Empty;
 
     public string RepStatus { get; set; } = string.Empty;
+
+    public bool ReadyToPrepareRep { get; set; }
+
+    public string? RepBlockReason { get; set; }
+
+    public string UnappliedDisposition { get; set; } = string.Empty;
 
     public string? RepDocumentStatus { get; set; }
 

@@ -101,7 +101,7 @@ public class PaymentComplementServicesTests
     }
 
     [Fact]
-    public async Task PreparePaymentComplement_Succeeds_ForPartiallyAppliedPayment_WithRemainingUnappliedAmount()
+    public async Task PreparePaymentComplement_Blocks_WhenRemainingUnappliedAmountIsPendingAllocation()
     {
         var payment = CreatePayment(amount: 5000m);
         payment.Applications =
@@ -163,12 +163,42 @@ public class PaymentComplementServicesTests
             AccountsReceivablePaymentId = payment.Id
         });
 
+        Assert.Equal(PreparePaymentComplementOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("explicitly assigned", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(repository.Added);
+    }
+
+    [Fact]
+    public async Task PreparePaymentComplement_Succeeds_ForCustomerCreditBalanceRemainder_WithoutCreatingFakeApplication()
+    {
+        var payment = CreatePayment(id: 10, amount: 100m);
+        payment.UnappliedDisposition = AccountsReceivablePaymentUnappliedDisposition.CustomerCreditBalance;
+        payment.Applications =
+        [
+            CreateApplication(id: 11, paymentId: 10, invoiceId: 201, appliedAmount: 99.8m, previousBalance: 99.8m, newBalance: 0m)
+        ];
+
+        var invoice = CreateInvoice(id: 201);
+        invoice.Total = 99.8m;
+        invoice.PaidTotal = 99.8m;
+        invoice.OutstandingBalance = 0m;
+        invoice.Applications.Clear();
+        invoice.Applications.Add(payment.Applications[0]);
+
+        var repository = new PcFakePaymentComplementDocumentRepository();
+        var service = CreatePrepareService(payment, repository, invoice, CreateFiscalDocument(), CreateFiscalStamp());
+
+        var result = await service.ExecuteAsync(new PreparePaymentComplementCommand
+        {
+            AccountsReceivablePaymentId = payment.Id
+        });
+
         Assert.Equal(PreparePaymentComplementOutcome.Created, result.Outcome);
         Assert.NotNull(repository.Added);
-        Assert.Equal(2722m, repository.Added!.TotalPaymentsAmount);
-        Assert.Equal(2, repository.Added.RelatedDocuments.Count);
-        Assert.Equal(1722m, repository.Added.RelatedDocuments[0].PaidAmount);
-        Assert.Equal(1000m, repository.Added.RelatedDocuments[1].PaidAmount);
+        Assert.Equal(100m, repository.Added!.TotalPaymentsAmount);
+        Assert.Single(repository.Added.RelatedDocuments);
+        Assert.Equal(99.8m, repository.Added.RelatedDocuments[0].PaidAmount);
+        Assert.Equal(0.2m, payment.Amount - payment.Applications.Sum(x => x.AppliedAmount));
     }
 
     [Fact]

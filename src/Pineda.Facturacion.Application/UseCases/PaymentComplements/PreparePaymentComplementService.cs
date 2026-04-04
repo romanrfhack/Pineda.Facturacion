@@ -1,5 +1,6 @@
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Common;
+using Pineda.Facturacion.Application.UseCases.AccountsReceivable;
 using Pineda.Facturacion.Domain.Entities;
 using Pineda.Facturacion.Domain.Enums;
 
@@ -68,12 +69,6 @@ public class PreparePaymentComplementService
             return ValidationFailure(command.AccountsReceivablePaymentId, "A payment complement requires at least one persisted payment application.");
         }
 
-        var appliedTotal = NormalizeMoney(payment.Applications.Sum(x => x.AppliedAmount));
-        if (appliedTotal <= 0m)
-        {
-            return ValidationFailure(command.AccountsReceivablePaymentId, "A payment complement requires at least one persisted payment application with a positive applied amount.");
-        }
-
         var existingDocument = await _paymentComplementDocumentRepository.GetByPaymentIdAsync(command.AccountsReceivablePaymentId, cancellationToken);
         if (existingDocument is not null)
         {
@@ -88,6 +83,8 @@ public class PreparePaymentComplementService
             };
         }
 
+        var linkedInvoices = new List<AccountsReceivableInvoice>();
+
         AnchorSnapshot? anchor = null;
         var relatedDocuments = new List<PaymentComplementRelatedDocument>();
         var now = DateTime.UtcNow;
@@ -99,6 +96,8 @@ public class PreparePaymentComplementService
             {
                 return ValidationFailure(command.AccountsReceivablePaymentId, $"Accounts receivable invoice '{application.AccountsReceivableInvoiceId}' was not found.");
             }
+
+            linkedInvoices.Add(invoice);
 
             if (!string.Equals(FiscalMasterDataNormalization.NormalizeRequiredCode(invoice.CurrencyCode), "MXN", StringComparison.Ordinal))
             {
@@ -267,6 +266,12 @@ public class PreparePaymentComplementService
             relatedDocuments.Add(relatedDocument);
         }
 
+        var evaluation = AccountsReceivablePaymentOperationalProjectionBuilder.EvaluateRepPreparation(payment, linkedInvoices, existingDocument);
+        if (!evaluation.ReadyToPrepareRep)
+        {
+            return ValidationFailure(command.AccountsReceivablePaymentId, evaluation.RepBlockReason ?? "Payment is not ready to prepare REP.");
+        }
+
         if (anchor is null)
         {
             return ValidationFailure(command.AccountsReceivablePaymentId, "A payment complement requires at least one valid related fiscal invoice.");
@@ -281,7 +286,7 @@ public class PreparePaymentComplementService
             IssuedAtUtc = command.IssuedAtUtc ?? now,
             PaymentDateUtc = payment.PaymentDateUtc,
             CurrencyCode = "MXN",
-            TotalPaymentsAmount = appliedTotal,
+            TotalPaymentsAmount = NormalizeMoney(payment.Amount),
             IssuerProfileId = anchor.IssuerProfileId,
             FiscalReceiverId = anchor.FiscalReceiverId,
             IssuerRfc = anchor.IssuerRfc,

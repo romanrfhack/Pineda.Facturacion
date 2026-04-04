@@ -112,6 +112,12 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
                         .HasColumnType("datetime(6)")
                         .HasColumnName("updated_at_utc");
 
+                    b.Property<int>("UnappliedDisposition")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("unapplied_disposition")
+                        .HasDefaultValue(0);
+
                     b.HasKey("Id");
 
                     b.HasIndex("BillingDocumentId");

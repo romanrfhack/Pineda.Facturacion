@@ -12,6 +12,8 @@ public sealed class AccountsReceivablePaymentOperationalProjection
 
     public decimal UnappliedAmount { get; init; }
 
+    public decimal CustomerCreditBalanceAmount { get; init; }
+
     public string CurrencyCode { get; init; } = string.Empty;
 
     public string? Reference { get; init; }
@@ -23,6 +25,12 @@ public sealed class AccountsReceivablePaymentOperationalProjection
     public AccountsReceivablePaymentOperationalStatus OperationalStatus { get; init; }
 
     public AccountsReceivablePaymentRepStatus RepStatus { get; init; }
+
+    public bool ReadyToPrepareRep { get; init; }
+
+    public string? RepBlockReason { get; init; }
+
+    public string UnappliedDisposition { get; init; } = string.Empty;
 
     public string? RepDocumentStatus { get; init; }
 

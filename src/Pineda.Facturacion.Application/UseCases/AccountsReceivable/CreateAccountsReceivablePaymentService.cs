@@ -2,6 +2,7 @@ using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Abstractions.Documents;
 using Pineda.Facturacion.Application.Common;
 using Pineda.Facturacion.Domain.Entities;
+using Pineda.Facturacion.Domain.Enums;
 
 namespace Pineda.Facturacion.Application.UseCases.AccountsReceivable;
 
@@ -56,6 +57,7 @@ public class CreateAccountsReceivablePaymentService
             Reference = FiscalMasterDataNormalization.NormalizeOptionalText(command.Reference),
             Notes = FiscalMasterDataNormalization.NormalizeOptionalText(command.Notes),
             ReceivedFromFiscalReceiverId = command.ReceivedFromFiscalReceiverId,
+            UnappliedDisposition = AccountsReceivablePaymentUnappliedDisposition.PendingAllocation,
             CreatedAtUtc = now,
             UpdatedAtUtc = now
         };

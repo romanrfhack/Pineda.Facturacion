@@ -248,6 +248,7 @@ public class ApplyAccountsReceivablePaymentService
         }
 
         payment.UpdatedAtUtc = now;
+        payment.UnappliedDisposition = AccountsReceivablePaymentUnappliedDisposition.PendingAllocation;
 
         var paidInvoiceIds = validationPlans
             .Where(x => x.Invoice.Status == AccountsReceivableInvoiceStatus.Paid)
