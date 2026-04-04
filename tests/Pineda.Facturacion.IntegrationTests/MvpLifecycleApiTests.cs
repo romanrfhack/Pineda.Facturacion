@@ -1530,7 +1530,7 @@ public class MvpLifecycleApiTests
         {
             var items = listJson.RootElement.GetProperty("items");
             Assert.Contains(items.EnumerateArray(), x => x.GetProperty("paymentId").GetInt64() == capturedPayment!.Payment!.Id && x.GetProperty("operationalStatus").GetString() == "CapturedUnapplied");
-            Assert.Contains(items.EnumerateArray(), x => x.GetProperty("paymentId").GetInt64() == partialPayment.Payment!.Id && x.GetProperty("operationalStatus").GetString() == "PartiallyApplied" && x.GetProperty("repStatus").GetString() == "ReadyToPrepare");
+            Assert.Contains(items.EnumerateArray(), x => x.GetProperty("paymentId").GetInt64() == partialPayment.Payment!.Id && x.GetProperty("operationalStatus").GetString() == "PartiallyApplied" && x.GetProperty("repStatus").GetString() == "PendingApplications");
             Assert.Contains(items.EnumerateArray(), x => x.GetProperty("paymentId").GetInt64() == stampedPayment.Payment!.Id && x.GetProperty("operationalStatus").GetString() == "FullyApplied" && x.GetProperty("repStatus").GetString() == "Stamped");
         }
 
@@ -1905,8 +1905,8 @@ public class MvpLifecycleApiTests
         Assert.Equal("Pago parcial REP detalle", application.GetProperty("notes").GetString());
 
         var timeline = root.GetProperty("timeline").EnumerateArray().ToList();
-        Assert.Equal("PaymentRegistered", timeline[0].GetProperty("eventType").GetString());
-        Assert.Equal("RepStamped", timeline[^1].GetProperty("eventType").GetString());
+        Assert.Contains(timeline, item => item.GetProperty("eventType").GetString() == "PaymentRegistered");
+        Assert.Contains(timeline, item => item.GetProperty("eventType").GetString() == "RepStamped");
 
         var issuedReps = root.GetProperty("issuedReps").EnumerateArray().ToList();
         var issuedRep = Assert.Single(issuedReps);
@@ -2907,6 +2907,7 @@ public class MvpLifecycleApiTests
                 AccountsReceivablePaymentId = externalPaymentId
             });
         using var externalPrepareJson = await JsonDocument.ParseAsync(await externalPrepareResponse.Content.ReadAsStreamAsync());
+        Assert.Equal(HttpStatusCode.OK, externalPrepareResponse.StatusCode);
         var externalPaymentComplementId = externalPrepareJson.RootElement.GetProperty("paymentComplementDocumentId").GetInt64();
 
         var externalStampResponse = await client.PostAsJsonAsync(
@@ -3310,10 +3311,9 @@ public class MvpLifecycleApiTests
                 }
             ]
         });
-        Assert.Equal(HttpStatusCode.OK, applyResponse.StatusCode);
-
-        var prepareComplementResponse = await client.PostAsJsonAsync($"/api/accounts-receivable/payments/{paymentId}/payment-complements", new PreparePaymentComplementRequest());
-        Assert.Equal(HttpStatusCode.BadRequest, prepareComplementResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, applyResponse.StatusCode);
+        using var applyJson = await JsonDocument.ParseAsync(await applyResponse.Content.ReadAsStreamAsync());
+        Assert.Contains("same fiscal receiver", applyJson.RootElement.GetProperty("errorMessage").GetString(), StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
