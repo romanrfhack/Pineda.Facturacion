@@ -40,6 +40,11 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        var providerOperation = NormalizeRelativePath(_options.PaymentComplementStampPath);
+        if (string.IsNullOrWhiteSpace(providerOperation))
+        {
+            return ValidationFailed("Configured payment complement stamp path is empty.");
+        }
 
         var apiKey = await ResolveOptionalSecretAsync(_options.ApiKeyReference, cancellationToken);
         if (!string.IsNullOrWhiteSpace(_options.ApiKeyReference) && string.IsNullOrWhiteSpace(apiKey))
@@ -69,7 +74,7 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
         var providerRequestHash = ComputeSha256(JsonSerializer.Serialize(redactedSummary, JsonOptions));
         var payload = BuildPayload(request, certificateValue, privateKeyValue, privateKeyPasswordValue);
 
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _options.PaymentComplementStampPath)
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, providerOperation)
         {
             Content = JsonContent.Create(payload, options: JsonOptions)
         };
@@ -97,7 +102,8 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
         }
 
         var providerResponse = TryDeserialize(responseContent);
-        var rawResponseSummaryJson = BuildRawResponseSummary(response.StatusCode, providerResponse, responseContent);
+        var requestUri = response.RequestMessage?.RequestUri?.ToString() ?? httpRequest.RequestUri?.ToString();
+        var rawResponseSummaryJson = BuildRawResponseSummary(response.StatusCode, providerOperation, requestUri, providerResponse, responseContent);
 
         if (response.IsSuccessStatusCode && IsProviderSuccess(providerResponse) && HasSuccessfulStampEvidence(providerResponse))
         {
@@ -106,7 +112,7 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
             {
                 Outcome = PaymentComplementStampingGatewayOutcome.Stamped,
                 ProviderName = _options.ProviderName,
-                ProviderOperation = "payment-complement-stamp",
+                ProviderOperation = providerOperation,
                 ProviderRequestHash = providerRequestHash,
                 ProviderTrackingId = successfulProviderResponse.TrackingId,
                 ProviderCode = successfulProviderResponse.Code,
@@ -127,7 +133,7 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
             {
                 Outcome = PaymentComplementStampingGatewayOutcome.Unavailable,
                 ProviderName = _options.ProviderName,
-                ProviderOperation = "payment-complement-stamp",
+                ProviderOperation = providerOperation,
                 ProviderRequestHash = providerRequestHash,
                 ProviderTrackingId = providerResponse?.TrackingId,
                 ProviderCode = providerResponse?.Code ?? ((int)response.StatusCode).ToString(CultureInfo.InvariantCulture),
@@ -142,7 +148,7 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
         {
             Outcome = PaymentComplementStampingGatewayOutcome.Rejected,
             ProviderName = _options.ProviderName,
-            ProviderOperation = "payment-complement-stamp",
+            ProviderOperation = providerOperation,
             ProviderRequestHash = providerRequestHash,
             ProviderTrackingId = providerResponse?.TrackingId,
             ProviderCode = providerResponse?.Code ?? ((int)response.StatusCode).ToString(CultureInfo.InvariantCulture),
@@ -294,11 +300,18 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
         }
     }
 
-    private static string BuildRawResponseSummary(HttpStatusCode statusCode, FacturaloPlusProviderResponse? providerResponse, string responseContent)
+    private static string BuildRawResponseSummary(
+        HttpStatusCode statusCode,
+        string providerOperation,
+        string? requestUri,
+        FacturaloPlusProviderResponse? providerResponse,
+        string responseContent)
     {
         var summary = new
         {
             StatusCode = (int)statusCode,
+            ProviderOperation = providerOperation,
+            RequestUri = requestUri,
             providerResponse?.Success,
             providerResponse?.Code,
             providerResponse?.Message,
@@ -319,6 +332,11 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
         var bytes = Encoding.UTF8.GetBytes(value);
         var hash = SHA256.HashData(bytes);
         return Convert.ToHexString(hash);
+    }
+
+    private static string NormalizeRelativePath(string path)
+    {
+        return path.Trim().TrimStart('/');
     }
 
     private static PaymentComplementStampingGatewayResult ValidationFailed(string errorMessage)

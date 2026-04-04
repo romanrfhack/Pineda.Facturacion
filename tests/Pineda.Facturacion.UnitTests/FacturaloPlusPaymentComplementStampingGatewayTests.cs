@@ -12,6 +12,37 @@ namespace Pineda.Facturacion.UnitTests;
 public class FacturaloPlusPaymentComplementStampingGatewayTests
 {
     [Fact]
+    public async Task StampAsync_Normalizes_LeadingSlash_Path_And_Preserves_BaseAddress()
+    {
+        var handler = new RecordingHandler(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""
+                {
+                  "code": "200",
+                  "message": "Solicitud procesada con éxito. - Complemento timbrado.",
+                  "data": {
+                    "uuid": "UUID-PC-OK-1",
+                    "xml": "<cfdi:Comprobante xmlns:cfdi=\"http://www.sat.gob.mx/cfd/4\" />"
+                  }
+                }
+                """, Encoding.UTF8, "application/json")
+        });
+
+        var gateway = CreateGateway(handler);
+
+        var result = await gateway.StampAsync(CreateRequest());
+
+        Assert.Equal(PaymentComplementStampingGatewayOutcome.Stamped, result.Outcome);
+        Assert.NotNull(handler.LastRequest);
+        Assert.Equal(HttpMethod.Post, handler.LastRequest!.Method);
+        Assert.Equal("https://dev.facturaloplus.com/api/rest/servicio/cfdi/payment-complement/stamp", handler.LastRequest.RequestUri!.ToString());
+        Assert.Equal("application/json", handler.LastContentType);
+        Assert.True(handler.LastRequest.Headers.Contains("X-Api-Key"));
+        Assert.Equal("cfdi/payment-complement/stamp", result.ProviderOperation);
+        Assert.Contains("\"requestUri\":\"https://dev.facturaloplus.com/api/rest/servicio/cfdi/payment-complement/stamp\"", result.RawResponseSummaryJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task StampAsync_Treats_Code200_With_NestedDataString_And_StampedXml_As_Success()
     {
         const string stampedXml = """
@@ -191,6 +222,10 @@ public class FacturaloPlusPaymentComplementStampingGatewayTests
     {
         private readonly HttpResponseMessage _response;
 
+        public HttpRequestMessage? LastRequest { get; private set; }
+
+        public string? LastContentType { get; private set; }
+
         public RecordingHandler(HttpResponseMessage response)
         {
             _response = response;
@@ -198,6 +233,8 @@ public class FacturaloPlusPaymentComplementStampingGatewayTests
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            LastRequest = request;
+            LastContentType = request.Content?.Headers.ContentType?.MediaType;
             return Task.FromResult(_response);
         }
     }

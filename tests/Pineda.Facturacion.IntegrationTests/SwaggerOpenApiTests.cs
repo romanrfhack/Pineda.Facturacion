@@ -99,7 +99,7 @@ internal sealed class SwaggerApiFactory : WebApplicationFactory<Program>, IAsync
                 ["BillingWrite:ConnectionString"] = "Server=localhost;Database=test;User ID=test;Password=test;",
                 ["FacturaloPlus:BaseUrl"] = "https://facturaloplus-placeholder.local/",
                 ["FacturaloPlus:StampPath"] = "/cfdi/stamp",
-                ["FacturaloPlus:PaymentComplementStampPath"] = "/cfdi/payment-complement/stamp",
+                ["FacturaloPlus:PaymentComplementStampPath"] = "cfdi/payment-complement/stamp",
                 ["FacturaloPlus:CancelPath"] = "cancelar2",
                 ["FacturaloPlus:StatusQueryPath"] = "consultarEstadoSAT",
                 ["FacturaloPlus:PaymentComplementCancelPath"] = "/cfdi/payment-complement/cancel",
