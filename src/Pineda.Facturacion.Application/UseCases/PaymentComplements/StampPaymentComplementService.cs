@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Xml.Linq;
 using Pineda.Facturacion.Application.Abstractions.Pac;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Common;
@@ -9,19 +11,29 @@ namespace Pineda.Facturacion.Application.UseCases.PaymentComplements;
 
 public class StampPaymentComplementService
 {
+    private const string DefaultTaxCode = "002";
     private readonly IPaymentComplementDocumentRepository _paymentComplementDocumentRepository;
     private readonly IPaymentComplementStampRepository _paymentComplementStampRepository;
+    private readonly IAccountsReceivablePaymentRepository _accountsReceivablePaymentRepository;
+    private readonly IFiscalDocumentRepository _fiscalDocumentRepository;
+    private readonly IExternalRepBaseDocumentRepository _externalRepBaseDocumentRepository;
     private readonly IPaymentComplementStampingGateway _paymentComplementStampingGateway;
     private readonly IUnitOfWork _unitOfWork;
 
     public StampPaymentComplementService(
         IPaymentComplementDocumentRepository paymentComplementDocumentRepository,
         IPaymentComplementStampRepository paymentComplementStampRepository,
+        IAccountsReceivablePaymentRepository accountsReceivablePaymentRepository,
+        IFiscalDocumentRepository fiscalDocumentRepository,
+        IExternalRepBaseDocumentRepository externalRepBaseDocumentRepository,
         IPaymentComplementStampingGateway paymentComplementStampingGateway,
         IUnitOfWork unitOfWork)
     {
         _paymentComplementDocumentRepository = paymentComplementDocumentRepository;
         _paymentComplementStampRepository = paymentComplementStampRepository;
+        _accountsReceivablePaymentRepository = accountsReceivablePaymentRepository;
+        _fiscalDocumentRepository = fiscalDocumentRepository;
+        _externalRepBaseDocumentRepository = externalRepBaseDocumentRepository;
         _paymentComplementStampingGateway = paymentComplementStampingGateway;
         _unitOfWork = unitOfWork;
     }
@@ -79,10 +91,12 @@ public class StampPaymentComplementService
             };
         }
 
-        if (!TryBuildRequest(document, out var request, out var validationError))
+        var requestBuildResult = await TryBuildRequestAsync(document, cancellationToken);
+        if (!requestBuildResult.IsSuccess)
         {
-            return ValidationFailure(document.Id, validationError!);
+            return ValidationFailure(document.Id, requestBuildResult.ErrorMessage!);
         }
+        var request = requestBuildResult.Request;
 
         var requestStartedAtUtc = DateTime.UtcNow;
         document.Status = PaymentComplementDocumentStatus.StampingRequested;
@@ -160,54 +174,81 @@ public class StampPaymentComplementService
         return result;
     }
 
-    private static bool TryBuildRequest(PaymentComplementDocument document, out PaymentComplementStampingRequest? request, out string? validationError)
+    private async Task<RequestBuildResult> TryBuildRequestAsync(
+        PaymentComplementDocument document,
+        CancellationToken cancellationToken)
     {
-        request = null;
-        validationError = null;
-
         if (string.IsNullOrWhiteSpace(document.PacEnvironment))
         {
-            validationError = "Payment complement PAC environment reference is required.";
-            return false;
+            return RequestBuildResult.Fail("Payment complement PAC environment reference is required.");
         }
 
         if (string.IsNullOrWhiteSpace(document.CertificateReference))
         {
-            validationError = "Payment complement certificate reference is required.";
-            return false;
+            return RequestBuildResult.Fail("Payment complement certificate reference is required.");
         }
 
         if (string.IsNullOrWhiteSpace(document.PrivateKeyReference))
         {
-            validationError = "Payment complement private key reference is required.";
-            return false;
+            return RequestBuildResult.Fail("Payment complement private key reference is required.");
         }
 
         if (string.IsNullOrWhiteSpace(document.PrivateKeyPasswordReference))
         {
-            validationError = "Payment complement private key password reference is required.";
-            return false;
+            return RequestBuildResult.Fail("Payment complement private key password reference is required.");
         }
 
         if (string.IsNullOrWhiteSpace(document.CurrencyCode) || !string.Equals(FiscalMasterDataNormalization.NormalizeRequiredCode(document.CurrencyCode), "MXN", StringComparison.Ordinal))
         {
-            validationError = "Current MVP payment complement stamping supports MXN only.";
-            return false;
+            return RequestBuildResult.Fail("Current MVP payment complement stamping supports MXN only.");
         }
 
         if (!document.RelatedDocuments.Any())
         {
-            validationError = "Payment complement must contain at least one related document.";
-            return false;
+            return RequestBuildResult.Fail("Payment complement must contain at least one related document.");
         }
 
         if (document.RelatedDocuments.Any(x => string.IsNullOrWhiteSpace(x.RelatedDocumentUuid)))
         {
-            validationError = "Payment complement related documents must contain persisted original invoice UUIDs.";
-            return false;
+            return RequestBuildResult.Fail("Payment complement related documents must contain persisted original invoice UUIDs.");
         }
 
-        request = new PaymentComplementStampingRequest
+        var payment = await _accountsReceivablePaymentRepository.GetByIdAsync(document.AccountsReceivablePaymentId, cancellationToken);
+        if (payment is null)
+        {
+            return RequestBuildResult.Fail($"Accounts receivable payment '{document.AccountsReceivablePaymentId}' was not found.");
+        }
+
+        if (string.IsNullOrWhiteSpace(payment.PaymentFormSat))
+        {
+            return RequestBuildResult.Fail("Payment complement payment form SAT is required.");
+        }
+
+        var relatedDocuments = new List<PaymentComplementStampingRequestRelatedDocument>();
+        foreach (var relatedDocument in document.RelatedDocuments.OrderBy(x => x.Id))
+        {
+            var enrichment = await BuildRelatedDocumentFiscalSnapshotAsync(relatedDocument, cancellationToken);
+            if (!enrichment.IsSuccess)
+            {
+                return RequestBuildResult.Fail(enrichment.ErrorMessage!);
+            }
+
+            relatedDocuments.Add(new PaymentComplementStampingRequestRelatedDocument
+            {
+                AccountsReceivableInvoiceId = relatedDocument.AccountsReceivableInvoiceId,
+                FiscalDocumentId = relatedDocument.FiscalDocumentId,
+                RelatedDocumentUuid = relatedDocument.RelatedDocumentUuid,
+                InstallmentNumber = relatedDocument.InstallmentNumber,
+                PreviousBalance = relatedDocument.PreviousBalance,
+                PaidAmount = relatedDocument.PaidAmount,
+                RemainingBalance = relatedDocument.RemainingBalance,
+                CurrencyCode = relatedDocument.CurrencyCode,
+                TaxObjectCode = enrichment.TaxObjectCode,
+                TaxTransfers = enrichment.TaxTransfers
+            });
+        }
+
+        var request = new PaymentComplementStampingRequest
         {
             PaymentComplementDocumentId = document.Id,
             PacEnvironment = document.PacEnvironment,
@@ -218,6 +259,7 @@ public class StampPaymentComplementService
             DocumentType = document.DocumentType,
             IssuedAtUtc = document.IssuedAtUtc,
             PaymentDateUtc = document.PaymentDateUtc,
+            PaymentFormSat = FiscalMasterDataNormalization.NormalizeRequiredCode(payment.PaymentFormSat),
             CurrencyCode = "MXN",
             TotalPaymentsAmount = document.TotalPaymentsAmount,
             IssuerRfc = document.IssuerRfc,
@@ -230,23 +272,287 @@ public class StampPaymentComplementService
             ReceiverPostalCode = document.ReceiverPostalCode,
             ReceiverCountryCode = document.ReceiverCountryCode,
             ReceiverForeignTaxRegistration = document.ReceiverForeignTaxRegistration,
-            RelatedDocuments = document.RelatedDocuments
-                .OrderBy(x => x.Id)
-                .Select(x => new PaymentComplementStampingRequestRelatedDocument
-                {
-                    AccountsReceivableInvoiceId = x.AccountsReceivableInvoiceId,
-                    FiscalDocumentId = x.FiscalDocumentId,
-                    RelatedDocumentUuid = x.RelatedDocumentUuid,
-                    InstallmentNumber = x.InstallmentNumber,
-                    PreviousBalance = x.PreviousBalance,
-                    PaidAmount = x.PaidAmount,
-                    RemainingBalance = x.RemainingBalance,
-                    CurrencyCode = x.CurrencyCode
-                })
-                .ToList()
+            RelatedDocuments = relatedDocuments
         };
 
-        return true;
+        return RequestBuildResult.Success(request);
+    }
+
+    private async Task<RelatedDocumentFiscalSnapshot> BuildRelatedDocumentFiscalSnapshotAsync(
+        PaymentComplementRelatedDocument relatedDocument,
+        CancellationToken cancellationToken)
+    {
+        if (relatedDocument.PaidAmount <= 0)
+        {
+            return RelatedDocumentFiscalSnapshot.Fail(
+                $"Payment complement related document '{relatedDocument.RelatedDocumentUuid}' must have a paid amount greater than zero.");
+        }
+
+        if (relatedDocument.FiscalDocumentId.HasValue)
+        {
+            var fiscalDocument = await _fiscalDocumentRepository.GetByIdAsync(relatedDocument.FiscalDocumentId.Value, cancellationToken);
+            if (fiscalDocument is null)
+            {
+                return RelatedDocumentFiscalSnapshot.Fail(
+                    $"Fiscal document '{relatedDocument.FiscalDocumentId.Value}' was not found for payment complement relation.");
+            }
+
+            return BuildFiscalSnapshotFromInternalDocument(fiscalDocument, relatedDocument);
+        }
+
+        if (relatedDocument.ExternalRepBaseDocumentId.HasValue)
+        {
+            var externalDocument = await _externalRepBaseDocumentRepository.GetByIdAsync(relatedDocument.ExternalRepBaseDocumentId.Value, cancellationToken);
+            if (externalDocument is null)
+            {
+                return RelatedDocumentFiscalSnapshot.Fail(
+                    $"External REP base document '{relatedDocument.ExternalRepBaseDocumentId.Value}' was not found for payment complement relation.");
+            }
+
+            return BuildFiscalSnapshotFromExternalXml(externalDocument, relatedDocument);
+        }
+
+        return RelatedDocumentFiscalSnapshot.Fail(
+            $"Payment complement related document '{relatedDocument.RelatedDocumentUuid}' is missing its fiscal source.");
+    }
+
+    private static RelatedDocumentFiscalSnapshot BuildFiscalSnapshotFromInternalDocument(
+        FiscalDocument fiscalDocument,
+        PaymentComplementRelatedDocument relatedDocument)
+    {
+        if (fiscalDocument.Total <= 0)
+        {
+            return RelatedDocumentFiscalSnapshot.Fail(
+                $"Fiscal document '{fiscalDocument.Id}' has an invalid total for REP tax breakdown.");
+        }
+
+        var transferGroups = fiscalDocument.Items
+            .Where(x => string.Equals(x.TaxObjectCode, "02", StringComparison.OrdinalIgnoreCase))
+            .GroupBy(x => new
+            {
+                TaxCode = DefaultTaxCode,
+                FactorType = "Tasa",
+                Rate = NormalizeRate(x.VatRate)
+            })
+            .Select(group => new TaxTransferSource
+            {
+                TaxCode = group.Key.TaxCode,
+                FactorType = group.Key.FactorType,
+                Rate = group.Key.Rate,
+                BaseAmount = group.Sum(x => x.Subtotal),
+                TaxAmount = group.Sum(x => x.TaxTotal)
+            })
+            .ToList();
+
+        return BuildRelatedDocumentSnapshotFromTransferSources(
+            fiscalDocument.Total,
+            transferGroups,
+            relatedDocument);
+    }
+
+    private static RelatedDocumentFiscalSnapshot BuildFiscalSnapshotFromExternalXml(
+        ExternalRepBaseDocument externalDocument,
+        PaymentComplementRelatedDocument relatedDocument)
+    {
+        if (string.IsNullOrWhiteSpace(externalDocument.XmlContent))
+        {
+            return RelatedDocumentFiscalSnapshot.Fail(
+                $"External REP base document '{externalDocument.Id}' is missing XML content required for REP tax breakdown.");
+        }
+
+        try
+        {
+            var xml = XDocument.Parse(externalDocument.XmlContent, LoadOptions.PreserveWhitespace);
+            var root = xml.Root;
+            if (root is null || !string.Equals(root.Name.LocalName, "Comprobante", StringComparison.Ordinal))
+            {
+                return RelatedDocumentFiscalSnapshot.Fail(
+                    $"External REP base document '{externalDocument.Id}' XML does not contain a CFDI Comprobante root.");
+            }
+
+            var total = ParseRequiredDecimal(root, "Total");
+            var conceptoTraslados = root
+                .Descendants()
+                .Where(x => string.Equals(x.Name.LocalName, "Traslado", StringComparison.Ordinal))
+                .Where(x => x.Parent is not null && string.Equals(x.Parent.Name.LocalName, "Traslados", StringComparison.Ordinal))
+                .Select(x => new TaxTransferSource
+                {
+                    TaxCode = NormalizeOptionalCode(GetAttribute(x, "Impuesto")) ?? DefaultTaxCode,
+                    FactorType = NormalizeOptionalCode(GetAttribute(x, "TipoFactor")) ?? "Tasa",
+                    Rate = ParseOptionalDecimal(GetAttribute(x, "TasaOCuota")) ?? 0m,
+                    BaseAmount = ParseOptionalDecimal(GetAttribute(x, "Base")) ?? 0m,
+                    TaxAmount = ParseOptionalDecimal(GetAttribute(x, "Importe")) ?? 0m
+                })
+                .Where(x => string.Equals(x.TaxCode, DefaultTaxCode, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            return BuildRelatedDocumentSnapshotFromTransferSources(total, conceptoTraslados, relatedDocument);
+        }
+        catch (Exception)
+        {
+            return RelatedDocumentFiscalSnapshot.Fail(
+                $"External REP base document '{externalDocument.Id}' XML could not be parsed for REP tax breakdown.");
+        }
+    }
+
+    private static RelatedDocumentFiscalSnapshot BuildRelatedDocumentSnapshotFromTransferSources(
+        decimal originalDocumentTotal,
+        IReadOnlyCollection<TaxTransferSource> transferSources,
+        PaymentComplementRelatedDocument relatedDocument)
+    {
+        if (originalDocumentTotal <= 0)
+        {
+            return RelatedDocumentFiscalSnapshot.Fail(
+                $"Payment complement related document '{relatedDocument.RelatedDocumentUuid}' has an invalid original total.");
+        }
+
+        var paidRatio = relatedDocument.PaidAmount / originalDocumentTotal;
+        if (paidRatio <= 0)
+        {
+            return RelatedDocumentFiscalSnapshot.Fail(
+                $"Payment complement related document '{relatedDocument.RelatedDocumentUuid}' has an invalid paid ratio.");
+        }
+
+        if (transferSources.Count == 0)
+        {
+            return RelatedDocumentFiscalSnapshot.Success("01", []);
+        }
+
+        var paidTransfers = transferSources
+            .GroupBy(x => new { x.TaxCode, x.FactorType, x.Rate })
+            .Select(group => new PaymentComplementStampingRequestTaxTransfer
+            {
+                TaxCode = group.Key.TaxCode,
+                FactorType = group.Key.FactorType,
+                Rate = group.Key.Rate,
+                BaseAmount = NormalizeMoney(group.Sum(x => x.BaseAmount) * paidRatio),
+                TaxAmount = NormalizeMoney(group.Sum(x => x.TaxAmount) * paidRatio)
+            })
+            .Where(x => x.BaseAmount > 0 || x.TaxAmount > 0 || x.Rate == 0m)
+            .ToList();
+
+        return RelatedDocumentFiscalSnapshot.Success(
+            paidTransfers.Count == 0 ? "01" : "02",
+            paidTransfers);
+    }
+
+    private static decimal NormalizeMoney(decimal amount)
+    {
+        return Math.Round(amount, 2, MidpointRounding.AwayFromZero);
+    }
+
+    private static decimal NormalizeRate(decimal rate)
+    {
+        return Math.Round(rate, 6, MidpointRounding.AwayFromZero);
+    }
+
+    private static decimal ParseRequiredDecimal(XElement element, string attributeName)
+    {
+        var value = ParseOptionalDecimal(GetAttribute(element, attributeName));
+        if (!value.HasValue)
+        {
+            throw new InvalidOperationException($"Attribute '{attributeName}' is required.");
+        }
+
+        return value.Value;
+    }
+
+    private static decimal? ParseOptionalDecimal(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return decimal.TryParse(value, NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : null;
+    }
+
+    private static string? GetAttribute(XElement element, string localName)
+    {
+        return element.Attributes()
+            .FirstOrDefault(x => string.Equals(x.Name.LocalName, localName, StringComparison.Ordinal))
+            ?.Value;
+    }
+
+    private static string? NormalizeOptionalCode(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? null
+            : FiscalMasterDataNormalization.NormalizeRequiredCode(value);
+    }
+
+    private sealed class TaxTransferSource
+    {
+        public string TaxCode { get; init; } = string.Empty;
+
+        public string FactorType { get; init; } = string.Empty;
+
+        public decimal Rate { get; init; }
+
+        public decimal BaseAmount { get; init; }
+
+        public decimal TaxAmount { get; init; }
+    }
+
+    private sealed class RelatedDocumentFiscalSnapshot
+    {
+        public bool IsSuccess { get; init; }
+
+        public string? ErrorMessage { get; init; }
+
+        public string TaxObjectCode { get; init; } = "01";
+
+        public List<PaymentComplementStampingRequestTaxTransfer> TaxTransfers { get; init; } = [];
+
+        public static RelatedDocumentFiscalSnapshot Success(
+            string taxObjectCode,
+            List<PaymentComplementStampingRequestTaxTransfer> taxTransfers)
+        {
+            return new RelatedDocumentFiscalSnapshot
+            {
+                IsSuccess = true,
+                TaxObjectCode = taxObjectCode,
+                TaxTransfers = taxTransfers
+            };
+        }
+
+        public static RelatedDocumentFiscalSnapshot Fail(string errorMessage)
+        {
+            return new RelatedDocumentFiscalSnapshot
+            {
+                IsSuccess = false,
+                ErrorMessage = errorMessage
+            };
+        }
+    }
+
+    private sealed class RequestBuildResult
+    {
+        public bool IsSuccess { get; init; }
+
+        public string? ErrorMessage { get; init; }
+
+        public PaymentComplementStampingRequest? Request { get; init; }
+
+        public static RequestBuildResult Success(PaymentComplementStampingRequest request)
+        {
+            return new RequestBuildResult
+            {
+                IsSuccess = true,
+                Request = request
+            };
+        }
+
+        public static RequestBuildResult Fail(string errorMessage)
+        {
+            return new RequestBuildResult
+            {
+                IsSuccess = false,
+                ErrorMessage = errorMessage
+            };
+        }
     }
 
     private static void ApplyGatewayResult(PaymentComplementStamp stamp, PaymentComplementStampingGatewayResult gatewayResult, DateTime now)

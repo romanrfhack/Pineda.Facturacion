@@ -3468,7 +3468,7 @@ internal sealed class MvpApiFactory : WebApplicationFactory<Program>, IAsyncDisp
                 ["BillingWrite:ConnectionString"] = "Server=localhost;Database=test;User ID=test;Password=test;",
                 ["FacturaloPlus:BaseUrl"] = "https://facturaloplus-placeholder.local/",
                 ["FacturaloPlus:StampPath"] = "/cfdi/stamp",
-                ["FacturaloPlus:PaymentComplementStampPath"] = "cfdi/payment-complement/stamp",
+                ["FacturaloPlus:PaymentComplementStampPath"] = "timbrarJSON3",
                 ["FacturaloPlus:CancelPath"] = "cancelar2",
                 ["FacturaloPlus:StatusQueryPath"] = "consultarEstadoSAT",
                 ["FacturaloPlus:PaymentComplementCancelPath"] = "/cfdi/payment-complement/cancel",

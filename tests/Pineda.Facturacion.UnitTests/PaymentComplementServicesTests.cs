@@ -695,7 +695,14 @@ public class PaymentComplementServicesTests
             detailRepository,
             new GetPaymentComplementStampByPaymentComplementIdService(stampRepository),
             new GetInternalRepBaseDocumentByFiscalDocumentIdService(detailRepository, new PcFakeInternalRepBaseDocumentStateRepository(), new PcFakeUnitOfWork()),
-            new StampPaymentComplementService(paymentComplementRepository, stampRepository, gateway, new PcFakeUnitOfWork()));
+            new StampPaymentComplementService(
+                paymentComplementRepository,
+                stampRepository,
+                new PcFakeAccountsReceivablePaymentRepository { ExistingById = CreatePayment(preparedComplement.AccountsReceivablePaymentId, preparedComplement.TotalPaymentsAmount) },
+                new PcFakeFiscalDocumentRepository { ById = { [preparedComplement.RelatedDocuments[0].FiscalDocumentId!.Value] = fiscalDocument } },
+                new PcFakeExternalRepBaseDocumentRepository(),
+                gateway,
+                new PcFakeUnitOfWork()));
 
         var result = await service.ExecuteAsync(new StampInternalRepBaseDocumentPaymentComplementCommand
         {
@@ -725,7 +732,14 @@ public class PaymentComplementServicesTests
             detailRepository,
             new GetPaymentComplementStampByPaymentComplementIdService(new PcFakePaymentComplementStampRepository()),
             new GetInternalRepBaseDocumentByFiscalDocumentIdService(detailRepository, new PcFakeInternalRepBaseDocumentStateRepository(), new PcFakeUnitOfWork()),
-            new StampPaymentComplementService(new PcFakePaymentComplementDocumentRepository(), new PcFakePaymentComplementStampRepository(), new PcFakePaymentComplementStampingGateway(), new PcFakeUnitOfWork()));
+            new StampPaymentComplementService(
+                new PcFakePaymentComplementDocumentRepository(),
+                new PcFakePaymentComplementStampRepository(),
+                new PcFakeAccountsReceivablePaymentRepository(),
+                new PcFakeFiscalDocumentRepository(),
+                new PcFakeExternalRepBaseDocumentRepository(),
+                new PcFakePaymentComplementStampingGateway(),
+                new PcFakeUnitOfWork()));
 
         var result = await service.ExecuteAsync(new StampInternalRepBaseDocumentPaymentComplementCommand
         {
@@ -758,11 +772,7 @@ public class PaymentComplementServicesTests
             }
         };
 
-        var service = new StampPaymentComplementService(
-            new PcFakePaymentComplementDocumentRepository { ExistingTrackedById = document },
-            stampRepository,
-            gateway,
-            new PcFakeUnitOfWork());
+        var service = CreateStampService(document, stampRepository, gateway);
 
         var result = await service.ExecuteAsync(new StampPaymentComplementCommand
         {
@@ -782,11 +792,7 @@ public class PaymentComplementServicesTests
         var document = CreatePaymentComplementDocument();
         document.Status = PaymentComplementDocumentStatus.Stamped;
 
-        var service = new StampPaymentComplementService(
-            new PcFakePaymentComplementDocumentRepository { ExistingTrackedById = document },
-            new PcFakePaymentComplementStampRepository(),
-            new PcFakePaymentComplementStampingGateway(),
-            new PcFakeUnitOfWork());
+        var service = CreateStampService(document, new PcFakePaymentComplementStampRepository(), new PcFakePaymentComplementStampingGateway());
 
         var result = await service.ExecuteAsync(new StampPaymentComplementCommand
         {
@@ -816,11 +822,7 @@ public class PaymentComplementServicesTests
             }
         };
 
-        var service = new StampPaymentComplementService(
-            new PcFakePaymentComplementDocumentRepository { ExistingTrackedById = document },
-            stampRepository,
-            gateway,
-            new PcFakeUnitOfWork());
+        var service = CreateStampService(document, stampRepository, gateway);
 
         var result = await service.ExecuteAsync(new StampPaymentComplementCommand
         {
@@ -851,11 +853,7 @@ public class PaymentComplementServicesTests
             }
         };
 
-        var service = new StampPaymentComplementService(
-            new PcFakePaymentComplementDocumentRepository { ExistingTrackedById = document },
-            stampRepository,
-            gateway,
-            new PcFakeUnitOfWork());
+        var service = CreateStampService(document, stampRepository, gateway);
 
         var result = await service.ExecuteAsync(new StampPaymentComplementCommand
         {
@@ -874,11 +872,7 @@ public class PaymentComplementServicesTests
         document.CertificateReference = string.Empty;
 
         var gateway = new PcFakePaymentComplementStampingGateway();
-        var service = new StampPaymentComplementService(
-            new PcFakePaymentComplementDocumentRepository { ExistingTrackedById = document },
-            new PcFakePaymentComplementStampRepository(),
-            gateway,
-            new PcFakeUnitOfWork());
+        var service = CreateStampService(document, new PcFakePaymentComplementStampRepository(), gateway);
 
         var result = await service.ExecuteAsync(new StampPaymentComplementCommand
         {
@@ -908,11 +902,7 @@ public class PaymentComplementServicesTests
             }
         };
 
-        var service = new StampPaymentComplementService(
-            new PcFakePaymentComplementDocumentRepository { ExistingTrackedById = document },
-            new PcFakePaymentComplementStampRepository(),
-            gateway,
-            new PcFakeUnitOfWork());
+        var service = CreateStampService(document, new PcFakePaymentComplementStampRepository(), gateway);
 
         await service.ExecuteAsync(new StampPaymentComplementCommand
         {
@@ -980,6 +970,38 @@ public class PaymentComplementServicesTests
             new PcFakeIssuerProfileRepository(),
             new PcFakeFiscalReceiverRepository(),
             paymentComplementRepository,
+            new PcFakeUnitOfWork());
+    }
+
+    private static StampPaymentComplementService CreateStampService(
+        PaymentComplementDocument document,
+        PcFakePaymentComplementStampRepository stampRepository,
+        IPaymentComplementStampingGateway gateway,
+        AccountsReceivablePayment? payment = null,
+        FiscalDocument? fiscalDocument = null,
+        ExternalRepBaseDocument? externalRepBaseDocument = null)
+    {
+        payment ??= CreatePayment(document.AccountsReceivablePaymentId, document.TotalPaymentsAmount);
+        fiscalDocument ??= CreateFiscalDocument(id: document.RelatedDocuments.First().FiscalDocumentId ?? 301, receiverRfc: document.ReceiverRfc);
+
+        return new StampPaymentComplementService(
+            new PcFakePaymentComplementDocumentRepository { ExistingTrackedById = document },
+            stampRepository,
+            new PcFakeAccountsReceivablePaymentRepository { ExistingById = payment },
+            new PcFakeFiscalDocumentRepository
+            {
+                ById =
+                {
+                    [fiscalDocument.Id] = fiscalDocument
+                }
+            },
+            new PcFakeExternalRepBaseDocumentRepository
+            {
+                ById = externalRepBaseDocument is null
+                    ? []
+                    : new Dictionary<long, ExternalRepBaseDocument> { [externalRepBaseDocument.Id] = externalRepBaseDocument }
+            },
+            gateway,
             new PcFakeUnitOfWork());
     }
 
