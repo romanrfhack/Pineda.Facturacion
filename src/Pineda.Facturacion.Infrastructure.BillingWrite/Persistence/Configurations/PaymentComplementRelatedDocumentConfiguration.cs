@@ -20,6 +20,10 @@ public class PaymentComplementRelatedDocumentConfiguration : IEntityTypeConfigur
             .HasColumnName("payment_complement_document_id")
             .IsRequired();
 
+        builder.Property(x => x.PaymentComplementPaymentId)
+            .HasColumnName("payment_complement_payment_id")
+            .IsRequired();
+
         builder.Property(x => x.AccountsReceivableInvoiceId)
             .HasColumnName("accounts_receivable_invoice_id")
             .IsRequired();
@@ -41,6 +45,18 @@ public class PaymentComplementRelatedDocumentConfiguration : IEntityTypeConfigur
             .HasMaxLength(50)
             .HasColumnType("varchar(50)")
             .IsRequired();
+
+        builder.Property(x => x.Series)
+            .HasColumnName("series")
+            .HasMaxLength(50)
+            .HasColumnType("varchar(50)")
+            .IsRequired(false);
+
+        builder.Property(x => x.Folio)
+            .HasColumnName("folio")
+            .HasMaxLength(50)
+            .HasColumnType("varchar(50)")
+            .IsRequired(false);
 
         builder.Property(x => x.InstallmentNumber)
             .HasColumnName("installment_number")
@@ -67,11 +83,23 @@ public class PaymentComplementRelatedDocumentConfiguration : IEntityTypeConfigur
             .HasColumnType("char(3)")
             .IsRequired();
 
+        builder.Property(x => x.CurrencyEquivalence)
+            .HasColumnName("currency_equivalence")
+            .HasPrecision(18, 6)
+            .IsRequired(false);
+
+        builder.Property(x => x.TaxObjectCode)
+            .HasColumnName("tax_object_code")
+            .HasMaxLength(10)
+            .HasColumnType("varchar(10)")
+            .IsRequired();
+
         builder.Property(x => x.CreatedAtUtc)
             .HasColumnName("created_at_utc")
             .IsRequired();
 
         builder.HasIndex(x => x.PaymentComplementDocumentId);
+        builder.HasIndex(x => x.PaymentComplementPaymentId);
         builder.HasIndex(x => x.RelatedDocumentUuid);
         builder.HasIndex(x => x.ExternalRepBaseDocumentId);
 

@@ -336,6 +336,7 @@ export interface SetAccountsReceivablePaymentUnappliedDispositionResponse {
 }
 
 export interface PreparePaymentComplementRequest {
+  additionalPaymentIds?: number[];
   issuedAtUtc?: string | null;
 }
 

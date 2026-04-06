@@ -645,6 +645,7 @@ public static class AccountsReceivableEndpoints
             new PreparePaymentComplementCommand
             {
                 AccountsReceivablePaymentId = paymentId,
+                AdditionalAccountsReceivablePaymentIds = request?.AdditionalPaymentIds ?? [],
                 IssuedAtUtc = request?.IssuedAtUtc
             },
             cancellationToken);
@@ -665,7 +666,7 @@ public static class AccountsReceivableEndpoints
             "PaymentComplementDocument",
             result.PaymentComplementId?.ToString() ?? paymentId.ToString(),
             result.Outcome.ToString(),
-            new { paymentId, request?.IssuedAtUtc },
+            new { paymentId, request?.IssuedAtUtc, request?.AdditionalPaymentIds },
             new { result.PaymentComplementId, result.Status },
             result.ErrorMessage,
             cancellationToken);
@@ -1504,6 +1505,8 @@ public class AccountsReceivablePaymentSummaryItemResponse
 
 public class PreparePaymentComplementRequest
 {
+    public List<long> AdditionalPaymentIds { get; set; } = [];
+
     public DateTime? IssuedAtUtc { get; set; }
 }
 

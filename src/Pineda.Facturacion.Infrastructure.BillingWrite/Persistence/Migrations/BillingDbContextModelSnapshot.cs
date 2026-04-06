@@ -2907,6 +2907,105 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
                     b.ToTable("payment_complement_document", (string)null);
                 });
 
+            modelBuilder.Entity("Pineda.Facturacion.Domain.Entities.PaymentComplementPayment", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("AccountsReceivablePaymentId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("accounts_receivable_payment_id");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("decimal(18,6)")
+                        .HasColumnName("amount");
+
+                    b.Property<string>("BeneficiaryAccountNumber")
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)")
+                        .HasColumnName("beneficiary_account_number");
+
+                    b.Property<string>("BeneficiaryBankRfc")
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("beneficiary_bank_rfc");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime(6)")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<string>("CurrencyCode")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("char(3)")
+                        .HasColumnName("currency_code");
+
+                    b.Property<decimal?>("ExchangeRate")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("decimal(18,6)")
+                        .HasColumnName("exchange_rate");
+
+                    b.Property<string>("OperationNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)")
+                        .HasColumnName("operation_number");
+
+                    b.Property<string>("OrderingAccountNumber")
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)")
+                        .HasColumnName("ordering_account_number");
+
+                    b.Property<string>("OrderingBankRfc")
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("ordering_bank_rfc");
+
+                    b.Property<string>("PaymentCertificate")
+                        .HasColumnType("longtext")
+                        .HasColumnName("payment_certificate");
+
+                    b.Property<string>("PaymentChain")
+                        .HasColumnType("longtext")
+                        .HasColumnName("payment_chain");
+
+                    b.Property<long>("PaymentComplementDocumentId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("payment_complement_document_id");
+
+                    b.Property<DateTime>("PaymentDateUtc")
+                        .HasColumnType("datetime(6)")
+                        .HasColumnName("payment_date_utc");
+
+                    b.Property<string>("PaymentFormSat")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("varchar(10)")
+                        .HasColumnName("payment_form_sat");
+
+                    b.Property<string>("PaymentSeal")
+                        .HasColumnType("longtext")
+                        .HasColumnName("payment_seal");
+
+                    b.Property<string>("PaymentChainType")
+                        .HasMaxLength(10)
+                        .HasColumnType("varchar(10)")
+                        .HasColumnName("payment_chain_type");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccountsReceivablePaymentId")
+                        .IsUnique();
+
+                    b.HasIndex("PaymentComplementDocumentId");
+
+                    b.ToTable("payment_complement_payment", (string)null);
+                });
+
             modelBuilder.Entity("Pineda.Facturacion.Domain.Entities.PaymentComplementRelatedDocument", b =>
                 {
                     b.Property<long>("Id")
@@ -2929,6 +3028,11 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
                         .HasMaxLength(3)
                         .HasColumnType("char(3)")
                         .HasColumnName("currency_code");
+
+                    b.Property<decimal?>("CurrencyEquivalence")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("decimal(18,6)")
+                        .HasColumnName("currency_equivalence");
 
                     b.Property<long?>("ExternalRepBaseDocumentId")
                         .HasColumnType("bigint")
@@ -2955,6 +3059,10 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("payment_complement_document_id");
 
+                    b.Property<long>("PaymentComplementPaymentId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("payment_complement_payment_id");
+
                     b.Property<decimal>("PreviousBalance")
                         .HasPrecision(18, 6)
                         .HasColumnType("decimal(18,6)")
@@ -2966,10 +3074,26 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
                         .HasColumnType("varchar(50)")
                         .HasColumnName("related_document_uuid");
 
+                    b.Property<string>("Series")
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)")
+                        .HasColumnName("series");
+
+                    b.Property<string>("Folio")
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)")
+                        .HasColumnName("folio");
+
                     b.Property<decimal>("RemainingBalance")
                         .HasPrecision(18, 6)
                         .HasColumnType("decimal(18,6)")
                         .HasColumnName("remaining_balance");
+
+                    b.Property<string>("TaxObjectCode")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("varchar(10)")
+                        .HasColumnName("tax_object_code");
 
                     b.HasKey("Id");
 
@@ -2982,6 +3106,8 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
                     b.HasIndex("FiscalStampId");
 
                     b.HasIndex("PaymentComplementDocumentId");
+
+                    b.HasIndex("PaymentComplementPaymentId");
 
                     b.HasIndex("RelatedDocumentUuid");
 
@@ -3949,6 +4075,21 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
                 });
 
+            modelBuilder.Entity("Pineda.Facturacion.Domain.Entities.PaymentComplementPayment", b =>
+                {
+                    b.HasOne("Pineda.Facturacion.Domain.Entities.AccountsReceivablePayment", null)
+                        .WithMany()
+                        .HasForeignKey("AccountsReceivablePaymentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Pineda.Facturacion.Domain.Entities.PaymentComplementDocument", null)
+                        .WithMany("Payments")
+                        .HasForeignKey("PaymentComplementDocumentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Pineda.Facturacion.Domain.Entities.PaymentComplementRelatedDocument", b =>
                 {
                     b.HasOne("Pineda.Facturacion.Domain.Entities.AccountsReceivableInvoice", null)
@@ -3975,6 +4116,12 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
                     b.HasOne("Pineda.Facturacion.Domain.Entities.PaymentComplementDocument", null)
                         .WithMany("RelatedDocuments")
                         .HasForeignKey("PaymentComplementDocumentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Pineda.Facturacion.Domain.Entities.PaymentComplementPayment", null)
+                        .WithMany("RelatedDocuments")
+                        .HasForeignKey("PaymentComplementPaymentId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
@@ -4062,6 +4209,13 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
                 });
 
             modelBuilder.Entity("Pineda.Facturacion.Domain.Entities.PaymentComplementDocument", b =>
+                {
+                    b.Navigation("Payments");
+
+                    b.Navigation("RelatedDocuments");
+                });
+
+            modelBuilder.Entity("Pineda.Facturacion.Domain.Entities.PaymentComplementPayment", b =>
                 {
                     b.Navigation("RelatedDocuments");
                 });

@@ -278,6 +278,7 @@ export interface RepBaseDocumentBulkRefreshResponse {
 
 export interface PrepareInternalRepBaseDocumentPaymentComplementRequest {
   accountsReceivablePaymentId?: number | null;
+  additionalPaymentIds?: number[] | null;
 }
 
 export interface PrepareInternalRepBaseDocumentPaymentComplementResponse {

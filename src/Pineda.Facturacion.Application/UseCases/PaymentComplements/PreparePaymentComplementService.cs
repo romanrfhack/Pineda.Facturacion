@@ -47,8 +47,26 @@ public class PreparePaymentComplementService
             return ValidationFailure(command.AccountsReceivablePaymentId, "Accounts receivable payment id is required.");
         }
 
-        var payment = await _accountsReceivablePaymentRepository.GetByIdAsync(command.AccountsReceivablePaymentId, cancellationToken);
-        if (payment is null)
+        var requestedPaymentIds = BuildRequestedPaymentIds(command);
+        if (requestedPaymentIds.Count == 0)
+        {
+            return ValidationFailure(command.AccountsReceivablePaymentId, "At least one accounts receivable payment id is required.");
+        }
+
+        if (requestedPaymentIds.Any(x => x <= 0))
+        {
+            return ValidationFailure(command.AccountsReceivablePaymentId, "Payment complement payment ids must be greater than zero.");
+        }
+
+        var payments = await _accountsReceivablePaymentRepository.SearchAsync(
+            new SearchAccountsReceivablePaymentsFilter
+            {
+                PaymentIds = requestedPaymentIds
+            },
+            cancellationToken);
+        var paymentsById = payments.ToDictionary(x => x.Id);
+
+        if (!paymentsById.TryGetValue(command.AccountsReceivablePaymentId, out var anchorPayment))
         {
             return new PreparePaymentComplementResult
             {
@@ -59,19 +77,19 @@ public class PreparePaymentComplementService
             };
         }
 
-        if (!string.Equals(FiscalMasterDataNormalization.NormalizeRequiredCode(payment.CurrencyCode), "MXN", StringComparison.Ordinal))
+        var missingPaymentId = requestedPaymentIds.FirstOrDefault(x => !paymentsById.ContainsKey(x));
+        if (missingPaymentId > 0)
         {
-            return ValidationFailure(command.AccountsReceivablePaymentId, $"Current MVP payment complements support MXN only. Payment currency '{payment.CurrencyCode}' is not supported yet.");
+            return ValidationFailure(command.AccountsReceivablePaymentId, $"Accounts receivable payment '{missingPaymentId}' was not found.");
         }
 
-        if (!payment.Applications.Any())
+        var existingDocuments = await _paymentComplementDocumentRepository.GetByPaymentIdsAsync(requestedPaymentIds, cancellationToken);
+        if (existingDocuments.Count > 0)
         {
-            return ValidationFailure(command.AccountsReceivablePaymentId, "A payment complement requires at least one persisted payment application.");
-        }
+            var existingDocument = existingDocuments
+                .OrderBy(x => x.Id)
+                .First();
 
-        var existingDocument = await _paymentComplementDocumentRepository.GetByPaymentIdAsync(command.AccountsReceivablePaymentId, cancellationToken);
-        if (existingDocument is not null)
-        {
             return new PreparePaymentComplementResult
             {
                 Outcome = PreparePaymentComplementOutcome.Conflict,
@@ -79,197 +97,235 @@ public class PreparePaymentComplementService
                 AccountsReceivablePaymentId = command.AccountsReceivablePaymentId,
                 PaymentComplementId = existingDocument.Id,
                 Status = existingDocument.Status,
-                ErrorMessage = $"Accounts receivable payment '{command.AccountsReceivablePaymentId}' already has a payment complement."
+                ErrorMessage = $"Accounts receivable payment '{existingDocument.AccountsReceivablePaymentId}' already has a payment complement."
             };
         }
 
+        var orderedPayments = requestedPaymentIds.Select(x => paymentsById[x]).ToList();
         var linkedInvoices = new List<AccountsReceivableInvoice>();
-
         AnchorSnapshot? anchor = null;
+        var complementPayments = new List<PaymentComplementPayment>();
         var relatedDocuments = new List<PaymentComplementRelatedDocument>();
         var now = DateTime.UtcNow;
 
-        foreach (var application in payment.Applications.OrderBy(x => x.ApplicationSequence).ThenBy(x => x.Id))
+        foreach (var payment in orderedPayments)
         {
-            var invoice = await _accountsReceivableInvoiceRepository.GetTrackedByIdAsync(application.AccountsReceivableInvoiceId, cancellationToken);
-            if (invoice is null)
+            if (!string.Equals(FiscalMasterDataNormalization.NormalizeRequiredCode(payment.CurrencyCode), "MXN", StringComparison.Ordinal))
             {
-                return ValidationFailure(command.AccountsReceivablePaymentId, $"Accounts receivable invoice '{application.AccountsReceivableInvoiceId}' was not found.");
+                return ValidationFailure(command.AccountsReceivablePaymentId, $"Current MVP payment complements support MXN only. Payment currency '{payment.CurrencyCode}' is not supported yet.");
             }
 
-            linkedInvoices.Add(invoice);
-
-            if (!string.Equals(FiscalMasterDataNormalization.NormalizeRequiredCode(invoice.CurrencyCode), "MXN", StringComparison.Ordinal))
+            if (!payment.Applications.Any())
             {
-                return ValidationFailure(command.AccountsReceivablePaymentId, $"Current MVP payment complements support MXN only. Invoice currency '{invoice.CurrencyCode}' is not supported yet.");
+                return ValidationFailure(command.AccountsReceivablePaymentId, $"Accounts receivable payment '{payment.Id}' requires at least one persisted payment application.");
             }
 
-            PaymentComplementRelatedDocument relatedDocument;
-            AnchorSnapshot currentAnchor;
-            if (invoice.ExternalRepBaseDocumentId.HasValue)
+            var currentPaymentInvoices = new List<AccountsReceivableInvoice>();
+            var paymentSnapshot = new PaymentComplementPayment
             {
-                var externalDocument = await _externalRepBaseDocumentRepository.GetByIdAsync(invoice.ExternalRepBaseDocumentId.Value, cancellationToken);
-                if (externalDocument is null)
-                {
-                    return ValidationFailure(command.AccountsReceivablePaymentId, $"External REP base document '{invoice.ExternalRepBaseDocumentId.Value}' was not found.");
-                }
+                AccountsReceivablePaymentId = payment.Id,
+                PaymentDateUtc = payment.PaymentDateUtc,
+                PaymentFormSat = FiscalMasterDataNormalization.NormalizeRequiredCode(payment.PaymentFormSat),
+                CurrencyCode = FiscalMasterDataNormalization.NormalizeRequiredCode(payment.CurrencyCode),
+                Amount = NormalizeMoney(payment.Amount),
+                CreatedAtUtc = now
+            };
 
-                if (externalDocument.ValidationStatus != ExternalRepBaseDocumentValidationStatus.Accepted
-                    || externalDocument.SatStatus != ExternalRepBaseDocumentSatStatus.Active)
-                {
-                    return ValidationFailure(command.AccountsReceivablePaymentId, $"External REP base document '{externalDocument.Id}' is not in an active validated state eligible for payment complement relation.");
-                }
-
-                if (!string.Equals(FiscalMasterDataNormalization.NormalizeRequiredCode(externalDocument.PaymentMethodSat), "PPD", StringComparison.Ordinal))
-                {
-                    return ValidationFailure(command.AccountsReceivablePaymentId, $"External REP base document '{externalDocument.Id}' does not use MetodoPago PPD.");
-                }
-
-                if (!string.Equals(FiscalMasterDataNormalization.NormalizeRequiredCode(externalDocument.PaymentFormSat), "99", StringComparison.Ordinal))
-                {
-                    return ValidationFailure(command.AccountsReceivablePaymentId, $"External REP base document '{externalDocument.Id}' does not use FormaPago 99.");
-                }
-
-                var issuerProfile = await _issuerProfileRepository.GetActiveAsync(cancellationToken);
-                if (issuerProfile is null)
-                {
-                    return ValidationFailure(command.AccountsReceivablePaymentId, "No active issuer profile is configured to stamp REP for external documents.");
-                }
-
-                if (!string.Equals(issuerProfile.Rfc, externalDocument.IssuerRfc, StringComparison.OrdinalIgnoreCase))
-                {
-                    return ValidationFailure(command.AccountsReceivablePaymentId, $"External REP base document '{externalDocument.Id}' does not match the active issuer profile RFC.");
-                }
-
-                var fiscalReceiver = await _fiscalReceiverRepository.GetByRfcAsync(externalDocument.ReceiverRfc, cancellationToken);
-                if (fiscalReceiver is null || !fiscalReceiver.IsActive)
-                {
-                    return ValidationFailure(command.AccountsReceivablePaymentId, $"External REP base document '{externalDocument.Id}' does not match an active fiscal receiver in the catalog.");
-                }
-
-                currentAnchor = new AnchorSnapshot
-                {
-                    CfdiVersion = externalDocument.CfdiVersion,
-                    IssuerProfileId = issuerProfile.Id,
-                    FiscalReceiverId = fiscalReceiver.Id,
-                    IssuerRfc = issuerProfile.Rfc,
-                    IssuerLegalName = issuerProfile.LegalName,
-                    IssuerFiscalRegimeCode = issuerProfile.FiscalRegimeCode,
-                    IssuerPostalCode = issuerProfile.PostalCode,
-                    ReceiverRfc = fiscalReceiver.Rfc,
-                    ReceiverLegalName = fiscalReceiver.LegalName,
-                    ReceiverFiscalRegimeCode = fiscalReceiver.FiscalRegimeCode,
-                    ReceiverPostalCode = fiscalReceiver.PostalCode,
-                    ReceiverCountryCode = fiscalReceiver.CountryCode,
-                    ReceiverForeignTaxRegistration = fiscalReceiver.ForeignTaxRegistration,
-                    PacEnvironment = issuerProfile.PacEnvironment,
-                    CertificateReference = issuerProfile.CertificateReference,
-                    PrivateKeyReference = issuerProfile.PrivateKeyReference,
-                    PrivateKeyPasswordReference = issuerProfile.PrivateKeyPasswordReference
-                };
-
-                relatedDocument = new PaymentComplementRelatedDocument
-                {
-                    AccountsReceivableInvoiceId = invoice.Id,
-                    ExternalRepBaseDocumentId = externalDocument.Id,
-                    RelatedDocumentUuid = externalDocument.Uuid,
-                    CurrencyCode = "MXN",
-                    CreatedAtUtc = now
-                };
-            }
-            else
+            foreach (var application in payment.Applications.OrderBy(x => x.ApplicationSequence).ThenBy(x => x.Id))
             {
-                if (!invoice.FiscalDocumentId.HasValue)
+                var invoice = await _accountsReceivableInvoiceRepository.GetTrackedByIdAsync(application.AccountsReceivableInvoiceId, cancellationToken);
+                if (invoice is null)
                 {
-                    return ValidationFailure(command.AccountsReceivablePaymentId, $"Accounts receivable invoice '{invoice.Id}' is missing its internal fiscal document reference.");
+                    return ValidationFailure(command.AccountsReceivablePaymentId, $"Accounts receivable invoice '{application.AccountsReceivableInvoiceId}' was not found.");
                 }
 
-                var fiscalDocument = await _fiscalDocumentRepository.GetByIdAsync(invoice.FiscalDocumentId.Value, cancellationToken);
-                var fiscalStamp = await _fiscalStampRepository.GetByFiscalDocumentIdAsync(invoice.FiscalDocumentId.Value, cancellationToken);
-                if (fiscalDocument is null || fiscalStamp is null || string.IsNullOrWhiteSpace(fiscalStamp.Uuid))
+                linkedInvoices.Add(invoice);
+                currentPaymentInvoices.Add(invoice);
+
+                if (!string.Equals(FiscalMasterDataNormalization.NormalizeRequiredCode(invoice.CurrencyCode), "MXN", StringComparison.Ordinal))
                 {
-                    return ValidationFailure(command.AccountsReceivablePaymentId, $"Accounts receivable invoice '{invoice.Id}' does not have the persisted stamped fiscal evidence required for a payment complement.");
+                    return ValidationFailure(command.AccountsReceivablePaymentId, $"Current MVP payment complements support MXN only. Invoice currency '{invoice.CurrencyCode}' is not supported yet.");
                 }
 
-                if (fiscalDocument.Status != FiscalDocumentStatus.Stamped && fiscalDocument.Status != FiscalDocumentStatus.CancellationRejected)
+                PaymentComplementRelatedDocument relatedDocument;
+                AnchorSnapshot currentAnchor;
+                if (invoice.ExternalRepBaseDocumentId.HasValue)
                 {
-                    return ValidationFailure(command.AccountsReceivablePaymentId, $"Fiscal document '{fiscalDocument.Id}' is not in a stamped lifecycle state eligible for payment complement relation.");
+                    var externalDocument = await _externalRepBaseDocumentRepository.GetByIdAsync(invoice.ExternalRepBaseDocumentId.Value, cancellationToken);
+                    if (externalDocument is null)
+                    {
+                        return ValidationFailure(command.AccountsReceivablePaymentId, $"External REP base document '{invoice.ExternalRepBaseDocumentId.Value}' was not found.");
+                    }
+
+                    if (externalDocument.ValidationStatus != ExternalRepBaseDocumentValidationStatus.Accepted
+                        || externalDocument.SatStatus != ExternalRepBaseDocumentSatStatus.Active)
+                    {
+                        return ValidationFailure(command.AccountsReceivablePaymentId, $"External REP base document '{externalDocument.Id}' is not in an active validated state eligible for payment complement relation.");
+                    }
+
+                    if (!string.Equals(FiscalMasterDataNormalization.NormalizeRequiredCode(externalDocument.PaymentMethodSat), "PPD", StringComparison.Ordinal))
+                    {
+                        return ValidationFailure(command.AccountsReceivablePaymentId, $"External REP base document '{externalDocument.Id}' does not use MetodoPago PPD.");
+                    }
+
+                    if (!string.Equals(FiscalMasterDataNormalization.NormalizeRequiredCode(externalDocument.PaymentFormSat), "99", StringComparison.Ordinal))
+                    {
+                        return ValidationFailure(command.AccountsReceivablePaymentId, $"External REP base document '{externalDocument.Id}' does not use FormaPago 99.");
+                    }
+
+                    var issuerProfile = await _issuerProfileRepository.GetActiveAsync(cancellationToken);
+                    if (issuerProfile is null)
+                    {
+                        return ValidationFailure(command.AccountsReceivablePaymentId, "No active issuer profile is configured to stamp REP for external documents.");
+                    }
+
+                    if (!string.Equals(issuerProfile.Rfc, externalDocument.IssuerRfc, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return ValidationFailure(command.AccountsReceivablePaymentId, $"External REP base document '{externalDocument.Id}' does not match the active issuer profile RFC.");
+                    }
+
+                    var fiscalReceiver = await _fiscalReceiverRepository.GetByRfcAsync(externalDocument.ReceiverRfc, cancellationToken);
+                    if (fiscalReceiver is null || !fiscalReceiver.IsActive)
+                    {
+                        return ValidationFailure(command.AccountsReceivablePaymentId, $"External REP base document '{externalDocument.Id}' does not match an active fiscal receiver in the catalog.");
+                    }
+
+                    currentAnchor = new AnchorSnapshot
+                    {
+                        CfdiVersion = externalDocument.CfdiVersion,
+                        IssuerProfileId = issuerProfile.Id,
+                        FiscalReceiverId = fiscalReceiver.Id,
+                        IssuerRfc = issuerProfile.Rfc,
+                        IssuerLegalName = issuerProfile.LegalName,
+                        IssuerFiscalRegimeCode = issuerProfile.FiscalRegimeCode,
+                        IssuerPostalCode = issuerProfile.PostalCode,
+                        ReceiverRfc = fiscalReceiver.Rfc,
+                        ReceiverLegalName = fiscalReceiver.LegalName,
+                        ReceiverFiscalRegimeCode = fiscalReceiver.FiscalRegimeCode,
+                        ReceiverPostalCode = fiscalReceiver.PostalCode,
+                        ReceiverCountryCode = fiscalReceiver.CountryCode,
+                        ReceiverForeignTaxRegistration = fiscalReceiver.ForeignTaxRegistration,
+                        PacEnvironment = issuerProfile.PacEnvironment,
+                        CertificateReference = issuerProfile.CertificateReference,
+                        PrivateKeyReference = issuerProfile.PrivateKeyReference,
+                        PrivateKeyPasswordReference = issuerProfile.PrivateKeyPasswordReference
+                    };
+
+                    relatedDocument = new PaymentComplementRelatedDocument
+                    {
+                        AccountsReceivableInvoiceId = invoice.Id,
+                        ExternalRepBaseDocumentId = externalDocument.Id,
+                        RelatedDocumentUuid = externalDocument.Uuid,
+                        Series = externalDocument.Series,
+                        Folio = externalDocument.Folio,
+                        CurrencyCode = "MXN",
+                        CurrencyEquivalence = null,
+                        TaxObjectCode = "01",
+                        CreatedAtUtc = now
+                    };
+                }
+                else
+                {
+                    if (!invoice.FiscalDocumentId.HasValue)
+                    {
+                        return ValidationFailure(command.AccountsReceivablePaymentId, $"Accounts receivable invoice '{invoice.Id}' is missing its internal fiscal document reference.");
+                    }
+
+                    var fiscalDocument = await _fiscalDocumentRepository.GetByIdAsync(invoice.FiscalDocumentId.Value, cancellationToken);
+                    var fiscalStamp = await _fiscalStampRepository.GetByFiscalDocumentIdAsync(invoice.FiscalDocumentId.Value, cancellationToken);
+                    if (fiscalDocument is null || fiscalStamp is null || string.IsNullOrWhiteSpace(fiscalStamp.Uuid))
+                    {
+                        return ValidationFailure(command.AccountsReceivablePaymentId, $"Accounts receivable invoice '{invoice.Id}' does not have the persisted stamped fiscal evidence required for a payment complement.");
+                    }
+
+                    if (fiscalDocument.Status != FiscalDocumentStatus.Stamped && fiscalDocument.Status != FiscalDocumentStatus.CancellationRejected)
+                    {
+                        return ValidationFailure(command.AccountsReceivablePaymentId, $"Fiscal document '{fiscalDocument.Id}' is not in a stamped lifecycle state eligible for payment complement relation.");
+                    }
+
+                    currentAnchor = new AnchorSnapshot
+                    {
+                        CfdiVersion = fiscalDocument.CfdiVersion,
+                        IssuerProfileId = fiscalDocument.IssuerProfileId,
+                        FiscalReceiverId = fiscalDocument.FiscalReceiverId,
+                        IssuerRfc = fiscalDocument.IssuerRfc,
+                        IssuerLegalName = fiscalDocument.IssuerLegalName,
+                        IssuerFiscalRegimeCode = fiscalDocument.IssuerFiscalRegimeCode,
+                        IssuerPostalCode = fiscalDocument.IssuerPostalCode,
+                        ReceiverRfc = fiscalDocument.ReceiverRfc,
+                        ReceiverLegalName = fiscalDocument.ReceiverLegalName,
+                        ReceiverFiscalRegimeCode = fiscalDocument.ReceiverFiscalRegimeCode,
+                        ReceiverPostalCode = fiscalDocument.ReceiverPostalCode,
+                        ReceiverCountryCode = fiscalDocument.ReceiverCountryCode,
+                        ReceiverForeignTaxRegistration = fiscalDocument.ReceiverForeignTaxRegistration,
+                        PacEnvironment = fiscalDocument.PacEnvironment,
+                        CertificateReference = fiscalDocument.CertificateReference,
+                        PrivateKeyReference = fiscalDocument.PrivateKeyReference,
+                        PrivateKeyPasswordReference = fiscalDocument.PrivateKeyPasswordReference
+                    };
+
+                    relatedDocument = new PaymentComplementRelatedDocument
+                    {
+                        AccountsReceivableInvoiceId = invoice.Id,
+                        FiscalDocumentId = fiscalDocument.Id,
+                        FiscalStampId = fiscalStamp.Id,
+                        RelatedDocumentUuid = fiscalStamp.Uuid,
+                        Series = fiscalDocument.Series,
+                        Folio = fiscalDocument.Folio,
+                        CurrencyCode = "MXN",
+                        CurrencyEquivalence = null,
+                        TaxObjectCode = ResolveInternalTaxObjectCode(fiscalDocument),
+                        CreatedAtUtc = now
+                    };
                 }
 
-                currentAnchor = new AnchorSnapshot
+                if (anchor is null)
                 {
-                    CfdiVersion = fiscalDocument.CfdiVersion,
-                    IssuerProfileId = fiscalDocument.IssuerProfileId,
-                    FiscalReceiverId = fiscalDocument.FiscalReceiverId,
-                    IssuerRfc = fiscalDocument.IssuerRfc,
-                    IssuerLegalName = fiscalDocument.IssuerLegalName,
-                    IssuerFiscalRegimeCode = fiscalDocument.IssuerFiscalRegimeCode,
-                    IssuerPostalCode = fiscalDocument.IssuerPostalCode,
-                    ReceiverRfc = fiscalDocument.ReceiverRfc,
-                    ReceiverLegalName = fiscalDocument.ReceiverLegalName,
-                    ReceiverFiscalRegimeCode = fiscalDocument.ReceiverFiscalRegimeCode,
-                    ReceiverPostalCode = fiscalDocument.ReceiverPostalCode,
-                    ReceiverCountryCode = fiscalDocument.ReceiverCountryCode,
-                    ReceiverForeignTaxRegistration = fiscalDocument.ReceiverForeignTaxRegistration,
-                    PacEnvironment = fiscalDocument.PacEnvironment,
-                    CertificateReference = fiscalDocument.CertificateReference,
-                    PrivateKeyReference = fiscalDocument.PrivateKeyReference,
-                    PrivateKeyPasswordReference = fiscalDocument.PrivateKeyPasswordReference
-                };
+                    anchor = currentAnchor;
+                }
+                else
+                {
+                    if (!string.Equals(anchor.ReceiverRfc, currentAnchor.ReceiverRfc, StringComparison.OrdinalIgnoreCase)
+                        || anchor.FiscalReceiverId != currentAnchor.FiscalReceiverId)
+                    {
+                        return ValidationFailure(command.AccountsReceivablePaymentId, "All invoices applied to one payment complement must belong to the same fiscal receiver.");
+                    }
 
-                relatedDocument = new PaymentComplementRelatedDocument
+                    if (!string.Equals(anchor.IssuerRfc, currentAnchor.IssuerRfc, StringComparison.OrdinalIgnoreCase)
+                        || anchor.IssuerProfileId != currentAnchor.IssuerProfileId)
+                    {
+                        return ValidationFailure(command.AccountsReceivablePaymentId, "All invoices applied to one payment complement must belong to the same issuer snapshot.");
+                    }
+                }
+
+                var orderedApplications = invoice.Applications
+                    .OrderBy(x => x.CreatedAtUtc)
+                    .ThenBy(x => x.ApplicationSequence)
+                    .ThenBy(x => x.Id)
+                    .ToList();
+
+                var index = orderedApplications.FindIndex(x => x.Id == application.Id);
+                if (index < 0)
                 {
-                    AccountsReceivableInvoiceId = invoice.Id,
-                    FiscalDocumentId = fiscalDocument.Id,
-                    FiscalStampId = fiscalStamp.Id,
-                    RelatedDocumentUuid = fiscalStamp.Uuid,
-                    CurrencyCode = "MXN",
-                    CreatedAtUtc = now
-                };
+                    return ValidationFailure(command.AccountsReceivablePaymentId, $"Could not derive the installment number for invoice '{invoice.Id}' from persisted application history.");
+                }
+
+                relatedDocument.InstallmentNumber = index + 1;
+                relatedDocument.PreviousBalance = NormalizeMoney(application.PreviousBalance);
+                relatedDocument.PaidAmount = NormalizeMoney(application.AppliedAmount);
+                relatedDocument.RemainingBalance = NormalizeMoney(application.NewBalance);
+
+                paymentSnapshot.RelatedDocuments.Add(relatedDocument);
+                relatedDocuments.Add(relatedDocument);
             }
 
-            if (anchor is null)
+            var evaluation = AccountsReceivablePaymentOperationalProjectionBuilder.EvaluateRepPreparation(payment, currentPaymentInvoices, null);
+            if (!evaluation.ReadyToPrepareRep)
             {
-                anchor = currentAnchor;
-            }
-            else
-            {
-                if (!string.Equals(anchor.ReceiverRfc, currentAnchor.ReceiverRfc, StringComparison.OrdinalIgnoreCase)
-                    || anchor.FiscalReceiverId != currentAnchor.FiscalReceiverId)
-                {
-                    return ValidationFailure(command.AccountsReceivablePaymentId, "All invoices applied to one payment complement must belong to the same fiscal receiver.");
-                }
-
-                if (!string.Equals(anchor.IssuerRfc, currentAnchor.IssuerRfc, StringComparison.OrdinalIgnoreCase)
-                    || anchor.IssuerProfileId != currentAnchor.IssuerProfileId)
-                {
-                    return ValidationFailure(command.AccountsReceivablePaymentId, "All invoices applied to one payment complement must belong to the same issuer snapshot.");
-                }
+                return ValidationFailure(command.AccountsReceivablePaymentId, evaluation.RepBlockReason ?? $"Payment '{payment.Id}' is not ready to prepare REP.");
             }
 
-            var orderedApplications = invoice.Applications
-                .OrderBy(x => x.CreatedAtUtc)
-                .ThenBy(x => x.ApplicationSequence)
-                .ThenBy(x => x.Id)
-                .ToList();
-
-            var index = orderedApplications.FindIndex(x => x.Id == application.Id);
-            if (index < 0)
-            {
-                return ValidationFailure(command.AccountsReceivablePaymentId, $"Could not derive the installment number for invoice '{invoice.Id}' from persisted application history.");
-            }
-
-            relatedDocument.InstallmentNumber = index + 1;
-            relatedDocument.PreviousBalance = NormalizeMoney(application.PreviousBalance);
-            relatedDocument.PaidAmount = NormalizeMoney(application.AppliedAmount);
-            relatedDocument.RemainingBalance = NormalizeMoney(application.NewBalance);
-            relatedDocuments.Add(relatedDocument);
-        }
-
-        var evaluation = AccountsReceivablePaymentOperationalProjectionBuilder.EvaluateRepPreparation(payment, linkedInvoices, existingDocument);
-        if (!evaluation.ReadyToPrepareRep)
-        {
-            return ValidationFailure(command.AccountsReceivablePaymentId, evaluation.RepBlockReason ?? "Payment is not ready to prepare REP.");
+            complementPayments.Add(paymentSnapshot);
         }
 
         if (anchor is null)
@@ -279,14 +335,14 @@ public class PreparePaymentComplementService
 
         var document = new PaymentComplementDocument
         {
-            AccountsReceivablePaymentId = payment.Id,
+            AccountsReceivablePaymentId = anchorPayment.Id,
             Status = PaymentComplementDocumentStatus.ReadyForStamping,
             CfdiVersion = anchor.CfdiVersion,
             DocumentType = "P",
             IssuedAtUtc = CfdiDateTimeNormalization.NormalizeIncomingUtcOrNow(command.IssuedAtUtc, now),
-            PaymentDateUtc = payment.PaymentDateUtc,
+            PaymentDateUtc = anchorPayment.PaymentDateUtc,
             CurrencyCode = "MXN",
-            TotalPaymentsAmount = NormalizeMoney(payment.Amount),
+            TotalPaymentsAmount = NormalizeMoney(complementPayments.Sum(x => x.Amount)),
             IssuerProfileId = anchor.IssuerProfileId,
             FiscalReceiverId = anchor.FiscalReceiverId,
             IssuerRfc = anchor.IssuerRfc,
@@ -305,6 +361,7 @@ public class PreparePaymentComplementService
             PrivateKeyPasswordReference = anchor.PrivateKeyPasswordReference,
             CreatedAtUtc = now,
             UpdatedAtUtc = now,
+            Payments = complementPayments,
             RelatedDocuments = relatedDocuments
         };
 
@@ -315,11 +372,32 @@ public class PreparePaymentComplementService
         {
             Outcome = PreparePaymentComplementOutcome.Created,
             IsSuccess = true,
-            AccountsReceivablePaymentId = payment.Id,
+            AccountsReceivablePaymentId = anchorPayment.Id,
             PaymentComplementId = document.Id,
             Status = document.Status,
             PaymentComplementDocument = document
         };
+    }
+
+    private static List<long> BuildRequestedPaymentIds(PreparePaymentComplementCommand command)
+    {
+        var requestedIds = new List<long> { command.AccountsReceivablePaymentId };
+        foreach (var paymentId in command.AdditionalAccountsReceivablePaymentIds)
+        {
+            if (!requestedIds.Contains(paymentId))
+            {
+                requestedIds.Add(paymentId);
+            }
+        }
+
+        return requestedIds;
+    }
+
+    private static string ResolveInternalTaxObjectCode(FiscalDocument fiscalDocument)
+    {
+        return fiscalDocument.Items.Any(x => string.Equals(x.TaxObjectCode, "02", StringComparison.OrdinalIgnoreCase))
+            ? "02"
+            : "01";
     }
 
     private static PreparePaymentComplementResult ValidationFailure(long paymentId, string errorMessage)

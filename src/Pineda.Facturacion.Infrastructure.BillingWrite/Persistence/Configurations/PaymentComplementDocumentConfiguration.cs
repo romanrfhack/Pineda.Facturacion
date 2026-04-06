@@ -180,6 +180,11 @@ public class PaymentComplementDocumentConfiguration : IEntityTypeConfiguration<P
             .HasForeignKey(x => x.FiscalReceiverId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        builder.HasMany(x => x.Payments)
+            .WithOne()
+            .HasForeignKey(x => x.PaymentComplementDocumentId)
+            .OnDelete(DeleteBehavior.Cascade);
+
         builder.HasMany(x => x.RelatedDocuments)
             .WithOne()
             .HasForeignKey(x => x.PaymentComplementDocumentId)

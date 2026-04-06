@@ -47,6 +47,8 @@ public class BillingDbContext : DbContext, IUnitOfWork
 
     public DbSet<PaymentComplementDocument> PaymentComplementDocuments => Set<PaymentComplementDocument>();
 
+    public DbSet<PaymentComplementPayment> PaymentComplementPayments => Set<PaymentComplementPayment>();
+
     public DbSet<PaymentComplementRelatedDocument> PaymentComplementRelatedDocuments => Set<PaymentComplementRelatedDocument>();
 
     public DbSet<PaymentComplementStamp> PaymentComplementStamps => Set<PaymentComplementStamp>();

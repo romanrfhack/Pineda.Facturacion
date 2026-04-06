@@ -60,5 +60,7 @@ public class PaymentComplementDocument
 
     public DateTime UpdatedAtUtc { get; set; }
 
+    public List<PaymentComplementPayment> Payments { get; set; } = [];
+
     public List<PaymentComplementRelatedDocument> RelatedDocuments { get; set; } = [];
 }

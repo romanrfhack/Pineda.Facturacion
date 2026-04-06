@@ -147,6 +147,100 @@ public class FacturaloPlusPaymentComplementStampingGatewayTests
     }
 
     [Fact]
+    public async Task StampAsync_Builds_MultiplePagos_WithTransfers_AndRetentions()
+    {
+        var handler = new RecordingHandler(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""
+                {
+                  "code": "200",
+                  "message": "Solicitud procesada con éxito. - Complemento timbrado.",
+                  "data": {
+                    "uuid": "UUID-PC-MULTI-1",
+                    "xml": "<cfdi:Comprobante xmlns:cfdi=\"http://www.sat.gob.mx/cfd/4\" />"
+                  }
+                }
+                """, Encoding.UTF8, "application/json")
+        });
+
+        var gateway = CreateGateway(handler);
+        var request = CreateRequest();
+        request.TotalPaymentsAmount = 173.45m;
+        request.Payments =
+        [
+            new PaymentComplementStampingRequestPayment
+            {
+                AccountsReceivablePaymentId = 10,
+                PaymentDateUtc = new DateTime(2026, 3, 24, 15, 0, 0, DateTimeKind.Utc),
+                PaymentFormSat = "03",
+                CurrencyCode = "MXN",
+                Amount = 123.45m,
+                RelatedDocuments = request.RelatedDocuments
+            },
+            new PaymentComplementStampingRequestPayment
+            {
+                AccountsReceivablePaymentId = 11,
+                PaymentDateUtc = new DateTime(2026, 3, 25, 15, 0, 0, DateTimeKind.Utc),
+                PaymentFormSat = "03",
+                CurrencyCode = "MXN",
+                Amount = 50m,
+                RelatedDocuments =
+                [
+                    new PaymentComplementStampingRequestRelatedDocument
+                    {
+                        AccountsReceivablePaymentId = 11,
+                        AccountsReceivableInvoiceId = 2,
+                        FiscalDocumentId = 3,
+                        RelatedDocumentUuid = "UUID-REL-2",
+                        Series = "B",
+                        Folio = "200",
+                        InstallmentNumber = 2,
+                        PreviousBalance = 50m,
+                        PaidAmount = 50m,
+                        RemainingBalance = 0m,
+                        CurrencyCode = "MXN",
+                        TaxObjectCode = "02",
+                        TaxRetentions =
+                        [
+                            new PaymentComplementStampingRequestTaxRetention
+                            {
+                                TaxCode = "001",
+                                BaseAmount = 50m,
+                                TaxAmount = 5m
+                            }
+                        ],
+                        TaxTransfers =
+                        [
+                            new PaymentComplementStampingRequestTaxTransfer
+                            {
+                                TaxCode = "002",
+                                FactorType = "Exento",
+                                Rate = 0m,
+                                BaseAmount = 50m,
+                                TaxAmount = 0m
+                            }
+                        ]
+                    }
+                ]
+            }
+        ];
+
+        var result = await gateway.StampAsync(request);
+
+        Assert.Equal(PaymentComplementStampingGatewayOutcome.Stamped, result.Outcome);
+
+        var form = ParseFormBody(handler.LastBody!);
+        var decodedJson = Encoding.UTF8.GetString(Convert.FromBase64String(form["jsonB64"]));
+        using var json = JsonDocument.Parse(decodedJson);
+        var pagos20 = json.RootElement.GetProperty("Comprobante").GetProperty("Complemento").GetProperty("Pagos20");
+        Assert.Equal(2, pagos20.GetProperty("Pago").GetArrayLength());
+        Assert.Equal(173.45m, pagos20.GetProperty("Totales").GetProperty("MontoTotalPagos").GetDecimal());
+        Assert.Equal(17.03m, pagos20.GetProperty("Totales").GetProperty("TotalTrasladosImpuestoIVA16").GetDecimal());
+        Assert.Equal(5m, pagos20.GetProperty("Totales").GetProperty("TotalRetencionesISR").GetDecimal());
+        Assert.Equal(50m, pagos20.GetProperty("Totales").GetProperty("TotalTrasladosBaseIVAExento").GetDecimal());
+    }
+
+    [Fact]
     public async Task StampAsync_RealProviderRejection_Remains_Rejected()
     {
         var handler = new RecordingHandler(new HttpResponseMessage(HttpStatusCode.BadRequest)
@@ -212,7 +306,7 @@ public class FacturaloPlusPaymentComplementStampingGatewayTests
 
     private static PaymentComplementStampingRequest CreateRequest()
     {
-        return new PaymentComplementStampingRequest
+        var request = new PaymentComplementStampingRequest
         {
             PaymentComplementDocumentId = 50,
             PacEnvironment = "Sandbox",
@@ -238,9 +332,12 @@ public class FacturaloPlusPaymentComplementStampingGatewayTests
             [
                 new PaymentComplementStampingRequestRelatedDocument
                 {
+                    AccountsReceivablePaymentId = 10,
                     AccountsReceivableInvoiceId = 1,
                     FiscalDocumentId = 2,
                     RelatedDocumentUuid = "UUID-REL-1",
+                    Series = "A",
+                    Folio = "100",
                     InstallmentNumber = 1,
                     PreviousBalance = 123.45m,
                     PaidAmount = 123.45m,
@@ -259,8 +356,23 @@ public class FacturaloPlusPaymentComplementStampingGatewayTests
                         }
                     ]
                 }
+            ],
+            Payments =
+            [
+                new PaymentComplementStampingRequestPayment
+                {
+                    AccountsReceivablePaymentId = 10,
+                    PaymentDateUtc = new DateTime(2026, 3, 24, 15, 0, 0, DateTimeKind.Utc),
+                    PaymentFormSat = "03",
+                    CurrencyCode = "MXN",
+                    Amount = 123.45m,
+                    RelatedDocuments = []
+                }
             ]
         };
+
+        request.Payments[0].RelatedDocuments = request.RelatedDocuments;
+        return request;
     }
 
     private sealed class RecordingHandler : HttpMessageHandler
