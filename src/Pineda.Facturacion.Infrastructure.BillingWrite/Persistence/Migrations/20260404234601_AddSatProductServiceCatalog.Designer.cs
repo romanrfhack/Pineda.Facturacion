@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Pineda.Facturacion.Infrastructure.BillingWrite.Persistence;
 
@@ -11,9 +12,11 @@ using Pineda.Facturacion.Infrastructure.BillingWrite.Persistence;
 namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
 {
     [DbContext(typeof(BillingDbContext))]
-    partial class BillingDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260404234601_AddSatProductServiceCatalog")]
+    partial class AddSatProductServiceCatalog
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -60,10 +63,6 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
                     b.Property<long?>("FiscalDocumentId")
                         .HasColumnType("bigint")
                         .HasColumnName("fiscal_document_id");
-
-                    b.Property<long?>("FiscalReceiverId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("fiscal_receiver_id");
 
                     b.Property<long?>("FiscalStampId")
                         .HasColumnType("bigint")
@@ -116,19 +115,13 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
 
                     b.HasIndex("BillingDocumentId");
 
-                    b.HasIndex("DueAtUtc");
-
                     b.HasIndex("ExternalRepBaseDocumentId")
                         .IsUnique();
 
                     b.HasIndex("FiscalDocumentId")
                         .IsUnique();
 
-                    b.HasIndex("FiscalReceiverId");
-
                     b.HasIndex("FiscalStampId");
-
-                    b.HasIndex("Status");
 
                     b.ToTable("accounts_receivable_invoice", (string)null);
                 });
@@ -180,12 +173,6 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("varchar(100)")
                         .HasColumnName("reference");
-
-                    b.Property<int>("UnappliedDisposition")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int")
-                        .HasDefaultValue(0)
-                        .HasColumnName("unapplied_disposition");
 
                     b.Property<DateTime>("UpdatedAtUtc")
                         .HasColumnType("datetime(6)")
@@ -906,106 +893,6 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
                         .HasDatabaseName("IX_billing_document_pending_item_assignment_billing_document_i~1");
 
                     b.ToTable("billing_document_pending_item_assignment", (string)null);
-                });
-
-            modelBuilder.Entity("Pineda.Facturacion.Domain.Entities.CollectionCommitment", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
-                        .HasColumnName("id");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
-
-                    b.Property<long>("AccountsReceivableInvoiceId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("accounts_receivable_invoice_id");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("datetime(6)")
-                        .HasColumnName("created_at_utc");
-
-                    b.Property<string>("CreatedByUsername")
-                        .HasMaxLength(120)
-                        .HasColumnType("varchar(120)")
-                        .HasColumnName("created_by_username");
-
-                    b.Property<string>("Notes")
-                        .HasMaxLength(1000)
-                        .HasColumnType("varchar(1000)")
-                        .HasColumnName("notes");
-
-                    b.Property<decimal>("PromisedAmount")
-                        .HasPrecision(18, 6)
-                        .HasColumnType("decimal(18,6)")
-                        .HasColumnName("promised_amount");
-
-                    b.Property<DateTime>("PromisedDateUtc")
-                        .HasColumnType("datetime(6)")
-                        .HasColumnName("promised_date_utc");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("int")
-                        .HasColumnName("status");
-
-                    b.Property<DateTime>("UpdatedAtUtc")
-                        .HasColumnType("datetime(6)")
-                        .HasColumnName("updated_at_utc");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AccountsReceivableInvoiceId");
-
-                    b.HasIndex("PromisedDateUtc");
-
-                    b.HasIndex("Status");
-
-                    b.ToTable("collection_commitment", (string)null);
-                });
-
-            modelBuilder.Entity("Pineda.Facturacion.Domain.Entities.CollectionNote", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
-                        .HasColumnName("id");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
-
-                    b.Property<long>("AccountsReceivableInvoiceId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("accounts_receivable_invoice_id");
-
-                    b.Property<string>("Content")
-                        .IsRequired()
-                        .HasMaxLength(2000)
-                        .HasColumnType("varchar(2000)")
-                        .HasColumnName("content");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("datetime(6)")
-                        .HasColumnName("created_at_utc");
-
-                    b.Property<string>("CreatedByUsername")
-                        .HasMaxLength(120)
-                        .HasColumnType("varchar(120)")
-                        .HasColumnName("created_by_username");
-
-                    b.Property<DateTime?>("NextFollowUpAtUtc")
-                        .HasColumnType("datetime(6)")
-                        .HasColumnName("next_follow_up_at_utc");
-
-                    b.Property<int>("NoteType")
-                        .HasColumnType("int")
-                        .HasColumnName("note_type");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AccountsReceivableInvoiceId");
-
-                    b.HasIndex("NextFollowUpAtUtc");
-
-                    b.ToTable("collection_note", (string)null);
                 });
 
             modelBuilder.Entity("Pineda.Facturacion.Domain.Entities.ExternalRepBaseDocument", b =>
@@ -3649,11 +3536,6 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
                         .HasForeignKey("FiscalDocumentId")
                         .OnDelete(DeleteBehavior.Restrict);
 
-                    b.HasOne("Pineda.Facturacion.Domain.Entities.FiscalReceiver", null)
-                        .WithMany()
-                        .HasForeignKey("FiscalReceiverId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.HasOne("Pineda.Facturacion.Domain.Entities.FiscalStamp", null)
                         .WithMany()
                         .HasForeignKey("FiscalStampId")
@@ -3782,24 +3664,6 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("DestinationFiscalDocumentId")
                         .OnDelete(DeleteBehavior.SetNull);
-                });
-
-            modelBuilder.Entity("Pineda.Facturacion.Domain.Entities.CollectionCommitment", b =>
-                {
-                    b.HasOne("Pineda.Facturacion.Domain.Entities.AccountsReceivableInvoice", null)
-                        .WithMany("CollectionCommitments")
-                        .HasForeignKey("AccountsReceivableInvoiceId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("Pineda.Facturacion.Domain.Entities.CollectionNote", b =>
-                {
-                    b.HasOne("Pineda.Facturacion.Domain.Entities.AccountsReceivableInvoice", null)
-                        .WithMany("CollectionNotes")
-                        .HasForeignKey("AccountsReceivableInvoiceId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("Pineda.Facturacion.Domain.Entities.ExternalRepBaseDocument", b =>
@@ -4018,10 +3882,6 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
             modelBuilder.Entity("Pineda.Facturacion.Domain.Entities.AccountsReceivableInvoice", b =>
                 {
                     b.Navigation("Applications");
-
-                    b.Navigation("CollectionCommitments");
-
-                    b.Navigation("CollectionNotes");
                 });
 
             modelBuilder.Entity("Pineda.Facturacion.Domain.Entities.AccountsReceivablePayment", b =>

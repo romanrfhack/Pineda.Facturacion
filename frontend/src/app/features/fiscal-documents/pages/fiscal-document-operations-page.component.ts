@@ -526,6 +526,7 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
                 <div>
                   <p class="selected-title">Recuperación requerida</p>
                   <strong>Falta el perfil fiscal del producto {{ missingProduct.internalCode }}.</strong>
+                  <span>Producto interno: {{ missingProduct.description }}.</span>
                   <span>Debes darlo de alta para continuar.</span>
                   @if (missingProduct.lineNumber) {
                     <span>Línea {{ missingProduct.lineNumber }} del documento de facturación.</span>

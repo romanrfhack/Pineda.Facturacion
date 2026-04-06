@@ -32,7 +32,7 @@ export function resolveMissingProductFiscalProfileContext(
     draft: {
       internalCode: parsed.internalCode,
       description,
-      satProductServiceCode: '01010101',
+      satProductServiceCode: '',
       satUnitCode: 'H87',
       taxObjectCode: '02',
       vatRate: 0.16,

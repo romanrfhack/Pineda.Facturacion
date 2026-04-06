@@ -13,6 +13,7 @@ using Pineda.Facturacion.Infrastructure.Hashing;
 using Pineda.Facturacion.Infrastructure.Excel;
 using Pineda.Facturacion.Infrastructure.FiscalReceivers;
 using Pineda.Facturacion.Infrastructure.Options;
+using Pineda.Facturacion.Infrastructure.SatCatalogs;
 using Pineda.Facturacion.Infrastructure.Security;
 
 namespace Pineda.Facturacion.Infrastructure.DependencyInjection;
@@ -48,6 +49,7 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<IContentHashGenerator, Sha256ContentHashGenerator>();
         services.AddSingleton<IFiscalReceiverSatCatalogProvider, FiscalReceiverSatCatalogProvider>();
+        services.AddSingleton<SatProductServiceCatalogSeedSource>();
         services.AddSingleton<ISatCatalogDescriptionProvider, SatCatalogDescriptionProvider>();
         services.AddSingleton<IExcelWorksheetReader, ClosedXmlWorksheetReader>();
         services.AddScoped<IFiscalDocumentPdfRenderer, FiscalDocumentPdfRenderer>();
@@ -62,6 +64,7 @@ public static class ServiceCollectionExtensions
         services.AddHostedService<DatabaseBootstrapHostedService>();
         services.AddHostedService<StandardVat16BackfillHostedService>();
         services.AddHostedService<AuthBootstrapHostedService>();
+        services.AddHostedService<SatProductServiceCatalogBootstrapHostedService>();
         return services;
     }
 }

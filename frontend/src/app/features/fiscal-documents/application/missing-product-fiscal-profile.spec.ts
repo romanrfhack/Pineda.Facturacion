@@ -27,7 +27,7 @@ describe('missing-product-fiscal-profile helper', () => {
       draft: {
         internalCode: 'MTE-4259',
         description: 'MTE-4259',
-        satProductServiceCode: '01010101',
+        satProductServiceCode: '',
         satUnitCode: 'H87',
         taxObjectCode: '02',
         vatRate: 0.16,
@@ -72,7 +72,7 @@ describe('missing-product-fiscal-profile helper', () => {
       draft: {
         internalCode: 'ABC-123',
         description: 'ABC-123',
-        satProductServiceCode: '01010101',
+        satProductServiceCode: '',
         satUnitCode: 'H87',
         taxObjectCode: '02',
         vatRate: 0.16,

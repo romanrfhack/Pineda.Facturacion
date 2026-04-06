@@ -1,0 +1,35 @@
+{
+  "version": "SAT-PRODUCT-SERVICE-2026-04-04",
+  "items": [
+    {
+      "code": "01010101",
+      "description": "No existe en el catálogo",
+      "keywords": "generico sin clasificar fallback"
+    },
+    {
+      "code": "10101504",
+      "description": "Semilla o planta de tomate",
+      "keywords": "tomate agricultura semilla planta"
+    },
+    {
+      "code": "10101505",
+      "description": "Semilla o planta de chile",
+      "keywords": "chile agricultura semilla planta"
+    },
+    {
+      "code": "25174000",
+      "description": "Sistema de enfriamiento del motor",
+      "keywords": "enfriamiento motor radiador automotriz"
+    },
+    {
+      "code": "40161513",
+      "description": "Filtro de aceite",
+      "keywords": "filtro aceite automotriz motor"
+    },
+    {
+      "code": "40161505",
+      "description": "Filtro de aire",
+      "keywords": "filtro aire automotriz motor"
+    }
+  ]
+}
