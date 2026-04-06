@@ -277,6 +277,7 @@ public static class AccountsReceivableEndpoints
         var result = await service.ExecuteAsync(
             new CreateAccountsReceivablePaymentCommand
             {
+                AccountsReceivableInvoiceId = request.AccountsReceivableInvoiceId,
                 PaymentDateUtc = request.PaymentDateUtc,
                 PaymentFormSat = request.PaymentFormSat,
                 Amount = request.Amount,
@@ -302,7 +303,7 @@ public static class AccountsReceivableEndpoints
             "AccountsReceivablePayment",
             result.AccountsReceivablePayment?.Id.ToString(),
             result.Outcome.ToString(),
-            new { request.PaymentDateUtc, request.PaymentFormSat, request.Amount, request.Reference },
+            new { request.AccountsReceivableInvoiceId, request.PaymentDateUtc, request.PaymentFormSat, request.Amount, request.Reference },
             new { paymentId = result.AccountsReceivablePayment?.Id, result.AccountsReceivablePayment?.Amount },
             result.ErrorMessage,
             cancellationToken);
@@ -1333,6 +1334,8 @@ public class AccountsReceivableTimelineEntryResponse
 
 public class CreateAccountsReceivablePaymentRequest
 {
+    public long? AccountsReceivableInvoiceId { get; set; }
+
     public DateTime PaymentDateUtc { get; set; }
 
     public string PaymentFormSat { get; set; } = string.Empty;

@@ -8,18 +8,23 @@ namespace Pineda.Facturacion.Application.UseCases.AccountsReceivable;
 
 public class CreateAccountsReceivablePaymentService
 {
+    private const int OperationalMoneyScale = 2;
+
     private readonly IAccountsReceivablePaymentRepository _accountsReceivablePaymentRepository;
+    private readonly IAccountsReceivableInvoiceRepository? _accountsReceivableInvoiceRepository;
     private readonly ISatCatalogDescriptionProvider _satCatalogDescriptionProvider;
     private readonly IUnitOfWork _unitOfWork;
 
     public CreateAccountsReceivablePaymentService(
         IAccountsReceivablePaymentRepository accountsReceivablePaymentRepository,
         ISatCatalogDescriptionProvider satCatalogDescriptionProvider,
-        IUnitOfWork unitOfWork)
+        IUnitOfWork unitOfWork,
+        IAccountsReceivableInvoiceRepository? accountsReceivableInvoiceRepository = null)
     {
         _accountsReceivablePaymentRepository = accountsReceivablePaymentRepository;
         _satCatalogDescriptionProvider = satCatalogDescriptionProvider;
         _unitOfWork = unitOfWork;
+        _accountsReceivableInvoiceRepository = accountsReceivableInvoiceRepository;
     }
 
     public async Task<CreateAccountsReceivablePaymentResult> ExecuteAsync(
@@ -45,6 +50,27 @@ public class CreateAccountsReceivablePaymentService
         if (command.Amount <= 0)
         {
             return Failure("Payment amount must be greater than zero.");
+        }
+
+        if (command.AccountsReceivableInvoiceId.HasValue)
+        {
+            if (_accountsReceivableInvoiceRepository is null)
+            {
+                return Failure("Accounts receivable invoice validation is not available for this payment context.");
+            }
+
+            var invoice = await _accountsReceivableInvoiceRepository.GetTrackedByIdAsync(command.AccountsReceivableInvoiceId.Value, cancellationToken);
+            if (invoice is null)
+            {
+                return Failure($"Accounts receivable invoice '{command.AccountsReceivableInvoiceId.Value}' was not found.");
+            }
+
+            var normalizedOutstandingBalance = NormalizeOperationalMoney(invoice.OutstandingBalance);
+            if (command.Amount > normalizedOutstandingBalance)
+            {
+                var excessAmount = NormalizeOperationalMoney(command.Amount - normalizedOutstandingBalance);
+                return Failure($"Captured payment amount exceeds the outstanding balance by {excessAmount:0.00}. Adjust the amount or explicitly assign the excess.");
+            }
         }
 
         var now = DateTime.UtcNow;
@@ -83,4 +109,7 @@ public class CreateAccountsReceivablePaymentService
             ErrorMessage = errorMessage
         };
     }
+
+    private static decimal NormalizeOperationalMoney(decimal amount)
+        => decimal.Round(amount, OperationalMoneyScale, MidpointRounding.AwayFromZero);
 }

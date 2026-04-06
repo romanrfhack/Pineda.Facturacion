@@ -226,6 +226,7 @@ export interface CreateAccountsReceivableInvoiceResponse {
 }
 
 export interface CreateAccountsReceivablePaymentRequest {
+  accountsReceivableInvoiceId?: number | null;
   paymentDateUtc: string;
   paymentFormSat: string;
   amount: number;

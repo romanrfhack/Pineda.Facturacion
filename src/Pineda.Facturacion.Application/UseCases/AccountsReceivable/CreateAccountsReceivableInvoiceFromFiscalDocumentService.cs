@@ -7,6 +7,8 @@ namespace Pineda.Facturacion.Application.UseCases.AccountsReceivable;
 
 public class CreateAccountsReceivableInvoiceFromFiscalDocumentService
 {
+    private const int OperationalMoneyScale = 2;
+
     private readonly IFiscalDocumentRepository _fiscalDocumentRepository;
     private readonly IFiscalStampRepository _fiscalStampRepository;
     private readonly IAccountsReceivableInvoiceRepository _accountsReceivableInvoiceRepository;
@@ -93,6 +95,7 @@ public class CreateAccountsReceivableInvoiceFromFiscalDocumentService
         }
 
         var now = DateTime.UtcNow;
+        var operationalTotal = NormalizeOperationalMoney(fiscalDocument.Total);
         var invoice = new AccountsReceivableInvoice
         {
             BillingDocumentId = fiscalDocument.BillingDocumentId,
@@ -107,9 +110,9 @@ public class CreateAccountsReceivableInvoiceFromFiscalDocumentService
             IssuedAtUtc = fiscalDocument.IssuedAtUtc,
             DueAtUtc = fiscalDocument.IssuedAtUtc.AddDays(creditDays.Value),
             CurrencyCode = currencyCode,
-            Total = fiscalDocument.Total,
+            Total = operationalTotal,
             PaidTotal = 0m,
-            OutstandingBalance = fiscalDocument.Total,
+            OutstandingBalance = operationalTotal,
             CreatedAtUtc = now,
             UpdatedAtUtc = now
         };
@@ -138,4 +141,7 @@ public class CreateAccountsReceivableInvoiceFromFiscalDocumentService
             ErrorMessage = errorMessage
         };
     }
+
+    private static decimal NormalizeOperationalMoney(decimal amount)
+        => decimal.Round(amount, OperationalMoneyScale, MidpointRounding.AwayFromZero);
 }

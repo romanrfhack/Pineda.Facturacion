@@ -341,6 +341,37 @@ export async function mockPaymentComplementJourney(page: Page): Promise<void> {
     });
   });
 
+  await page.route('**/api/accounts-receivable/payments/702', async (route) => {
+    await route.fulfill({
+      json: {
+        id: 702,
+        paymentDateUtc: '2026-03-20T14:30:00Z',
+        paymentFormSat: '03',
+        currencyCode: 'MXN',
+        amount: 100,
+        appliedTotal: complementExists ? 100 : 100,
+        remainingAmount: 0,
+        customerCreditBalanceAmount: 0,
+        reference: 'TRX-702',
+        notes: null,
+        receivedFromFiscalReceiverId: 77,
+        operationalStatus: 'FullyApplied',
+        repStatus: complementExists ? 'Prepared' : 'ReadyToPrepare',
+        readyToPrepareRep: !complementExists,
+        repBlockReason: null,
+        unappliedDisposition: 'PendingAllocation',
+        repDocumentStatus: complementExists ? complementStatus : null,
+        repReservedAmount: complementExists ? 100 : 0,
+        repFiscalizedAmount: complementExists && complementStatus === 'Stamped' ? 100 : 0,
+        applicationsCount: 1,
+        linkedFiscalDocumentId: 411,
+        createdAtUtc: '2026-03-20T14:30:00Z',
+        updatedAtUtc: '2026-03-20T14:30:00Z',
+        applications: []
+      }
+    });
+  });
+
   await page.route('**/api/accounts-receivable/payments/702/payment-complements', async (route) => {
     if (route.request().method() === 'GET') {
       if (!complementExists) {
@@ -409,6 +440,37 @@ export async function mockMixedReceiversComplementFailure(page: Page): Promise<v
     username: 'supervisor',
     displayName: 'Supervisor',
     role: 'FiscalSupervisor'
+  });
+
+  await page.route('**/api/accounts-receivable/payments/703', async (route) => {
+    await route.fulfill({
+      json: {
+        id: 703,
+        paymentDateUtc: '2026-03-20T14:35:00Z',
+        paymentFormSat: '03',
+        currencyCode: 'MXN',
+        amount: 100,
+        appliedTotal: 100,
+        remainingAmount: 0,
+        customerCreditBalanceAmount: 0,
+        reference: 'TRX-703',
+        notes: null,
+        receivedFromFiscalReceiverId: 77,
+        operationalStatus: 'FullyApplied',
+        repStatus: 'ReadyToPrepare',
+        readyToPrepareRep: true,
+        repBlockReason: null,
+        unappliedDisposition: 'PendingAllocation',
+        repDocumentStatus: null,
+        repReservedAmount: 0,
+        repFiscalizedAmount: 0,
+        applicationsCount: 2,
+        linkedFiscalDocumentId: null,
+        createdAtUtc: '2026-03-20T14:35:00Z',
+        updatedAtUtc: '2026-03-20T14:35:00Z',
+        applications: []
+      }
+    });
   });
 
   await page.route('**/api/accounts-receivable/payments/703/payment-complement', async (route) => {

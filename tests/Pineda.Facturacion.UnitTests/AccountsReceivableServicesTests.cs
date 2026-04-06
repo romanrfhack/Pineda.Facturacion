@@ -36,6 +36,30 @@ public class AccountsReceivableServicesTests
     }
 
     [Fact]
+    public async Task CreateAccountsReceivableInvoiceFromFiscalDocument_NormalizesOperationalTotals_ToTwoDecimals()
+    {
+        var fiscalDocument = CreateStampedFiscalDocument();
+        fiscalDocument.Total = 1190.000001m;
+        var fiscalStamp = CreateFiscalStamp();
+        var repository = new ArFakeAccountsReceivableInvoiceRepository();
+        var service = new CreateAccountsReceivableInvoiceFromFiscalDocumentService(
+            new ArFakeFiscalDocumentRepository { ExistingById = fiscalDocument },
+            new ArFakeFiscalStampRepository { ExistingByFiscalDocumentId = fiscalStamp },
+            repository,
+            new ArFakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new CreateAccountsReceivableInvoiceFromFiscalDocumentCommand
+        {
+            FiscalDocumentId = fiscalDocument.Id
+        });
+
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(repository.Added);
+        Assert.Equal(1190.00m, repository.Added!.Total);
+        Assert.Equal(1190.00m, repository.Added.OutstandingBalance);
+    }
+
+    [Fact]
     public async Task CreateAccountsReceivableInvoiceFromFiscalDocument_ReturnsConflict_WhenDuplicateExists()
     {
         var service = new CreateAccountsReceivableInvoiceFromFiscalDocumentService(
@@ -218,6 +242,87 @@ public class AccountsReceivableServicesTests
         Assert.Equal("MXN", repository.Added!.CurrencyCode);
         Assert.Equal(250m, repository.Added.Amount);
         Assert.Equal(AccountsReceivablePaymentUnappliedDisposition.PendingAllocation, repository.Added.UnappliedDisposition);
+    }
+
+    [Fact]
+    public async Task CreateAccountsReceivablePayment_Succeeds_WhenContextInvoiceAmountMatchesOutstandingBalance()
+    {
+        var repository = new ArFakeAccountsReceivablePaymentRepository();
+        var invoiceRepository = new ArFakeAccountsReceivableInvoiceRepository
+        {
+            TrackedById = { [200] = CreateInvoice(id: 200, total: 1190m) }
+        };
+        var service = new CreateAccountsReceivablePaymentService(
+            repository,
+            new ArFakeSatCatalogDescriptionProvider(),
+            new ArFakeUnitOfWork(),
+            invoiceRepository);
+
+        var result = await service.ExecuteAsync(new CreateAccountsReceivablePaymentCommand
+        {
+            AccountsReceivableInvoiceId = 200,
+            PaymentDateUtc = new DateTime(2026, 3, 20, 12, 0, 0, DateTimeKind.Utc),
+            PaymentFormSat = "03",
+            Amount = 1190m
+        });
+
+        Assert.Equal(CreateAccountsReceivablePaymentOutcome.Created, result.Outcome);
+        Assert.NotNull(repository.Added);
+        Assert.Equal(1190m, repository.Added!.Amount);
+    }
+
+    [Fact]
+    public async Task CreateAccountsReceivablePayment_Succeeds_WhenContextInvoiceAmountIsBelowOutstandingBalance()
+    {
+        var repository = new ArFakeAccountsReceivablePaymentRepository();
+        var invoiceRepository = new ArFakeAccountsReceivableInvoiceRepository
+        {
+            TrackedById = { [200] = CreateInvoice(id: 200, total: 1190m) }
+        };
+        var service = new CreateAccountsReceivablePaymentService(
+            repository,
+            new ArFakeSatCatalogDescriptionProvider(),
+            new ArFakeUnitOfWork(),
+            invoiceRepository);
+
+        var result = await service.ExecuteAsync(new CreateAccountsReceivablePaymentCommand
+        {
+            AccountsReceivableInvoiceId = 200,
+            PaymentDateUtc = new DateTime(2026, 3, 20, 12, 0, 0, DateTimeKind.Utc),
+            PaymentFormSat = "03",
+            Amount = 1189.99m
+        });
+
+        Assert.Equal(CreateAccountsReceivablePaymentOutcome.Created, result.Outcome);
+        Assert.NotNull(repository.Added);
+        Assert.Equal(1189.99m, repository.Added!.Amount);
+    }
+
+    [Fact]
+    public async Task CreateAccountsReceivablePayment_Blocks_WhenContextInvoiceAmountExceedsOutstandingBalance()
+    {
+        var repository = new ArFakeAccountsReceivablePaymentRepository();
+        var invoiceRepository = new ArFakeAccountsReceivableInvoiceRepository
+        {
+            TrackedById = { [200] = CreateInvoice(id: 200, total: 1190m) }
+        };
+        var service = new CreateAccountsReceivablePaymentService(
+            repository,
+            new ArFakeSatCatalogDescriptionProvider(),
+            new ArFakeUnitOfWork(),
+            invoiceRepository);
+
+        var result = await service.ExecuteAsync(new CreateAccountsReceivablePaymentCommand
+        {
+            AccountsReceivableInvoiceId = 200,
+            PaymentDateUtc = new DateTime(2026, 3, 20, 12, 0, 0, DateTimeKind.Utc),
+            PaymentFormSat = "03",
+            Amount = 1190.04m
+        });
+
+        Assert.Equal(CreateAccountsReceivablePaymentOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("exceeds the outstanding balance by 0.04", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(repository.Added);
     }
 
     [Fact]

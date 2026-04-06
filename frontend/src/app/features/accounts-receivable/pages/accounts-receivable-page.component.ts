@@ -854,7 +854,10 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
             <h3>Crear pago</h3>
             <p class="helper">Registra un depósito o pago recibido. Después podrás aplicarlo total o parcialmente a esta cuenta.</p>
           </div>
-          <app-payment-create-form [loading]="loading()" (submit)="createPayment($event)" />
+          <app-payment-create-form
+            [loading]="loading()"
+            [maxOperationalAmount]="invoice()?.outstandingBalance ?? null"
+            (submit)="createPayment($event)" />
         </section>
       }
 
@@ -1253,11 +1256,23 @@ export class AccountsReceivablePageComponent {
   }
 
   protected async createPayment(request: CreateAccountsReceivablePaymentRequest): Promise<void> {
+    const currentInvoice = this.invoice();
+    const normalizedOutstandingBalance = currentInvoice ? this.normalizeMoney(currentInvoice.outstandingBalance) : null;
+    if (normalizedOutstandingBalance != null && request.amount > normalizedOutstandingBalance) {
+      const excessAmount = this.normalizeMoney(request.amount - normalizedOutstandingBalance);
+      this.feedbackService.show(
+        'error',
+        `El monto capturado excede el saldo pendiente por ${excessAmount.toFixed(2)}. Ajusta el monto o asigna explícitamente el excedente.`
+      );
+      return;
+    }
+
     await this.run(async () => {
       const payload = {
         ...request,
+        accountsReceivableInvoiceId: currentInvoice?.id ?? null,
         paymentDateUtc: new Date(request.paymentDateUtc).toISOString(),
-        receivedFromFiscalReceiverId: this.invoice()?.fiscalReceiverId ?? null
+        receivedFromFiscalReceiverId: currentInvoice?.fiscalReceiverId ?? null
       };
       const response = await firstValueFrom(this.api.createPayment(payload));
       if (response.payment) {
@@ -1475,6 +1490,10 @@ export class AccountsReceivablePageComponent {
 
   private isPendingRemainderRepBlockReason(reason: string | null | undefined): boolean {
     return (reason ?? '').toLowerCase().includes('unapplied payment remainder');
+  }
+
+  private normalizeMoney(value: number): number {
+    return Math.round(value * 100) / 100;
   }
 }
 

@@ -45,7 +45,16 @@ export function formatDateTimeLocalValue(date: Date): string {
           } 
         </label>
 
-        <label><span>Monto</span><input class="field-control" [(ngModel)]="model.amount" name="amount" type="number" min="0.01" step="0.01" required /></label>
+        <label>
+          <span>Monto</span>
+          <input class="field-control" [(ngModel)]="model.amount" name="amount" type="number" min="0.01" step="0.01" required />
+          @if (normalizedMaxOperationalAmount() != null) {
+            <small class="helper">Saldo pendiente operativo: {{ normalizedMaxOperationalAmount()!.toFixed(2) }} MXN</small>
+          }
+          @if (getAmountGuardrailMessage(); as amountGuardrailMessage) {
+            <small class="helper error">{{ amountGuardrailMessage }}</small>
+          }
+        </label>
         <label><span>Referencia</span><input class="field-control" [(ngModel)]="model.reference" name="reference" /></label>
         <label><span>Notas</span><input class="field-control" [(ngModel)]="model.notes" name="notes" /></label>
         <button type="submit" [disabled]="loading() || loadingCatalog() || !canSubmit()"> {{ loading() ? 'Guardando...' : 'Crear pago' }} </button>
@@ -69,6 +78,7 @@ export class PaymentCreateFormComponent {
   private readonly fiscalReceiverSatCatalogService = inject(FiscalReceiverSatCatalogService);
 
   readonly loading = input(false);
+  readonly maxOperationalAmount = input<number | null>(null);
   readonly submit = output<CreateAccountsReceivablePaymentRequest>();
 
   protected readonly loadingCatalog = signal(true);
@@ -88,6 +98,10 @@ export class PaymentCreateFormComponent {
   protected readonly selectedPaymentFormLabel = computed(() => {
     const selected = this.paymentFormOptions().find((option) => option.code === this.model.paymentFormSat);
     return selected ? `${selected.code} - ${selected.description}` : '';
+  });
+  protected readonly normalizedMaxOperationalAmount = computed(() => {
+    const value = this.maxOperationalAmount();
+    return value == null ? null : this.roundMoney(value);
   });
 
   private readonly paymentFormCatalog = signal<FiscalReceiverSatCatalogOption[]>([]);
@@ -110,7 +124,18 @@ export class PaymentCreateFormComponent {
   protected canSubmit(): boolean {
     return !!this.model.paymentDateUtc
       && this.model.amount > 0
+      && this.getExcessAmount() <= 0
       && this.paymentFormOptions().some((option) => option.code === this.model.paymentFormSat);
+  }
+
+  protected getAmountGuardrailMessage(): string | null {
+    const maxAmount = this.normalizedMaxOperationalAmount();
+    const excessAmount = this.getExcessAmount();
+    if (maxAmount == null || excessAmount <= 0) {
+      return null;
+    }
+
+    return `El monto capturado excede el saldo pendiente por ${excessAmount.toFixed(2)}. Ajusta el monto o asigna explícitamente el excedente.`;
   }
 
   private async loadSatCatalog(): Promise<void> {
@@ -131,5 +156,18 @@ export class PaymentCreateFormComponent {
     } finally {
       this.loadingCatalog.set(false);
     }
+  }
+
+  private roundMoney(value: number): number {
+    return Math.round(value * 100) / 100;
+  }
+
+  private getExcessAmount(): number {
+    const maxAmount = this.normalizedMaxOperationalAmount();
+    if (maxAmount == null || this.model.amount <= maxAmount) {
+      return 0;
+    }
+
+    return this.roundMoney(this.model.amount - maxAmount);
   }
 }

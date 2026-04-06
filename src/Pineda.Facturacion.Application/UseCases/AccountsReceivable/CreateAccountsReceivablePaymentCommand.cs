@@ -2,6 +2,8 @@ namespace Pineda.Facturacion.Application.UseCases.AccountsReceivable;
 
 public class CreateAccountsReceivablePaymentCommand
 {
+    public long? AccountsReceivableInvoiceId { get; set; }
+
     public DateTime PaymentDateUtc { get; set; }
 
     public string PaymentFormSat { get; set; } = string.Empty;
