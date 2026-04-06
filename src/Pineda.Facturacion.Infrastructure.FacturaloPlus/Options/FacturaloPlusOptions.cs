@@ -8,7 +8,7 @@ public class FacturaloPlusOptions
 
     public string StampPath { get; set; } = "/cfdi/stamp";
 
-    public string PaymentComplementStampPath { get; set; } = "/cfdi/payment-complement/stamp";
+    public string PaymentComplementStampPath { get; set; } = "timbrarJSON3";
 
     public string PaymentComplementCancelPath { get; set; } = "/cfdi/payment-complement/cancel";
 

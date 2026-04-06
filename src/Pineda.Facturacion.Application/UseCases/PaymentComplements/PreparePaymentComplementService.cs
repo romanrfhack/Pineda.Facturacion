@@ -1,5 +1,6 @@
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Common;
+using Pineda.Facturacion.Application.UseCases.AccountsReceivable;
 using Pineda.Facturacion.Domain.Entities;
 using Pineda.Facturacion.Domain.Enums;
 
@@ -68,12 +69,6 @@ public class PreparePaymentComplementService
             return ValidationFailure(command.AccountsReceivablePaymentId, "A payment complement requires at least one persisted payment application.");
         }
 
-        var appliedTotal = payment.Applications.Sum(x => x.AppliedAmount);
-        if (appliedTotal != payment.Amount)
-        {
-            return ValidationFailure(command.AccountsReceivablePaymentId, "Current MVP payment complement preparation requires the payment amount to be fully allocated across persisted applications.");
-        }
-
         var existingDocument = await _paymentComplementDocumentRepository.GetByPaymentIdAsync(command.AccountsReceivablePaymentId, cancellationToken);
         if (existingDocument is not null)
         {
@@ -88,6 +83,8 @@ public class PreparePaymentComplementService
             };
         }
 
+        var linkedInvoices = new List<AccountsReceivableInvoice>();
+
         AnchorSnapshot? anchor = null;
         var relatedDocuments = new List<PaymentComplementRelatedDocument>();
         var now = DateTime.UtcNow;
@@ -99,6 +96,8 @@ public class PreparePaymentComplementService
             {
                 return ValidationFailure(command.AccountsReceivablePaymentId, $"Accounts receivable invoice '{application.AccountsReceivableInvoiceId}' was not found.");
             }
+
+            linkedInvoices.Add(invoice);
 
             if (!string.Equals(FiscalMasterDataNormalization.NormalizeRequiredCode(invoice.CurrencyCode), "MXN", StringComparison.Ordinal))
             {
@@ -261,10 +260,16 @@ public class PreparePaymentComplementService
             }
 
             relatedDocument.InstallmentNumber = index + 1;
-            relatedDocument.PreviousBalance = application.PreviousBalance;
-            relatedDocument.PaidAmount = application.AppliedAmount;
-            relatedDocument.RemainingBalance = application.NewBalance;
+            relatedDocument.PreviousBalance = NormalizeMoney(application.PreviousBalance);
+            relatedDocument.PaidAmount = NormalizeMoney(application.AppliedAmount);
+            relatedDocument.RemainingBalance = NormalizeMoney(application.NewBalance);
             relatedDocuments.Add(relatedDocument);
+        }
+
+        var evaluation = AccountsReceivablePaymentOperationalProjectionBuilder.EvaluateRepPreparation(payment, linkedInvoices, existingDocument);
+        if (!evaluation.ReadyToPrepareRep)
+        {
+            return ValidationFailure(command.AccountsReceivablePaymentId, evaluation.RepBlockReason ?? "Payment is not ready to prepare REP.");
         }
 
         if (anchor is null)
@@ -278,10 +283,10 @@ public class PreparePaymentComplementService
             Status = PaymentComplementDocumentStatus.ReadyForStamping,
             CfdiVersion = anchor.CfdiVersion,
             DocumentType = "P",
-            IssuedAtUtc = command.IssuedAtUtc ?? now,
+            IssuedAtUtc = CfdiDateTimeNormalization.NormalizeIncomingUtcOrNow(command.IssuedAtUtc, now),
             PaymentDateUtc = payment.PaymentDateUtc,
             CurrencyCode = "MXN",
-            TotalPaymentsAmount = payment.Amount,
+            TotalPaymentsAmount = NormalizeMoney(payment.Amount),
             IssuerProfileId = anchor.IssuerProfileId,
             FiscalReceiverId = anchor.FiscalReceiverId,
             IssuerRfc = anchor.IssuerRfc,
@@ -326,6 +331,11 @@ public class PreparePaymentComplementService
             AccountsReceivablePaymentId = paymentId,
             ErrorMessage = errorMessage
         };
+    }
+
+    private static decimal NormalizeMoney(decimal amount)
+    {
+        return decimal.Round(amount, 2, MidpointRounding.AwayFromZero);
     }
 
     private sealed class AnchorSnapshot

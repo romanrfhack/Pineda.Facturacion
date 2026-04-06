@@ -39,12 +39,23 @@ describe('PaymentComplementsApiService', () => {
       eligible: true,
       blocked: false,
       withOutstandingBalance: true,
-      hasRepEmitted: false
+      hasRepEmitted: false,
+      alertCode: 'PreparedRepPendingStamp',
+      severity: 'warning',
+      nextRecommendedAction: 'StampRep',
+      quickView: 'PendingStamp'
     }).subscribe();
 
-    const req = httpTesting.expectOne('/api/payment-complements/base-documents/internal?page=2&pageSize=10&fromDate=2026-04-01&toDate=2026-04-30&receiverRfc=BBB010101BBB&query=UUID-REP-1&eligible=true&blocked=false&withOutstandingBalance=true&hasRepEmitted=false');
+    const req = httpTesting.expectOne('/api/payment-complements/base-documents/internal?page=2&pageSize=10&fromDate=2026-04-01&toDate=2026-04-30&receiverRfc=BBB010101BBB&query=UUID-REP-1&eligible=true&blocked=false&withOutstandingBalance=true&hasRepEmitted=false&alertCode=PreparedRepPendingStamp&severity=warning&nextRecommendedAction=StampRep&quickView=PendingStamp');
     expect(req.request.method).toBe('GET');
-    req.flush({ page: 2, pageSize: 10, totalCount: 0, totalPages: 0, items: [] });
+    req.flush({
+      page: 2,
+      pageSize: 10,
+      totalCount: 0,
+      totalPages: 0,
+      items: [],
+      summaryCounts: { infoCount: 0, warningCount: 0, errorCount: 0, criticalCount: 0, blockedCount: 0, alertCounts: [], nextRecommendedActionCounts: [], quickViewCounts: [] }
+    });
     httpTesting.verify();
   });
 
@@ -179,6 +190,90 @@ describe('PaymentComplementsApiService', () => {
       cancellationStatus: 'Cancelled',
       availableActions: ['ViewDetail'],
       alerts: []
+    });
+
+    httpTesting.verify();
+  });
+
+  it('executes bulk refresh for internal, external and unified trays', () => {
+    const service = TestBed.inject(PaymentComplementsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.bulkRefreshInternalBaseDocuments({
+      mode: 'Selected',
+      documents: [{ sourceType: 'Internal', sourceId: 501 }],
+      quickView: 'PendingRefresh'
+    }).subscribe();
+    const internalReq = httpTesting.expectOne('/api/payment-complements/base-documents/internal/refresh-rep-status/bulk');
+    expect(internalReq.request.method).toBe('POST');
+    expect(internalReq.request.body).toEqual({
+      mode: 'Selected',
+      documents: [{ sourceType: 'Internal', sourceId: 501 }],
+      quickView: 'PendingRefresh'
+    });
+    internalReq.flush({
+      isSuccess: true,
+      mode: 'Selected',
+      maxDocuments: 50,
+      totalRequested: 1,
+      totalAttempted: 1,
+      refreshedCount: 1,
+      noChangesCount: 0,
+      blockedCount: 0,
+      failedCount: 0,
+      items: []
+    });
+
+    service.bulkRefreshExternalBaseDocuments({
+      mode: 'Filtered',
+      severity: 'warning'
+    }).subscribe();
+    const externalReq = httpTesting.expectOne('/api/payment-complements/base-documents/external/refresh-rep-status/bulk');
+    expect(externalReq.request.method).toBe('POST');
+    expect(externalReq.request.body).toEqual({
+      mode: 'Filtered',
+      severity: 'warning'
+    });
+    externalReq.flush({
+      isSuccess: true,
+      mode: 'Filtered',
+      maxDocuments: 50,
+      totalRequested: 2,
+      totalAttempted: 2,
+      refreshedCount: 1,
+      noChangesCount: 1,
+      blockedCount: 0,
+      failedCount: 0,
+      items: []
+    });
+
+    service.bulkRefreshBaseDocuments({
+      mode: 'Selected',
+      documents: [
+        { sourceType: 'Internal', sourceId: 501 },
+        { sourceType: 'External', sourceId: 901 }
+      ]
+    }).subscribe();
+    const unifiedReq = httpTesting.expectOne('/api/payment-complements/base-documents/refresh-rep-status/bulk');
+    expect(unifiedReq.request.method).toBe('POST');
+    expect(unifiedReq.request.body).toEqual({
+      mode: 'Selected',
+      documents: [
+        { sourceType: 'Internal', sourceId: 501 },
+        { sourceType: 'External', sourceId: 901 }
+      ]
+    });
+    unifiedReq.flush({
+      isSuccess: true,
+      mode: 'Selected',
+      maxDocuments: 50,
+      totalRequested: 2,
+      totalAttempted: 2,
+      refreshedCount: 2,
+      noChangesCount: 0,
+      blockedCount: 0,
+      failedCount: 0,
+      items: []
     });
 
     httpTesting.verify();
@@ -393,12 +488,23 @@ describe('PaymentComplementsApiService', () => {
       query: 'UUID-EXT-1',
       validationStatus: 'Accepted',
       eligible: true,
-      blocked: false
+      blocked: false,
+      alertCode: 'StampedRepAvailable',
+      severity: 'info',
+      nextRecommendedAction: 'RefreshRepStatus',
+      quickView: 'PendingRefresh'
     }).subscribe();
 
-    const req = httpTesting.expectOne('/api/payment-complements/base-documents/external?page=1&pageSize=25&fromDate=2026-04-01&toDate=2026-04-30&receiverRfc=BBB010101BBB&query=UUID-EXT-1&validationStatus=Accepted&eligible=true&blocked=false');
+    const req = httpTesting.expectOne('/api/payment-complements/base-documents/external?page=1&pageSize=25&fromDate=2026-04-01&toDate=2026-04-30&receiverRfc=BBB010101BBB&query=UUID-EXT-1&validationStatus=Accepted&eligible=true&blocked=false&alertCode=StampedRepAvailable&severity=info&nextRecommendedAction=RefreshRepStatus&quickView=PendingRefresh');
     expect(req.request.method).toBe('GET');
-    req.flush({ page: 1, pageSize: 25, totalCount: 0, totalPages: 0, items: [] });
+    req.flush({
+      page: 1,
+      pageSize: 25,
+      totalCount: 0,
+      totalPages: 0,
+      items: [],
+      summaryCounts: { infoCount: 0, warningCount: 0, errorCount: 0, criticalCount: 0, blockedCount: 0, alertCounts: [], nextRecommendedActionCounts: [], quickViewCounts: [] }
+    });
     httpTesting.verify();
   });
 
@@ -416,12 +522,23 @@ describe('PaymentComplementsApiService', () => {
       sourceType: 'External',
       validationStatus: 'Accepted',
       eligible: true,
-      blocked: false
+      blocked: false,
+      alertCode: 'AppliedPaymentsWithoutStampedRep',
+      severity: 'warning',
+      nextRecommendedAction: 'PrepareRep',
+      quickView: 'AppliedPaymentWithoutStampedRep'
     }).subscribe();
 
-    const req = httpTesting.expectOne('/api/payment-complements/base-documents?page=1&pageSize=25&fromDate=2026-04-01&toDate=2026-04-30&receiverRfc=BBB010101BBB&query=UUID-REP-1&sourceType=External&validationStatus=Accepted&eligible=true&blocked=false');
+    const req = httpTesting.expectOne('/api/payment-complements/base-documents?page=1&pageSize=25&fromDate=2026-04-01&toDate=2026-04-30&receiverRfc=BBB010101BBB&query=UUID-REP-1&sourceType=External&validationStatus=Accepted&eligible=true&blocked=false&alertCode=AppliedPaymentsWithoutStampedRep&severity=warning&nextRecommendedAction=PrepareRep&quickView=AppliedPaymentWithoutStampedRep');
     expect(req.request.method).toBe('GET');
-    req.flush({ page: 1, pageSize: 25, totalCount: 0, totalPages: 0, items: [] });
+    req.flush({
+      page: 1,
+      pageSize: 25,
+      totalCount: 0,
+      totalPages: 0,
+      items: [],
+      summaryCounts: { infoCount: 0, warningCount: 0, errorCount: 0, criticalCount: 0, blockedCount: 0, alertCounts: [], nextRecommendedActionCounts: [], quickViewCounts: [] }
+    });
     httpTesting.verify();
   });
 });

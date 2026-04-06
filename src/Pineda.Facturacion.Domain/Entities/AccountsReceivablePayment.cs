@@ -1,3 +1,5 @@
+using Pineda.Facturacion.Domain.Enums;
+
 namespace Pineda.Facturacion.Domain.Entities;
 
 public class AccountsReceivablePayment
@@ -17,6 +19,8 @@ public class AccountsReceivablePayment
     public string? Notes { get; set; }
 
     public long? ReceivedFromFiscalReceiverId { get; set; }
+
+    public AccountsReceivablePaymentUnappliedDisposition UnappliedDisposition { get; set; }
 
     public DateTime CreatedAtUtc { get; set; }
 

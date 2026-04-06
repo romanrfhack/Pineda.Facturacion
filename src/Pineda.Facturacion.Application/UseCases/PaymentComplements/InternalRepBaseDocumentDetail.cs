@@ -6,6 +6,8 @@ public sealed class InternalRepBaseDocumentDetail
 
     public InternalRepBaseDocumentOperationalSnapshot? OperationalState { get; init; }
 
+    public IReadOnlyList<RepBaseDocumentTimelineEntry> Timeline { get; init; } = [];
+
     public IReadOnlyList<InternalRepBaseDocumentPaymentHistoryReadModel> PaymentHistory { get; init; } = [];
 
     public IReadOnlyList<InternalRepBaseDocumentPaymentApplicationReadModel> PaymentApplications { get; init; } = [];

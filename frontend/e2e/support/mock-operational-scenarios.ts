@@ -300,18 +300,19 @@ export async function mockPaymentComplementJourney(page: Page): Promise<void> {
     });
   });
 
-  await page.route('**/api/accounts-receivable/payments/702/payment-complement', async (route) => {
-    if (!complementExists) {
-      await route.fulfill({ status: 404, json: { errorMessage: 'No encontrado.' } });
+  await page.route('**/api/accounts-receivable/payments/702/payment-complements', async (route) => {
+    if (route.request().method() === 'GET') {
+      if (!complementExists) {
+        await route.fulfill({ status: 404, json: { errorMessage: 'No encontrado.' } });
+        return;
+      }
+
+      await route.fulfill({
+        json: buildPaymentComplementDocument(802, complementStatus)
+      });
       return;
     }
 
-    await route.fulfill({
-      json: buildPaymentComplementDocument(802, complementStatus)
-    });
-  });
-
-  await page.route('**/api/accounts-receivable/payments/702/payment-complements', async (route) => {
     complementExists = true;
     await route.fulfill({
       json: {
@@ -731,6 +732,12 @@ function createInvoice(input: {
     billingDocumentId: 301,
     fiscalDocumentId: input.fiscalDocumentId,
     fiscalStampId: 501,
+    fiscalReceiverId: 9,
+    receiverRfc: 'BBB010101BBB',
+    receiverLegalName: 'Receiver One',
+    fiscalSeries: 'A',
+    fiscalFolio: '401',
+    fiscalUuid: 'UUID-FISCAL-411',
     status: input.status,
     paymentMethodSat: 'PPD',
     paymentFormSatInitial: '99',
@@ -744,6 +751,16 @@ function createInvoice(input: {
     outstandingBalance: input.outstandingBalance,
     createdAtUtc: '2026-03-20T12:30:00Z',
     updatedAtUtc: '2026-03-20T14:05:00Z',
+    agingBucket: 'Current',
+    hasPendingCommitment: false,
+    nextCommitmentDateUtc: null,
+    nextFollowUpAtUtc: null,
+    followUpPending: false,
+    collectionCommitments: [],
+    collectionNotes: [],
+    relatedPayments: [],
+    relatedPaymentComplements: [],
+    timeline: [],
     applications: input.applications
   };
 }
@@ -780,6 +797,8 @@ function buildPaymentComplementDocument(id: number, status: string): Record<stri
     providerName: 'FacturaloPlus',
     cfdiVersion: '4.0',
     documentType: 'P',
+    appliesToIncomePpdInvoices: true,
+    eligibilitySummary: 'Complemento elegible para timbrado.',
     issuedAtUtc: '2026-03-20T15:00:00Z',
     paymentDateUtc: '2026-03-20T14:00:00Z',
     currencyCode: 'MXN',
@@ -800,6 +819,8 @@ function buildPaymentComplementDocument(id: number, status: string): Record<stri
     hasCertificateReference: true,
     hasPrivateKeyReference: true,
     hasPrivateKeyPasswordReference: true,
+    createdAtUtc: '2026-03-20T15:00:00Z',
+    updatedAtUtc: '2026-03-20T15:00:00Z',
     relatedDocuments: [
       {
         id: 811,

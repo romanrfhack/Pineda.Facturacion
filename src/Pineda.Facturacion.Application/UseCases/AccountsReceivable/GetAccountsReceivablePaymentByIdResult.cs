@@ -11,4 +11,6 @@ public class GetAccountsReceivablePaymentByIdResult
     public long AccountsReceivablePaymentId { get; set; }
 
     public AccountsReceivablePayment? AccountsReceivablePayment { get; set; }
+
+    public AccountsReceivablePaymentOperationalProjection? OperationalProjection { get; set; }
 }

@@ -21,4 +21,12 @@ public sealed class SearchInternalRepBaseDocumentsFilter
     public bool? WithOutstandingBalance { get; init; }
 
     public bool? HasRepEmitted { get; init; }
+
+    public string? AlertCode { get; init; }
+
+    public string? Severity { get; init; }
+
+    public string? NextRecommendedAction { get; init; }
+
+    public string? QuickView { get; init; }
 }

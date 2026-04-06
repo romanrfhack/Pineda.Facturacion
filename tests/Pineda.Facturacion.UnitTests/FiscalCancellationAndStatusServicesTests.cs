@@ -3,6 +3,7 @@ using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Abstractions.Security;
 using Pineda.Facturacion.Application.Contracts.Pac;
 using Pineda.Facturacion.Application.Security;
+using Pineda.Facturacion.Application.UseCases.AccountsReceivable;
 using Pineda.Facturacion.Application.UseCases.FiscalDocuments;
 using Pineda.Facturacion.Api.Endpoints;
 using Pineda.Facturacion.Domain.Entities;
@@ -18,6 +19,13 @@ public class FiscalCancellationAndStatusServicesTests
         var fiscalDocument = CreateStampedFiscalDocument();
         var fiscalStamp = CreateFiscalStamp();
         var cancellationRepository = new FakeFiscalCancellationRepository();
+        var accountsReceivableInvoice = new AccountsReceivableInvoice
+        {
+            Id = 901,
+            FiscalDocumentId = fiscalDocument.Id,
+            Status = AccountsReceivableInvoiceStatus.Open,
+            UpdatedAtUtc = new DateTime(2026, 3, 20, 0, 0, 0, DateTimeKind.Utc)
+        };
         var gateway = new FakeFiscalCancellationGateway
         {
             NextResult = new FiscalCancellationGatewayResult
@@ -32,10 +40,15 @@ public class FiscalCancellationAndStatusServicesTests
                 RawResponseSummaryJson = "{\"success\":true}"
             }
         };
+        var accountsReceivableRepository = new FakeAccountsReceivableInvoiceRepository
+        {
+            ExistingTrackedByFiscalDocumentId = accountsReceivableInvoice
+        };
         var service = new CancelFiscalDocumentService(
             new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
             new FakeFiscalStampRepository { ExistingTracked = fiscalStamp },
             cancellationRepository,
+            accountsReceivableRepository,
             gateway,
             new FakeUnitOfWork());
 
@@ -48,6 +61,7 @@ public class FiscalCancellationAndStatusServicesTests
         Assert.True(result.IsSuccess);
         Assert.Equal(CancelFiscalDocumentOutcome.Cancelled, result.Outcome);
         Assert.Equal(FiscalDocumentStatus.Cancelled, fiscalDocument.Status);
+        Assert.Equal(AccountsReceivableInvoiceStatus.Cancelled, accountsReceivableInvoice.Status);
         Assert.Equal(FiscalCancellationStatus.Cancelled, cancellationRepository.Added!.Status);
         Assert.Equal("200", result.ProviderCode);
         Assert.Equal("Cancelled", result.ProviderMessage);
@@ -60,6 +74,7 @@ public class FiscalCancellationAndStatusServicesTests
             new FakeFiscalDocumentRepository(),
             new FakeFiscalStampRepository(),
             new FakeFiscalCancellationRepository(),
+            new FakeAccountsReceivableInvoiceRepository(),
             new FakeFiscalCancellationGateway(),
             new FakeUnitOfWork());
 
@@ -83,6 +98,7 @@ public class FiscalCancellationAndStatusServicesTests
             new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
             new FakeFiscalStampRepository { ExistingTracked = CreateFiscalStamp() },
             new FakeFiscalCancellationRepository(),
+            new FakeAccountsReceivableInvoiceRepository(),
             new FakeFiscalCancellationGateway(),
             new FakeUnitOfWork());
 
@@ -105,6 +121,7 @@ public class FiscalCancellationAndStatusServicesTests
             new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
             new FakeFiscalStampRepository { ExistingTracked = CreateFiscalStamp() },
             new FakeFiscalCancellationRepository(),
+            new FakeAccountsReceivableInvoiceRepository(),
             new FakeFiscalCancellationGateway(),
             new FakeUnitOfWork());
 
@@ -129,6 +146,7 @@ public class FiscalCancellationAndStatusServicesTests
             new FakeFiscalDocumentRepository { ExistingTracked = CreateStampedFiscalDocument() },
             new FakeFiscalStampRepository { ExistingTracked = fiscalStamp },
             new FakeFiscalCancellationRepository(),
+            new FakeAccountsReceivableInvoiceRepository(),
             new FakeFiscalCancellationGateway(),
             new FakeUnitOfWork());
 
@@ -165,6 +183,7 @@ public class FiscalCancellationAndStatusServicesTests
             new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
             new FakeFiscalStampRepository { ExistingTracked = CreateFiscalStamp() },
             cancellationRepository,
+            new FakeAccountsReceivableInvoiceRepository(),
             gateway,
             new FakeUnitOfWork());
 
@@ -202,6 +221,7 @@ public class FiscalCancellationAndStatusServicesTests
             new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
             new FakeFiscalStampRepository { ExistingTracked = CreateFiscalStamp() },
             cancellationRepository,
+            new FakeAccountsReceivableInvoiceRepository(),
             gateway,
             new FakeUnitOfWork());
 
@@ -234,6 +254,7 @@ public class FiscalCancellationAndStatusServicesTests
             new FakeFiscalDocumentRepository { ExistingTracked = CreateStampedFiscalDocument() },
             new FakeFiscalStampRepository { ExistingTracked = CreateFiscalStamp() },
             new FakeFiscalCancellationRepository(),
+            new FakeAccountsReceivableInvoiceRepository(),
             gateway,
             new FakeUnitOfWork());
 
@@ -265,6 +286,7 @@ public class FiscalCancellationAndStatusServicesTests
             new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
             new FakeFiscalStampRepository { ExistingTracked = CreateFiscalStamp() },
             new FakeFiscalCancellationRepository(),
+            new FakeAccountsReceivableInvoiceRepository(),
             new FakeFiscalCancellationGateway(),
             new FakeUnitOfWork());
 
@@ -302,6 +324,7 @@ public class FiscalCancellationAndStatusServicesTests
         var service = new RefreshFiscalDocumentStatusService(
             new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
             new FakeFiscalStampRepository { ExistingTracked = fiscalStamp },
+            new FakeAccountsReceivableInvoiceRepository(),
             gateway,
             new FakeUnitOfWork());
 
@@ -325,6 +348,7 @@ public class FiscalCancellationAndStatusServicesTests
         var service = new RefreshFiscalDocumentStatusService(
             new FakeFiscalDocumentRepository(),
             new FakeFiscalStampRepository(),
+            new FakeAccountsReceivableInvoiceRepository(),
             new FakeFiscalStatusQueryGateway(),
             new FakeUnitOfWork());
 
@@ -345,6 +369,7 @@ public class FiscalCancellationAndStatusServicesTests
         var service = new RefreshFiscalDocumentStatusService(
             new FakeFiscalDocumentRepository { ExistingTracked = CreateStampedFiscalDocument() },
             new FakeFiscalStampRepository { ExistingTracked = fiscalStamp },
+            new FakeAccountsReceivableInvoiceRepository(),
             new FakeFiscalStatusQueryGateway(),
             new FakeUnitOfWork());
 
@@ -363,6 +388,7 @@ public class FiscalCancellationAndStatusServicesTests
         var service = new RefreshFiscalDocumentStatusService(
             new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
             new FakeFiscalStampRepository { ExistingTracked = CreateFiscalStamp() },
+            new FakeAccountsReceivableInvoiceRepository(),
             new FakeFiscalStatusQueryGateway
             {
                 NextResult = new FiscalStatusQueryGatewayResult
@@ -395,6 +421,7 @@ public class FiscalCancellationAndStatusServicesTests
         var service = new RefreshFiscalDocumentStatusService(
             new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
             new FakeFiscalStampRepository { ExistingTracked = fiscalStamp },
+            new FakeAccountsReceivableInvoiceRepository(),
             new FakeFiscalStatusQueryGateway
             {
                 NextResult = new FiscalStatusQueryGatewayResult
@@ -432,9 +459,19 @@ public class FiscalCancellationAndStatusServicesTests
     {
         var fiscalDocument = CreateStampedFiscalDocument();
         var fiscalStamp = CreateFiscalStamp();
+        var accountsReceivableInvoice = new AccountsReceivableInvoice
+        {
+            Id = 902,
+            FiscalDocumentId = fiscalDocument.Id,
+            Status = AccountsReceivableInvoiceStatus.PartiallyPaid
+        };
         var service = new RefreshFiscalDocumentStatusService(
             new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
             new FakeFiscalStampRepository { ExistingTracked = fiscalStamp },
+            new FakeAccountsReceivableInvoiceRepository
+            {
+                ExistingTrackedByFiscalDocumentId = accountsReceivableInvoice
+            },
             new FakeFiscalStatusQueryGateway
             {
                 NextResult = new FiscalStatusQueryGatewayResult
@@ -455,6 +492,7 @@ public class FiscalCancellationAndStatusServicesTests
 
         Assert.Equal(RefreshFiscalDocumentStatusOutcome.Refreshed, result.Outcome);
         Assert.Equal(FiscalDocumentStatus.Cancelled, fiscalDocument.Status);
+        Assert.Equal(AccountsReceivableInvoiceStatus.Cancelled, accountsReceivableInvoice.Status);
         Assert.Equal("Cancelled", result.OperationalStatus);
     }
 
@@ -466,6 +504,7 @@ public class FiscalCancellationAndStatusServicesTests
         var service = new RefreshFiscalDocumentStatusService(
             new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
             new FakeFiscalStampRepository { ExistingTracked = fiscalStamp },
+            new FakeAccountsReceivableInvoiceRepository(),
             new FakeFiscalStatusQueryGateway
             {
                 NextResult = new FiscalStatusQueryGatewayResult
@@ -501,6 +540,7 @@ public class FiscalCancellationAndStatusServicesTests
         var service = new RefreshFiscalDocumentStatusService(
             new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
             new FakeFiscalStampRepository { ExistingTracked = fiscalStamp },
+            new FakeAccountsReceivableInvoiceRepository(),
             new FakeFiscalStatusQueryGateway
             {
                 NextResult = new FiscalStatusQueryGatewayResult
@@ -533,6 +573,7 @@ public class FiscalCancellationAndStatusServicesTests
         var service = new RefreshFiscalDocumentStatusService(
             new FakeFiscalDocumentRepository { ExistingTracked = CreateStampedFiscalDocument() },
             new FakeFiscalStampRepository { ExistingTracked = CreateFiscalStamp() },
+            new FakeAccountsReceivableInvoiceRepository(),
             new FakeFiscalStatusQueryGateway
             {
                 NextResult = new FiscalStatusQueryGatewayResult
@@ -563,6 +604,7 @@ public class FiscalCancellationAndStatusServicesTests
         var service = new RefreshFiscalDocumentStatusService(
             new FakeFiscalDocumentRepository { ExistingTracked = CreateStampedFiscalDocument() },
             new FakeFiscalStampRepository { ExistingTracked = CreateFiscalStamp() },
+            new FakeAccountsReceivableInvoiceRepository(),
             new FakeFiscalStatusQueryGateway
             {
                 NextResult = new FiscalStatusQueryGatewayResult
@@ -593,6 +635,7 @@ public class FiscalCancellationAndStatusServicesTests
         var service = new RefreshFiscalDocumentStatusService(
             new FakeFiscalDocumentRepository { ExistingTracked = CreateStampedFiscalDocument() },
             new FakeFiscalStampRepository { ExistingTracked = CreateFiscalStamp() },
+            new FakeAccountsReceivableInvoiceRepository(),
             gateway,
             new FakeUnitOfWork());
 
@@ -939,6 +982,37 @@ public class FiscalCancellationAndStatusServicesTests
             Added = fiscalCancellation;
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class FakeAccountsReceivableInvoiceRepository : IAccountsReceivableInvoiceRepository
+    {
+        public AccountsReceivableInvoice? ExistingTrackedByFiscalDocumentId { get; set; }
+
+        public Task<AccountsReceivableInvoice?> GetByFiscalDocumentIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default)
+            => Task.FromResult(ExistingTrackedByFiscalDocumentId?.FiscalDocumentId == fiscalDocumentId ? ExistingTrackedByFiscalDocumentId : null);
+
+        public Task<AccountsReceivableInvoice?> GetByExternalRepBaseDocumentIdAsync(long externalRepBaseDocumentId, CancellationToken cancellationToken = default)
+            => Task.FromResult<AccountsReceivableInvoice?>(null);
+
+        public Task<AccountsReceivableInvoice?> GetTrackedByIdAsync(long accountsReceivableInvoiceId, CancellationToken cancellationToken = default)
+            => Task.FromResult(ExistingTrackedByFiscalDocumentId?.Id == accountsReceivableInvoiceId ? ExistingTrackedByFiscalDocumentId : null);
+
+        public Task<AccountsReceivableInvoice?> GetTrackedByFiscalDocumentIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default)
+            => Task.FromResult(ExistingTrackedByFiscalDocumentId?.FiscalDocumentId == fiscalDocumentId ? ExistingTrackedByFiscalDocumentId : null);
+
+        public Task<AccountsReceivableInvoice?> GetTrackedByExternalRepBaseDocumentIdAsync(long externalRepBaseDocumentId, CancellationToken cancellationToken = default)
+            => Task.FromResult<AccountsReceivableInvoice?>(null);
+
+        public Task<IReadOnlyList<AccountsReceivableInvoice>> GetByIdsAsync(IReadOnlyCollection<long> accountsReceivableInvoiceIds, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<AccountsReceivableInvoice>>(
+                ExistingTrackedByFiscalDocumentId is not null && accountsReceivableInvoiceIds.Contains(ExistingTrackedByFiscalDocumentId.Id)
+                    ? [ExistingTrackedByFiscalDocumentId]
+                    : []);
+
+        public Task<IReadOnlyList<AccountsReceivablePortfolioItem>> SearchPortfolioAsync(SearchAccountsReceivablePortfolioFilter filter, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<AccountsReceivablePortfolioItem>>([]);
+
+        public Task AddAsync(AccountsReceivableInvoice accountsReceivableInvoice, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     private sealed class FakeFiscalCancellationGateway : IFiscalCancellationGateway

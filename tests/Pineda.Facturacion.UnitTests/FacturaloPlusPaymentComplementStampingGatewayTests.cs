@@ -1,4 +1,6 @@
 using System.Net;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
@@ -11,6 +13,52 @@ namespace Pineda.Facturacion.UnitTests;
 
 public class FacturaloPlusPaymentComplementStampingGatewayTests
 {
+    [Fact]
+    public async Task StampAsync_Uses_TimbrarJson3_FormUrlEncoded_Request_For_Rep()
+    {
+        var handler = new RecordingHandler(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""
+                {
+                  "code": "200",
+                  "message": "Solicitud procesada con éxito. - Complemento timbrado.",
+                  "data": {
+                    "uuid": "UUID-PC-OK-1",
+                    "xml": "<cfdi:Comprobante xmlns:cfdi=\"http://www.sat.gob.mx/cfd/4\" />"
+                  }
+                }
+                """, Encoding.UTF8, "application/json")
+        });
+
+        var gateway = CreateGateway(handler);
+
+        var result = await gateway.StampAsync(CreateRequest());
+
+        Assert.Equal(PaymentComplementStampingGatewayOutcome.Stamped, result.Outcome);
+        Assert.NotNull(handler.LastRequest);
+        Assert.Equal(HttpMethod.Post, handler.LastRequest!.Method);
+        Assert.Equal("https://dev.facturaloplus.com/api/rest/servicio/timbrarJSON3", handler.LastRequest.RequestUri!.ToString());
+        Assert.Equal("application/x-www-form-urlencoded", handler.LastContentType);
+        Assert.False(handler.LastRequest.Headers.Contains("X-Api-Key"));
+        Assert.Equal("timbrarJSON3", result.ProviderOperation);
+        Assert.Contains("\"requestUri\":\"https://dev.facturaloplus.com/api/rest/servicio/timbrarJSON3\"", result.RawResponseSummaryJson, StringComparison.Ordinal);
+
+        var form = ParseFormBody(handler.LastBody!);
+        Assert.Equal("APIKEY-TEST", form["apikey"]);
+        Assert.Equal("PRIVATE-KEY-PEM", form["keyPEM"]);
+        Assert.True(form.ContainsKey("cerPEM"));
+        Assert.True(form.ContainsKey("jsonB64"));
+
+        var decodedJson = Encoding.UTF8.GetString(Convert.FromBase64String(form["jsonB64"]));
+        using var json = JsonDocument.Parse(decodedJson);
+        var comprobante = json.RootElement.GetProperty("Comprobante");
+        Assert.Equal("P", comprobante.GetProperty("TipoDeComprobante").GetString());
+        Assert.Equal("XXX", comprobante.GetProperty("Moneda").GetString());
+        Assert.Equal("CP01", comprobante.GetProperty("Receptor").GetProperty("UsoCFDI").GetString());
+        Assert.Equal("03", comprobante.GetProperty("Complemento").GetProperty("Pagos20").GetProperty("Pago")[0].GetProperty("FormaDePagoP").GetString());
+        Assert.Equal("UUID-REL-1", comprobante.GetProperty("Complemento").GetProperty("Pagos20").GetProperty("Pago")[0].GetProperty("DoctoRelacionado")[0].GetProperty("IdDocumento").GetString());
+    }
+
     [Fact]
     public async Task StampAsync_Treats_Code200_With_NestedDataString_And_StampedXml_As_Success()
     {
@@ -123,6 +171,21 @@ public class FacturaloPlusPaymentComplementStampingGatewayTests
 
     private static FacturaloPlusPaymentComplementStampingGateway CreateGateway(HttpMessageHandler handler)
     {
+        using var rsa = RSA.Create(2048);
+        var request = new CertificateRequest(
+            "CN=FacturaloPlus Test",
+            rsa,
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
+        var serialBytes = Encoding.ASCII.GetBytes("30001000000500003416");
+        var certificate = request.Create(
+            new X500DistinguishedName("CN=FacturaloPlus Test"),
+            X509SignatureGenerator.CreateForRSA(rsa, RSASignaturePadding.Pkcs1),
+            DateTimeOffset.UtcNow.AddDays(-1),
+            DateTimeOffset.UtcNow.AddYears(1),
+            serialBytes);
+        var certificatePem = new string(PemEncoding.Write("CERTIFICATE", certificate.Export(X509ContentType.Cert)));
+
         var client = new HttpClient(handler)
         {
             BaseAddress = new Uri("https://dev.facturaloplus.com/api/rest/servicio/")
@@ -130,7 +193,7 @@ public class FacturaloPlusPaymentComplementStampingGatewayTests
         var secretResolver = new RecordingSecretResolver(new Dictionary<string, string?>
         {
             ["FACTURALOPLUS_API_KEY_REFERENCE"] = "APIKEY-TEST",
-            ["CERT_REF"] = "CERTIFICATE-PEM",
+            ["CERT_REF"] = certificatePem,
             ["KEY_REF"] = "PRIVATE-KEY-PEM",
             ["PWD_REF"] = "PRIVATE-KEY-PASSWORD"
         });
@@ -140,7 +203,7 @@ public class FacturaloPlusPaymentComplementStampingGatewayTests
             Options.Create(new FacturaloPlusOptions
             {
                 BaseUrl = "https://dev.facturaloplus.com/api/rest/servicio/",
-                PaymentComplementStampPath = "/cfdi/payment-complement/stamp",
+                PaymentComplementStampPath = "timbrarJSON3",
                 ApiKeyReference = "FACTURALOPLUS_API_KEY_REFERENCE",
                 ApiKeyHeaderName = "X-Api-Key"
             }),
@@ -157,9 +220,10 @@ public class FacturaloPlusPaymentComplementStampingGatewayTests
             PrivateKeyReference = "KEY_REF",
             PrivateKeyPasswordReference = "PWD_REF",
             CfdiVersion = "4.0",
-            DocumentType = "PAYMENT_COMPLEMENT",
+            DocumentType = "P",
             IssuedAtUtc = new DateTime(2026, 3, 24, 15, 0, 0, DateTimeKind.Utc),
             PaymentDateUtc = new DateTime(2026, 3, 24, 15, 0, 0, DateTimeKind.Utc),
+            PaymentFormSat = "03",
             CurrencyCode = "MXN",
             TotalPaymentsAmount = 123.45m,
             IssuerRfc = "AAA010101AAA",
@@ -181,7 +245,19 @@ public class FacturaloPlusPaymentComplementStampingGatewayTests
                     PreviousBalance = 123.45m,
                     PaidAmount = 123.45m,
                     RemainingBalance = 0m,
-                    CurrencyCode = "MXN"
+                    CurrencyCode = "MXN",
+                    TaxObjectCode = "02",
+                    TaxTransfers =
+                    [
+                        new PaymentComplementStampingRequestTaxTransfer
+                        {
+                            TaxCode = "002",
+                            FactorType = "Tasa",
+                            Rate = 0.16m,
+                            BaseAmount = 106.42m,
+                            TaxAmount = 17.03m
+                        }
+                    ]
                 }
             ]
         };
@@ -191,6 +267,12 @@ public class FacturaloPlusPaymentComplementStampingGatewayTests
     {
         private readonly HttpResponseMessage _response;
 
+        public HttpRequestMessage? LastRequest { get; private set; }
+
+        public string? LastContentType { get; private set; }
+
+        public string? LastBody { get; private set; }
+
         public RecordingHandler(HttpResponseMessage response)
         {
             _response = response;
@@ -198,8 +280,20 @@ public class FacturaloPlusPaymentComplementStampingGatewayTests
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            LastRequest = request;
+            LastContentType = request.Content?.Headers.ContentType?.MediaType;
+            LastBody = request.Content?.ReadAsStringAsync(cancellationToken).GetAwaiter().GetResult();
             return Task.FromResult(_response);
         }
+    }
+
+    private static Dictionary<string, string> ParseFormBody(string body)
+    {
+        return body.Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Select(part => part.Split('=', 2))
+            .ToDictionary(
+                pieces => Uri.UnescapeDataString(pieces[0]),
+                pieces => Uri.UnescapeDataString(pieces.Length > 1 ? pieces[1] : string.Empty));
     }
 
     private sealed class RecordingSecretResolver : ISecretReferenceResolver

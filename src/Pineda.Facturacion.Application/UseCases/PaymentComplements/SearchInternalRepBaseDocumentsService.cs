@@ -50,16 +50,28 @@ public sealed class SearchInternalRepBaseDocumentsService
 
         var evaluatedItems = items
             .Select(BuildListItem)
-            .Where(x => MatchesFilter(x, filter))
+            .Where(x => MatchesBaseFilter(x, filter))
             .OrderByDescending(x => x.IsEligible)
             .ThenByDescending(x => x.IsBlocked)
             .ThenByDescending(x => x.OutstandingBalance)
             .ThenByDescending(x => x.IssuedAtUtc)
             .ToList();
 
-        var totalCount = evaluatedItems.Count;
+        var summaryCounts = RepOperationalSummaryCountsBuilder.Build(
+            evaluatedItems,
+            x => x.Alerts,
+            x => x.NextRecommendedAction,
+            x => x.IsBlocked,
+            x => x.StampedPaymentComplementCount);
+
+        var filteredItems = evaluatedItems
+            .Where(x => MatchesQuickView(x, filter))
+            .Where(x => MatchesOperationalFilter(x, filter))
+            .ToList();
+
+        var totalCount = filteredItems.Count;
         var totalPages = totalCount == 0 ? 0 : (int)Math.Ceiling(totalCount / (double)normalizedPageSize);
-        var pageItems = evaluatedItems
+        var pageItems = filteredItems
             .Skip((normalizedPage - 1) * normalizedPageSize)
             .Take(normalizedPageSize)
             .ToList();
@@ -72,7 +84,8 @@ public sealed class SearchInternalRepBaseDocumentsService
             PageSize = normalizedPageSize,
             TotalCount = totalCount,
             TotalPages = totalPages,
-            Items = pageItems
+            Items = pageItems,
+            SummaryCounts = summaryCounts
         };
     }
 
@@ -167,7 +180,7 @@ public sealed class SearchInternalRepBaseDocumentsService
         await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 
-    private static bool MatchesFilter(InternalRepBaseDocumentListItem item, SearchInternalRepBaseDocumentsFilter filter)
+    private static bool MatchesBaseFilter(InternalRepBaseDocumentListItem item, SearchInternalRepBaseDocumentsFilter filter)
     {
         if (filter.Eligible.HasValue && item.IsEligible != filter.Eligible.Value)
         {
@@ -198,6 +211,43 @@ public sealed class SearchInternalRepBaseDocumentsService
         }
 
         return true;
+    }
+
+    private static bool MatchesOperationalFilter(InternalRepBaseDocumentListItem item, SearchInternalRepBaseDocumentsFilter filter)
+    {
+        if (!string.IsNullOrWhiteSpace(filter.AlertCode)
+            && !item.Alerts.Any(x => string.Equals(x.Code, filter.AlertCode.Trim(), StringComparison.Ordinal)))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.Severity)
+            && !item.Alerts.Any(x => string.Equals(x.Severity, filter.Severity.Trim(), StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.NextRecommendedAction)
+            && !string.Equals(item.NextRecommendedAction, filter.NextRecommendedAction.Trim(), StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool MatchesQuickView(InternalRepBaseDocumentListItem item, SearchInternalRepBaseDocumentsFilter filter)
+    {
+        if (string.IsNullOrWhiteSpace(filter.QuickView))
+        {
+            return true;
+        }
+
+        return RepQuickViewMatcher.Matches(
+            filter.QuickView.Trim(),
+            item.Alerts,
+            item.NextRecommendedAction,
+            item.StampedPaymentComplementCount);
     }
 
     private static string? NormalizeOptionalText(string? value)

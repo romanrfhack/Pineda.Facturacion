@@ -279,7 +279,7 @@ public class PrepareFiscalDocumentService
             DocumentType = billingDocument.DocumentType,
             Series = folioAssignment.Series,
             Folio = folioAssignment.Folio,
-            IssuedAtUtc = command.IssuedAtUtc ?? now,
+            IssuedAtUtc = CfdiDateTimeNormalization.NormalizeIncomingUtcOrNow(command.IssuedAtUtc, now),
             CurrencyCode = currencyCode,
             ExchangeRate = exchangeRate,
             PaymentMethodSat = paymentMethodSat,

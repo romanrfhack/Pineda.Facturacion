@@ -277,6 +277,12 @@ public class ExternalRepBaseDocumentImportServicesTests
 
         Assert.Equal(GetExternalRepBaseDocumentByIdOutcome.Found, result.Outcome);
         Assert.Equal("UUID-EXT-77", result.Document!.Summary.Uuid);
+        Assert.Equal(
+            [
+                RepBaseDocumentTimelineEventTypes.ExternalXmlImported,
+                RepBaseDocumentTimelineEventTypes.ExternalValidationAccepted
+            ],
+            result.Document.Timeline.Select(x => x.EventType).ToArray());
     }
 
     private static ImportExternalRepBaseDocumentFromXmlService CreateService(

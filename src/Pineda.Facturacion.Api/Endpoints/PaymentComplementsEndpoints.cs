@@ -77,17 +77,44 @@ public static class PaymentComplementsEndpoints
             .Produces<InternalRepBaseDocumentDetailResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status404NotFound);
 
+        group.MapPost("/base-documents/internal/refresh-rep-status/bulk", BulkRefreshInternalRepBaseDocumentsAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.OperatorOrAbove)
+            .WithName("BulkRefreshInternalRepBaseDocuments")
+            .WithSummary("Refresh REP status in bulk for internal base documents")
+            .Produces<RepBaseDocumentBulkRefreshResponse>(StatusCodes.Status200OK)
+            .Produces<RepBaseDocumentBulkRefreshResponse>(StatusCodes.Status400BadRequest);
+
         group.MapGet("/base-documents/external", SearchExternalRepBaseDocumentsAsync)
             .WithName("SearchExternalRepBaseDocuments")
             .WithSummary("Search imported external CFDI base documents for REP follow-up")
             .Produces<ExternalRepBaseDocumentListResponse>(StatusCodes.Status200OK)
             .Produces<PaymentComplementBaseDocumentSearchErrorResponse>(StatusCodes.Status400BadRequest);
 
+        group.MapPost("/base-documents/external/refresh-rep-status/bulk", BulkRefreshExternalRepBaseDocumentsAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.OperatorOrAbove)
+            .WithName("BulkRefreshExternalRepBaseDocuments")
+            .WithSummary("Refresh REP status in bulk for external base documents")
+            .Produces<RepBaseDocumentBulkRefreshResponse>(StatusCodes.Status200OK)
+            .Produces<RepBaseDocumentBulkRefreshResponse>(StatusCodes.Status400BadRequest);
+
         group.MapGet("/base-documents", SearchRepBaseDocumentsAsync)
             .WithName("SearchRepBaseDocuments")
             .WithSummary("Search unified internal and external REP base documents")
             .Produces<RepBaseDocumentListResponse>(StatusCodes.Status200OK)
             .Produces<PaymentComplementBaseDocumentSearchErrorResponse>(StatusCodes.Status400BadRequest);
+
+        group.MapGet("/attention-items", SearchRepAttentionItemsAsync)
+            .WithName("SearchRepAttentionItems")
+            .WithSummary("Search REP base documents that currently require operational attention")
+            .Produces<RepAttentionItemsResponse>(StatusCodes.Status200OK)
+            .Produces<PaymentComplementBaseDocumentSearchErrorResponse>(StatusCodes.Status400BadRequest);
+
+        group.MapPost("/base-documents/refresh-rep-status/bulk", BulkRefreshRepBaseDocumentsAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.OperatorOrAbove)
+            .WithName("BulkRefreshRepBaseDocuments")
+            .WithSummary("Refresh REP status in bulk for the unified base-document tray")
+            .Produces<RepBaseDocumentBulkRefreshResponse>(StatusCodes.Status200OK)
+            .Produces<RepBaseDocumentBulkRefreshResponse>(StatusCodes.Status400BadRequest);
 
         group.MapPost("/base-documents/internal/{fiscalDocumentId:long}/payments", RegisterInternalRepBaseDocumentPaymentAsync)
             .RequireAuthorization(AuthorizationPolicyNames.OperatorOrAbove)
@@ -215,6 +242,10 @@ public static class PaymentComplementsEndpoints
         bool? blocked,
         bool? withOutstandingBalance,
         bool? hasRepEmitted,
+        string? alertCode,
+        string? severity,
+        string? nextRecommendedAction,
+        string? quickView,
         SearchInternalRepBaseDocumentsService service,
         CancellationToken cancellationToken)
     {
@@ -238,7 +269,11 @@ public static class PaymentComplementsEndpoints
                 Eligible = eligible,
                 Blocked = blocked,
                 WithOutstandingBalance = withOutstandingBalance,
-                HasRepEmitted = hasRepEmitted
+                HasRepEmitted = hasRepEmitted,
+                AlertCode = alertCode,
+                Severity = severity,
+                NextRecommendedAction = nextRecommendedAction,
+                QuickView = quickView
             },
             cancellationToken);
 
@@ -248,7 +283,8 @@ public static class PaymentComplementsEndpoints
             PageSize = result.PageSize,
             TotalCount = result.TotalCount,
             TotalPages = result.TotalPages,
-            Items = result.Items.Select(MapInternalRepBaseDocument).ToList()
+            Items = result.Items.Select(MapInternalRepBaseDocument).ToList(),
+            SummaryCounts = MapOperationalSummaryCounts(result.SummaryCounts)
         });
     }
 
@@ -267,6 +303,9 @@ public static class PaymentComplementsEndpoints
         {
             Summary = MapInternalRepBaseDocument(result.Document.Summary),
             OperationalState = result.Document.OperationalState is null ? null : MapInternalRepOperationalState(result.Document.OperationalState),
+            Timeline = result.Document.Timeline
+                .Select(MapTimelineEntry)
+                .ToList(),
             PaymentHistory = result.Document.PaymentHistory
                 .Select(x => new InternalRepBaseDocumentPaymentHistoryResponse
                 {
@@ -332,6 +371,10 @@ public static class PaymentComplementsEndpoints
         string? validationStatus,
         bool? eligible,
         bool? blocked,
+        string? alertCode,
+        string? severity,
+        string? nextRecommendedAction,
+        string? quickView,
         SearchExternalRepBaseDocumentsService service,
         CancellationToken cancellationToken)
     {
@@ -354,7 +397,11 @@ public static class PaymentComplementsEndpoints
                 Query = query,
                 ValidationStatus = validationStatus,
                 Eligible = eligible,
-                Blocked = blocked
+                Blocked = blocked,
+                AlertCode = alertCode,
+                Severity = severity,
+                NextRecommendedAction = nextRecommendedAction,
+                QuickView = quickView
             },
             cancellationToken);
 
@@ -364,7 +411,8 @@ public static class PaymentComplementsEndpoints
             PageSize = result.PageSize,
             TotalCount = result.TotalCount,
             TotalPages = result.TotalPages,
-            Items = result.Items.Select(MapExternalRepBaseDocumentListItem).ToList()
+            Items = result.Items.Select(MapExternalRepBaseDocumentListItem).ToList(),
+            SummaryCounts = MapOperationalSummaryCounts(result.SummaryCounts)
         });
     }
 
@@ -379,6 +427,10 @@ public static class PaymentComplementsEndpoints
         string? validationStatus,
         bool? eligible,
         bool? blocked,
+        string? alertCode,
+        string? severity,
+        string? nextRecommendedAction,
+        string? quickView,
         SearchRepBaseDocumentsService service,
         CancellationToken cancellationToken)
     {
@@ -402,7 +454,11 @@ public static class PaymentComplementsEndpoints
                 SourceType = sourceType,
                 ValidationStatus = validationStatus,
                 Eligible = eligible,
-                Blocked = blocked
+                Blocked = blocked,
+                AlertCode = alertCode,
+                Severity = severity,
+                NextRecommendedAction = nextRecommendedAction,
+                QuickView = quickView
             },
             cancellationToken);
 
@@ -412,8 +468,284 @@ public static class PaymentComplementsEndpoints
             PageSize = result.PageSize,
             TotalCount = result.TotalCount,
             TotalPages = result.TotalPages,
-            Items = result.Items.Select(MapRepBaseDocument).ToList()
+            Items = result.Items.Select(MapRepBaseDocument).ToList(),
+            SummaryCounts = MapOperationalSummaryCounts(result.SummaryCounts)
         });
+    }
+
+    private static async Task<Results<Ok<RepAttentionItemsResponse>, BadRequest<PaymentComplementBaseDocumentSearchErrorResponse>>> SearchRepAttentionItemsAsync(
+        int? page,
+        int? pageSize,
+        DateOnly? fromDate,
+        DateOnly? toDate,
+        string? receiverRfc,
+        string? query,
+        string? sourceType,
+        string? alertCode,
+        string? severity,
+        string? nextRecommendedAction,
+        SearchRepAttentionItemsService service,
+        CancellationToken cancellationToken)
+    {
+        if (fromDate.HasValue && toDate.HasValue && fromDate.Value > toDate.Value)
+        {
+            return TypedResults.BadRequest(new PaymentComplementBaseDocumentSearchErrorResponse
+            {
+                ErrorMessage = "La fecha inicial no puede ser mayor a la fecha final."
+            });
+        }
+
+        var result = await service.ExecuteAsync(
+            new SearchRepAttentionItemsFilter
+            {
+                Page = page ?? 1,
+                PageSize = pageSize ?? 25,
+                FromDate = fromDate,
+                ToDate = toDate,
+                ReceiverRfc = receiverRfc,
+                Query = query,
+                SourceType = sourceType,
+                AlertCode = alertCode,
+                Severity = severity,
+                NextRecommendedAction = nextRecommendedAction
+            },
+            cancellationToken);
+
+        return TypedResults.Ok(new RepAttentionItemsResponse
+        {
+            Page = result.Page,
+            PageSize = result.PageSize,
+            TotalCount = result.TotalCount,
+            TotalPages = result.TotalPages,
+            Items = result.Items.Select(MapRepAttentionItem).ToList(),
+            SummaryCounts = MapOperationalSummaryCounts(result.SummaryCounts)
+        });
+    }
+
+    private static async Task<Results<Ok<RepBaseDocumentBulkRefreshResponse>, BadRequest<RepBaseDocumentBulkRefreshResponse>>> BulkRefreshInternalRepBaseDocumentsAsync(
+        BulkRefreshRepBaseDocumentsRequest? request,
+        BulkRefreshInternalRepBaseDocumentsService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        request ??= new BulkRefreshRepBaseDocumentsRequest();
+
+        var result = await service.ExecuteAsync(
+            new BulkRefreshInternalRepBaseDocumentsCommand
+            {
+                Mode = request.Mode,
+                Documents = request.Documents
+                    .Select(x => new RepBaseDocumentBulkRefreshDocumentReference
+                    {
+                        SourceType = x.SourceType,
+                        SourceId = x.SourceId
+                    })
+                    .ToList(),
+                FromDate = request.FromDate,
+                ToDate = request.ToDate,
+                ReceiverRfc = request.ReceiverRfc,
+                Query = request.Query,
+                Eligible = request.Eligible,
+                Blocked = request.Blocked,
+                WithOutstandingBalance = request.WithOutstandingBalance,
+                HasRepEmitted = request.HasRepEmitted,
+                AlertCode = request.AlertCode,
+                Severity = request.Severity,
+                NextRecommendedAction = request.NextRecommendedAction,
+                QuickView = request.QuickView
+            },
+            cancellationToken);
+
+        var response = MapBulkRefreshResult(result);
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "InternalRepBaseDocumentPaymentComplement.BulkRefreshStatus",
+            "FiscalDocument",
+            null,
+            result.IsSuccess ? "Completed" : "ValidationFailed",
+            new
+            {
+                request.Mode,
+                request.Documents,
+                request.FromDate,
+                request.ToDate,
+                request.ReceiverRfc,
+                request.Query,
+                request.Eligible,
+                request.Blocked,
+                request.WithOutstandingBalance,
+                request.HasRepEmitted,
+                request.AlertCode,
+                request.Severity,
+                request.NextRecommendedAction,
+                request.QuickView
+            },
+            new
+            {
+                result.TotalRequested,
+                result.TotalAttempted,
+                result.RefreshedCount,
+                result.NoChangesCount,
+                result.BlockedCount,
+                result.FailedCount
+            },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.IsSuccess
+            ? TypedResults.Ok(response)
+            : TypedResults.BadRequest(response);
+    }
+
+    private static async Task<Results<Ok<RepBaseDocumentBulkRefreshResponse>, BadRequest<RepBaseDocumentBulkRefreshResponse>>> BulkRefreshExternalRepBaseDocumentsAsync(
+        BulkRefreshRepBaseDocumentsRequest? request,
+        BulkRefreshExternalRepBaseDocumentsService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        request ??= new BulkRefreshRepBaseDocumentsRequest();
+
+        var result = await service.ExecuteAsync(
+            new BulkRefreshExternalRepBaseDocumentsCommand
+            {
+                Mode = request.Mode,
+                Documents = request.Documents
+                    .Select(x => new RepBaseDocumentBulkRefreshDocumentReference
+                    {
+                        SourceType = x.SourceType,
+                        SourceId = x.SourceId
+                    })
+                    .ToList(),
+                FromDate = request.FromDate,
+                ToDate = request.ToDate,
+                ReceiverRfc = request.ReceiverRfc,
+                Query = request.Query,
+                ValidationStatus = request.ValidationStatus,
+                Eligible = request.Eligible,
+                Blocked = request.Blocked,
+                AlertCode = request.AlertCode,
+                Severity = request.Severity,
+                NextRecommendedAction = request.NextRecommendedAction,
+                QuickView = request.QuickView
+            },
+            cancellationToken);
+
+        var response = MapBulkRefreshResult(result);
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "ExternalRepBaseDocumentPaymentComplement.BulkRefreshStatus",
+            "ExternalRepBaseDocument",
+            null,
+            result.IsSuccess ? "Completed" : "ValidationFailed",
+            new
+            {
+                request.Mode,
+                request.Documents,
+                request.FromDate,
+                request.ToDate,
+                request.ReceiverRfc,
+                request.Query,
+                request.ValidationStatus,
+                request.Eligible,
+                request.Blocked,
+                request.AlertCode,
+                request.Severity,
+                request.NextRecommendedAction,
+                request.QuickView
+            },
+            new
+            {
+                result.TotalRequested,
+                result.TotalAttempted,
+                result.RefreshedCount,
+                result.NoChangesCount,
+                result.BlockedCount,
+                result.FailedCount
+            },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.IsSuccess
+            ? TypedResults.Ok(response)
+            : TypedResults.BadRequest(response);
+    }
+
+    private static async Task<Results<Ok<RepBaseDocumentBulkRefreshResponse>, BadRequest<RepBaseDocumentBulkRefreshResponse>>> BulkRefreshRepBaseDocumentsAsync(
+        BulkRefreshRepBaseDocumentsRequest? request,
+        BulkRefreshRepBaseDocumentsService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        request ??= new BulkRefreshRepBaseDocumentsRequest();
+
+        var result = await service.ExecuteAsync(
+            new BulkRefreshRepBaseDocumentsCommand
+            {
+                Mode = request.Mode,
+                Documents = request.Documents
+                    .Select(x => new RepBaseDocumentBulkRefreshDocumentReference
+                    {
+                        SourceType = x.SourceType,
+                        SourceId = x.SourceId
+                    })
+                    .ToList(),
+                FromDate = request.FromDate,
+                ToDate = request.ToDate,
+                ReceiverRfc = request.ReceiverRfc,
+                Query = request.Query,
+                SourceType = request.SourceType,
+                ValidationStatus = request.ValidationStatus,
+                Eligible = request.Eligible,
+                Blocked = request.Blocked,
+                AlertCode = request.AlertCode,
+                Severity = request.Severity,
+                NextRecommendedAction = request.NextRecommendedAction,
+                QuickView = request.QuickView
+            },
+            cancellationToken);
+
+        var response = MapBulkRefreshResult(result);
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "RepBaseDocumentPaymentComplement.BulkRefreshStatus",
+            "RepBaseDocument",
+            null,
+            result.IsSuccess ? "Completed" : "ValidationFailed",
+            new
+            {
+                request.Mode,
+                request.Documents,
+                request.FromDate,
+                request.ToDate,
+                request.ReceiverRfc,
+                request.Query,
+                request.SourceType,
+                request.ValidationStatus,
+                request.Eligible,
+                request.Blocked,
+                request.AlertCode,
+                request.Severity,
+                request.NextRecommendedAction,
+                request.QuickView
+            },
+            new
+            {
+                result.TotalRequested,
+                result.TotalAttempted,
+                result.RefreshedCount,
+                result.NoChangesCount,
+                result.BlockedCount,
+                result.FailedCount
+            },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.IsSuccess
+            ? TypedResults.Ok(response)
+            : TypedResults.BadRequest(response);
     }
 
     private static async Task<Results<Ok<RegisterInternalRepBaseDocumentPaymentResponse>, BadRequest<RegisterInternalRepBaseDocumentPaymentResponse>, NotFound<RegisterInternalRepBaseDocumentPaymentResponse>, Conflict<RegisterInternalRepBaseDocumentPaymentResponse>>> RegisterInternalRepBaseDocumentPaymentAsync(
@@ -1479,6 +1811,9 @@ public static class PaymentComplementsEndpoints
         return new ExternalRepBaseDocumentDetailResponse
         {
             Summary = MapExternalRepBaseDocumentListItem(document.Summary),
+            Timeline = document.Timeline
+                .Select(MapTimelineEntry)
+                .ToList(),
             PaymentHistory = document.PaymentHistory
                 .Select(x => new ExternalRepBaseDocumentPaymentHistoryResponse
                 {
@@ -1592,6 +1927,64 @@ public static class PaymentComplementsEndpoints
         };
     }
 
+    public static RepAttentionItemResponse MapRepAttentionItem(RepAttentionItem item)
+    {
+        return new RepAttentionItemResponse
+        {
+            SourceType = item.SourceType,
+            SourceId = item.SourceId,
+            FiscalDocumentId = item.FiscalDocumentId,
+            ExternalRepBaseDocumentId = item.ExternalRepBaseDocumentId,
+            BillingDocumentId = item.BillingDocumentId,
+            Uuid = item.Uuid,
+            Series = item.Series,
+            Folio = item.Folio,
+            IssuedAtUtc = item.IssuedAtUtc,
+            ImportedAtUtc = item.ImportedAtUtc,
+            IssuerRfc = item.IssuerRfc,
+            IssuerLegalName = item.IssuerLegalName,
+            ReceiverRfc = item.ReceiverRfc,
+            ReceiverLegalName = item.ReceiverLegalName,
+            CurrencyCode = item.CurrencyCode,
+            Total = item.Total,
+            OutstandingBalance = item.OutstandingBalance,
+            OperationalStatus = item.OperationalStatus,
+            IsBlocked = item.IsBlocked,
+            PrimaryReasonCode = item.PrimaryReasonCode,
+            PrimaryReasonMessage = item.PrimaryReasonMessage,
+            NextRecommendedAction = item.NextRecommendedAction,
+            AvailableActions = item.AvailableActions.ToList(),
+            AttentionSeverity = item.AttentionSeverity,
+            AttentionAlerts = item.AttentionAlerts
+                .Select(x => new RepOperationalAttentionCandidateResponse
+                {
+                    AlertCode = x.AlertCode,
+                    Severity = x.Severity,
+                    Title = x.Title,
+                    Message = x.Message,
+                    HookKey = x.HookKey
+                })
+                .ToList()
+        };
+    }
+
+    private static RepBaseDocumentTimelineEntryResponse MapTimelineEntry(RepBaseDocumentTimelineEntry item)
+    {
+        return new RepBaseDocumentTimelineEntryResponse
+        {
+            EventType = item.EventType,
+            OccurredAtUtc = item.OccurredAtUtc,
+            SourceType = item.SourceType,
+            Severity = item.Severity,
+            Title = item.Title,
+            Description = item.Description,
+            Status = item.Status,
+            ReferenceId = item.ReferenceId,
+            ReferenceUuid = item.ReferenceUuid,
+            Metadata = item.Metadata.ToDictionary(x => x.Key, x => x.Value)
+        };
+    }
+
     public static RepBaseDocumentItemResponse MapRepBaseDocument(RepBaseDocumentUnifiedListItem item)
     {
         return new RepBaseDocumentItemResponse
@@ -1640,6 +2033,83 @@ public static class PaymentComplementsEndpoints
             Code = alert.Code,
             Severity = alert.Severity,
             Message = alert.Message
+        };
+    }
+
+    private static RepOperationalSummaryCountsResponse MapOperationalSummaryCounts(RepOperationalSummaryCounts counts)
+    {
+        return new RepOperationalSummaryCountsResponse
+        {
+            InfoCount = counts.InfoCount,
+            WarningCount = counts.WarningCount,
+            ErrorCount = counts.ErrorCount,
+            CriticalCount = counts.CriticalCount,
+            BlockedCount = counts.BlockedCount,
+            AlertCounts = counts.AlertCounts
+                .Select(x => new RepOperationalCountResponse
+                {
+                    Code = x.Code,
+                    Count = x.Count
+                })
+                .ToList(),
+            NextRecommendedActionCounts = counts.NextRecommendedActionCounts
+                .Select(x => new RepOperationalCountResponse
+                {
+                    Code = x.Code,
+                    Count = x.Count
+                })
+                .ToList(),
+            QuickViewCounts = counts.QuickViewCounts
+                .Select(x => new RepOperationalCountResponse
+                {
+                    Code = x.Code,
+                    Count = x.Count
+                })
+                .ToList()
+        };
+    }
+
+    private static RepBaseDocumentBulkRefreshResponse MapBulkRefreshResult(RepBaseDocumentBulkRefreshResult result)
+    {
+        return new RepBaseDocumentBulkRefreshResponse
+        {
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            Mode = result.Mode,
+            MaxDocuments = result.MaxDocuments,
+            TotalRequested = result.TotalRequested,
+            TotalAttempted = result.TotalAttempted,
+            RefreshedCount = result.RefreshedCount,
+            NoChangesCount = result.NoChangesCount,
+            BlockedCount = result.BlockedCount,
+            FailedCount = result.FailedCount,
+            Items = result.Items
+                .Select(x => new RepBaseDocumentBulkRefreshItemResponse
+                {
+                    SourceType = x.SourceType,
+                    SourceId = x.SourceId,
+                    Attempted = x.Attempted,
+                    Outcome = x.Outcome.ToString(),
+                    Message = x.Message,
+                    PaymentComplementDocumentId = x.PaymentComplementDocumentId,
+                    PaymentComplementStatus = x.PaymentComplementStatus,
+                    LastKnownExternalStatus = x.LastKnownExternalStatus,
+                    UpdatedState = x.UpdatedState is null ? null : MapBulkRefreshUpdatedState(x.UpdatedState)
+                })
+                .ToList()
+        };
+    }
+
+    private static RepBaseDocumentBulkRefreshUpdatedStateResponse MapBulkRefreshUpdatedState(RepBaseDocumentBulkRefreshUpdatedState state)
+    {
+        return new RepBaseDocumentBulkRefreshUpdatedStateResponse
+        {
+            OperationalStatus = state.OperationalStatus,
+            IsEligible = state.IsEligible,
+            IsBlocked = state.IsBlocked,
+            PrimaryReasonMessage = state.PrimaryReasonMessage,
+            NextRecommendedAction = state.NextRecommendedAction,
+            Alerts = state.Alerts.Select(MapOperationalAlert).ToList()
         };
     }
 
@@ -2055,6 +2525,109 @@ public sealed class PaymentComplementBaseDocumentSearchErrorResponse
     public string ErrorMessage { get; set; } = string.Empty;
 }
 
+public sealed class BulkRefreshRepBaseDocumentsRequest
+{
+    public string Mode { get; set; } = RepBaseDocumentBulkRefreshMode.Selected;
+
+    public List<BulkRefreshRepBaseDocumentReferenceRequest> Documents { get; set; } = [];
+
+    public DateOnly? FromDate { get; set; }
+
+    public DateOnly? ToDate { get; set; }
+
+    public string? ReceiverRfc { get; set; }
+
+    public string? Query { get; set; }
+
+    public string? SourceType { get; set; }
+
+    public string? ValidationStatus { get; set; }
+
+    public bool? Eligible { get; set; }
+
+    public bool? Blocked { get; set; }
+
+    public bool? WithOutstandingBalance { get; set; }
+
+    public bool? HasRepEmitted { get; set; }
+
+    public string? AlertCode { get; set; }
+
+    public string? Severity { get; set; }
+
+    public string? NextRecommendedAction { get; set; }
+
+    public string? QuickView { get; set; }
+}
+
+public sealed class BulkRefreshRepBaseDocumentReferenceRequest
+{
+    public string? SourceType { get; set; }
+
+    public long SourceId { get; set; }
+}
+
+public sealed class RepBaseDocumentBulkRefreshResponse
+{
+    public bool IsSuccess { get; set; }
+
+    public string? ErrorMessage { get; set; }
+
+    public string Mode { get; set; } = RepBaseDocumentBulkRefreshMode.Selected;
+
+    public int MaxDocuments { get; set; }
+
+    public int TotalRequested { get; set; }
+
+    public int TotalAttempted { get; set; }
+
+    public int RefreshedCount { get; set; }
+
+    public int NoChangesCount { get; set; }
+
+    public int BlockedCount { get; set; }
+
+    public int FailedCount { get; set; }
+
+    public List<RepBaseDocumentBulkRefreshItemResponse> Items { get; set; } = [];
+}
+
+public sealed class RepBaseDocumentBulkRefreshItemResponse
+{
+    public string SourceType { get; set; } = string.Empty;
+
+    public long SourceId { get; set; }
+
+    public bool Attempted { get; set; }
+
+    public string Outcome { get; set; } = string.Empty;
+
+    public string Message { get; set; } = string.Empty;
+
+    public long? PaymentComplementDocumentId { get; set; }
+
+    public string? PaymentComplementStatus { get; set; }
+
+    public string? LastKnownExternalStatus { get; set; }
+
+    public RepBaseDocumentBulkRefreshUpdatedStateResponse? UpdatedState { get; set; }
+}
+
+public sealed class RepBaseDocumentBulkRefreshUpdatedStateResponse
+{
+    public string OperationalStatus { get; set; } = string.Empty;
+
+    public bool IsEligible { get; set; }
+
+    public bool IsBlocked { get; set; }
+
+    public string PrimaryReasonMessage { get; set; } = string.Empty;
+
+    public string NextRecommendedAction { get; set; } = RepBaseDocumentRecommendedAction.NoAction;
+
+    public List<RepOperationalAlertResponse> Alerts { get; set; } = [];
+}
+
 public sealed class InternalRepBaseDocumentListResponse
 {
     public int Page { get; set; }
@@ -2066,6 +2639,8 @@ public sealed class InternalRepBaseDocumentListResponse
     public int TotalPages { get; set; }
 
     public List<InternalRepBaseDocumentItemResponse> Items { get; set; } = [];
+
+    public RepOperationalSummaryCountsResponse SummaryCounts { get; set; } = new();
 }
 
 public sealed class InternalRepBaseDocumentItemResponse
@@ -2134,7 +2709,7 @@ public sealed class InternalRepBaseDocumentItemResponse
 
     public bool HasBlockedOperation { get; set; }
 
-    public string? NextRecommendedAction { get; set; }
+    public string NextRecommendedAction { get; set; } = RepBaseDocumentRecommendedAction.NoAction;
 
     public List<string> AvailableActions { get; set; } = [];
 
@@ -2152,17 +2727,68 @@ public sealed class RepOperationalAlertResponse
     public string Message { get; set; } = string.Empty;
 }
 
+public sealed class RepOperationalCountResponse
+{
+    public string Code { get; set; } = string.Empty;
+
+    public int Count { get; set; }
+}
+
+public sealed class RepOperationalSummaryCountsResponse
+{
+    public int InfoCount { get; set; }
+
+    public int WarningCount { get; set; }
+
+    public int ErrorCount { get; set; }
+
+    public int CriticalCount { get; set; }
+
+    public int BlockedCount { get; set; }
+
+    public List<RepOperationalCountResponse> AlertCounts { get; set; } = [];
+
+    public List<RepOperationalCountResponse> NextRecommendedActionCounts { get; set; } = [];
+
+    public List<RepOperationalCountResponse> QuickViewCounts { get; set; } = [];
+}
+
 public sealed class InternalRepBaseDocumentDetailResponse
 {
     public InternalRepBaseDocumentItemResponse Summary { get; set; } = new();
 
     public InternalRepBaseDocumentOperationalStateResponse? OperationalState { get; set; }
 
+    public List<RepBaseDocumentTimelineEntryResponse> Timeline { get; set; } = [];
+
     public List<InternalRepBaseDocumentPaymentHistoryResponse> PaymentHistory { get; set; } = [];
 
     public List<InternalRepBaseDocumentPaymentApplicationResponse> PaymentApplications { get; set; } = [];
 
     public List<InternalRepBaseDocumentPaymentComplementResponse> IssuedReps { get; set; } = [];
+}
+
+public sealed class RepBaseDocumentTimelineEntryResponse
+{
+    public string EventType { get; set; } = string.Empty;
+
+    public DateTime OccurredAtUtc { get; set; }
+
+    public string SourceType { get; set; } = string.Empty;
+
+    public string? Severity { get; set; }
+
+    public string Title { get; set; } = string.Empty;
+
+    public string Description { get; set; } = string.Empty;
+
+    public string? Status { get; set; }
+
+    public long? ReferenceId { get; set; }
+
+    public string? ReferenceUuid { get; set; }
+
+    public Dictionary<string, string?> Metadata { get; set; } = [];
 }
 
 public sealed class InternalRepBaseDocumentEligibilityExplanationResponse
@@ -2810,6 +3436,8 @@ public sealed class ExternalRepBaseDocumentDetailResponse
 {
     public ExternalRepBaseDocumentItemResponse Summary { get; set; } = new();
 
+    public List<RepBaseDocumentTimelineEntryResponse> Timeline { get; set; } = [];
+
     public List<ExternalRepBaseDocumentPaymentHistoryResponse> PaymentHistory { get; set; } = [];
 
     public List<ExternalRepBaseDocumentPaymentApplicationResponse> PaymentApplications { get; set; } = [];
@@ -2828,6 +3456,8 @@ public sealed class ExternalRepBaseDocumentListResponse
     public int TotalPages { get; set; }
 
     public List<ExternalRepBaseDocumentItemResponse> Items { get; set; } = [];
+
+    public RepOperationalSummaryCountsResponse SummaryCounts { get; set; } = new();
 }
 
 public sealed class ExternalRepBaseDocumentItemResponse
@@ -2928,7 +3558,7 @@ public sealed class ExternalRepBaseDocumentItemResponse
 
     public bool HasBlockedOperation { get; set; }
 
-    public string? NextRecommendedAction { get; set; }
+    public string NextRecommendedAction { get; set; } = RepBaseDocumentRecommendedAction.NoAction;
 
     public List<string> AvailableActions { get; set; } = [];
 
@@ -3029,6 +3659,89 @@ public sealed class RepBaseDocumentListResponse
     public int TotalPages { get; set; }
 
     public List<RepBaseDocumentItemResponse> Items { get; set; } = [];
+
+    public RepOperationalSummaryCountsResponse SummaryCounts { get; set; } = new();
+}
+
+public sealed class RepAttentionItemsResponse
+{
+    public int Page { get; set; }
+
+    public int PageSize { get; set; }
+
+    public int TotalCount { get; set; }
+
+    public int TotalPages { get; set; }
+
+    public List<RepAttentionItemResponse> Items { get; set; } = [];
+
+    public RepOperationalSummaryCountsResponse SummaryCounts { get; set; } = new();
+}
+
+public sealed class RepAttentionItemResponse
+{
+    public string SourceType { get; set; } = string.Empty;
+
+    public long SourceId { get; set; }
+
+    public long? FiscalDocumentId { get; set; }
+
+    public long? ExternalRepBaseDocumentId { get; set; }
+
+    public long? BillingDocumentId { get; set; }
+
+    public string? Uuid { get; set; }
+
+    public string Series { get; set; } = string.Empty;
+
+    public string Folio { get; set; } = string.Empty;
+
+    public DateTime IssuedAtUtc { get; set; }
+
+    public DateTime? ImportedAtUtc { get; set; }
+
+    public string? IssuerRfc { get; set; }
+
+    public string? IssuerLegalName { get; set; }
+
+    public string ReceiverRfc { get; set; } = string.Empty;
+
+    public string ReceiverLegalName { get; set; } = string.Empty;
+
+    public string CurrencyCode { get; set; } = string.Empty;
+
+    public decimal Total { get; set; }
+
+    public decimal? OutstandingBalance { get; set; }
+
+    public string OperationalStatus { get; set; } = string.Empty;
+
+    public bool IsBlocked { get; set; }
+
+    public string PrimaryReasonCode { get; set; } = string.Empty;
+
+    public string PrimaryReasonMessage { get; set; } = string.Empty;
+
+    public string NextRecommendedAction { get; set; } = RepBaseDocumentRecommendedAction.NoAction;
+
+    public List<string> AvailableActions { get; set; } = [];
+
+    public string AttentionSeverity { get; set; } = RepOperationalAlertSeverity.Info;
+
+    public List<RepOperationalAttentionCandidateResponse> AttentionAlerts { get; set; } = [];
+}
+
+public sealed class RepOperationalAttentionCandidateResponse
+{
+    public string AlertCode { get; set; } = string.Empty;
+
+    public string Severity { get; set; } = string.Empty;
+
+    public string Title { get; set; } = string.Empty;
+
+    public string Message { get; set; } = string.Empty;
+
+    public string HookKey { get; set; } = string.Empty;
 }
 
 public sealed class RepBaseDocumentItemResponse
@@ -3093,7 +3806,7 @@ public sealed class RepBaseDocumentItemResponse
 
     public bool HasBlockedOperation { get; set; }
 
-    public string? NextRecommendedAction { get; set; }
+    public string NextRecommendedAction { get; set; } = RepBaseDocumentRecommendedAction.NoAction;
 
     public List<string> AvailableActions { get; set; } = [];
 

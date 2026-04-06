@@ -228,6 +228,28 @@ public class FiscalDocumentServicesTests
     }
 
     [Fact]
+    public async Task PrepareFiscalDocument_Normalizes_UnspecifiedMexicoCityLocalIssuedAt_ToUtc()
+    {
+        var repository = new FakeFiscalDocumentRepository();
+        var service = CreateService(fiscalDocumentRepository: repository);
+        var localIssuedAt = new DateTime(2026, 4, 4, 10, 20, 0, DateTimeKind.Unspecified);
+
+        var result = await service.ExecuteAsync(new PrepareFiscalDocumentCommand
+        {
+            BillingDocumentId = 5,
+            FiscalReceiverId = 11,
+            PaymentMethodSat = "PUE",
+            PaymentFormSat = "03",
+            PaymentCondition = "Contado",
+            IssuedAtUtc = localIssuedAt
+        });
+
+        Assert.Equal(PrepareFiscalDocumentOutcome.Created, result.Outcome);
+        Assert.Equal(ConvertMexicoCityLocalToUtc(localIssuedAt), repository.Added!.IssuedAtUtc);
+        Assert.Equal(DateTimeKind.Utc, repository.Added.IssuedAtUtc.Kind);
+    }
+
+    [Fact]
     public async Task PrepareFiscalDocument_Fails_WhenPaymentMethodSatIsInvalid()
     {
         var service = CreateService();
@@ -872,6 +894,27 @@ public class FiscalDocumentServicesTests
             new FakeProductFiscalProfileRepository { ExistingByCode = productFiscalProfile ?? CreateProductFiscalProfile() },
             new FakeSatCatalogDescriptionProvider(),
             new FakeUnitOfWork());
+    }
+
+    private static DateTime ConvertMexicoCityLocalToUtc(DateTime value)
+    {
+        var unspecifiedLocal = DateTime.SpecifyKind(value, DateTimeKind.Unspecified);
+
+        foreach (var timeZoneId in new[] { "America/Mexico_City", "Central Standard Time (Mexico)" })
+        {
+            try
+            {
+                return TimeZoneInfo.ConvertTimeToUtc(unspecifiedLocal, TimeZoneInfo.FindSystemTimeZoneById(timeZoneId));
+            }
+            catch (TimeZoneNotFoundException)
+            {
+            }
+            catch (InvalidTimeZoneException)
+            {
+            }
+        }
+
+        return DateTime.SpecifyKind(value, DateTimeKind.Local).ToUniversalTime();
     }
 
     private static BillingDocument CreateBillingDocument(long id = 5)

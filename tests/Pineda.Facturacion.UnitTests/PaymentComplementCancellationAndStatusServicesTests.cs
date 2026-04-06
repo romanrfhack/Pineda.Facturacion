@@ -453,6 +453,9 @@ file sealed class PccFakePaymentComplementDocumentRepository : IPaymentComplemen
     public Task<PaymentComplementDocument?> GetTrackedByPaymentIdAsync(long accountsReceivablePaymentId, CancellationToken cancellationToken = default)
         => Task.FromResult(ExistingByPaymentId);
 
+    public Task<IReadOnlyList<PaymentComplementDocument>> GetByPaymentIdsAsync(IReadOnlyCollection<long> accountsReceivablePaymentIds, CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<PaymentComplementDocument>>(ExistingByPaymentId is null ? [] : [ExistingByPaymentId]);
+
     public Task AddAsync(PaymentComplementDocument paymentComplementDocument, CancellationToken cancellationToken = default)
     {
         Added = paymentComplementDocument;

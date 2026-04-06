@@ -8,5 +8,7 @@ public enum RepBaseDocumentAvailableAction
     PrepareRep = 4,
     StampRep = 5,
     RefreshRepStatus = 6,
-    CancelRep = 7
+    CancelRep = 7,
+    Blocked = 8,
+    NoAction = 9
 }

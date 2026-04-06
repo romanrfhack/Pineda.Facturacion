@@ -14,7 +14,7 @@ test('operator sees read-only fiscal document actions', async ({ page }) => {
   await loginPage.signIn('operator', 'Secret123!');
 
   await page.goto('/app/fiscal-documents/405');
-  await expect(page.getByText('UUID-FISCAL-RO')).toBeVisible();
+  await expect(page.getByText('UUID-FISCAL-RO', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Timbrar' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Cancelar' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Actualizar estatus' })).toHaveCount(0);

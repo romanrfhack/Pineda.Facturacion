@@ -152,6 +152,10 @@ export interface InternalRepBaseDocumentFilters {
   blocked?: boolean | null;
   withOutstandingBalance?: boolean | null;
   hasRepEmitted?: boolean | null;
+  alertCode?: string | null;
+  severity?: string | null;
+  nextRecommendedAction?: string | null;
+  quickView?: string | null;
 }
 
 export interface RegisterInternalRepBaseDocumentPaymentRequest {
@@ -195,6 +199,81 @@ export interface RepOperationalAlertResponse {
   code: string;
   severity: string;
   message: string;
+}
+
+export interface RepOperationalCountResponse {
+  code: string;
+  count: number;
+}
+
+export interface RepOperationalSummaryCountsResponse {
+  infoCount: number;
+  warningCount: number;
+  errorCount: number;
+  criticalCount: number;
+  blockedCount: number;
+  alertCounts: RepOperationalCountResponse[];
+  nextRecommendedActionCounts: RepOperationalCountResponse[];
+  quickViewCounts: RepOperationalCountResponse[];
+}
+
+export interface RepBaseDocumentBulkRefreshDocumentRequest {
+  sourceType?: string | null;
+  sourceId: number;
+}
+
+export interface RepBaseDocumentBulkRefreshRequest {
+  mode: string;
+  documents?: RepBaseDocumentBulkRefreshDocumentRequest[];
+  fromDate?: string | null;
+  toDate?: string | null;
+  receiverRfc?: string | null;
+  query?: string | null;
+  sourceType?: string | null;
+  validationStatus?: string | null;
+  eligible?: boolean | null;
+  blocked?: boolean | null;
+  withOutstandingBalance?: boolean | null;
+  hasRepEmitted?: boolean | null;
+  alertCode?: string | null;
+  severity?: string | null;
+  nextRecommendedAction?: string | null;
+  quickView?: string | null;
+}
+
+export interface RepBaseDocumentBulkRefreshUpdatedStateResponse {
+  operationalStatus: string;
+  isEligible: boolean;
+  isBlocked: boolean;
+  primaryReasonMessage: string;
+  nextRecommendedAction: string;
+  alerts: RepOperationalAlertResponse[];
+}
+
+export interface RepBaseDocumentBulkRefreshItemResponse {
+  sourceType: string;
+  sourceId: number;
+  attempted: boolean;
+  outcome: string;
+  message: string;
+  paymentComplementDocumentId?: number | null;
+  paymentComplementStatus?: string | null;
+  lastKnownExternalStatus?: string | null;
+  updatedState?: RepBaseDocumentBulkRefreshUpdatedStateResponse | null;
+}
+
+export interface RepBaseDocumentBulkRefreshResponse {
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  mode: string;
+  maxDocuments: number;
+  totalRequested: number;
+  totalAttempted: number;
+  refreshedCount: number;
+  noChangesCount: number;
+  blockedCount: number;
+  failedCount: number;
+  items: RepBaseDocumentBulkRefreshItemResponse[];
 }
 
 export interface PrepareInternalRepBaseDocumentPaymentComplementRequest {
@@ -316,9 +395,23 @@ export interface ExternalRepBaseDocumentImportResponse {
 
 export interface ExternalRepBaseDocumentDetailResponse {
   summary: ExternalRepBaseDocumentItemResponse;
+  timeline?: RepBaseDocumentTimelineEntryResponse[];
   paymentHistory: ExternalRepBaseDocumentPaymentHistoryResponse[];
   paymentApplications: ExternalRepBaseDocumentPaymentApplicationResponse[];
   issuedReps: ExternalRepBaseDocumentPaymentComplementResponse[];
+}
+
+export interface RepBaseDocumentTimelineEntryResponse {
+  eventType: string;
+  occurredAtUtc: string;
+  sourceType: string;
+  severity?: string | null;
+  title: string;
+  description: string;
+  status?: string | null;
+  referenceId?: number | null;
+  referenceUuid?: string | null;
+  metadata: Record<string, string | null>;
 }
 
 export interface ExternalRepBaseDocumentFilters {
@@ -331,6 +424,10 @@ export interface ExternalRepBaseDocumentFilters {
   validationStatus?: string | null;
   eligible?: boolean | null;
   blocked?: boolean | null;
+  alertCode?: string | null;
+  severity?: string | null;
+  nextRecommendedAction?: string | null;
+  quickView?: string | null;
 }
 
 export interface ExternalRepBaseDocumentItemResponse {
@@ -382,7 +479,7 @@ export interface ExternalRepBaseDocumentItemResponse {
   hasPreparedRepPendingStamp: boolean;
   hasRepWithError: boolean;
   hasBlockedOperation: boolean;
-  nextRecommendedAction?: string | null;
+  nextRecommendedAction: string;
   availableActions: string[];
   alerts: RepOperationalAlertResponse[];
 }
@@ -578,6 +675,7 @@ export interface ExternalRepBaseDocumentListResponse {
   totalCount: number;
   totalPages: number;
   items: ExternalRepBaseDocumentItemResponse[];
+  summaryCounts?: RepOperationalSummaryCountsResponse;
 }
 
 export interface RepBaseDocumentFilters {
@@ -591,6 +689,68 @@ export interface RepBaseDocumentFilters {
   validationStatus?: string | null;
   eligible?: boolean | null;
   blocked?: boolean | null;
+  alertCode?: string | null;
+  severity?: string | null;
+  nextRecommendedAction?: string | null;
+  quickView?: string | null;
+}
+
+export interface RepAttentionItemsFilters {
+  page: number;
+  pageSize: number;
+  fromDate?: string | null;
+  toDate?: string | null;
+  receiverRfc?: string | null;
+  query?: string | null;
+  sourceType?: string | null;
+  alertCode?: string | null;
+  severity?: string | null;
+  nextRecommendedAction?: string | null;
+}
+
+export interface RepOperationalAttentionCandidateResponse {
+  alertCode: string;
+  severity: string;
+  title: string;
+  message: string;
+  hookKey: string;
+}
+
+export interface RepAttentionItemResponse {
+  sourceType: string;
+  sourceId: number;
+  fiscalDocumentId?: number | null;
+  externalRepBaseDocumentId?: number | null;
+  billingDocumentId?: number | null;
+  uuid?: string | null;
+  series: string;
+  folio: string;
+  issuedAtUtc: string;
+  importedAtUtc?: string | null;
+  issuerRfc?: string | null;
+  issuerLegalName?: string | null;
+  receiverRfc: string;
+  receiverLegalName: string;
+  currencyCode: string;
+  total: number;
+  outstandingBalance?: number | null;
+  operationalStatus: string;
+  isBlocked: boolean;
+  primaryReasonCode: string;
+  primaryReasonMessage: string;
+  nextRecommendedAction: string;
+  availableActions: string[];
+  attentionSeverity: string;
+  attentionAlerts: RepOperationalAttentionCandidateResponse[];
+}
+
+export interface RepAttentionItemsResponse {
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+  items: RepAttentionItemResponse[];
+  summaryCounts?: RepOperationalSummaryCountsResponse;
 }
 
 export interface RepBaseDocumentItemResponse {
@@ -624,7 +784,7 @@ export interface RepBaseDocumentItemResponse {
   hasPreparedRepPendingStamp: boolean;
   hasRepWithError: boolean;
   hasBlockedOperation: boolean;
-  nextRecommendedAction?: string | null;
+  nextRecommendedAction: string;
   availableActions: string[];
   alerts: RepOperationalAlertResponse[];
   importedAtUtc?: string | null;
@@ -636,6 +796,7 @@ export interface RepBaseDocumentListResponse {
   totalCount: number;
   totalPages: number;
   items: RepBaseDocumentItemResponse[];
+  summaryCounts?: RepOperationalSummaryCountsResponse;
 }
 
 export interface InternalRepBaseDocumentItemResponse {
@@ -671,7 +832,7 @@ export interface InternalRepBaseDocumentItemResponse {
   hasPreparedRepPendingStamp: boolean;
   hasRepWithError: boolean;
   hasBlockedOperation: boolean;
-  nextRecommendedAction?: string | null;
+  nextRecommendedAction: string;
   availableActions: string[];
   alerts: RepOperationalAlertResponse[];
   operationalState?: InternalRepBaseDocumentOperationalStateResponse | null;
@@ -683,6 +844,7 @@ export interface InternalRepBaseDocumentListResponse {
   totalCount: number;
   totalPages: number;
   items: InternalRepBaseDocumentItemResponse[];
+  summaryCounts?: RepOperationalSummaryCountsResponse;
 }
 
 export interface InternalRepBaseDocumentPaymentApplicationResponse {
@@ -759,6 +921,7 @@ export interface InternalRepBaseDocumentOperationalStateResponse {
 export interface InternalRepBaseDocumentDetailResponse {
   summary: InternalRepBaseDocumentItemResponse;
   operationalState?: InternalRepBaseDocumentOperationalStateResponse | null;
+  timeline?: RepBaseDocumentTimelineEntryResponse[];
   paymentHistory: InternalRepBaseDocumentPaymentHistoryResponse[];
   paymentApplications: InternalRepBaseDocumentPaymentApplicationResponse[];
   issuedReps: InternalRepBaseDocumentPaymentComplementResponse[];

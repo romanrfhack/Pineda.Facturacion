@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Pineda.Facturacion.Domain.Entities;
+using Pineda.Facturacion.Domain.Enums;
 
 namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Configurations;
 
@@ -52,6 +53,12 @@ public class AccountsReceivablePaymentConfiguration : IEntityTypeConfiguration<A
         builder.Property(x => x.ReceivedFromFiscalReceiverId)
             .HasColumnName("received_from_fiscal_receiver_id")
             .IsRequired(false);
+
+        builder.Property(x => x.UnappliedDisposition)
+            .HasColumnName("unapplied_disposition")
+            .HasColumnType("int")
+            .HasDefaultValue(AccountsReceivablePaymentUnappliedDisposition.PendingAllocation)
+            .IsRequired();
 
         builder.Property(x => x.CreatedAtUtc)
             .HasColumnName("created_at_utc")

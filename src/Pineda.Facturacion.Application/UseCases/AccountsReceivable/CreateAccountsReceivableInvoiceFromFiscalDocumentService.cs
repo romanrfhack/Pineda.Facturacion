@@ -55,6 +55,11 @@ public class CreateAccountsReceivableInvoiceFromFiscalDocumentService
             return Failure(command.FiscalDocumentId, "Current MVP creates accounts receivable invoices only for credit-sale PPD fiscal documents.");
         }
 
+        if (!string.Equals(fiscalDocument.PaymentFormSat, "99", StringComparison.OrdinalIgnoreCase))
+        {
+            return Failure(command.FiscalDocumentId, "Current MVP creates accounts receivable invoices only for credit-sale fiscal documents with payment form SAT '99'.");
+        }
+
         var existingInvoice = await _accountsReceivableInvoiceRepository.GetByFiscalDocumentIdAsync(command.FiscalDocumentId, cancellationToken);
         if (existingInvoice is not null)
         {
@@ -93,6 +98,7 @@ public class CreateAccountsReceivableInvoiceFromFiscalDocumentService
             BillingDocumentId = fiscalDocument.BillingDocumentId,
             FiscalDocumentId = fiscalDocument.Id,
             FiscalStampId = fiscalStamp.Id,
+            FiscalReceiverId = fiscalDocument.FiscalReceiverId,
             Status = AccountsReceivableInvoiceStatus.Open,
             PaymentMethodSat = FiscalMasterDataNormalization.NormalizeRequiredCode(fiscalDocument.PaymentMethodSat),
             PaymentFormSatInitial = FiscalMasterDataNormalization.NormalizeRequiredCode(fiscalDocument.PaymentFormSat),

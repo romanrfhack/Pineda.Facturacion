@@ -12,5 +12,7 @@ public interface IPaymentComplementDocumentRepository
 
     Task<PaymentComplementDocument?> GetTrackedByPaymentIdAsync(long accountsReceivablePaymentId, CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<PaymentComplementDocument>> GetByPaymentIdsAsync(IReadOnlyCollection<long> accountsReceivablePaymentIds, CancellationToken cancellationToken = default);
+
     Task AddAsync(PaymentComplementDocument paymentComplementDocument, CancellationToken cancellationToken = default);
 }

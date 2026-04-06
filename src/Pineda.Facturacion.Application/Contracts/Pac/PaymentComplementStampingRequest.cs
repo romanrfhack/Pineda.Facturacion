@@ -20,6 +20,8 @@ public class PaymentComplementStampingRequest
 
     public DateTime PaymentDateUtc { get; set; }
 
+    public string PaymentFormSat { get; set; } = string.Empty;
+
     public string CurrencyCode { get; set; } = string.Empty;
 
     public decimal TotalPaymentsAmount { get; set; }
@@ -64,4 +66,21 @@ public class PaymentComplementStampingRequestRelatedDocument
     public decimal RemainingBalance { get; set; }
 
     public string CurrencyCode { get; set; } = string.Empty;
+
+    public string TaxObjectCode { get; set; } = string.Empty;
+
+    public List<PaymentComplementStampingRequestTaxTransfer> TaxTransfers { get; set; } = [];
+}
+
+public class PaymentComplementStampingRequestTaxTransfer
+{
+    public string TaxCode { get; set; } = string.Empty;
+
+    public string FactorType { get; set; } = string.Empty;
+
+    public decimal Rate { get; set; }
+
+    public decimal BaseAmount { get; set; }
+
+    public decimal TaxAmount { get; set; }
 }

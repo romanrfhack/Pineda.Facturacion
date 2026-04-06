@@ -5,14 +5,18 @@ import { firstValueFrom } from 'rxjs';
 import { extractApiErrorMessage } from '../../../core/http/api-error-message';
 import { FeedbackService } from '../../../core/ui/feedback.service';
 import { getDisplayLabel } from '../../../shared/ui/display-labels';
+import { AccountsReceivableApiService } from '../../accounts-receivable/infrastructure/accounts-receivable-api.service';
 import { PaymentComplementsApiService } from '../infrastructure/payment-complements-api.service';
 import {
+  RepBaseDocumentBulkRefreshResponse,
   InternalRepBaseDocumentDetailResponse,
   InternalRepBaseDocumentItemResponse,
   InternalRepBaseDocumentPaymentComplementResponse,
   InternalRepBaseDocumentPaymentHistoryResponse,
   PrepareInternalRepBaseDocumentPaymentComplementResponse,
   RepOperationalAlertResponse,
+  RepBaseDocumentTimelineEntryResponse,
+  RepOperationalSummaryCountsResponse,
   RegisterInternalRepBaseDocumentPaymentResponse,
   StampInternalRepBaseDocumentPaymentComplementResponse
 } from '../models/payment-complements.models';
@@ -66,6 +70,33 @@ import {
               <option value="false">Sin REP emitidos</option>
             </select>
           </label>
+          <label>
+            <span>Alerta</span>
+            <select [(ngModel)]="alertCodeFilter" name="alertCodeFilter">
+              <option value="">Todas</option>
+              @for (option of alertOptions; track option) {
+                <option [value]="option">{{ getDisplayLabel(option) }}</option>
+              }
+            </select>
+          </label>
+          <label>
+            <span>Severidad</span>
+            <select [(ngModel)]="severityFilter" name="severityFilter">
+              <option value="">Todas</option>
+              @for (option of severityOptions; track option) {
+                <option [value]="option">{{ getDisplayLabel(option) }}</option>
+              }
+            </select>
+          </label>
+          <label>
+            <span>Acción recomendada</span>
+            <select [(ngModel)]="nextRecommendedActionFilter" name="nextRecommendedActionFilter">
+              <option value="">Todas</option>
+              @for (option of recommendedActionOptions; track option) {
+                <option [value]="option">{{ getDisplayLabel(option) }}</option>
+              }
+            </select>
+          </label>
 
           @if (filtersError()) {
             <p class="error wide">{{ filtersError() }}</p>
@@ -76,6 +107,27 @@ import {
             <button type="button" class="secondary" (click)="clearFilters()" [disabled]="loading()">Limpiar filtros</button>
           </div>
         </form>
+
+        <div class="quick-filters">
+          <button type="button" class="secondary small quick-chip" [class.quick-chip-active]="!quickViewFilter" (click)="applyQuickView('')" [disabled]="loading()">
+            Todos
+          </button>
+          @for (quickView of quickViewOptions; track quickView) {
+            <button type="button" class="secondary small quick-chip" [class.quick-chip-active]="quickViewFilter === quickView" (click)="applyQuickView(quickView)" [disabled]="loading()">
+              {{ getDisplayLabel(quickView) }} ({{ countForQuickView(quickView) }})
+            </button>
+          }
+          @if (quickViewFilter) {
+            <button type="button" class="secondary small quick-chip" (click)="applyQuickView('')" [disabled]="loading()">
+              Volver a Todos
+            </button>
+          }
+          @if (hasOperationalFilters()) {
+            <button type="button" class="secondary small quick-chip" (click)="clearOperationalFilters()" [disabled]="loading()">
+              Limpiar operativos
+            </button>
+          }
+        </div>
       </section>
 
       <section class="card">
@@ -98,10 +150,76 @@ import {
             </label>
           </div>
 
+          <div class="bulk-toolbar">
+            <label class="selection-toggle">
+              <input type="checkbox" [checked]="allVisibleSelected()" (change)="toggleSelectAll($any($event.target).checked)" [disabled]="bulkRefreshing()" />
+              <span>Seleccionar visibles</span>
+            </label>
+            <span class="helper">{{ selectedCount() }} seleccionados</span>
+            <button type="button" [disabled]="bulkRefreshing() || !selectedCount()" (click)="refreshSelectedDocuments()">
+              {{ bulkRefreshing() ? 'Refrescando...' : 'Refrescar seleccionados' }}
+            </button>
+            <button type="button" class="secondary" [disabled]="bulkRefreshing() || !items().length" (click)="refreshFilteredDocuments()">
+              {{ bulkRefreshing() ? 'Refrescando...' : 'Refrescar filtrados' }}
+            </button>
+            @if (bulkRefreshResult()) {
+              <button type="button" class="secondary small" [disabled]="bulkRefreshing()" (click)="clearBulkRefreshResult()">
+                Limpiar resultado
+              </button>
+            }
+          </div>
+
+          @if (bulkRefreshError()) {
+            <p class="error">{{ bulkRefreshError() }}</p>
+          }
+
+          @if (bulkRefreshResult(); as result) {
+            <section class="nested-card bulk-result-card">
+              <div class="section-header">
+                <div>
+                  <h4>Resultado del refresh masivo</h4>
+                  <p class="helper">
+                    Modo {{ getDisplayLabel(result.mode) }} · solicitados {{ result.totalRequested }} · procesados {{ result.totalAttempted }} · actualizados {{ result.refreshedCount }} · sin cambios {{ result.noChangesCount }} · bloqueados {{ result.blockedCount }} · fallidos {{ result.failedCount }}
+                  </p>
+                </div>
+              </div>
+
+              @if (result.items.length) {
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Documento</th>
+                        <th>Resultado</th>
+                        <th>REP</th>
+                        <th>Estado externo</th>
+                        <th>Mensaje</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (item of result.items; track item.sourceId) {
+                        <tr>
+                          <td>#{{ item.sourceId }}</td>
+                          <td>{{ getDisplayLabel(item.outcome) }}</td>
+                          <td>{{ item.paymentComplementDocumentId ? ('#' + item.paymentComplementDocumentId) : '—' }}{{ item.paymentComplementStatus ? (' · ' + getDisplayLabel(item.paymentComplementStatus)) : '' }}</td>
+                          <td>{{ item.lastKnownExternalStatus || '—' }}</td>
+                          <td>{{ item.message }}</td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              }
+            </section>
+          }
+
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
+                  <th>
+                    <input type="checkbox" [checked]="allVisibleSelected()" (change)="toggleSelectAll($any($event.target).checked)" [disabled]="bulkRefreshing()" />
+                  </th>
                   <th>Emisión</th>
                   <th>Serie/Folio</th>
                   <th>UUID</th>
@@ -120,6 +238,9 @@ import {
               <tbody>
                 @for (item of items(); track item.fiscalDocumentId) {
                   <tr>
+                    <td>
+                      <input type="checkbox" [checked]="isSelected(item.fiscalDocumentId)" (change)="toggleSelection(item.fiscalDocumentId, $any($event.target).checked)" [disabled]="bulkRefreshing()" />
+                    </td>
                     <td>{{ formatUtc(item.issuedAtUtc) }}</td>
                     <td>{{ buildSeriesFolio(item) }}</td>
                     <td>{{ item.uuid || '—' }}</td>
@@ -133,12 +254,17 @@ import {
                       <span class="status-pill" [class.status-eligible]="item.isEligible" [class.status-blocked]="item.isBlocked" [class.status-ineligible]="!item.isEligible && !item.isBlocked">
                         {{ getDisplayLabel(item.repOperationalStatus) }}
                       </span>
+                      @if (getPrimarySeverity(item); as severity) {
+                        <span class="severity-pill" [class.severity-warning]="severity === 'warning'" [class.severity-error]="severity === 'error'" [class.severity-critical]="severity === 'critical'" [class.severity-info]="severity === 'info'">
+                          {{ getDisplayLabel(severity) }}
+                        </span>
+                      }
                       <small class="row-reason">{{ item.eligibility.primaryReasonMessage }}</small>
                       <small class="row-reason">Siguiente: {{ getRecommendedActionLabel(item.nextRecommendedAction) }}</small>
                       @if (getAlerts(item).length) {
                         <div class="alert-chip-list">
                           @for (alert of visibleAlerts(getAlerts(item)); track alert.code + '-' + alert.message) {
-                            <span class="alert-chip" [class.alert-critical]="alert.severity === 'critical'" [class.alert-warning]="alert.severity === 'warning'" [class.alert-info]="alert.severity === 'info'">
+                            <span class="alert-chip" [class.alert-critical]="alert.severity === 'critical'" [class.alert-error]="alert.severity === 'error'" [class.alert-warning]="alert.severity === 'warning'" [class.alert-info]="alert.severity === 'info'">
                               {{ getDisplayLabel(alert.code) }}
                             </span>
                           }
@@ -232,6 +358,14 @@ import {
                     </span>
                     <p class="eligibility-reason">{{ detail.summary.eligibility.primaryReasonMessage }}</p>
                     <p class="helper">Código: {{ detail.summary.eligibility.primaryReasonCode }} · Evaluado: {{ formatUtc(detail.summary.eligibility.evaluatedAtUtc) }}</p>
+                    @if (canEnsureAccountsReceivable(detail)) {
+                      <p class="helper">Este CFDI ya cumple el patrón fiscal del flujo diferido, pero todavía no tiene la cuenta operativa que REP usa para controlar saldo, parcialidades y aplicaciones.</p>
+                      <div class="row-actions">
+                        <button type="button" [disabled]="ensuringAccountsReceivable()" (click)="ensureAccountsReceivable(detail.summary.fiscalDocumentId)">
+                          {{ ensuringAccountsReceivable() ? 'Habilitando...' : 'Habilitar cuenta por cobrar' }}
+                        </button>
+                      </div>
+                    }
                   </div>
 
                   @if (detail.summary.eligibility.secondarySignals.length) {
@@ -282,7 +416,7 @@ import {
                   @if (getAlerts(detail.summary).length) {
                     <ul class="alert-list">
                       @for (alert of getAlerts(detail.summary); track alert.code + '-' + alert.message) {
-                        <li class="alert-item" [class.alert-critical]="alert.severity === 'critical'" [class.alert-warning]="alert.severity === 'warning'" [class.alert-info]="alert.severity === 'info'">
+                        <li class="alert-item" [class.alert-critical]="alert.severity === 'critical'" [class.alert-error]="alert.severity === 'error'" [class.alert-warning]="alert.severity === 'warning'" [class.alert-info]="alert.severity === 'info'">
                           <strong>{{ getDisplayLabel(alert.code) }}</strong>
                           <p>{{ alert.message }}</p>
                         </li>
@@ -292,6 +426,60 @@ import {
                     <p class="helper">No hay alertas operativas activas para este CFDI.</p>
                   }
                 </article>
+              </section>
+
+              <section class="nested-card">
+                <div class="section-header">
+                  <div>
+                    <h4>Timeline operativo</h4>
+                    <p class="helper">Historial cronológico derivado del flujo REP sobre este CFDI base. Las alertas activas siguen viviendo en el resumen operativo; aquí sólo se muestra trazabilidad.</p>
+                  </div>
+                </div>
+
+                @if (!(detail.timeline ?? []).length) {
+                  <p class="helper">Todavía no hay eventos cronológicos suficientes para este CFDI.</p>
+                } @else {
+                  <div class="timeline-list">
+                    @for (event of detail.timeline ?? []; track event.eventType + '-' + event.occurredAtUtc + '-' + (event.referenceId ?? 0)) {
+                      <article class="timeline-item">
+                        <header>
+                          <div class="timeline-heading">
+                            <strong>{{ event.title }}</strong>
+                            <div class="timeline-badges">
+                              @if (event.severity) {
+                                <span class="severity-pill" [class.severity-warning]="event.severity === 'warning'" [class.severity-error]="event.severity === 'error'" [class.severity-critical]="event.severity === 'critical'" [class.severity-info]="event.severity === 'info'">
+                                  {{ getDisplayLabel(event.severity) }}
+                                </span>
+                              }
+                              @if (event.status) {
+                                <span class="timeline-chip">{{ getDisplayLabel(event.status) }}</span>
+                              }
+                              <span class="timeline-chip">{{ event.eventType }}</span>
+                            </div>
+                          </div>
+                          <span>{{ formatUtc(event.occurredAtUtc) }}</span>
+                        </header>
+                        <p>{{ event.description }}</p>
+                        <small>
+                          Fuente {{ event.sourceType }}
+                          @if (event.referenceId) {
+                            · Ref #{{ event.referenceId }}
+                          }
+                          @if (event.referenceUuid) {
+                            · UUID {{ event.referenceUuid }}
+                          }
+                        </small>
+                        @if (timelineMetadataEntries(event).length) {
+                          <div class="timeline-meta-list">
+                            @for (entry of timelineMetadataEntries(event); track entry) {
+                              <span class="timeline-chip">{{ entry }}</span>
+                            }
+                          </div>
+                        }
+                      </article>
+                    }
+                  </div>
+                }
               </section>
 
               <section class="nested-card">
@@ -332,7 +520,14 @@ import {
                     </div>
                   </form>
                 } @else if (!detail.summary.isEligible || detail.summary.outstandingBalance <= 0) {
-                  <p class="helper">El CFDI no puede recibir pagos desde esta vista: {{ detail.summary.eligibility.primaryReasonMessage }}</p>
+                  <p class="helper">{{ buildRegisterPaymentBlockedMessage(detail) }}</p>
+                  @if (canEnsureAccountsReceivable(detail)) {
+                    <div class="row-actions">
+                      <button type="button" [disabled]="ensuringAccountsReceivable()" (click)="ensureAccountsReceivable(detail.summary.fiscalDocumentId)">
+                        {{ ensuringAccountsReceivable() ? 'Habilitando...' : 'Habilitar cuenta por cobrar' }}
+                      </button>
+                    </div>
+                  }
                 }
               </section>
 
@@ -551,9 +746,12 @@ import {
     button.secondary { background:#d8c49b; color:#182533; }
     button.small { padding:0.45rem 0.7rem; font-size:0.88rem; }
     button:disabled { opacity:0.6; cursor:not-allowed; }
-    .actions, .toolbar, .pagination, .modal-actions, .section-header, .row-actions { display:flex; flex-wrap:wrap; gap:0.75rem; align-items:center; }
+    .actions, .toolbar, .pagination, .modal-actions, .section-header, .row-actions, .quick-filters, .bulk-toolbar { display:flex; flex-wrap:wrap; gap:0.75rem; align-items:center; }
     .toolbar, .pagination { justify-content:space-between; }
     .section-header { justify-content:space-between; margin-bottom:0.75rem; }
+    .bulk-toolbar { margin-bottom:0.75rem; }
+    .selection-toggle { display:inline-flex; align-items:center; gap:0.5rem; }
+    .bulk-result-card { margin-bottom:1rem; }
     .table-wrap { overflow:auto; }
     table { width:100%; border-collapse:collapse; }
     th, td { text-align:left; padding:0.75rem 0.5rem; border-bottom:1px solid #ece5d7; vertical-align:top; }
@@ -572,6 +770,11 @@ import {
     .signal-positive { background:#e5f6eb; color:#1b6b3a; }
     .signal-warning { background:#fff1d6; color:#8a5a00; }
     .signal-blocking { background:#fdeaea; color:#8a1f1f; }
+    .severity-pill { display:inline-flex; align-items:center; border-radius:999px; padding:0.2rem 0.55rem; margin-left:0.35rem; font-size:0.74rem; font-weight:700; }
+    .severity-info { background:#eef1f4; color:#425466; }
+    .severity-warning { background:#fff3dd; color:#8a5a00; }
+    .severity-error { background:#fde8e8; color:#8a1f1f; }
+    .severity-critical { background:#f8d7d7; color:#6f1111; }
     .alert-chip-list { display:flex; flex-wrap:wrap; gap:0.35rem; margin-top:0.45rem; }
     .alert-chip, .alert-item { border-radius:0.8rem; }
     .alert-chip { display:inline-flex; align-items:center; padding:0.2rem 0.55rem; font-size:0.75rem; font-weight:700; }
@@ -579,9 +782,19 @@ import {
     .alert-item { padding:0.7rem 0.8rem; border:1px solid #ece5d7; }
     .alert-item p { margin:0.2rem 0 0; color:#425466; }
     .alert-warning { background:#fff3dd; color:#8a5a00; }
+    .alert-error { background:#fde8e8; color:#8a1f1f; }
     .alert-critical { background:#fdeaea; color:#8a1f1f; }
     .alert-info { background:#eef1f4; color:#425466; }
+    .quick-chip { border:1px solid #d8d1c2; }
+    .quick-chip.quick-chip-active { outline:2px solid #182533; }
     .row-reason { display:block; margin-top:0.35rem; color:#5f6b76; }
+    .timeline-list { display:grid; gap:0.85rem; }
+    .timeline-item { border:1px solid #ece5d7; border-left:4px solid #8a6a32; border-radius:0.9rem; padding:0.85rem 1rem; display:grid; gap:0.45rem; background:#fcfaf4; }
+    .timeline-item header { display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; }
+    .timeline-heading { display:grid; gap:0.45rem; }
+    .timeline-badges, .timeline-meta-list { display:flex; gap:0.45rem; flex-wrap:wrap; }
+    .timeline-chip { display:inline-flex; align-items:center; border-radius:999px; padding:0.2rem 0.55rem; background:#eef1f4; color:#425466; font-size:0.75rem; font-weight:700; }
+    .timeline-item p, .timeline-item small { margin:0; color:#425466; }
     .modal-backdrop { position:fixed; inset:0; background:rgba(24, 37, 51, 0.42); display:grid; place-items:center; padding:1rem; z-index:50; }
     .modal-card { width:min(1180px, 100%); max-height:calc(100vh - 2rem); overflow:auto; border:1px solid #d8d1c2; border-radius:1rem; background:#fff; padding:1rem; display:grid; gap:1rem; box-shadow:0 24px 60px rgba(24, 37, 51, 0.24); }
     .detail-modal { align-content:start; }
@@ -601,6 +814,7 @@ import {
 })
 export class PaymentComplementBaseDocumentsPageComponent {
   private readonly api = inject(PaymentComplementsApiService);
+  private readonly accountsReceivableApi = inject(AccountsReceivableApiService);
   private readonly feedbackService = inject(FeedbackService);
   protected readonly getDisplayLabel = getDisplayLabel;
 
@@ -612,20 +826,34 @@ export class PaymentComplementBaseDocumentsPageComponent {
   protected blockedFilter = '';
   protected outstandingFilter = '';
   protected repEmittedFilter = '';
+  protected alertCodeFilter = '';
+  protected severityFilter = '';
+  protected nextRecommendedActionFilter = '';
+  protected quickViewFilter = '';
+  protected readonly alertOptions = REP_OPERATIONAL_ALERT_OPTIONS;
+  protected readonly severityOptions = REP_OPERATIONAL_SEVERITY_OPTIONS;
+  protected readonly recommendedActionOptions = REP_RECOMMENDED_ACTION_OPTIONS;
+  protected readonly quickViewOptions = REP_QUICK_VIEW_OPTIONS;
   protected readonly page = signal(1);
   protected readonly pageSize = signal(25);
   protected readonly totalCount = signal(0);
   protected readonly totalPages = signal(0);
   protected readonly items = signal<InternalRepBaseDocumentItemResponse[]>([]);
+  protected readonly selectedIds = signal<number[]>([]);
+  protected readonly summaryCounts = signal<RepOperationalSummaryCountsResponse>(createEmptySummaryCounts());
   protected readonly loading = signal(false);
   protected readonly errorMessage = signal<string | null>(null);
   protected readonly filtersError = signal<string | null>(null);
+  protected readonly bulkRefreshing = signal(false);
+  protected readonly bulkRefreshError = signal<string | null>(null);
+  protected readonly bulkRefreshResult = signal<RepBaseDocumentBulkRefreshResponse | null>(null);
   protected readonly showDetailModal = signal(false);
   protected readonly selectedDetail = signal<InternalRepBaseDocumentDetailResponse | null>(null);
   protected readonly loadingDetail = signal(false);
   protected readonly detailError = signal<string | null>(null);
   protected readonly showRegisterPaymentForm = signal(false);
   protected readonly submittingPayment = signal(false);
+  protected readonly ensuringAccountsReceivable = signal(false);
   protected readonly paymentError = signal<string | null>(null);
   protected readonly preparingComplement = signal<number | null>(null);
   protected readonly stampingComplement = signal<number | null>(null);
@@ -662,6 +890,10 @@ export class PaymentComplementBaseDocumentsPageComponent {
     this.blockedFilter = '';
     this.outstandingFilter = '';
     this.repEmittedFilter = '';
+    this.alertCodeFilter = '';
+    this.severityFilter = '';
+    this.nextRecommendedActionFilter = '';
+    this.quickViewFilter = '';
     this.filtersError.set(null);
     this.page.set(1);
     this.pageSize.set(25);
@@ -724,6 +956,42 @@ export class PaymentComplementBaseDocumentsPageComponent {
     this.paymentAmount = null;
     this.paymentReference = '';
     this.paymentNotes = '';
+  }
+
+  protected canEnsureAccountsReceivable(detail: InternalRepBaseDocumentDetailResponse | null): boolean {
+    return detail?.summary.eligibility.primaryReasonCode === 'AccountsReceivableMissing';
+  }
+
+  protected buildRegisterPaymentBlockedMessage(detail: InternalRepBaseDocumentDetailResponse): string {
+    if (this.canEnsureAccountsReceivable(detail)) {
+      return 'El CFDI no puede recibir pagos desde esta vista porque todavía no tiene una cuenta por cobrar operativa. Habilítala para controlar saldo, parcialidades y REP.';
+    }
+
+    return `El CFDI no puede recibir pagos desde esta vista: ${detail.summary.eligibility.primaryReasonMessage}`;
+  }
+
+  protected async ensureAccountsReceivable(fiscalDocumentId: number): Promise<void> {
+    this.ensuringAccountsReceivable.set(true);
+    this.paymentError.set(null);
+    this.repActionError.set(null);
+
+    try {
+      const result = await firstValueFrom(this.accountsReceivableApi.ensureInvoiceForFiscalDocument(fiscalDocumentId));
+      const invoiceId = result.accountsReceivableInvoice?.id;
+      const message = invoiceId
+        ? `Cuenta por cobrar ${invoiceId} habilitada para el CFDI.`
+        : (result.errorMessage || 'La cuenta por cobrar ya quedó asegurada.');
+      this.feedbackService.show(result.outcome === 'Skipped' ? 'warning' : 'success', message);
+      await this.loadDetail(fiscalDocumentId);
+      await this.load();
+    } catch (error) {
+      const message = extractApiErrorMessage(error, 'No fue posible habilitar la cuenta por cobrar operativa para este CFDI.');
+      this.repActionError.set(message);
+      this.paymentError.set(message);
+      this.feedbackService.show('error', message);
+    } finally {
+      this.ensuringAccountsReceivable.set(false);
+    }
   }
 
   protected async submitRegisterPayment(): Promise<void> {
@@ -900,12 +1168,97 @@ export class PaymentComplementBaseDocumentsPageComponent {
     return alerts.slice(0, 3);
   }
 
+  protected getPrimarySeverity(source: { alerts?: RepOperationalAlertResponse[] | null }): string | null {
+    return resolvePrimarySeverity(source.alerts ?? []);
+  }
+
   protected getAlerts(source: { alerts?: RepOperationalAlertResponse[] | null }): RepOperationalAlertResponse[] {
     return source.alerts ?? [];
   }
 
   protected getRecommendedActionLabel(action?: string | null): string {
     return action ? getDisplayLabel(action) : 'Sin acción disponible';
+  }
+
+  protected timelineMetadataEntries(item: RepBaseDocumentTimelineEntryResponse): string[] {
+    return Object.entries(item.metadata ?? {})
+      .filter(([, value]) => value)
+      .map(([key, value]) => `${key}: ${value}`);
+  }
+
+  protected async applyQuickView(quickView: string): Promise<void> {
+    this.quickViewFilter = this.quickViewFilter === quickView ? '' : quickView;
+    this.page.set(1);
+    await this.load();
+  }
+
+  protected async clearOperationalFilters(): Promise<void> {
+    this.alertCodeFilter = '';
+    this.severityFilter = '';
+    this.nextRecommendedActionFilter = '';
+    this.quickViewFilter = '';
+    this.page.set(1);
+    await this.load();
+  }
+
+  protected countForQuickView(code: string): number {
+    return this.summaryCounts().quickViewCounts.find((item) => item.code === code)?.count ?? 0;
+  }
+
+  protected hasOperationalFilters(): boolean {
+    return Boolean(this.alertCodeFilter || this.severityFilter || this.nextRecommendedActionFilter || this.quickViewFilter);
+  }
+
+  protected isSelected(fiscalDocumentId: number): boolean {
+    return this.selectedIds().includes(fiscalDocumentId);
+  }
+
+  protected selectedCount(): number {
+    return this.selectedIds().length;
+  }
+
+  protected allVisibleSelected(): boolean {
+    const currentItems = this.items();
+    return currentItems.length > 0 && currentItems.every((item) => this.isSelected(item.fiscalDocumentId));
+  }
+
+  protected toggleSelection(fiscalDocumentId: number, checked: boolean): void {
+    if (checked) {
+      this.selectedIds.set([...new Set([...this.selectedIds(), fiscalDocumentId])]);
+      return;
+    }
+
+    this.selectedIds.set(this.selectedIds().filter((id) => id !== fiscalDocumentId));
+  }
+
+  protected toggleSelectAll(checked: boolean): void {
+    if (checked) {
+      this.selectedIds.set(this.items().map((item) => item.fiscalDocumentId));
+      return;
+    }
+
+    this.selectedIds.set([]);
+  }
+
+  protected clearBulkRefreshResult(): void {
+    this.bulkRefreshResult.set(null);
+    this.bulkRefreshError.set(null);
+  }
+
+  protected async refreshSelectedDocuments(): Promise<void> {
+    if (!this.selectedCount()) {
+      return;
+    }
+
+    await this.executeBulkRefresh('Selected');
+  }
+
+  protected async refreshFilteredDocuments(): Promise<void> {
+    if (!this.items().length) {
+      return;
+    }
+
+    await this.executeBulkRefresh('Filtered');
   }
 
   private async handleSuccessfulPaymentRegistration(
@@ -993,18 +1346,71 @@ export class PaymentComplementBaseDocumentsPageComponent {
         eligible: parseBooleanFilter(this.eligibleFilter),
         blocked: parseBooleanFilter(this.blockedFilter),
         withOutstandingBalance: parseBooleanFilter(this.outstandingFilter),
-        hasRepEmitted: parseBooleanFilter(this.repEmittedFilter)
+        hasRepEmitted: parseBooleanFilter(this.repEmittedFilter),
+        alertCode: this.alertCodeFilter || null,
+        severity: this.severityFilter || null,
+        nextRecommendedAction: this.nextRecommendedActionFilter || null,
+        quickView: this.quickViewFilter || null
       }));
 
       this.items.set(response.items);
+      this.selectedIds.set([]);
+      this.summaryCounts.set(response.summaryCounts ?? createEmptySummaryCounts());
       this.totalCount.set(response.totalCount);
       this.totalPages.set(response.totalPages);
       this.page.set(response.page);
       this.pageSize.set(response.pageSize);
     } catch (error) {
       this.errorMessage.set(extractApiErrorMessage(error, 'No fue posible cargar la bandeja REP interna.'));
+      this.summaryCounts.set(createEmptySummaryCounts());
     } finally {
       this.loading.set(false);
+    }
+  }
+
+  private async executeBulkRefresh(mode: string): Promise<void> {
+    this.bulkRefreshing.set(true);
+    this.bulkRefreshError.set(null);
+
+    try {
+      const result = await firstValueFrom(this.api.bulkRefreshInternalBaseDocuments({
+        mode,
+        documents: this.selectedIds().map((sourceId) => ({ sourceType: 'Internal', sourceId })),
+        fromDate: this.fromDate || null,
+        toDate: this.toDate || null,
+        receiverRfc: this.receiverRfc || null,
+        query: this.query || null,
+        eligible: parseBooleanFilter(this.eligibleFilter),
+        blocked: parseBooleanFilter(this.blockedFilter),
+        withOutstandingBalance: parseBooleanFilter(this.outstandingFilter),
+        hasRepEmitted: parseBooleanFilter(this.repEmittedFilter),
+        alertCode: this.alertCodeFilter || null,
+        severity: this.severityFilter || null,
+        nextRecommendedAction: this.nextRecommendedActionFilter || null,
+        quickView: this.quickViewFilter || null
+      }));
+
+      this.bulkRefreshResult.set(result);
+      this.selectedIds.set([]);
+
+      const refreshedIds = new Set(result.items.filter((item) => item.attempted).map((item) => item.sourceId));
+      const detail = this.selectedDetail();
+
+      if (detail && refreshedIds.has(detail.summary.fiscalDocumentId)) {
+        await this.loadDetail(detail.summary.fiscalDocumentId, this.showRegisterPaymentForm());
+      }
+
+      await this.load();
+      this.feedbackService.show(
+        result.failedCount > 0 ? 'warning' : 'success',
+        `Refresh masivo interno ejecutado: ${result.refreshedCount} actualizados, ${result.noChangesCount} sin cambios, ${result.blockedCount} bloqueados, ${result.failedCount} fallidos.`
+      );
+    } catch (error) {
+      const message = extractApiErrorMessage(error, 'No fue posible ejecutar el refresh masivo interno.');
+      this.bulkRefreshError.set(message);
+      this.feedbackService.show('error', message);
+    } finally {
+      this.bulkRefreshing.set(false);
     }
   }
 }
@@ -1024,3 +1430,45 @@ function parseBooleanFilter(value: string): boolean | null {
 function todayInputValue(): string {
   return new Date().toISOString().slice(0, 10);
 }
+
+function createEmptySummaryCounts(): RepOperationalSummaryCountsResponse {
+  return {
+    infoCount: 0,
+    warningCount: 0,
+    errorCount: 0,
+    criticalCount: 0,
+    blockedCount: 0,
+    alertCounts: [],
+    nextRecommendedActionCounts: [],
+    quickViewCounts: []
+  };
+}
+
+function resolvePrimarySeverity(alerts: RepOperationalAlertResponse[]): string | null {
+  for (const severity of REP_OPERATIONAL_SEVERITY_PRIORITY) {
+    if (alerts.some((alert) => alert.severity === severity)) {
+      return severity;
+    }
+  }
+
+  return null;
+}
+
+const REP_OPERATIONAL_ALERT_OPTIONS = [
+  'AppliedPaymentsWithoutStampedRep',
+  'PreparedRepPendingStamp',
+  'RepStampingRejected',
+  'RepCancellationRejected',
+  'BlockedOperation',
+  'CancelledBaseDocument',
+  'ValidationBlocked',
+  'SatValidationUnavailable',
+  'UnsupportedCurrency',
+  'DuplicateExternalInvoice',
+  'StampedRepAvailable'
+];
+
+const REP_OPERATIONAL_SEVERITY_OPTIONS = ['info', 'warning', 'error', 'critical'];
+const REP_OPERATIONAL_SEVERITY_PRIORITY = ['critical', 'error', 'warning', 'info'];
+const REP_RECOMMENDED_ACTION_OPTIONS = ['RegisterPayment', 'PrepareRep', 'StampRep', 'RefreshRepStatus', 'CancelRep', 'ViewDetail', 'Blocked', 'NoAction'];
+const REP_QUICK_VIEW_OPTIONS = ['PendingStamp', 'WithError', 'Blocked', 'AppliedPaymentWithoutStampedRep', 'PendingRefresh', 'Stamped'];

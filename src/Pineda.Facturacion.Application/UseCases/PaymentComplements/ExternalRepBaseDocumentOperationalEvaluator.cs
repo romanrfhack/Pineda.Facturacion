@@ -20,8 +20,15 @@ public static class ExternalRepBaseDocumentOperationalEvaluator
 
         if (!string.Equals(summary.SatStatus, ExternalRepBaseDocumentSatStatus.Active.ToString(), StringComparison.Ordinal))
         {
+            var reasonCode = summary.SatStatus switch
+            {
+                nameof(ExternalRepBaseDocumentSatStatus.Cancelled) => nameof(ExternalRepBaseDocumentImportReasonCode.CancelledExternalInvoice),
+                nameof(ExternalRepBaseDocumentSatStatus.Unavailable) => nameof(ExternalRepBaseDocumentImportReasonCode.ValidationUnavailable),
+                _ => summary.ValidationReasonCode
+            };
+
             return Blocked(
-                summary.ValidationReasonCode,
+                reasonCode,
                 NormalizeReasonMessage(summary.ValidationReasonMessage, "El CFDI externo no está vigente en SAT y quedó bloqueado para operación REP."));
         }
 

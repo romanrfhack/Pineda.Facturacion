@@ -12,6 +12,25 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
         pageSize: 25,
         totalCount: 2,
         totalPages: 1,
+        summaryCounts: {
+          infoCount: 0,
+          warningCount: 1,
+          errorCount: 0,
+          criticalCount: 1,
+          blockedCount: 1,
+          alertCounts: [
+            { code: 'AppliedPaymentsWithoutStampedRep', count: 1 },
+            { code: 'CancelledBaseDocument', count: 1 }
+          ],
+          nextRecommendedActionCounts: [
+            { code: 'PrepareRep', count: 1 },
+            { code: 'Blocked', count: 1 }
+          ],
+          quickViewCounts: [
+            { code: 'AppliedPaymentWithoutStampedRep', count: 1 },
+            { code: 'Blocked', count: 1 }
+          ]
+        },
         items: [
           {
             fiscalDocumentId: 501,
@@ -111,10 +130,10 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
             hasPreparedRepPendingStamp: false,
             hasRepWithError: false,
             hasBlockedOperation: true,
-            nextRecommendedAction: null,
+            nextRecommendedAction: 'Blocked',
             availableActions: ['ViewDetail'],
             alerts: [
-              { code: 'BlockedOperation', severity: 'critical', message: 'El CFDI está cancelado.' }
+              { code: 'CancelledBaseDocument', severity: 'critical', message: 'El CFDI está cancelado.' }
             ],
             operationalState: {
               lastEligibilityEvaluatedAtUtc: '2026-04-03T08:05:00Z',
@@ -228,6 +247,44 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
             paymentAmount: 40,
             remainingPaymentAmount: 0,
             createdAtUtc: '2026-04-02T10:00:00Z'
+          }
+        ],
+        timeline: [
+          {
+            eventType: 'PaymentRegistered',
+            occurredAtUtc: '2026-04-02T10:00:00Z',
+            sourceType: 'AccountsReceivablePayment',
+            severity: 'info',
+            title: 'Pago registrado',
+            description: 'Se registró el pago #9001 por 40.00 MXN.',
+            status: 'Stamped',
+            referenceId: 9001,
+            referenceUuid: 'UUID-PC-1',
+            metadata: { paymentFormSat: '03' }
+          },
+          {
+            eventType: 'RepPrepared',
+            occurredAtUtc: '2026-04-02T12:00:00Z',
+            sourceType: 'PaymentComplementDocument',
+            severity: 'info',
+            title: 'REP preparado',
+            description: 'Se preparó el REP #7001 para el pago #9001 por 40.00 MXN.',
+            status: 'Stamped',
+            referenceId: 7001,
+            referenceUuid: 'UUID-PC-1',
+            metadata: { accountsReceivablePaymentId: '9001' }
+          },
+          {
+            eventType: 'RepStamped',
+            occurredAtUtc: '2026-04-02T12:05:00Z',
+            sourceType: 'PaymentComplementStamp',
+            severity: 'info',
+            title: 'REP timbrado',
+            description: 'El REP #7001 quedó timbrado para el receptor BBB010101BBB.',
+            status: 'Stamped',
+            referenceId: 7001,
+            referenceUuid: 'UUID-PC-1',
+            metadata: { providerName: 'FacturaloPlus' }
           }
         ],
         issuedReps: [
@@ -353,6 +410,29 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
         availableActions: ['ViewDetail'],
         alerts: []
       })),
+      bulkRefreshInternalBaseDocuments: vi.fn().mockReturnValue(of({
+        isSuccess: true,
+        mode: 'Selected',
+        maxDocuments: 50,
+        totalRequested: 1,
+        totalAttempted: 1,
+        refreshedCount: 1,
+        noChangesCount: 0,
+        blockedCount: 0,
+        failedCount: 0,
+        items: [
+          {
+            sourceType: 'Internal',
+            sourceId: 501,
+            attempted: true,
+            outcome: 'Refreshed',
+            message: 'Estatus refrescado correctamente.',
+            paymentComplementDocumentId: 7001,
+            paymentComplementStatus: 'Stamped',
+            lastKnownExternalStatus: 'VIGENTE'
+          }
+        ]
+      })),
       ...overrides
     };
   }
@@ -390,13 +470,24 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
       pageSize: 25,
       totalCount: 0,
       totalPages: 0,
-      items: []
+      items: [],
+      summaryCounts: {
+        infoCount: 0,
+        warningCount: 0,
+        errorCount: 0,
+        criticalCount: 0,
+        blockedCount: 0,
+        alertCounts: [],
+        nextRecommendedActionCounts: [],
+        quickViewCounts: []
+      }
     }));
     const fixture = await configure({ searchInternalBaseDocuments });
 
     fixture.componentInstance['receiverRfc'] = 'BBB010101BBB';
     fixture.componentInstance['query'] = 'UUID-REP-1';
     fixture.componentInstance['eligibleFilter'] = 'true';
+    fixture.componentInstance['quickViewFilter'] = 'AppliedPaymentWithoutStampedRep';
     await fixture.componentInstance['applyFilters']();
 
     expect(searchInternalBaseDocuments).toHaveBeenCalledWith(expect.objectContaining({
@@ -404,7 +495,28 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
       pageSize: 25,
       receiverRfc: 'BBB010101BBB',
       query: 'UUID-REP-1',
-      eligible: true
+      eligible: true,
+      quickView: 'AppliedPaymentWithoutStampedRep'
+    }));
+  });
+
+  it('renders quick operational chips with summary counts', async () => {
+    const fixture = await configure();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Pendientes de timbrar');
+    expect(fixture.nativeElement.textContent).toContain('Pago aplicado sin REP (1)');
+    expect(fixture.nativeElement.textContent).toContain('Bloqueado (1)');
+  });
+
+  it('applies a quick view and reloads the internal tray', async () => {
+    const fixture = await configure();
+    const api = TestBed.inject(PaymentComplementsApiService) as unknown as { searchInternalBaseDocuments: ReturnType<typeof vi.fn> };
+
+    await fixture.componentInstance['applyQuickView']('PendingStamp');
+
+    expect(api.searchInternalBaseDocuments).toHaveBeenLastCalledWith(expect.objectContaining({
+      quickView: 'PendingStamp'
     }));
   });
 
@@ -417,6 +529,7 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Contexto del CFDI base');
     expect(fixture.nativeElement.textContent).toContain('Explicación de elegibilidad');
     expect(fixture.nativeElement.textContent).toContain('Snapshot operativo persistido');
+    expect(fixture.nativeElement.textContent).toContain('Timeline operativo');
     expect(fixture.nativeElement.textContent).toContain('Historial de pagos registrados');
     expect(fixture.nativeElement.textContent).toContain('Aplicaciones de pago');
     expect(fixture.nativeElement.textContent).toContain('REP emitidos y relacionados');
@@ -424,6 +537,8 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('UUID-PC-1');
     expect(fixture.nativeElement.textContent).toContain('EligibleInternalRep');
     expect(fixture.nativeElement.textContent).toContain('FacturaloPlus');
+    expect(fixture.nativeElement.textContent).toContain('Pago registrado');
+    expect(fixture.nativeElement.textContent).toContain('REP timbrado');
   });
 
   it('renders operational alerts and refresh/cancel actions in detail', async () => {
@@ -1217,5 +1332,46 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Todavía no hay pagos registrados relacionados');
     expect(fixture.nativeElement.textContent).toContain('Todavía no hay pagos aplicados');
     expect(fixture.nativeElement.textContent).toContain('Aún no hay REP ligados');
+  });
+
+  it('executes bulk refresh from selected internal documents', async () => {
+    const bulkRefreshInternalBaseDocuments = vi.fn().mockReturnValue(of({
+      isSuccess: true,
+      mode: 'Selected',
+      maxDocuments: 50,
+      totalRequested: 1,
+      totalAttempted: 1,
+      refreshedCount: 1,
+      noChangesCount: 0,
+      blockedCount: 0,
+      failedCount: 0,
+      items: [
+        {
+          sourceType: 'Internal',
+          sourceId: 501,
+          attempted: true,
+          outcome: 'Refreshed',
+          message: 'Estatus refrescado correctamente.',
+          paymentComplementDocumentId: 7001,
+          paymentComplementStatus: 'Stamped',
+          lastKnownExternalStatus: 'VIGENTE'
+        }
+      ]
+    }));
+
+    const fixture = await configure({
+      bulkRefreshInternalBaseDocuments
+    });
+
+    fixture.componentInstance['toggleSelection'](501, true);
+    await fixture.componentInstance['refreshSelectedDocuments']();
+    fixture.detectChanges();
+
+    expect(bulkRefreshInternalBaseDocuments).toHaveBeenCalledWith(expect.objectContaining({
+      mode: 'Selected',
+      documents: [{ sourceType: 'Internal', sourceId: 501 }]
+    }));
+    expect(fixture.nativeElement.textContent).toContain('Resultado del refresh masivo');
+    expect(fixture.nativeElement.textContent).toContain('sin cambios');
   });
 });

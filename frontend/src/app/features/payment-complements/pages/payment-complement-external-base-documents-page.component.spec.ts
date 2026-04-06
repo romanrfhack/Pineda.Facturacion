@@ -25,6 +25,19 @@ describe('PaymentComplementExternalBaseDocumentsPageComponent', () => {
               pageSize: 25,
               totalCount: 1,
               totalPages: 1,
+              summaryCounts: {
+                infoCount: 1,
+                warningCount: 0,
+                errorCount: 0,
+                criticalCount: 0,
+                blockedCount: 0,
+                alertCounts: [{ code: 'StampedRepAvailable', count: 1 }],
+                nextRecommendedActionCounts: [{ code: 'RegisterPayment', count: 1 }],
+                quickViewCounts: [
+                  { code: 'Stamped', count: 1 },
+                  { code: 'Blocked', count: 0 }
+                ]
+              },
               items: [{
                 externalRepBaseDocumentId: 123,
                 accountsReceivableInvoiceId: null,
@@ -117,6 +130,32 @@ describe('PaymentComplementExternalBaseDocumentsPageComponent', () => {
                   { code: 'StampedRepAvailable', severity: 'info', message: 'El CFDI externo ya cuenta con REP timbrado y sólo requiere seguimiento o refresh de estatus.' }
                 ]
               },
+              timeline: [
+                {
+                  eventType: 'ExternalXmlImported',
+                  occurredAtUtc: '2026-04-01T11:00:00Z',
+                  sourceType: 'ExternalRepBaseDocument',
+                  severity: 'info',
+                  title: 'XML externo importado',
+                  description: 'Se importó el CFDI externo UUID-EXT-123 desde external.xml.',
+                  status: 'Accepted',
+                  referenceId: 123,
+                  referenceUuid: 'UUID-EXT-123',
+                  metadata: { sourceFileName: 'external.xml' }
+                },
+                {
+                  eventType: 'RepStamped',
+                  occurredAtUtc: '2026-04-01T12:12:00Z',
+                  sourceType: 'PaymentComplementStamp',
+                  severity: 'info',
+                  title: 'REP timbrado',
+                  description: 'El REP #7001 quedó timbrado para el receptor BBB010101BBB.',
+                  status: 'Stamped',
+                  referenceId: 7001,
+                  referenceUuid: 'UUID-REP-1',
+                  metadata: { providerName: 'FacturaloPlus' }
+                }
+              ],
               paymentHistory: [],
               paymentApplications: [],
               issuedReps: [
@@ -191,6 +230,29 @@ describe('PaymentComplementExternalBaseDocumentsPageComponent', () => {
               cancellationStatus: 'Cancelled',
               availableActions: ['ViewDetail'],
               alerts: []
+            })),
+            bulkRefreshExternalBaseDocuments: vi.fn().mockReturnValue(of({
+              isSuccess: true,
+              mode: 'Selected',
+              maxDocuments: 50,
+              totalRequested: 1,
+              totalAttempted: 1,
+              refreshedCount: 1,
+              noChangesCount: 0,
+              blockedCount: 0,
+              failedCount: 0,
+              items: [
+                {
+                  sourceType: 'External',
+                  sourceId: 123,
+                  attempted: true,
+                  outcome: 'Refreshed',
+                  message: 'Estatus refrescado correctamente.',
+                  paymentComplementDocumentId: 7001,
+                  paymentComplementStatus: 'Stamped',
+                  lastKnownExternalStatus: 'VIGENTE'
+                }
+              ]
             }))
           }
         }
@@ -210,6 +272,19 @@ describe('PaymentComplementExternalBaseDocumentsPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Bandeja de CFDI externos importados');
     expect(fixture.nativeElement.textContent).toContain('UUID-EXT-123');
     expect(fixture.nativeElement.textContent).toContain('Listo para registrar pago');
+    expect(fixture.nativeElement.textContent).toContain('Timbrado (1)');
+    expect(fixture.nativeElement.textContent).toContain('Bloqueado (0)');
+  });
+
+  it('applies a quick view and reloads the external tray', async () => {
+    const fixture = await configure();
+    const api = TestBed.inject(PaymentComplementsApiService) as unknown as { searchExternalBaseDocuments: ReturnType<typeof vi.fn> };
+
+    await fixture.componentInstance['applyQuickView']('Stamped');
+
+    expect(api.searchExternalBaseDocuments).toHaveBeenLastCalledWith(expect.objectContaining({
+      quickView: 'Stamped'
+    }));
   });
 
   it('opens external detail context', async () => {
@@ -220,6 +295,8 @@ describe('PaymentComplementExternalBaseDocumentsPageComponent', () => {
 
     expect(fixture.nativeElement.textContent).toContain('Detalle operativo del CFDI importado');
     expect(fixture.nativeElement.textContent).toContain('Emisor externo');
+    expect(fixture.nativeElement.textContent).toContain('Timeline operativo');
+    expect(fixture.nativeElement.textContent).toContain('XML externo importado');
   });
 
   it('renders external operation actions in detail', async () => {
@@ -254,5 +331,20 @@ describe('PaymentComplementExternalBaseDocumentsPageComponent', () => {
       cancellationReasonCode: '02',
       replacementUuid: null
     });
+  });
+
+  it('executes bulk refresh from selected external documents', async () => {
+    const fixture = await configure();
+    const api = TestBed.inject(PaymentComplementsApiService) as unknown as Record<string, ReturnType<typeof vi.fn>>;
+
+    fixture.componentInstance['toggleSelection'](123, true);
+    await fixture.componentInstance['refreshSelectedDocuments']();
+    fixture.detectChanges();
+
+    expect(api['bulkRefreshExternalBaseDocuments']).toHaveBeenCalledWith(expect.objectContaining({
+      mode: 'Selected',
+      documents: [{ sourceType: 'External', sourceId: 123 }]
+    }));
+    expect(fixture.nativeElement.textContent).toContain('Resultado del refresh masivo');
   });
 });

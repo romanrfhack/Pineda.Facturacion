@@ -19,10 +19,14 @@ import {
   PrepareInternalRepBaseDocumentPaymentComplementResponse,
   PrepareExternalRepBaseDocumentPaymentComplementRequest,
   PrepareExternalRepBaseDocumentPaymentComplementResponse,
+  RepBaseDocumentBulkRefreshRequest,
+  RepBaseDocumentBulkRefreshResponse,
   RegisterExternalRepBaseDocumentPaymentRequest,
   RegisterExternalRepBaseDocumentPaymentResponse,
   RegisterInternalRepBaseDocumentPaymentRequest,
   RegisterInternalRepBaseDocumentPaymentResponse,
+  RepAttentionItemsFilters,
+  RepAttentionItemsResponse,
   RepBaseDocumentFilters,
   RepBaseDocumentListResponse,
   StampExternalRepBaseDocumentPaymentComplementRequest,
@@ -61,12 +65,23 @@ export class PaymentComplementsApiService {
     setOptionalBooleanQuery(query, 'blocked', filters.blocked);
     setOptionalBooleanQuery(query, 'withOutstandingBalance', filters.withOutstandingBalance);
     setOptionalBooleanQuery(query, 'hasRepEmitted', filters.hasRepEmitted);
+    setOptionalQuery(query, 'alertCode', filters.alertCode);
+    setOptionalQuery(query, 'severity', filters.severity);
+    setOptionalQuery(query, 'nextRecommendedAction', filters.nextRecommendedAction);
+    setOptionalQuery(query, 'quickView', filters.quickView);
 
     return this.http.get<InternalRepBaseDocumentListResponse>(buildApiUrl(`/payment-complements/base-documents/internal?${query.toString()}`));
   }
 
   getInternalBaseDocumentByFiscalDocumentId(fiscalDocumentId: number): Observable<InternalRepBaseDocumentDetailResponse> {
     return this.http.get<InternalRepBaseDocumentDetailResponse>(buildApiUrl(`/payment-complements/base-documents/internal/${fiscalDocumentId}`));
+  }
+
+  bulkRefreshInternalBaseDocuments(request: RepBaseDocumentBulkRefreshRequest): Observable<RepBaseDocumentBulkRefreshResponse> {
+    return this.http.post<RepBaseDocumentBulkRefreshResponse>(
+      buildApiUrl('/payment-complements/base-documents/internal/refresh-rep-status/bulk'),
+      request
+    );
   }
 
   searchExternalBaseDocuments(filters: ExternalRepBaseDocumentFilters): Observable<ExternalRepBaseDocumentListResponse> {
@@ -81,8 +96,19 @@ export class PaymentComplementsApiService {
     setOptionalQuery(query, 'validationStatus', filters.validationStatus);
     setOptionalBooleanQuery(query, 'eligible', filters.eligible);
     setOptionalBooleanQuery(query, 'blocked', filters.blocked);
+    setOptionalQuery(query, 'alertCode', filters.alertCode);
+    setOptionalQuery(query, 'severity', filters.severity);
+    setOptionalQuery(query, 'nextRecommendedAction', filters.nextRecommendedAction);
+    setOptionalQuery(query, 'quickView', filters.quickView);
 
     return this.http.get<ExternalRepBaseDocumentListResponse>(buildApiUrl(`/payment-complements/base-documents/external?${query.toString()}`));
+  }
+
+  bulkRefreshExternalBaseDocuments(request: RepBaseDocumentBulkRefreshRequest): Observable<RepBaseDocumentBulkRefreshResponse> {
+    return this.http.post<RepBaseDocumentBulkRefreshResponse>(
+      buildApiUrl('/payment-complements/base-documents/external/refresh-rep-status/bulk'),
+      request
+    );
   }
 
   searchBaseDocuments(filters: RepBaseDocumentFilters): Observable<RepBaseDocumentListResponse> {
@@ -98,8 +124,36 @@ export class PaymentComplementsApiService {
     setOptionalQuery(query, 'validationStatus', filters.validationStatus);
     setOptionalBooleanQuery(query, 'eligible', filters.eligible);
     setOptionalBooleanQuery(query, 'blocked', filters.blocked);
+    setOptionalQuery(query, 'alertCode', filters.alertCode);
+    setOptionalQuery(query, 'severity', filters.severity);
+    setOptionalQuery(query, 'nextRecommendedAction', filters.nextRecommendedAction);
+    setOptionalQuery(query, 'quickView', filters.quickView);
 
     return this.http.get<RepBaseDocumentListResponse>(buildApiUrl(`/payment-complements/base-documents?${query.toString()}`));
+  }
+
+  searchAttentionItems(filters: RepAttentionItemsFilters): Observable<RepAttentionItemsResponse> {
+    const query = new URLSearchParams();
+    query.set('page', `${filters.page}`);
+    query.set('pageSize', `${filters.pageSize}`);
+
+    setOptionalQuery(query, 'fromDate', filters.fromDate);
+    setOptionalQuery(query, 'toDate', filters.toDate);
+    setOptionalQuery(query, 'receiverRfc', filters.receiverRfc);
+    setOptionalQuery(query, 'query', filters.query);
+    setOptionalQuery(query, 'sourceType', filters.sourceType);
+    setOptionalQuery(query, 'alertCode', filters.alertCode);
+    setOptionalQuery(query, 'severity', filters.severity);
+    setOptionalQuery(query, 'nextRecommendedAction', filters.nextRecommendedAction);
+
+    return this.http.get<RepAttentionItemsResponse>(buildApiUrl(`/payment-complements/attention-items?${query.toString()}`));
+  }
+
+  bulkRefreshBaseDocuments(request: RepBaseDocumentBulkRefreshRequest): Observable<RepBaseDocumentBulkRefreshResponse> {
+    return this.http.post<RepBaseDocumentBulkRefreshResponse>(
+      buildApiUrl('/payment-complements/base-documents/refresh-rep-status/bulk'),
+      request
+    );
   }
 
   registerInternalBaseDocumentPayment(

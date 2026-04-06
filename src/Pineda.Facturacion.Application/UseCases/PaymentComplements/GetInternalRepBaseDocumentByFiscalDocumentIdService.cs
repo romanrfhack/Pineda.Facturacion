@@ -55,6 +55,11 @@ public sealed class GetInternalRepBaseDocumentByFiscalDocumentIdService
             {
                 Summary = summary,
                 OperationalState = InternalRepBaseDocumentOperationalStateProjector.BuildSnapshot(stateEntity),
+                Timeline = RepBaseDocumentTimelineBuilder.BuildInternal(
+                    summary,
+                    document.PaymentHistory,
+                    document.PaymentApplications,
+                    document.PaymentComplements),
                 PaymentHistory = document.PaymentHistory,
                 PaymentApplications = document.PaymentApplications,
                 PaymentComplements = document.PaymentComplements

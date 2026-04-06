@@ -129,7 +129,7 @@ export class PaymentComplementOperationsPageComponent {
 
     await this.run(async () => {
       const response = await firstValueFrom(this.arApi.preparePaymentComplement(paymentId));
-      if (!response.paymentComplementId) {
+      if (!resolvePaymentComplementId(response)) {
         this.feedbackService.show('error', response.errorMessage || 'No se pudo preparar el complemento.');
         return;
       }
@@ -141,47 +141,50 @@ export class PaymentComplementOperationsPageComponent {
 
   protected async stamp(): Promise<void> {
     const complement = this.complement();
-    if (!complement) {
+    const paymentComplementId = complement ? resolvePaymentComplementId(complement) : null;
+    if (!complement || !paymentComplementId) {
       return;
     }
 
     await this.run(async () => {
-      const response = await firstValueFrom(this.paymentComplementsApi.stamp(complement.id));
+      const response = await firstValueFrom(this.paymentComplementsApi.stamp(paymentComplementId));
       this.feedbackService.show(response.isSuccess ? 'success' : 'warning', response.providerMessage || response.supportMessage || response.errorMessage || getDisplayLabel(response.outcome));
       await this.loadComplementByPayment(complement.accountsReceivablePaymentId);
-      await this.loadStamp(complement.id);
+      await this.loadStamp(paymentComplementId);
     });
   }
 
   protected async cancel(): Promise<void> {
     const complement = this.complement();
-    if (!complement || !window.confirm('¿Cancelar este complemento de pago timbrado?')) {
+    const paymentComplementId = complement ? resolvePaymentComplementId(complement) : null;
+    if (!complement || !paymentComplementId || !window.confirm('¿Cancelar este complemento de pago timbrado?')) {
       return;
     }
 
     await this.run(async () => {
-      const response = await firstValueFrom(this.paymentComplementsApi.cancel(complement.id));
+      const response = await firstValueFrom(this.paymentComplementsApi.cancel(paymentComplementId));
       this.feedbackService.show(response.isSuccess ? 'success' : 'warning', response.providerMessage || response.supportMessage || response.errorMessage || getDisplayLabel(response.outcome));
       await this.loadComplementByPayment(complement.accountsReceivablePaymentId);
-      await this.loadCancellation(complement.id);
+      await this.loadCancellation(paymentComplementId);
     });
   }
 
   protected async refreshStatus(): Promise<void> {
     const complement = this.complement();
-    if (!complement) {
+    const paymentComplementId = complement ? resolvePaymentComplementId(complement) : null;
+    if (!complement || !paymentComplementId) {
       return;
     }
 
     await this.run(async () => {
-      const response = await firstValueFrom(this.paymentComplementsApi.refreshStatus(complement.id));
+      const response = await firstValueFrom(this.paymentComplementsApi.refreshStatus(paymentComplementId));
       this.feedbackService.show(
         response.isSuccess ? 'success' : 'warning',
         response.providerMessage || response.supportMessage || response.errorMessage || getDisplayLabel(response.outcome)
       );
       await this.loadComplementByPayment(complement.accountsReceivablePaymentId);
-      await this.loadStamp(complement.id);
-      await this.loadCancellation(complement.id);
+      await this.loadStamp(paymentComplementId);
+      await this.loadCancellation(paymentComplementId);
     });
   }
 
@@ -203,7 +206,8 @@ export class PaymentComplementOperationsPageComponent {
 
   protected async openStampXml(): Promise<void> {
     const complement = this.complement();
-    if (!complement) {
+    const paymentComplementId = complement ? resolvePaymentComplementId(complement) : null;
+    if (!complement || !paymentComplementId) {
       return;
     }
 
@@ -213,7 +217,7 @@ export class PaymentComplementOperationsPageComponent {
     this.stampXmlContent.set(null);
 
     try {
-      this.stampXmlContent.set(await firstValueFrom(this.paymentComplementsApi.getStampXml(complement.id)));
+      this.stampXmlContent.set(await firstValueFrom(this.paymentComplementsApi.getStampXml(paymentComplementId)));
     } catch (error) {
       this.stampXmlError.set(extractErrorMessage(error));
     } finally {
@@ -234,8 +238,15 @@ export class PaymentComplementOperationsPageComponent {
       this.complement.set(complement);
       this.showStampDetail.set(false);
       this.closeStampXml();
-      await this.loadStamp(complement.id);
-      await this.loadCancellation(complement.id);
+      const paymentComplementId = resolvePaymentComplementId(complement);
+      if (!paymentComplementId) {
+        this.stampEvidence.set(null);
+        this.cancellation.set(null);
+        return;
+      }
+
+      await this.loadStamp(paymentComplementId);
+      await this.loadCancellation(paymentComplementId);
     } catch {
       this.complement.set(null);
     }
@@ -280,4 +291,8 @@ function parseNumber(value: string | null): number | null {
 
 function extractErrorMessage(error: unknown): string {
   return extractApiErrorMessage(error);
+}
+
+function resolvePaymentComplementId(value: { id?: number | null; paymentComplementId?: number | null; paymentComplementDocumentId?: number | null }): number | null {
+  return value.id ?? value.paymentComplementId ?? value.paymentComplementDocumentId ?? null;
 }

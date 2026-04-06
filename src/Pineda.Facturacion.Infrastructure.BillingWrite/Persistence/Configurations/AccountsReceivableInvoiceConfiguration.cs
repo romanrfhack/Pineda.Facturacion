@@ -32,6 +32,10 @@ public class AccountsReceivableInvoiceConfiguration : IEntityTypeConfiguration<A
             .HasColumnName("external_rep_base_document_id")
             .IsRequired(false);
 
+        builder.Property(x => x.FiscalReceiverId)
+            .HasColumnName("fiscal_receiver_id")
+            .IsRequired(false);
+
         builder.Property(x => x.Status)
             .HasColumnName("status")
             .HasConversion<int>()
@@ -102,6 +106,12 @@ public class AccountsReceivableInvoiceConfiguration : IEntityTypeConfiguration<A
         builder.HasIndex(x => x.ExternalRepBaseDocumentId)
             .IsUnique();
 
+        builder.HasIndex(x => x.FiscalReceiverId);
+
+        builder.HasIndex(x => x.Status);
+
+        builder.HasIndex(x => x.DueAtUtc);
+
         builder.HasOne<BillingDocument>()
             .WithMany()
             .HasForeignKey(x => x.BillingDocumentId)
@@ -115,6 +125,11 @@ public class AccountsReceivableInvoiceConfiguration : IEntityTypeConfiguration<A
         builder.HasOne<FiscalStamp>()
             .WithMany()
             .HasForeignKey(x => x.FiscalStampId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne<FiscalReceiver>()
+            .WithMany()
+            .HasForeignKey(x => x.FiscalReceiverId)
             .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasOne<ExternalRepBaseDocument>()
