@@ -137,6 +137,7 @@ app.MapSalesOrdersEndpoints();
 app.MapBillingDocumentsEndpoints();
 app.MapIssuerProfileEndpoints();
 app.MapFiscalReceiversEndpoints();
+app.MapFiscalSatCatalogEndpoints();
 app.MapProductFiscalProfilesEndpoints();
 app.MapFiscalImportEndpoints();
 app.MapFiscalDocumentsEndpoints();

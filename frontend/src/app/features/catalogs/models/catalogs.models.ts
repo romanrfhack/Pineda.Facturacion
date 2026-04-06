@@ -125,6 +125,13 @@ export interface ProductFiscalProfile extends ProductFiscalProfileSearchItem {
   updatedAtUtc: string;
 }
 
+export interface SatProductServiceSearchItem {
+  code: string;
+  description: string;
+  displayText: string;
+  matchKind: 'exactCode' | 'prefixCode' | 'text' | string;
+}
+
 export interface UpsertProductFiscalProfileRequest {
   internalCode: string;
   description: string;

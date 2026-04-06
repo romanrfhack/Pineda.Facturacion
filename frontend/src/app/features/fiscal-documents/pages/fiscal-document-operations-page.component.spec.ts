@@ -7,6 +7,7 @@ import { FeedbackService } from '../../../core/ui/feedback.service';
 import { PermissionService } from '../../../core/auth/permission.service';
 import { ProductFiscalProfilesApiService } from '../../catalogs/infrastructure/product-fiscal-profiles-api.service';
 import { FiscalReceiversApiService } from '../../catalogs/infrastructure/fiscal-receivers-api.service';
+import { SatProductServicesApiService } from '../../catalogs/infrastructure/sat-product-services-api.service';
 import { OrdersApiService } from '../../orders/infrastructure/orders-api.service';
 
 describe('FiscalDocumentOperationsPageComponent', () => {
@@ -270,6 +271,25 @@ describe('FiscalDocumentOperationsPageComponent', () => {
               id: 15
             })),
             ...productApiOverrides
+          }
+        },
+        {
+          provide: SatProductServicesApiService,
+          useValue: {
+            search: vi.fn().mockReturnValue(of([
+              {
+                code: '40161513',
+                description: 'Filtro de aceite',
+                displayText: '40161513 — Filtro de aceite',
+                matchKind: 'text'
+              },
+              {
+                code: '01010101',
+                description: 'No existe en el catálogo',
+                displayText: '01010101 — No existe en el catálogo',
+                matchKind: 'exactCode'
+              }
+            ]))
           }
         },
         {
@@ -1698,6 +1718,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(feedback.show).toHaveBeenCalledWith('warning', 'Falta el perfil fiscal del producto MTE-4259. Debes darlo de alta para continuar.');
     expect(fixture.componentInstance['missingProductFiscalProfile']()?.description).toBe('FILTRO DE ACEITE');
     expect(fixture.componentInstance['missingProductFiscalProfile']()?.draft.description).toBe('FILTRO DE ACEITE');
+    expect(fixture.componentInstance['missingProductFiscalProfile']()?.draft.satProductServiceCode).toBe('');
   });
 
   it('creates the missing product fiscal profile and retries preparation', async () => {
@@ -1789,7 +1810,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     await fixture.componentInstance['saveMissingProductProfile']({
       internalCode: 'MTE-4259',
       description: 'FILTRO DE ACEITE',
-      satProductServiceCode: '01010101',
+      satProductServiceCode: '40161513',
       satUnitCode: 'H87',
       taxObjectCode: '02',
       vatRate: 0.16,
@@ -1800,7 +1821,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(create).toHaveBeenCalledWith({
       internalCode: 'MTE-4259',
       description: 'FILTRO DE ACEITE',
-      satProductServiceCode: '01010101',
+      satProductServiceCode: '40161513',
       satUnitCode: 'H87',
       taxObjectCode: '02',
       vatRate: 0.16,
@@ -1810,6 +1831,32 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(prepareFiscalDocument).toHaveBeenCalledTimes(2);
     expect(feedback.show).toHaveBeenCalledWith('success', 'Perfil fiscal del producto MTE-4259 creado.');
     expect(feedback.show).toHaveBeenCalledWith('success', 'Documento fiscal preparado.');
+  });
+
+  it('keeps SAT product selection pending in the recovery form until the user chooses one explicitly', async () => {
+    const fixture = await configure(
+      {
+        prepareFiscalDocument: vi.fn().mockReturnValue(throwError(() => ({
+          status: 400,
+          error: {
+            outcome: 'MissingProductFiscalProfile',
+            isSuccess: false,
+            errorMessage: "No active product fiscal profile exists for item line '1' and internal code 'MTE-4259'.",
+            billingDocumentId: 30,
+            fiscalDocumentId: null,
+            status: null
+          }
+        })))
+      },
+      { id: null, billingDocumentId: '30' }
+    );
+
+    fixture.componentInstance['selectedReceiverId'] = 9;
+    await fixture.componentInstance['prepare']();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Pendiente de seleccionar un producto/servicio SAT.');
+    expect(fixture.nativeElement.textContent).toContain('Usar 01010101 explícitamente');
   });
 
   it('keeps a visible recovery action after the user cancels the auto-opened form', async () => {

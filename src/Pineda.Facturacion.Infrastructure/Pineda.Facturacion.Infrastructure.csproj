@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <EmbeddedResource Include="..\..\sat_cfdi_40_catalogos_y_compatibilidad_receptor.json" LogicalName="Pineda.Facturacion.Infrastructure.Resources.sat_cfdi_40_catalogos_y_compatibilidad_receptor.json" />
+    <EmbeddedResource Include="..\..\sat_product_service_catalog.json" LogicalName="Pineda.Facturacion.Infrastructure.Resources.sat_product_service_catalog.json" />
   </ItemGroup>
 
   <ItemGroup>
