@@ -13,7 +13,7 @@
     "e2e": "playwright test",
     "e2e:headed": "playwright test --headed",
     "e2e:debug": "playwright test --debug",
-    "e2e:ci": "playwright test --reporter=line"
+    "e2e:ci": "playwright test --reporter=line --workers=1 --retries=2"
   },
   "private": true,
   "packageManager": "npm@10.9.4",

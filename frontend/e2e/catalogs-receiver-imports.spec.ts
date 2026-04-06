@@ -2,6 +2,8 @@ import { expect, test } from '@playwright/test';
 import { LoginPage } from './support/login-page';
 import { mockCatalogReceiverImportsBackend } from './support/mock-catalogs';
 
+const APP_BOOTSTRAP_TIMEOUT_MS = 15000;
+
 test('login then apply all eligible receiver import rows', async ({ page }) => {
   await mockCatalogReceiverImportsBackend(page);
 
@@ -9,7 +11,8 @@ test('login then apply all eligible receiver import rows', async ({ page }) => {
   await loginPage.open();
   await loginPage.signIn('supervisor', 'Secret123!');
 
-  await page.goto('/app/catalogs/imports/receivers');
+  await page.goto('/app/catalogs/imports/receivers', { waitUntil: 'commit' });
+  await expect(page.getByLabel('Cargar lote por id')).toBeVisible({ timeout: APP_BOOTSTRAP_TIMEOUT_MS });
   await page.getByLabel('Cargar lote por id').fill('22');
   await page.getByRole('button', { name: 'Cargar lote' }).click();
 

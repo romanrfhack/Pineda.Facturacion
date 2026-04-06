@@ -6,6 +6,8 @@ import {
   mockStampUnavailableFiscalDocument
 } from '../support/mock-operational-scenarios';
 
+const APP_BOOTSTRAP_TIMEOUT_MS = 15000;
+
 test('operator sees read-only fiscal document actions', async ({ page }) => {
   await mockOperatorReadOnlyFiscalDocument(page);
 
@@ -13,8 +15,8 @@ test('operator sees read-only fiscal document actions', async ({ page }) => {
   await loginPage.open();
   await loginPage.signIn('operator', 'Secret123!');
 
-  await page.goto('/app/fiscal-documents/405');
-  await expect(page.getByText('UUID-FISCAL-RO', { exact: true })).toBeVisible();
+  await page.goto('/app/fiscal-documents/405', { waitUntil: 'commit' });
+  await expect(page.getByText('UUID-FISCAL-RO', { exact: true })).toBeVisible({ timeout: APP_BOOTSTRAP_TIMEOUT_MS });
   await expect(page.getByRole('button', { name: 'Timbrar' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Cancelar' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Actualizar estatus' })).toHaveCount(0);
@@ -28,7 +30,7 @@ test('supervisor sees provider unavailable feedback when invoice stamp fails', a
   await loginPage.signIn('supervisor', 'Secret123!');
 
   await page.goto('/app/fiscal-documents/406', { waitUntil: 'commit' });
-  await expect(page.getByText('Aún no hay evidencia de timbrado disponible')).toBeVisible();
+  await expect(page.getByText('Aún no hay evidencia de timbrado disponible')).toBeVisible({ timeout: APP_BOOTSTRAP_TIMEOUT_MS });
   await page.getByRole('button', { name: 'Timbrar' }).click();
   await expect(page.getByText('PAC no disponible. Intenta de nuevo después de verificar el estatus.')).toBeVisible();
 });
@@ -40,7 +42,8 @@ test('mixed receivers validation is shown during payment complement preparation'
   await loginPage.open();
   await loginPage.signIn('supervisor', 'Secret123!');
 
-  await page.goto('/app/payment-complements?paymentId=703', { waitUntil: 'domcontentloaded' });
+  await page.goto('/app/payment-complements?paymentId=703', { waitUntil: 'commit' });
+  await expect(page.getByRole('button', { name: 'Preparar complemento de pago' })).toBeVisible({ timeout: APP_BOOTSTRAP_TIMEOUT_MS });
   await page.getByRole('button', { name: 'Preparar complemento de pago' }).click();
   await expect(page.getByText('Las facturas aplicadas pertenecen a receptores distintos.')).toBeVisible();
 });

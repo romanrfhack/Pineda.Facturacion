@@ -108,16 +108,15 @@ export async function mockInvoiceStampingJourney(page: Page): Promise<void> {
   });
 
   await page.route('**/api/fiscal-documents/401/stamp', async (route) => {
-    if (route.request().method() === 'GET') {
-      if (!stampEvidence) {
-        await route.fulfill({ status: 404, json: { errorMessage: 'No encontrado.' } });
-        return;
-      }
-
-      await route.fulfill({ json: stampEvidence });
+    if (!stampEvidence) {
+      await route.fulfill({ status: 404, json: { errorMessage: 'No encontrado.' } });
       return;
     }
 
+    await route.fulfill({ json: stampEvidence });
+  });
+
+  await page.route('**/api/fiscal-documents/401/stamp-and-email', async (route) => {
     fiscalDocumentStatus = 'Stamped';
     stampEvidence = buildStampEvidence({
       fiscalDocumentId: 401,
@@ -127,15 +126,18 @@ export async function mockInvoiceStampingJourney(page: Page): Promise<void> {
 
     await route.fulfill({
       json: {
-        outcome: 'Stamped',
-        isSuccess: true,
         fiscalDocumentId: 401,
+        stamped: true,
         fiscalDocumentStatus: 'Stamped',
-        fiscalStampId: 501,
-        uuid: 'UUID-FISCAL-7101',
-        stampedAtUtc: '2026-03-20T13:00:00Z',
-        providerName: 'FacturaloPlus',
-        providerTrackingId: 'TRACK-FISCAL-7101'
+        providerMessage: 'Documento fiscal timbrado correctamente.',
+        email: {
+          attempted: false,
+          sent: false,
+          status: 'not_attempted',
+          recipients: [],
+          invalidRecipients: [],
+          message: null
+        }
       }
     });
   });
@@ -201,6 +203,45 @@ export async function mockAccountsReceivableJourney(page: Page): Promise<void> {
         accountsReceivableInvoice: invoice
       }
     });
+  });
+
+  await page.route('**/api/accounts-receivable/invoices/601', async (route) => {
+    if (!invoiceExists) {
+      await route.fulfill({ status: 404, json: { errorMessage: 'No encontrado.' } });
+      return;
+    }
+
+    await route.fulfill({ json: invoice });
+  });
+
+  await page.route('**/api/accounts-receivable/invoices?**', async (route) => {
+    const currentInvoiceSnapshot = invoice as { paidTotal: number; outstandingBalance: number; status: string } | null;
+    const currentInvoice = invoiceExists
+      ? [{
+          accountsReceivableInvoiceId: 601,
+          fiscalDocumentId: 401,
+          fiscalReceiverId: 9,
+          receiverRfc: 'BBB010101BBB',
+          receiverLegalName: 'Receiver One',
+          fiscalSeries: 'A',
+          fiscalFolio: '401',
+          fiscalUuid: 'UUID-FISCAL-411',
+          total: 100,
+          paidTotal: currentInvoiceSnapshot?.paidTotal ?? 0,
+          outstandingBalance: currentInvoiceSnapshot?.outstandingBalance ?? 100,
+          issuedAtUtc: '2026-03-20T12:00:00Z',
+          dueAtUtc: '2026-03-27T12:00:00Z',
+          status: currentInvoiceSnapshot?.status ?? 'Open',
+          daysPastDue: 0,
+          agingBucket: 'Current',
+          hasPendingCommitment: false,
+          nextCommitmentDateUtc: null,
+          nextFollowUpAtUtc: null,
+          followUpPending: false
+        }]
+      : [];
+
+    await route.fulfill({ json: { items: currentInvoice } });
   });
 
   await page.route('**/api/accounts-receivable/payments', async (route) => {
@@ -466,19 +507,24 @@ export async function mockStampUnavailableFiscalDocument(page: Page): Promise<vo
     });
   });
   await page.route('**/api/fiscal-documents/406/stamp', async (route) => {
-    if (route.request().method() === 'GET') {
-      await route.fulfill({ status: 404, json: { errorMessage: 'No encontrado.' } });
-      return;
-    }
-
+    await route.fulfill({ status: 404, json: { errorMessage: 'No encontrado.' } });
+  });
+  await page.route('**/api/fiscal-documents/406/stamp-and-email', async (route) => {
     await route.fulfill({
       status: 503,
       json: {
-        outcome: 'ProviderUnavailable',
-        isSuccess: false,
-        errorMessage: 'PAC provider is unavailable. Retry after checking status.',
         fiscalDocumentId: 406,
-        fiscalDocumentStatus: 'ReadyForStamping'
+        stamped: false,
+        fiscalDocumentStatus: 'ReadyForStamping',
+        errorMessage: 'PAC provider is unavailable. Retry after checking status.',
+        email: {
+          attempted: false,
+          sent: false,
+          status: 'not_attempted',
+          recipients: [],
+          invalidRecipients: [],
+          message: null
+        }
       }
     });
   });
