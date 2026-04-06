@@ -33,7 +33,8 @@ import {
   SyncFiscalDocumentSpecialFieldsResponse,
   UpdateBillingDocumentOrderAssociationResponse,
   StampFiscalDocumentRequest,
-  StampFiscalDocumentResponse
+  StampFiscalDocumentResponse,
+  StampAndEmailFiscalDocumentResponse
 } from '../models/fiscal-documents.models';
 
 @Injectable({ providedIn: 'root' })
@@ -117,6 +118,10 @@ export class FiscalDocumentsApiService {
 
   stampFiscalDocument(fiscalDocumentId: number, request: StampFiscalDocumentRequest): Observable<StampFiscalDocumentResponse> {
     return this.http.post<StampFiscalDocumentResponse>(buildApiUrl(`/fiscal-documents/${fiscalDocumentId}/stamp`), request);
+  }
+
+  stampAndEmailFiscalDocument(fiscalDocumentId: number, request: StampFiscalDocumentRequest): Observable<StampAndEmailFiscalDocumentResponse> {
+    return this.http.post<StampAndEmailFiscalDocumentResponse>(buildApiUrl(`/fiscal-documents/${fiscalDocumentId}/stamp-and-email`), request);
   }
 
   syncFiscalDocumentSpecialFields(

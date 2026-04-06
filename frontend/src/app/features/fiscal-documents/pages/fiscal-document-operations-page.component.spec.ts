@@ -209,6 +209,22 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         specialFieldCount: 0
       })),
       stampFiscalDocument: vi.fn(),
+      stampAndEmailFiscalDocument: vi.fn().mockReturnValue(of({
+        fiscalDocumentId: 40,
+        stamped: true,
+        fiscalDocumentStatus: 'Stamped',
+        providerMessage: 'Stamped',
+        supportMessage: null,
+        errorMessage: null,
+        email: {
+          attempted: true,
+          sent: true,
+          status: 'sent',
+          recipients: ['cliente@example.com'],
+          invalidRecipients: [],
+          message: 'El correo fue enviado automáticamente a: cliente@example.com.'
+        }
+      })),
       cancelFiscalDocument: vi.fn(),
       refreshStatus: vi.fn(),
       queryRemoteStamp: vi.fn(),
@@ -371,12 +387,12 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Aún no hay evidencia de timbrado disponible');
   });
 
-  it('shows PDF and email actions only for stamped documents', async () => {
+  it('shows PDF actions for stamped documents without the persistent email action', async () => {
     const fixture = await configure();
 
     expect(fixture.nativeElement.textContent).toContain('Ver PDF');
     expect(fixture.nativeElement.textContent).toContain('Descargar PDF');
-    expect(fixture.nativeElement.textContent).toContain('Enviar por correo');
+    expect(fixture.nativeElement.textContent).not.toContain('Enviar por correo');
   });
 
   it('downloads the stamped PDF with RFC plus series-folio plus receiver RFC', async () => {
@@ -453,6 +469,225 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(fixture.componentInstance['emailRecipientsInput']).toBe('cliente@example.com');
     expect(fixture.componentInstance['emailSubject']).toBe('CFDI timbrado A8');
     expect(fixture.componentInstance['emailBody']).toContain('XML y PDF');
+  });
+
+  it('stamps and auto-sends email with a combined confirmation message', async () => {
+    const stampAndEmailFiscalDocument = vi.fn().mockReturnValue(of({
+      fiscalDocumentId: 40,
+      stamped: true,
+      fiscalDocumentStatus: 'Stamped',
+      providerMessage: 'Stamped',
+      supportMessage: null,
+      errorMessage: null,
+      email: {
+        attempted: true,
+        sent: true,
+        status: 'sent',
+        recipients: ['cliente@example.com'],
+        invalidRecipients: [],
+        message: 'El correo fue enviado automáticamente a: cliente@example.com.'
+      }
+    }));
+    const readyDocument = {
+      id: 40,
+      billingDocumentId: 30,
+      issuerProfileId: 1,
+      fiscalReceiverId: 9,
+      status: 'ReadyForStamping',
+      cfdiVersion: '4.0',
+      documentType: 'I',
+      series: 'A',
+      folio: '31787',
+      issuedAtUtc: '2026-03-20T12:00:00Z',
+      currencyCode: 'MXN',
+      exchangeRate: 1,
+      paymentMethodSat: 'PPD',
+      paymentFormSat: '99',
+      paymentCondition: 'CREDITO',
+      isCreditSale: true,
+      creditDays: 7,
+      issuerRfc: 'AAA010101AAA',
+      issuerLegalName: 'Issuer SA',
+      issuerFiscalRegimeCode: '601',
+      issuerPostalCode: '01000',
+      pacEnvironment: 'Sandbox',
+      hasCertificateReference: true,
+      hasPrivateKeyReference: true,
+      hasPrivateKeyPasswordReference: true,
+      receiverRfc: 'BBB010101BBB',
+      receiverLegalName: 'Receiver One',
+      receiverFiscalRegimeCode: '601',
+      receiverCfdiUseCode: 'G03',
+      receiverPostalCode: '02000',
+      receiverCountryCode: 'MX',
+      receiverForeignTaxRegistration: null,
+      subtotal: 100,
+      discountTotal: 0,
+      taxTotal: 0,
+      total: 100,
+      items: []
+    };
+    const stampedDocument = { ...readyDocument, status: 'Stamped' };
+    const fixture = await configure({
+      stampAndEmailFiscalDocument,
+      getFiscalDocumentById: vi.fn()
+        .mockReturnValue(of(stampedDocument))
+        .mockReturnValueOnce(of(readyDocument))
+        .mockReturnValueOnce(of(readyDocument))
+    });
+
+    await fixture.componentInstance['stamp']();
+
+    expect(stampAndEmailFiscalDocument).toHaveBeenCalledWith(40, { retryRejected: false });
+    expect(fixture.componentInstance['lastOperationMessage']()).toContain('correo fue enviado automáticamente');
+    expect(fixture.componentInstance['showEmailComposer']()).toBe(false);
+  });
+
+  it('opens the fallback composer automatically when the receiver email is missing', async () => {
+    const stampAndEmailFiscalDocument = vi.fn().mockReturnValue(of({
+      fiscalDocumentId: 40,
+      stamped: true,
+      fiscalDocumentStatus: 'Stamped',
+      providerMessage: 'Stamped',
+      supportMessage: null,
+      errorMessage: null,
+      email: {
+        attempted: false,
+        sent: false,
+        status: 'missing',
+        recipients: [],
+        invalidRecipients: [],
+        message: 'El receptor no tiene un email registrado.'
+      }
+    }));
+    const readyDocument = {
+      id: 40, billingDocumentId: 30, issuerProfileId: 1, fiscalReceiverId: 9, status: 'ReadyForStamping', cfdiVersion: '4.0',
+      documentType: 'I', series: 'A', folio: '31787', issuedAtUtc: '2026-03-20T12:00:00Z', currencyCode: 'MXN', exchangeRate: 1,
+      paymentMethodSat: 'PPD', paymentFormSat: '99', paymentCondition: 'CREDITO', isCreditSale: true, creditDays: 7,
+      issuerRfc: 'AAA010101AAA', issuerLegalName: 'Issuer SA', issuerFiscalRegimeCode: '601', issuerPostalCode: '01000',
+      pacEnvironment: 'Sandbox', hasCertificateReference: true, hasPrivateKeyReference: true, hasPrivateKeyPasswordReference: true,
+      receiverRfc: 'BBB010101BBB', receiverLegalName: 'Receiver One', receiverFiscalRegimeCode: '601', receiverCfdiUseCode: 'G03',
+      receiverPostalCode: '02000', receiverCountryCode: 'MX', receiverForeignTaxRegistration: null, subtotal: 100, discountTotal: 0, taxTotal: 0, total: 100, items: []
+    };
+    const stampedDocument = { ...readyDocument, status: 'Stamped' };
+    const getFiscalDocumentById = vi.fn()
+      .mockReturnValue(of(stampedDocument))
+      .mockReturnValueOnce(of(readyDocument))
+      .mockReturnValueOnce(of(readyDocument));
+    const getEmailDraft = vi.fn().mockReturnValue(of({
+      outcome: 'Found',
+      isSuccess: true,
+      defaultRecipientEmail: null,
+      suggestedSubject: 'CFDI timbrado A8',
+      suggestedBody: 'Adjuntamos XML y PDF.'
+    }));
+    const fixture = await configure({ stampAndEmailFiscalDocument, getFiscalDocumentById, getEmailDraft });
+
+    await fixture.componentInstance['stamp']();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['showEmailComposer']()).toBe(true);
+    expect(fixture.componentInstance['emailRecipientsInput']).toBe('');
+    expect(fixture.componentInstance['lastOperationMessage']()).toContain('no tiene un email registrado');
+    expect(fixture.nativeElement.textContent).toContain('Continuar sin enviar');
+  });
+
+  it('opens the fallback composer automatically when the receiver email is invalid', async () => {
+    const stampAndEmailFiscalDocument = vi.fn().mockReturnValue(of({
+      fiscalDocumentId: 40,
+      stamped: true,
+      fiscalDocumentStatus: 'Stamped',
+      providerMessage: 'Stamped',
+      supportMessage: null,
+      errorMessage: null,
+      email: {
+        attempted: false,
+        sent: false,
+        status: 'invalid',
+        recipients: [],
+        invalidRecipients: ['correo-invalido'],
+        message: 'El email registrado del receptor no es válido.'
+      }
+    }));
+    const readyDocument = {
+      id: 40, billingDocumentId: 30, issuerProfileId: 1, fiscalReceiverId: 9, status: 'ReadyForStamping', cfdiVersion: '4.0',
+      documentType: 'I', series: 'A', folio: '31787', issuedAtUtc: '2026-03-20T12:00:00Z', currencyCode: 'MXN', exchangeRate: 1,
+      paymentMethodSat: 'PPD', paymentFormSat: '99', paymentCondition: 'CREDITO', isCreditSale: true, creditDays: 7,
+      issuerRfc: 'AAA010101AAA', issuerLegalName: 'Issuer SA', issuerFiscalRegimeCode: '601', issuerPostalCode: '01000',
+      pacEnvironment: 'Sandbox', hasCertificateReference: true, hasPrivateKeyReference: true, hasPrivateKeyPasswordReference: true,
+      receiverRfc: 'BBB010101BBB', receiverLegalName: 'Receiver One', receiverFiscalRegimeCode: '601', receiverCfdiUseCode: 'G03',
+      receiverPostalCode: '02000', receiverCountryCode: 'MX', receiverForeignTaxRegistration: null, subtotal: 100, discountTotal: 0, taxTotal: 0, total: 100, items: []
+    };
+    const stampedDocument = { ...readyDocument, status: 'Stamped' };
+    const getFiscalDocumentById = vi.fn()
+      .mockReturnValue(of(stampedDocument))
+      .mockReturnValueOnce(of(readyDocument))
+      .mockReturnValueOnce(of(readyDocument));
+    const getEmailDraft = vi.fn().mockReturnValue(of({
+      outcome: 'Found',
+      isSuccess: true,
+      defaultRecipientEmail: 'correo-invalido',
+      suggestedSubject: 'CFDI timbrado A8',
+      suggestedBody: 'Adjuntamos XML y PDF.'
+    }));
+    const fixture = await configure({ stampAndEmailFiscalDocument, getFiscalDocumentById, getEmailDraft });
+
+    await fixture.componentInstance['stamp']();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['showEmailComposer']()).toBe(true);
+    expect(fixture.componentInstance['emailRecipientsInput']).toBe('correo-invalido');
+    expect(fixture.componentInstance['lastOperationMessage']()).toContain('no es válido');
+    expect(fixture.nativeElement.textContent).toContain('Continuar sin enviar');
+  });
+
+  it('opens the fallback composer automatically when auto-email fails and keeps manual send available', async () => {
+    const stampAndEmailFiscalDocument = vi.fn().mockReturnValue(of({
+      fiscalDocumentId: 40,
+      stamped: true,
+      fiscalDocumentStatus: 'Stamped',
+      providerMessage: 'Stamped',
+      supportMessage: null,
+      errorMessage: null,
+      email: {
+        attempted: true,
+        sent: false,
+        status: 'failed',
+        recipients: ['cliente@example.com'],
+        invalidRecipients: [],
+        message: 'SMTP no disponible.'
+      }
+    }));
+    const readyDocument = {
+      id: 40, billingDocumentId: 30, issuerProfileId: 1, fiscalReceiverId: 9, status: 'ReadyForStamping', cfdiVersion: '4.0',
+      documentType: 'I', series: 'A', folio: '31787', issuedAtUtc: '2026-03-20T12:00:00Z', currencyCode: 'MXN', exchangeRate: 1,
+      paymentMethodSat: 'PPD', paymentFormSat: '99', paymentCondition: 'CREDITO', isCreditSale: true, creditDays: 7,
+      issuerRfc: 'AAA010101AAA', issuerLegalName: 'Issuer SA', issuerFiscalRegimeCode: '601', issuerPostalCode: '01000',
+      pacEnvironment: 'Sandbox', hasCertificateReference: true, hasPrivateKeyReference: true, hasPrivateKeyPasswordReference: true,
+      receiverRfc: 'BBB010101BBB', receiverLegalName: 'Receiver One', receiverFiscalRegimeCode: '601', receiverCfdiUseCode: 'G03',
+      receiverPostalCode: '02000', receiverCountryCode: 'MX', receiverForeignTaxRegistration: null, subtotal: 100, discountTotal: 0, taxTotal: 0, total: 100, items: []
+    };
+    const stampedDocument = { ...readyDocument, status: 'Stamped' };
+    const getFiscalDocumentById = vi.fn()
+      .mockReturnValue(of(stampedDocument))
+      .mockReturnValueOnce(of(readyDocument))
+      .mockReturnValueOnce(of(readyDocument));
+    const fixture = await configure({ stampAndEmailFiscalDocument, getFiscalDocumentById });
+
+    await fixture.componentInstance['stamp']();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['showEmailComposer']()).toBe(true);
+    expect(fixture.componentInstance['emailRecipientsInput']).toBe('cliente@example.com');
+    expect(fixture.componentInstance['lastOperationMessage']()).toContain('no fue posible enviar el correo');
+
+    fixture.componentInstance['closeEmailComposer']();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Completar envío por correo');
   });
 
   it('sends the stamped CFDI by email and shows confirmation', async () => {
@@ -1096,20 +1331,28 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       fiscalDocumentStatus: 'StampingRejected',
       specialFieldCount: 3
     }));
-    const stampFiscalDocument = vi.fn().mockReturnValue(of({
-      outcome: 'Stamped',
-      isSuccess: true,
+    const stampAndEmailFiscalDocument = vi.fn().mockReturnValue(of({
       fiscalDocumentId: 40,
+      stamped: true,
       fiscalDocumentStatus: 'Stamped',
-      fiscalStampId: 80,
-      uuid: 'UUID-123'
+      providerMessage: 'Stamped',
+      supportMessage: null,
+      errorMessage: null,
+      email: {
+        attempted: false,
+        sent: false,
+        status: 'missing',
+        recipients: [],
+        invalidRecipients: [],
+        message: 'El receptor no tiene un email registrado.'
+      }
     }));
 
     const fixture = await configure(
       {
         getFiscalDocumentById: vi.fn().mockReturnValue(of(rejectedDocument)),
         syncFiscalDocumentSpecialFields,
-        stampFiscalDocument
+        stampAndEmailFiscalDocument
       },
       undefined,
       undefined,
@@ -1210,7 +1453,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         { fieldCode: 'AÑO', value: '2026' }
       ]
     });
-    expect(stampFiscalDocument).toHaveBeenCalledWith(40, { retryRejected: true });
+    expect(stampAndEmailFiscalDocument).toHaveBeenCalledWith(40, { retryRejected: true });
   });
 
   it('syncs current fiscal document special fields on demand', async () => {

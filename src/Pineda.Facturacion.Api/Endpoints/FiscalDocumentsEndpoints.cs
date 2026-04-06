@@ -45,6 +45,16 @@ public static class FiscalDocumentsEndpoints
             .Produces<StampFiscalDocumentResponse>(StatusCodes.Status409Conflict)
             .Produces<StampFiscalDocumentResponse>(StatusCodes.Status503ServiceUnavailable);
 
+        group.MapPost("/{fiscalDocumentId:long}/stamp-and-email", StampAndEmailFiscalDocumentAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
+            .WithName("StampAndEmailFiscalDocument")
+            .WithSummary("Stamp a fiscal document and attempt the automatic email delivery flow used by Documentos fiscales")
+            .Produces<StampAndEmailFiscalDocumentResponse>(StatusCodes.Status200OK)
+            .Produces<StampAndEmailFiscalDocumentResponse>(StatusCodes.Status400BadRequest)
+            .Produces<StampAndEmailFiscalDocumentResponse>(StatusCodes.Status404NotFound)
+            .Produces<StampAndEmailFiscalDocumentResponse>(StatusCodes.Status409Conflict)
+            .Produces<StampAndEmailFiscalDocumentResponse>(StatusCodes.Status503ServiceUnavailable);
+
         group.MapPost("/{fiscalDocumentId:long}/special-fields/sync", SyncFiscalDocumentSpecialFieldsAsync)
             .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
             .WithName("SyncFiscalDocumentSpecialFields")
@@ -280,73 +290,85 @@ public static class FiscalDocumentsEndpoints
             RetryAdvice = result.RetryAdvice
         };
 
-        await AuditApiHelper.RecordAsync(
-            auditService,
-            "FiscalDocument.Stamp",
-            "FiscalDocument",
-            fiscalDocumentId.ToString(),
-            result.Outcome.ToString(),
-            new { fiscalDocumentId, retryRejected = request?.RetryRejected ?? false },
-            new
-            {
-                result.FiscalStampId,
-                result.Uuid,
-                result.FiscalDocumentStatus,
-                result.ProviderName,
-                result.ProviderTrackingId,
-                result.ProviderCode,
-                result.ProviderMessage,
-                result.ErrorCode,
-                result.SupportMessage
-            },
-            result.ErrorMessage,
-            cancellationToken);
-
-        if (result.Outcome == StampFiscalDocumentOutcome.Stamped)
-        {
-            try
-            {
-                var ensureResult = await ensureAccountsReceivableInvoiceForFiscalDocumentService.ExecuteAsync(
-                    new EnsureAccountsReceivableInvoiceForFiscalDocumentCommand
-                    {
-                        FiscalDocumentId = fiscalDocumentId
-                    },
-                    cancellationToken);
-
-                await AuditApiHelper.RecordAsync(
-                    auditService,
-                    "AccountsReceivableInvoice.EnsureAfterFiscalStamp",
-                    "AccountsReceivableInvoice",
-                    ensureResult.AccountsReceivableInvoice?.Id.ToString() ?? fiscalDocumentId.ToString(),
-                    ensureResult.Outcome.ToString(),
-                    new { fiscalDocumentId },
-                    new
-                    {
-                        invoiceId = ensureResult.AccountsReceivableInvoice?.Id,
-                        ensureResult.AccountsReceivableInvoice?.Status,
-                        ensureResult.AccountsReceivableInvoice?.OutstandingBalance
-                    },
-                    ensureResult.ErrorMessage,
-                    cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                await AuditApiHelper.RecordAsync(
-                    auditService,
-                    "AccountsReceivableInvoice.EnsureAfterFiscalStamp",
-                    "AccountsReceivableInvoice",
-                    fiscalDocumentId.ToString(),
-                    "UnexpectedError",
-                    new { fiscalDocumentId },
-                    null,
-                    ex.Message,
-                    cancellationToken);
-            }
-        }
+        await RecordStampAuditAsync(fiscalDocumentId, request?.RetryRejected ?? false, result, auditService, cancellationToken);
+        await EnsureAccountsReceivableAfterStampAsync(fiscalDocumentId, result.Outcome, ensureAccountsReceivableInvoiceForFiscalDocumentService, auditService, cancellationToken);
 
         return result.Outcome switch
         {
             StampFiscalDocumentOutcome.Stamped => TypedResults.Ok(response),
+            StampFiscalDocumentOutcome.NotFound => TypedResults.NotFound(response),
+            StampFiscalDocumentOutcome.Conflict => TypedResults.Conflict(response),
+            StampFiscalDocumentOutcome.ProviderRejected => TypedResults.Conflict(response),
+            StampFiscalDocumentOutcome.ProviderUnavailable => TypedResults.Json(response, statusCode: StatusCodes.Status503ServiceUnavailable),
+            StampFiscalDocumentOutcome.ValidationFailed => TypedResults.BadRequest(response),
+            _ => TypedResults.BadRequest(response)
+        };
+    }
+
+    private static async Task<Results<Ok<StampAndEmailFiscalDocumentResponse>, BadRequest<StampAndEmailFiscalDocumentResponse>, NotFound<StampAndEmailFiscalDocumentResponse>, Conflict<StampAndEmailFiscalDocumentResponse>, JsonHttpResult<StampAndEmailFiscalDocumentResponse>>> StampAndEmailFiscalDocumentAsync(
+        long fiscalDocumentId,
+        StampFiscalDocumentRequest? request,
+        StampAndEmailFiscalDocumentService service,
+        EnsureAccountsReceivableInvoiceForFiscalDocumentService ensureAccountsReceivableInvoiceForFiscalDocumentService,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(
+            new StampAndEmailFiscalDocumentCommand
+            {
+                FiscalDocumentId = fiscalDocumentId,
+                RetryRejected = request?.RetryRejected ?? false
+            },
+            cancellationToken);
+
+        var response = new StampAndEmailFiscalDocumentResponse
+        {
+            FiscalDocumentId = result.FiscalDocumentId,
+            Stamped = result.Stamped,
+            FiscalDocumentStatus = result.FiscalDocumentStatus?.ToString(),
+            ProviderMessage = result.ProviderMessage,
+            SupportMessage = result.SupportMessage,
+            ErrorMessage = result.ErrorMessage,
+            Email = new StampAndEmailFiscalDocumentEmailResponse
+            {
+                Attempted = result.EmailAttempted,
+                Sent = result.EmailSent,
+                Status = MapEmailStatus(result.EmailStatus),
+                Recipients = result.EmailRecipients,
+                InvalidRecipients = result.InvalidRecipients,
+                Message = result.EmailMessage
+            }
+        };
+
+        await RecordStampAndEmailAuditAsync(fiscalDocumentId, request?.RetryRejected ?? false, result, auditService, cancellationToken);
+        await RecordStampAuditAsync(
+            fiscalDocumentId,
+            request?.RetryRejected ?? false,
+            new StampFiscalDocumentResult
+            {
+                Outcome = result.StampOutcome,
+                IsSuccess = result.IsSuccess,
+                ErrorMessage = result.ErrorMessage,
+                FiscalDocumentId = result.FiscalDocumentId,
+                FiscalDocumentStatus = result.FiscalDocumentStatus,
+                FiscalStampId = result.FiscalStampId,
+                Uuid = result.Uuid,
+                StampedAtUtc = result.StampedAtUtc,
+                ProviderMessage = result.ProviderMessage,
+                SupportMessage = result.SupportMessage
+            },
+            auditService,
+            cancellationToken);
+
+        if (result.Stamped)
+        {
+            await EnsureAccountsReceivableAfterStampAsync(fiscalDocumentId, StampFiscalDocumentOutcome.Stamped, ensureAccountsReceivableInvoiceForFiscalDocumentService, auditService, cancellationToken);
+            await RecordAutomaticEmailAuditAsync(fiscalDocumentId, result, auditService, cancellationToken);
+            return TypedResults.Ok(response);
+        }
+
+        return result.StampOutcome switch
+        {
             StampFiscalDocumentOutcome.NotFound => TypedResults.NotFound(response),
             StampFiscalDocumentOutcome.Conflict => TypedResults.Conflict(response),
             StampFiscalDocumentOutcome.ProviderRejected => TypedResults.Conflict(response),
@@ -1067,6 +1089,155 @@ public static class FiscalDocumentsEndpoints
         };
     }
 
+    private static async Task RecordStampAuditAsync(
+        long fiscalDocumentId,
+        bool retryRejected,
+        StampFiscalDocumentResult result,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "FiscalDocument.Stamp",
+            "FiscalDocument",
+            fiscalDocumentId.ToString(),
+            result.Outcome.ToString(),
+            new { fiscalDocumentId, retryRejected },
+            new
+            {
+                result.FiscalStampId,
+                result.Uuid,
+                result.FiscalDocumentStatus,
+                result.ProviderName,
+                result.ProviderTrackingId,
+                result.ProviderCode,
+                result.ProviderMessage,
+                result.ErrorCode,
+                result.SupportMessage
+            },
+            result.ErrorMessage,
+            cancellationToken);
+    }
+
+    private static async Task EnsureAccountsReceivableAfterStampAsync(
+        long fiscalDocumentId,
+        StampFiscalDocumentOutcome outcome,
+        EnsureAccountsReceivableInvoiceForFiscalDocumentService ensureAccountsReceivableInvoiceForFiscalDocumentService,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        if (outcome != StampFiscalDocumentOutcome.Stamped)
+        {
+            return;
+        }
+
+        try
+        {
+            var ensureResult = await ensureAccountsReceivableInvoiceForFiscalDocumentService.ExecuteAsync(
+                new EnsureAccountsReceivableInvoiceForFiscalDocumentCommand
+                {
+                    FiscalDocumentId = fiscalDocumentId
+                },
+                cancellationToken);
+
+            await AuditApiHelper.RecordAsync(
+                auditService,
+                "AccountsReceivableInvoice.EnsureAfterFiscalStamp",
+                "AccountsReceivableInvoice",
+                ensureResult.AccountsReceivableInvoice?.Id.ToString() ?? fiscalDocumentId.ToString(),
+                ensureResult.Outcome.ToString(),
+                new { fiscalDocumentId },
+                new
+                {
+                    invoiceId = ensureResult.AccountsReceivableInvoice?.Id,
+                    ensureResult.AccountsReceivableInvoice?.Status,
+                    ensureResult.AccountsReceivableInvoice?.OutstandingBalance
+                },
+                ensureResult.ErrorMessage,
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            await AuditApiHelper.RecordAsync(
+                auditService,
+                "AccountsReceivableInvoice.EnsureAfterFiscalStamp",
+                "AccountsReceivableInvoice",
+                fiscalDocumentId.ToString(),
+                "UnexpectedError",
+                new { fiscalDocumentId },
+                null,
+                ex.Message,
+                cancellationToken);
+        }
+    }
+
+    private static async Task RecordStampAndEmailAuditAsync(
+        long fiscalDocumentId,
+        bool retryRejected,
+        StampAndEmailFiscalDocumentResult result,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "FiscalDocument.StampAndEmail",
+            "FiscalDocument",
+            fiscalDocumentId.ToString(),
+            result.StampOutcome.ToString(),
+            new { fiscalDocumentId, retryRejected },
+            new
+            {
+                result.Stamped,
+                FiscalDocumentStatus = result.FiscalDocumentStatus?.ToString(),
+                result.ProviderMessage,
+                result.SupportMessage,
+                EmailAttempted = result.EmailAttempted,
+                EmailSent = result.EmailSent,
+                EmailStatus = MapEmailStatus(result.EmailStatus),
+                result.EmailRecipients,
+                result.InvalidRecipients,
+                result.EmailMessage
+            },
+            result.ErrorMessage,
+            cancellationToken);
+    }
+
+    private static async Task RecordAutomaticEmailAuditAsync(
+        long fiscalDocumentId,
+        StampAndEmailFiscalDocumentResult result,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "FiscalDocument.Email",
+            "FiscalDocument",
+            fiscalDocumentId.ToString(),
+            result.EmailStatus.ToString(),
+            new { fiscalDocumentId, automatic = true },
+            new
+            {
+                result.EmailRecipients,
+                result.InvalidRecipients,
+                result.EmailSentAtUtc,
+                result.EmailMessage
+            },
+            result.EmailStatus == StampAndEmailFiscalDocumentEmailStatus.Sent ? null : result.EmailMessage,
+            cancellationToken);
+    }
+
+    private static string MapEmailStatus(StampAndEmailFiscalDocumentEmailStatus status)
+    {
+        return status switch
+        {
+            StampAndEmailFiscalDocumentEmailStatus.Sent => "sent",
+            StampAndEmailFiscalDocumentEmailStatus.Missing => "missing",
+            StampAndEmailFiscalDocumentEmailStatus.Invalid => "invalid",
+            StampAndEmailFiscalDocumentEmailStatus.Failed => "failed",
+            _ => "not_attempted"
+        };
+    }
+
     private static DateTime EnsureUtc(DateTime value)
     {
         return value.Kind == DateTimeKind.Utc
@@ -1314,6 +1485,27 @@ public static class FiscalDocumentsEndpoints
         public string? SupportMessage { get; init; }
         public string? RawResponseSummaryJson { get; init; }
         public DateTime? CheckedAtUtc { get; init; }
+    }
+
+    public sealed class StampAndEmailFiscalDocumentResponse
+    {
+        public long FiscalDocumentId { get; init; }
+        public bool Stamped { get; init; }
+        public string? FiscalDocumentStatus { get; init; }
+        public string? ProviderMessage { get; init; }
+        public string? SupportMessage { get; init; }
+        public string? ErrorMessage { get; init; }
+        public StampAndEmailFiscalDocumentEmailResponse Email { get; init; } = new();
+    }
+
+    public sealed class StampAndEmailFiscalDocumentEmailResponse
+    {
+        public bool Attempted { get; init; }
+        public bool Sent { get; init; }
+        public string Status { get; init; } = "not_attempted";
+        public IReadOnlyList<string> Recipients { get; init; } = [];
+        public IReadOnlyList<string> InvalidRecipients { get; init; } = [];
+        public string? Message { get; init; }
     }
 
     public sealed class FiscalDocumentEmailDraftResponse

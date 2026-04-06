@@ -91,6 +91,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<GetFiscalDocumentPdfService>();
         services.AddScoped<GetFiscalDocumentEmailDraftService>();
         services.AddScoped<StampFiscalDocumentService>();
+        services.AddScoped<StampAndEmailFiscalDocumentService>();
         services.AddScoped<SendFiscalDocumentEmailService>();
         services.AddScoped<GetFiscalCancellationByFiscalDocumentIdService>();
         services.AddScoped<CancelFiscalDocumentService>();

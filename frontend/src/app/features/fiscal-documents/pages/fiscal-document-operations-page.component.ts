@@ -19,7 +19,8 @@ import {
   IssuerProfileResponse,
   PendingBillingItemResponse,
   PendingCancellationAuthorizationItemResponse,
-  PrepareFiscalDocumentRequest
+  PrepareFiscalDocumentRequest,
+  StampAndEmailFiscalDocumentResponse
 } from '../models/fiscal-documents.models';
 import { FeedbackService } from '../../../core/ui/feedback.service';
 import { PermissionService } from '../../../core/auth/permission.service';
@@ -633,15 +634,19 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
               <button type="button" class="secondary" (click)="downloadStampPdf()" [disabled]="loadingPdf() || sendingEmail()">
                 {{ loadingPdf() ? 'Descargando PDF...' : 'Descargar PDF' }}
               </button>
-              <button type="button" class="secondary" (click)="openEmailComposer()" [disabled]="loadingEmailDraft() || sendingEmail()">
-                {{ loadingEmailDraft() ? 'Cargando envío...' : 'Enviar por correo' }}
-              </button>
             }
             <a [routerLink]="['/app/accounts-receivable']" [queryParams]="{ fiscalDocumentId: currentDocument.id }">Abrir cuentas por cobrar y pagos</a>
           </div>
 
           @if (lastOperationMessage()) {
             <p class="helper">{{ lastOperationMessage() }}</p>
+          }
+          @if (shouldShowEmailFallbackAction()) {
+            <div class="context-actions">
+              <button type="button" class="secondary" (click)="reopenEmailComposerAfterStamp()" [disabled]="loadingEmailDraft() || sendingEmail()">
+                {{ loadingEmailDraft() ? 'Cargando envío...' : 'Completar envío por correo' }}
+              </button>
+            </div>
           }
           @if (!canRefreshCurrentFiscalDocument()) {
             <p class="helper">Actualizar estatus solo está disponible para CFDI timbrados con UUID.</p>
@@ -740,7 +745,7 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
       @if (showEmailComposer()) {
         <section class="card nested-card email-panel">
           <h3>Enviar CFDI por correo</h3>
-          <p class="helper">Se adjuntarán el XML timbrado y el PDF del CFDI.</p>
+          <p class="helper">{{ emailComposerContextMessage() }}</p>
 
           <form class="form-grid" (ngSubmit)="sendEmail()">
             <label class="receiver-selector">
@@ -775,7 +780,7 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
               <button type="submit" [disabled]="sendingEmail() || !hasValidEmailRecipients()">
                 {{ sendingEmail() ? 'Enviando...' : 'Enviar CFDI' }}
               </button>
-              <button type="button" class="secondary" (click)="closeEmailComposer()" [disabled]="sendingEmail()">Cancelar</button>
+              <button type="button" class="secondary" (click)="closeEmailComposer()" [disabled]="sendingEmail()">{{ emailComposerCloseLabel() }}</button>
             </div>
           </form>
         </section>
@@ -1070,6 +1075,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected readonly emailDraft = signal<FiscalDocumentEmailDraftResponse | null>(null);
   protected readonly emailDraftError = signal<string | null>(null);
   protected readonly emailRecipientsError = signal<string | null>(null);
+  protected readonly pendingAutomaticEmailStatus = signal<'missing' | 'invalid' | 'failed' | null>(null);
   protected readonly searchingReceivers = signal(false);
   protected readonly receiverSearchError = signal<string | null>(null);
   protected readonly receiverSearchTouched = signal(false);
@@ -1429,6 +1435,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     this.fiscalDocument.set(null);
     this.stampEvidence.set(null);
     this.cancellation.set(null);
+    this.pendingAutomaticEmailStatus.set(null);
     this.fiscalDocumentId.set(null);
     await this.router.navigate(['/app/fiscal-documents'], { queryParams: {} });
   }
@@ -1862,21 +1869,15 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
         return;
       }
 
-      const response = await firstValueFrom(this.api.stampFiscalDocument(fiscalDocumentId, { retryRejected }));
-      this.lastOperationMessage.set(
-        (response.isSuccess
-          ? retryRejected
-            ? 'Reintento de timbrado ejecutado correctamente.'
-            : 'Documento fiscal timbrado correctamente.'
-          : null)
-          || response.providerMessage
-          || response.supportMessage
-          || response.retryAdvice
-          || response.errorMessage
-          || `Resultado del timbrado: ${getDisplayLabel(response.outcome)}`
-      );
+      const response = await firstValueFrom(this.api.stampAndEmailFiscalDocument(fiscalDocumentId, { retryRejected }));
+      this.pendingAutomaticEmailStatus.set(null);
+      this.lastOperationMessage.set(this.buildStampAndEmailMessage(response, retryRejected));
       await this.loadFiscalDocument(fiscalDocumentId);
       await this.loadStamp(fiscalDocumentId);
+      if (response.stamped && shouldOpenEmailComposerAfterStamp(response.email.status)) {
+        this.pendingAutomaticEmailStatus.set(response.email.status);
+        await this.openEmailComposer(true);
+      }
     });
   }
 
@@ -2049,7 +2050,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     await this.handleStampPdf(true);
   }
 
-  protected async openEmailComposer(): Promise<void> {
+  protected async openEmailComposer(openedAutomatically = false): Promise<void> {
     const fiscalDocumentId = this.fiscalDocumentId();
     if (!fiscalDocumentId || this.loadingEmailDraft() || this.sendingEmail()) {
       return;
@@ -2109,6 +2110,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       }));
 
       this.lastOperationMessage.set(`CFDI enviado correctamente a ${response.recipients.join(', ')}.`);
+      this.pendingAutomaticEmailStatus.set(null);
       this.feedbackService.show('success', 'CFDI enviado por correo correctamente.');
       this.closeEmailComposer();
     } catch (error) {
@@ -2149,6 +2151,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     this.showStampDetail.set(false);
     this.closeStampXml();
     this.closeEmailComposer();
+    this.pendingAutomaticEmailStatus.set(null);
     this.closeRemoveBillingItemDialog();
     const document = await firstValueFrom(this.api.getFiscalDocumentById(fiscalDocumentId));
     this.fiscalDocument.set(document);
@@ -2348,6 +2351,32 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     );
   }
 
+  private buildStampAndEmailMessage(response: StampAndEmailFiscalDocumentResponse, retryRejected: boolean): string {
+    if (!response.stamped) {
+      return response.providerMessage
+        || response.supportMessage
+        || response.errorMessage
+        || (retryRejected
+          ? 'No fue posible reintentar el timbrado.'
+          : 'No fue posible timbrar el documento fiscal.');
+    }
+
+    switch (response.email.status) {
+      case 'sent':
+        return `CFDI timbrado correctamente. El correo fue enviado automáticamente a: ${response.email.recipients.join(', ')}.`;
+      case 'missing':
+        return 'CFDI timbrado correctamente. El receptor no tiene un email registrado.';
+      case 'invalid':
+        return 'CFDI timbrado correctamente. El email registrado del receptor no es válido.';
+      case 'failed':
+        return 'CFDI timbrado correctamente, pero no fue posible enviar el correo.';
+      default:
+        return retryRejected
+          ? 'Reintento de timbrado ejecutado correctamente.'
+          : 'Documento fiscal timbrado correctamente.';
+    }
+  }
+
   private reconcileCancellationAfterOperation(
     response: import('../models/fiscal-documents.models').CancelFiscalDocumentResponse,
     request: CancelFiscalDocumentRequest): void
@@ -2388,6 +2417,28 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
 
   protected canQueryRemoteStamp(): boolean {
     return !!this.stampEvidence()?.uuid;
+  }
+
+  protected shouldShowEmailFallbackAction(): boolean {
+    return this.fiscalDocument()?.status === 'Stamped'
+      && this.pendingAutomaticEmailStatus() !== null
+      && !this.showEmailComposer();
+  }
+
+  protected async reopenEmailComposerAfterStamp(): Promise<void> {
+    await this.openEmailComposer(true);
+  }
+
+  protected emailComposerCloseLabel(): string {
+    return this.pendingAutomaticEmailStatus() === null
+      ? 'Cancelar'
+      : 'Continuar sin enviar';
+  }
+
+  protected emailComposerContextMessage(): string {
+    return this.pendingAutomaticEmailStatus() === null
+      ? 'Se adjuntarán el XML timbrado y el PDF del CFDI.'
+      : 'El CFDI ya quedó timbrado. Puedes capturar o corregir el correo para enviarlo ahora, o continuar sin enviar.';
   }
 
   protected billingItemRemovalValidationError(): string | null {
@@ -2526,6 +2577,10 @@ function parseRecipients(value: string): string[] {
 
 function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function shouldOpenEmailComposerAfterStamp(status: StampAndEmailFiscalDocumentResponse['email']['status']): status is 'missing' | 'invalid' | 'failed' {
+  return status === 'missing' || status === 'invalid' || status === 'failed';
 }
 
 function normalizeCreditDays(value: number | string | null): number | null {
