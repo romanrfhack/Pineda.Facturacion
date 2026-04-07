@@ -15,7 +15,7 @@ import {
   FiscalStampResponse,
   IssuedFiscalDocumentFilters,
   IssuedFiscalDocumentListItemResponse,
-  IssuedFiscalDocumentSpecialFieldOptionResponse
+  IssuedFiscalDocumentSpecialFieldOptionResponse,
 } from '../../fiscal-documents/models/fiscal-documents.models';
 import { FiscalDocumentCardComponent } from '../../fiscal-documents/components/fiscal-document-card.component';
 import { FiscalStampEvidenceCardComponent } from '../../fiscal-documents/components/fiscal-stamp-evidence-card.component';
@@ -32,12 +32,27 @@ import {
   getCancellationValidationError,
   normalizeSatCode,
   reconcileCancellationAfterOperation,
-  shouldKeepCurrentCancelledCancellation
+  shouldKeepCurrentCancelledCancellation,
 } from '../../fiscal-documents/application/fiscal-cancellation-ui';
+import { ConfirmationModalComponent } from '../../../shared/components/confirmation-modal.component';
+import {
+  StatusBadgeComponent,
+  StatusBadgeTone,
+} from '../../../shared/components/status-badge.component';
 
 @Component({
   selector: 'app-issued-cfdis-page',
-  imports: [FormsModule, DecimalPipe, FiscalDocumentCardComponent, FiscalStampEvidenceCardComponent, FiscalStampEvidenceDetailComponent, FiscalCancellationCardComponent, XmlViewerPanelComponent],
+  imports: [
+    FormsModule,
+    DecimalPipe,
+    FiscalDocumentCardComponent,
+    FiscalStampEvidenceCardComponent,
+    FiscalStampEvidenceDetailComponent,
+    FiscalCancellationCardComponent,
+    XmlViewerPanelComponent,
+    ConfirmationModalComponent,
+    StatusBadgeComponent,
+  ],
   template: `
     <section class="page">
       <header>
@@ -47,10 +62,16 @@ import {
 
       <section class="card">
         <form class="filters" (ngSubmit)="applyFilters()">
-          <label><span>Desde</span><input [(ngModel)]="fromDate" name="fromDate" type="date" /></label>
+          <label
+            ><span>Desde</span><input [(ngModel)]="fromDate" name="fromDate" type="date"
+          /></label>
           <label><span>Hasta</span><input [(ngModel)]="toDate" name="toDate" type="date" /></label>
-          <label><span>RFC receptor</span><input [(ngModel)]="receiverRfc" name="receiverRfc" /></label>
-          <label><span>Nombre receptor</span><input [(ngModel)]="receiverName" name="receiverName" /></label>
+          <label
+            ><span>RFC receptor</span><input [(ngModel)]="receiverRfc" name="receiverRfc"
+          /></label>
+          <label
+            ><span>Nombre receptor</span><input [(ngModel)]="receiverName" name="receiverName"
+          /></label>
           <label><span>UUID</span><input [(ngModel)]="uuid" name="uuid" /></label>
           <label><span>Serie</span><input [(ngModel)]="series" name="series" /></label>
           <label><span>Folio</span><input [(ngModel)]="folio" name="folio" /></label>
@@ -63,7 +84,10 @@ import {
               }
             </select>
           </label>
-          <label><span>Valor campo especial</span><input [(ngModel)]="specialFieldValue" name="specialFieldValue" /></label>
+          <label
+            ><span>Valor campo especial</span
+            ><input [(ngModel)]="specialFieldValue" name="specialFieldValue"
+          /></label>
           <label>
             <span>Estado</span>
             <select [(ngModel)]="status" name="status">
@@ -72,15 +96,25 @@ import {
               <option value="Cancelled">Cancelled</option>
             </select>
           </label>
-          <label class="wide"><span>Búsqueda general</span><input [(ngModel)]="query" name="query" placeholder="UUID, RFC, receptor, serie o folio" /></label>
+          <label class="wide"
+            ><span>Búsqueda general</span
+            ><input
+              [(ngModel)]="query"
+              name="query"
+              placeholder="UUID, RFC, receptor, serie o folio"
+          /></label>
 
           @if (filtersError()) {
             <p class="error wide">{{ filtersError() }}</p>
           }
 
           <div class="actions wide">
-            <button type="submit" [disabled]="loading()">{{ loading() ? 'Buscando...' : 'Buscar' }}</button>
-            <button type="button" class="secondary" (click)="clearFilters()" [disabled]="loading()">Limpiar filtros</button>
+            <button type="submit" [disabled]="loading()">
+              {{ loading() ? 'Buscando...' : 'Buscar' }}
+            </button>
+            <button type="button" class="secondary" (click)="clearFilters()" [disabled]="loading()">
+              Limpiar filtros
+            </button>
           </div>
         </form>
       </section>
@@ -97,7 +131,11 @@ import {
             <p class="helper">Mostrando {{ items().length }} de {{ totalCount() }} CFDI.</p>
             <label class="page-size">
               <span>Tamaño</span>
-              <select [ngModel]="pageSize()" (ngModelChange)="changePageSize($event)" name="pageSize">
+              <select
+                [ngModel]="pageSize()"
+                (ngModelChange)="changePageSize($event)"
+                name="pageSize"
+              >
                 <option [ngValue]="10">10</option>
                 <option [ngValue]="25">25</option>
                 <option [ngValue]="50">50</option>
@@ -133,11 +171,25 @@ import {
                     <td>{{ item.uuid || '—' }}</td>
                     <td>{{ item.receiverRfc }}</td>
                     <td>{{ item.receiverLegalName }}</td>
-                    <td>{{ item.total | number:'1.2-2' }}</td>
-                    <td>{{ getDisplayLabel(item.status) }}</td>
+                    <td>{{ item.total | number: '1.2-2' }}</td>
+                    <td>
+                      <app-status-badge
+                        [label]="item.status"
+                        [tone]="issuedFiscalStatusTone(item.status)"
+                      />
+                    </td>
                     <td>{{ item.paymentMethodSat }}</td>
                     <td>{{ item.paymentFormSat }}</td>
-                    <td><button type="button" class="secondary small" (click)="openDetailModal(item)" [disabled]="actionBusy(item.fiscalDocumentId, 'detail')">Ver detalle</button></td>
+                    <td>
+                      <button
+                        type="button"
+                        class="secondary small"
+                        (click)="openDetailModal(item)"
+                        [disabled]="actionBusy(item.fiscalDocumentId, 'detail')"
+                      >
+                        Ver detalle
+                      </button>
+                    </td>
                   </tr>
                 }
               </tbody>
@@ -145,9 +197,23 @@ import {
           </div>
 
           <div class="pagination">
-            <button type="button" class="secondary" (click)="goToPage(page() - 1)" [disabled]="page() <= 1 || loading()">Anterior</button>
+            <button
+              type="button"
+              class="secondary"
+              (click)="goToPage(page() - 1)"
+              [disabled]="page() <= 1 || loading()"
+            >
+              Anterior
+            </button>
             <span>Página {{ page() }} de {{ totalPages() || 1 }}</span>
-            <button type="button" class="secondary" (click)="goToPage(page() + 1)" [disabled]="page() >= totalPages() || loading()">Siguiente</button>
+            <button
+              type="button"
+              class="secondary"
+              (click)="goToPage(page() + 1)"
+              [disabled]="page() >= totalPages() || loading()"
+            >
+              Siguiente
+            </button>
           </div>
         }
       </section>
@@ -167,27 +233,60 @@ import {
               <section class="card nested-card">
                 <div class="button-row">
                   @if (permissionService.canCancelFiscal()) {
-                    <button type="button" class="danger" (click)="openCancelDialog()" [disabled]="loadingOperation() || !canCancelSelectedDocument()">
+                    <button
+                      type="button"
+                      class="danger"
+                      (click)="openCancelDialog()"
+                      [disabled]="loadingOperation() || !canCancelSelectedDocument()"
+                    >
                       {{ loadingOperation() && showCancelDialog() ? 'Cancelando...' : 'Cancelar' }}
                     </button>
-                    <button type="button" class="secondary" (click)="refreshStatus()" [disabled]="loadingOperation() || !canRefreshSelectedDocument()">Actualizar estatus</button>
-                    <button type="button" class="secondary" (click)="queryRemoteStamp()" [disabled]="loadingOperation() || !canQueryRemoteStamp()">Consultar CFDI en PAC</button>
+                    <button
+                      type="button"
+                      class="secondary"
+                      (click)="refreshStatus()"
+                      [disabled]="loadingOperation() || !canRefreshSelectedDocument()"
+                    >
+                      Actualizar estatus
+                    </button>
+                    <button
+                      type="button"
+                      class="secondary"
+                      (click)="queryRemoteStamp()"
+                      [disabled]="loadingOperation() || !canQueryRemoteStamp()"
+                    >
+                      Consultar CFDI en PAC
+                    </button>
                   }
-                  <button type="button" class="secondary" (click)="openPdfForSelected(false)">Ver PDF</button>
-                  <button type="button" class="secondary" (click)="openPdfForSelected(true)">Descargar PDF</button>
-                  <button type="button" class="secondary" (click)="openXmlForSelected()">Ver XML</button>
-                  <button type="button" class="secondary" (click)="downloadXmlForSelected()">Descargar XML</button>
-                  <button type="button" class="secondary" (click)="openEmailComposerForSelected()">Reenviar por correo</button>
+                  <button type="button" class="secondary" (click)="openPdfForSelected(false)">
+                    Ver PDF
+                  </button>
+                  <button type="button" class="secondary" (click)="openPdfForSelected(true)">
+                    Descargar PDF
+                  </button>
+                  <button type="button" class="secondary" (click)="openXmlForSelected()">
+                    Ver XML
+                  </button>
+                  <button type="button" class="secondary" (click)="downloadXmlForSelected()">
+                    Descargar XML
+                  </button>
+                  <button type="button" class="secondary" (click)="openEmailComposerForSelected()">
+                    Reenviar por correo
+                  </button>
                 </div>
 
                 @if (lastOperationMessage()) {
                   <p class="helper">{{ lastOperationMessage() }}</p>
                 }
                 @if (!canRefreshSelectedDocument()) {
-                  <p class="helper">Actualizar estatus solo está disponible para CFDI timbrados con UUID.</p>
+                  <p class="helper">
+                    Actualizar estatus solo está disponible para CFDI timbrados con UUID.
+                  </p>
                 }
                 @if (!canQueryRemoteStamp()) {
-                  <p class="helper">Consultar CFDI en PAC solo está disponible para CFDI con UUID persistido.</p>
+                  <p class="helper">
+                    Consultar CFDI en PAC solo está disponible para CFDI con UUID persistido.
+                  </p>
                 }
               </section>
 
@@ -199,7 +298,12 @@ import {
             }
 
             @if (selectedStamp(); as currentStamp) {
-              <app-fiscal-stamp-evidence-card [stamp]="currentStamp" (detailsRequested)="toggleStampDetail()" (xmlRequested)="openXmlForSelected()" (remoteQueryRequested)="queryRemoteStamp()" />
+              <app-fiscal-stamp-evidence-card
+                [stamp]="currentStamp"
+                (detailsRequested)="toggleStampDetail()"
+                (xmlRequested)="openXmlForSelected()"
+                (remoteQueryRequested)="queryRemoteStamp()"
+              />
               @if (showStampDetail()) {
                 <app-fiscal-stamp-evidence-detail [stamp]="currentStamp" />
               }
@@ -220,10 +324,20 @@ import {
                 <p class="eyebrow">CFDI emitidos</p>
                 <h3>Cancelar CFDI</h3>
               </div>
-              <button type="button" class="secondary" (click)="closeCancelDialog()" [disabled]="loadingOperation()">Cerrar</button>
+              <button
+                type="button"
+                class="secondary"
+                (click)="closeCancelDialog()"
+                [disabled]="loadingOperation()"
+              >
+                Cerrar
+              </button>
             </header>
 
-            <p class="helper">Selecciona el motivo SAT de cancelación. Si eliges 01, debes capturar el UUID del comprobante sustituto.</p>
+            <p class="helper">
+              Selecciona el motivo SAT de cancelación. Si eliges 01, debes capturar el UUID del
+              comprobante sustituto.
+            </p>
 
             <form class="filters" (ngSubmit)="cancel()">
               <label class="wide">
@@ -232,10 +346,13 @@ import {
                   [ngModel]="cancellationReasonCode"
                   (ngModelChange)="onCancellationReasonChange($event)"
                   name="cancellationReasonCode"
-                  required>
+                  required
+                >
                   <option value="">Selecciona motivo de cancelación</option>
                   @for (option of cancellationReasonOptions; track option.code) {
-                    <option [value]="option.code">{{ option.code }} - {{ option.description }}</option>
+                    <option [value]="option.code">
+                      {{ option.code }} - {{ option.description }}
+                    </option>
                   }
                 </select>
                 @if (selectedCancellationReasonHelp()) {
@@ -262,15 +379,40 @@ import {
               }
 
               <div class="actions wide">
-                <button type="submit" class="danger" [disabled]="loadingOperation() || !!getCancellationValidationError()">
+                <button
+                  type="submit"
+                  class="danger"
+                  [disabled]="loadingOperation() || !!getCancellationValidationError()"
+                >
                   {{ loadingOperation() ? 'Cancelando...' : 'Confirmar cancelación' }}
                 </button>
-                <button type="button" class="secondary" (click)="closeCancelDialog()" [disabled]="loadingOperation()">Volver</button>
+                <button
+                  type="button"
+                  class="secondary"
+                  (click)="closeCancelDialog()"
+                  [disabled]="loadingOperation()"
+                >
+                  Volver
+                </button>
               </div>
             </form>
           </section>
         </section>
       }
+
+      <app-confirmation-modal
+        [open]="showCancelConfirmationDialog()"
+        eyebrow="CFDI emitidos"
+        title="Confirmar cancelación"
+        [message]="cancellationConfirmationMessage()"
+        confirmLabel="Sí, cancelar CFDI"
+        cancelLabel="No, volver"
+        busyConfirmLabel="Cancelando..."
+        tone="danger"
+        [busy]="loadingOperation()"
+        (confirmed)="confirmCancellation()"
+        (cancelled)="closeCancelConfirmationDialog()"
+      />
 
       @if (showStampXmlPanel()) {
         <app-xml-viewer-panel
@@ -311,8 +453,17 @@ import {
               }
 
               <div class="actions wide">
-                <button type="submit" [disabled]="sendingEmail() || !hasValidEmailRecipients()">{{ sendingEmail() ? 'Enviando...' : 'Enviar CFDI' }}</button>
-                <button type="button" class="secondary" (click)="closeEmailComposer()" [disabled]="sendingEmail()">Cancelar</button>
+                <button type="submit" [disabled]="sendingEmail() || !hasValidEmailRecipients()">
+                  {{ sendingEmail() ? 'Enviando...' : 'Enviar CFDI' }}
+                </button>
+                <button
+                  type="button"
+                  class="secondary"
+                  (click)="closeEmailComposer()"
+                  [disabled]="sendingEmail()"
+                >
+                  Cancelar
+                </button>
               </div>
             </form>
           </section>
@@ -320,39 +471,163 @@ import {
       }
     </section>
   `,
-  styles: [`
-    .page { display:grid; gap:1rem; }
-    .card { border:1px solid #d8d1c2; border-radius:1rem; padding:1rem; background:#fff; }
-    .eyebrow { margin:0; text-transform:uppercase; letter-spacing:0.12em; font-size:0.72rem; color:#8a6a32; }
-    .filters { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:1rem; align-items:end; }
-    .wide { grid-column:1 / -1; }
-    label { display:grid; gap:0.35rem; }
-    input, select, button, textarea { font:inherit; }
-    input, select, textarea { border:1px solid #c9d1da; border-radius:0.8rem; padding:0.75rem 0.9rem; }
-    .actions, .toolbar, .pagination, .button-row { display:flex; flex-wrap:wrap; gap:0.75rem; align-items:center; }
-    .toolbar, .pagination { justify-content:space-between; }
-    .table-wrap { overflow:auto; }
-    table { width:100%; border-collapse:collapse; }
-    th, td { text-align:left; padding:0.75rem 0.5rem; border-bottom:1px solid #ece5d7; vertical-align:top; }
-    .helper { margin:0; color:#5f6b76; }
-    .error { margin:0; color:#7a2020; }
-    button { border:none; border-radius:0.8rem; padding:0.75rem 1rem; background:#182533; color:#fff; cursor:pointer; }
-    button.secondary { background:#d8c49b; color:#182533; }
-    button.danger { background:#7a2020; color:#fff; }
-    button.small { padding:0.45rem 0.7rem; font-size:0.88rem; }
-    button:disabled { opacity:0.6; cursor:not-allowed; }
-    .page-size { min-width:120px; }
-    .modal-backdrop { position:fixed; inset:0; background:rgba(24, 37, 51, 0.42); display:grid; place-items:center; padding:1rem; z-index:50; }
-    .modal-card { width:min(760px, 100%); max-height:calc(100vh - 2rem); overflow:auto; border:1px solid #d8d1c2; border-radius:1rem; background:#fff; padding:1rem; display:grid; gap:1rem; box-shadow:0 24px 60px rgba(24, 37, 51, 0.24); }
-    .detail-modal { width:min(1120px, 100%); align-content:start; }
-    .modal-header { display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; }
-    .nested-card { padding:0; border:none; background:transparent; }
-    @media (max-width: 720px) {
-      .toolbar, .pagination { flex-direction:column; align-items:stretch; }
-      .modal-header { flex-direction:column; align-items:stretch; }
-    }
-  `],
-  changeDetection: ChangeDetectionStrategy.OnPush
+  styles: [
+    `
+      .page {
+        display: grid;
+        gap: 1rem;
+      }
+      .card {
+        border: 1px solid #d8d1c2;
+        border-radius: 1rem;
+        padding: 1rem;
+        background: #fff;
+      }
+      .eyebrow {
+        margin: 0;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        font-size: 0.72rem;
+        color: #8a6a32;
+      }
+      .filters {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 1rem;
+        align-items: end;
+      }
+      .wide {
+        grid-column: 1 / -1;
+      }
+      label {
+        display: grid;
+        gap: 0.35rem;
+      }
+      input,
+      select,
+      button,
+      textarea {
+        font: inherit;
+      }
+      input,
+      select,
+      textarea {
+        border: 1px solid #c9d1da;
+        border-radius: 0.8rem;
+        padding: 0.75rem 0.9rem;
+      }
+      .actions,
+      .toolbar,
+      .pagination,
+      .button-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        align-items: center;
+      }
+      .toolbar,
+      .pagination {
+        justify-content: space-between;
+      }
+      .table-wrap {
+        overflow: auto;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 0.75rem 0.5rem;
+        border-bottom: 1px solid #ece5d7;
+        vertical-align: top;
+      }
+      .helper {
+        margin: 0;
+        color: #5f6b76;
+      }
+      .error {
+        margin: 0;
+        color: #7a2020;
+      }
+      button {
+        border: none;
+        border-radius: 0.8rem;
+        padding: 0.75rem 1rem;
+        background: #182533;
+        color: #fff;
+        cursor: pointer;
+      }
+      button.secondary {
+        background: #d8c49b;
+        color: #182533;
+      }
+      button.danger {
+        background: #7a2020;
+        color: #fff;
+      }
+      button.small {
+        padding: 0.45rem 0.7rem;
+        font-size: 0.88rem;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      .page-size {
+        min-width: 120px;
+      }
+      .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(24, 37, 51, 0.42);
+        display: grid;
+        place-items: center;
+        padding: 1rem;
+        z-index: 50;
+      }
+      .modal-card {
+        width: min(760px, 100%);
+        max-height: calc(100vh - 2rem);
+        overflow: auto;
+        border: 1px solid #d8d1c2;
+        border-radius: 1rem;
+        background: #fff;
+        padding: 1rem;
+        display: grid;
+        gap: 1rem;
+        box-shadow: 0 24px 60px rgba(24, 37, 51, 0.24);
+      }
+      .detail-modal {
+        width: min(1120px, 100%);
+        align-content: start;
+      }
+      .modal-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        align-items: flex-start;
+      }
+      .nested-card {
+        padding: 0;
+        border: none;
+        background: transparent;
+      }
+      @media (max-width: 720px) {
+        .toolbar,
+        .pagination {
+          flex-direction: column;
+          align-items: stretch;
+        }
+        .modal-header {
+          flex-direction: column;
+          align-items: stretch;
+        }
+      }
+    `,
+  ],
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class IssuedCfdisPageComponent {
   private readonly api = inject(FiscalDocumentsApiService);
@@ -375,7 +650,9 @@ export class IssuedCfdisPageComponent {
   protected specialFieldValue = '';
   protected status = '';
   protected query = '';
-  protected readonly specialFieldOptions = signal<IssuedFiscalDocumentSpecialFieldOptionResponse[]>([]);
+  protected readonly specialFieldOptions = signal<IssuedFiscalDocumentSpecialFieldOptionResponse[]>(
+    [],
+  );
   protected readonly page = signal(1);
   protected readonly pageSize = signal(25);
   protected readonly totalCount = signal(0);
@@ -401,6 +678,7 @@ export class IssuedCfdisPageComponent {
   protected readonly emailRecipientsError = signal<string | null>(null);
   protected readonly showStampDetail = signal(false);
   protected readonly showCancelDialog = signal(false);
+  protected readonly showCancelConfirmationDialog = signal(false);
   protected readonly actionKey = signal<string | null>(null);
   protected readonly showDetailModal = signal(false);
   private emailFiscalDocumentId: number | null = null;
@@ -409,6 +687,13 @@ export class IssuedCfdisPageComponent {
   protected emailBody = '';
   protected cancellationReasonCode = '';
   protected cancellationReplacementUuid = '';
+  protected readonly cancellationConfirmationMessage = computed(() => {
+    const request = buildCancellationRequest(
+      this.cancellationReasonCode,
+      this.cancellationReplacementUuid,
+    );
+    return request ? buildCancellationConfirmationMessage(request) : '';
+  });
 
   constructor() {
     void this.loadSpecialFieldOptions();
@@ -459,7 +744,10 @@ export class IssuedCfdisPageComponent {
     await this.load(false);
   }
 
-  protected async selectItem(item: IssuedFiscalDocumentListItemResponse, forceRefresh = false): Promise<void> {
+  protected async selectItem(
+    item: IssuedFiscalDocumentListItemResponse,
+    forceRefresh = false,
+  ): Promise<void> {
     this.selectedItem.set(item);
     this.showStampDetail.set(false);
     this.lastOperationMessage.set(null);
@@ -467,13 +755,20 @@ export class IssuedCfdisPageComponent {
     try {
       const document = await this.loadFiscalDocument(item.fiscalDocumentId, forceRefresh);
       const stamp = await this.loadStamp(item.fiscalDocumentId, forceRefresh);
-      const cancellation = await this.loadCancellation(item.fiscalDocumentId, document.status, forceRefresh);
+      const cancellation = await this.loadCancellation(
+        item.fiscalDocumentId,
+        document.status,
+        forceRefresh,
+      );
 
       this.selectedDocument.set(document);
       this.selectedStamp.set(stamp);
       this.selectedCancellation.set(cancellation);
     } catch (error) {
-      this.feedbackService.show('error', extractApiErrorMessage(error, 'No fue posible cargar el detalle del CFDI.'));
+      this.feedbackService.show(
+        'error',
+        extractApiErrorMessage(error, 'No fue posible cargar el detalle del CFDI.'),
+      );
       return;
     }
   }
@@ -492,6 +787,7 @@ export class IssuedCfdisPageComponent {
     this.showDetailModal.set(false);
     this.showStampDetail.set(false);
     this.showCancelDialog.set(false);
+    this.showCancelConfirmationDialog.set(false);
   }
 
   protected toggleStampDetail(): void {
@@ -508,6 +804,7 @@ export class IssuedCfdisPageComponent {
     }
 
     this.showCancelDialog.set(true);
+    this.showCancelConfirmationDialog.set(false);
     this.cancellationReasonCode = this.selectedCancellation()?.cancellationReasonCode ?? '';
     this.cancellationReplacementUuid = this.selectedCancellation()?.replacementUuid ?? '';
   }
@@ -518,6 +815,15 @@ export class IssuedCfdisPageComponent {
     }
 
     this.showCancelDialog.set(false);
+    this.showCancelConfirmationDialog.set(false);
+  }
+
+  protected closeCancelConfirmationDialog(): void {
+    if (this.loadingOperation()) {
+      return;
+    }
+
+    this.showCancelConfirmationDialog.set(false);
   }
 
   protected onCancellationReasonChange(value: string): void {
@@ -541,7 +847,10 @@ export class IssuedCfdisPageComponent {
   }
 
   protected getCancellationValidationError(): string | null {
-    return getCancellationValidationError(this.cancellationReasonCode, this.cancellationReplacementUuid);
+    return getCancellationValidationError(
+      this.cancellationReasonCode,
+      this.cancellationReplacementUuid,
+    );
   }
 
   protected canCancelSelectedDocument(): boolean {
@@ -556,7 +865,10 @@ export class IssuedCfdisPageComponent {
     return !!this.selectedStamp()?.uuid;
   }
 
-  protected async openPdf(item: IssuedFiscalDocumentListItemResponse, download: boolean): Promise<void> {
+  protected async openPdf(
+    item: IssuedFiscalDocumentListItemResponse,
+    download: boolean,
+  ): Promise<void> {
     await this.handlePdf(item, download);
   }
 
@@ -579,7 +891,9 @@ export class IssuedCfdisPageComponent {
     try {
       this.stampXmlContent.set(await firstValueFrom(this.api.getStampXml(item.fiscalDocumentId)));
     } catch (error) {
-      this.stampXmlError.set(extractApiErrorMessage(error, 'No fue posible cargar el XML del CFDI.'));
+      this.stampXmlError.set(
+        extractApiErrorMessage(error, 'No fue posible cargar el XML del CFDI.'),
+      );
     } finally {
       this.loadingStampXml.set(false);
       this.actionKey.set(null);
@@ -606,15 +920,24 @@ export class IssuedCfdisPageComponent {
     this.actionKey.set(`xml-download:${item.fiscalDocumentId}`);
     try {
       const blob = await firstValueFrom(this.api.getStampXmlFile(item.fiscalDocumentId));
-      triggerBlobDownload(blob, buildFiscalDocumentFileName({
-        issuerRfc: item.issuerRfc,
-        series: item.series,
-        folio: item.folio,
-        receiverRfc: item.receiverRfc,
-        fallbackToken: item.uuid ?? item.fiscalDocumentId
-      }, 'xml'));
+      triggerBlobDownload(
+        blob,
+        buildFiscalDocumentFileName(
+          {
+            issuerRfc: item.issuerRfc,
+            series: item.series,
+            folio: item.folio,
+            receiverRfc: item.receiverRfc,
+            fallbackToken: item.uuid ?? item.fiscalDocumentId,
+          },
+          'xml',
+        ),
+      );
     } catch (error) {
-      this.feedbackService.show('error', extractApiErrorMessage(error, 'No fue posible descargar el XML del CFDI.'));
+      this.feedbackService.show(
+        'error',
+        extractApiErrorMessage(error, 'No fue posible descargar el XML del CFDI.'),
+      );
     } finally {
       this.actionKey.set(null);
     }
@@ -644,7 +967,9 @@ export class IssuedCfdisPageComponent {
       this.consumeEmailDraft(draft);
       this.showEmailComposer.set(true);
     } catch (error) {
-      this.emailDraftError.set(extractApiErrorMessage(error, 'No fue posible cargar el envío por correo.'));
+      this.emailDraftError.set(
+        extractApiErrorMessage(error, 'No fue posible cargar el envío por correo.'),
+      );
       this.showEmailComposer.set(true);
     } finally {
       this.loadingEmailDraft.set(false);
@@ -692,15 +1017,22 @@ export class IssuedCfdisPageComponent {
     this.emailDraftError.set(null);
 
     try {
-      const response = await firstValueFrom(this.api.sendByEmail(this.emailFiscalDocumentId, {
-        recipients,
-        subject: this.emailSubject,
-        body: this.emailBody
-      }));
-      this.feedbackService.show('success', `CFDI enviado correctamente a ${response.recipients.join(', ')}.`);
+      const response = await firstValueFrom(
+        this.api.sendByEmail(this.emailFiscalDocumentId, {
+          recipients,
+          subject: this.emailSubject,
+          body: this.emailBody,
+        }),
+      );
+      this.feedbackService.show(
+        'success',
+        `CFDI enviado correctamente a ${response.recipients.join(', ')}.`,
+      );
       this.closeEmailComposer();
     } catch (error) {
-      this.emailDraftError.set(extractApiErrorMessage(error, 'No fue posible enviar el CFDI por correo.'));
+      this.emailDraftError.set(
+        extractApiErrorMessage(error, 'No fue posible enviar el CFDI por correo.'),
+      );
     } finally {
       this.sendingEmail.set(false);
     }
@@ -718,30 +1050,48 @@ export class IssuedCfdisPageComponent {
       return;
     }
 
-    const cancellationRequest = buildCancellationRequest(this.cancellationReasonCode, this.cancellationReplacementUuid);
-    if (!cancellationRequest) {
+    const cancellationRequest = buildCancellationRequest(
+      this.cancellationReasonCode,
+      this.cancellationReplacementUuid,
+    );
+    if (!cancellationRequest || this.loadingOperation()) {
       return;
     }
 
-    if (!window.confirm(buildCancellationConfirmationMessage(cancellationRequest))) {
+    this.showCancelConfirmationDialog.set(true);
+  }
+
+  protected async confirmCancellation(): Promise<void> {
+    const currentDocument = this.selectedDocument();
+    const cancellationRequest = buildCancellationRequest(
+      this.cancellationReasonCode,
+      this.cancellationReplacementUuid,
+    );
+    if (!currentDocument || !cancellationRequest || !this.showCancelConfirmationDialog()) {
       return;
     }
 
     await this.runOperation(async () => {
-      const response = await firstValueFrom(this.api.cancelFiscalDocument(currentDocument.id, cancellationRequest));
-      this.lastOperationMessage.set(
-        (response.isSuccess ? 'Cancelación exitosa.' : null)
-          || response.providerMessage
-          || response.supportMessage
-          || response.retryAdvice
-          || response.errorMessage
-          || `Resultado de la cancelación: ${getDisplayLabel(response.outcome)}`
+      const response = await firstValueFrom(
+        this.api.cancelFiscalDocument(currentDocument.id, cancellationRequest),
       );
+      const feedbackMessage =
+        response.providerMessage ||
+        response.supportMessage ||
+        response.retryAdvice ||
+        response.errorMessage ||
+        `Resultado de la cancelación: ${getDisplayLabel(response.outcome)}`;
+      this.lastOperationMessage.set(null);
+      this.showCancelConfirmationDialog.set(false);
       this.showCancelDialog.set(false);
       if (!response.isSuccess) {
         await this.reloadSelectedContext(currentDocument.id);
       }
       this.reconcileCancellationAfterOperation(response, cancellationRequest);
+      this.feedbackService.show(
+        response.isSuccess ? 'success' : 'error',
+        response.isSuccess ? 'CFDI cancelado correctamente ante SAT/PAC.' : feedbackMessage,
+      );
     });
   }
 
@@ -754,14 +1104,29 @@ export class IssuedCfdisPageComponent {
     await this.runOperation(async () => {
       const response = await firstValueFrom(this.api.refreshStatus(currentDocument.id));
       this.lastOperationMessage.set(
-        response.operationalMessage
-          || response.providerMessage
-          || response.supportMessage
-          || response.errorMessage
-          || `Último estatus externo: ${getDisplayLabel(response.lastKnownExternalStatus ?? 'Unknown')}`
+        response.operationalMessage ||
+          response.providerMessage ||
+          response.supportMessage ||
+          response.errorMessage ||
+          `Último estatus externo: ${getDisplayLabel(response.lastKnownExternalStatus ?? 'Unknown')}`,
       );
       await this.reloadSelectedContext(currentDocument.id);
     });
+  }
+
+  protected issuedFiscalStatusTone(status: string): StatusBadgeTone {
+    switch (status) {
+      case 'Stamped':
+        return 'info';
+      case 'CancellationRequested':
+        return 'warning';
+      case 'Cancelled':
+      case 'CancellationRejected':
+      case 'StampingRejected':
+        return 'danger';
+      default:
+        return 'neutral';
+    }
   }
 
   protected async queryRemoteStamp(): Promise<void> {
@@ -773,13 +1138,15 @@ export class IssuedCfdisPageComponent {
     await this.runOperation(async () => {
       const response = await firstValueFrom(this.api.queryRemoteStamp(currentDocument.id));
       this.lastOperationMessage.set(
-        (response.xmlRecoveredLocally ? 'Se recuperó XML remoto y ya quedó persistido localmente.' : null)
-          || response.supportMessage
-          || response.providerMessage
-          || response.errorMessage
-          || (response.remoteExists
+        (response.xmlRecoveredLocally
+          ? 'Se recuperó XML remoto y ya quedó persistido localmente.'
+          : null) ||
+          response.supportMessage ||
+          response.providerMessage ||
+          response.errorMessage ||
+          (response.remoteExists
             ? 'El CFDI fue encontrado remotamente en el PAC.'
-            : 'El PAC no devolvió evidencia remota para el UUID consultado.')
+            : 'El PAC no devolvió evidencia remota para el UUID consultado.'),
       );
       await this.reloadSelectedContext(currentDocument.id);
     });
@@ -803,7 +1170,9 @@ export class IssuedCfdisPageComponent {
 
       const currentSelected = this.selectedItem();
       const nextSelected = currentSelected
-        ? response.items.find((item) => item.fiscalDocumentId === currentSelected.fiscalDocumentId) ?? null
+        ? (response.items.find(
+            (item) => item.fiscalDocumentId === currentSelected.fiscalDocumentId,
+          ) ?? null)
         : null;
 
       if (nextSelected) {
@@ -822,7 +1191,9 @@ export class IssuedCfdisPageComponent {
       this.selectedCancellation.set(null);
       this.totalCount.set(0);
       this.totalPages.set(0);
-      this.errorMessage.set(extractApiErrorMessage(error, 'No fue posible cargar los CFDI emitidos.'));
+      this.errorMessage.set(
+        extractApiErrorMessage(error, 'No fue posible cargar los CFDI emitidos.'),
+      );
     } finally {
       this.loading.set(false);
     }
@@ -842,7 +1213,7 @@ export class IssuedCfdisPageComponent {
       specialFieldCode: this.specialFieldCode || null,
       specialFieldValue: this.specialFieldValue || null,
       status: this.status || null,
-      query: this.query || null
+      query: this.query || null,
     };
   }
 
@@ -869,26 +1240,36 @@ export class IssuedCfdisPageComponent {
     if (selectedItem && selectedItem.fiscalDocumentId === fiscalDocumentId) {
       this.selectedItem.set({
         ...selectedItem,
-        status: document.status
+        status: document.status,
       });
     }
 
     this.selectedStamp.set(await this.loadStamp(fiscalDocumentId, true));
 
-    const fetchedCancellation = await this.loadCancellation(fiscalDocumentId, document.status, true);
-    if (fetchedCancellation && shouldKeepCurrentCancelledCancellation(this.selectedCancellation(), fetchedCancellation)) {
+    const fetchedCancellation = await this.loadCancellation(
+      fiscalDocumentId,
+      document.status,
+      true,
+    );
+    if (
+      fetchedCancellation &&
+      shouldKeepCurrentCancelledCancellation(this.selectedCancellation(), fetchedCancellation)
+    ) {
       return;
     }
 
     this.selectedCancellation.set(fetchedCancellation);
   }
 
-  private reconcileCancellationAfterOperation(response: CancelFiscalDocumentResponse, request: CancelFiscalDocumentRequest): void {
+  private reconcileCancellationAfterOperation(
+    response: CancelFiscalDocumentResponse,
+    request: CancelFiscalDocumentRequest,
+  ): void {
     const reconciliation = reconcileCancellationAfterOperation(
       this.selectedDocument(),
       this.selectedCancellation(),
       response,
-      request
+      request,
     );
     this.selectedDocument.set(reconciliation.nextDocument);
     this.selectedCancellation.set(reconciliation.nextCancellation);
@@ -896,10 +1277,15 @@ export class IssuedCfdisPageComponent {
       this.documentCache.set(reconciliation.nextDocument.id, reconciliation.nextDocument);
     }
     this.cancellationCache.set(response.fiscalDocumentId, reconciliation.nextCancellation);
-    this.updateSelectedStatuses(reconciliation.nextDocument?.status ?? response.fiscalDocumentStatus ?? null);
+    this.updateSelectedStatuses(
+      reconciliation.nextDocument?.status ?? response.fiscalDocumentStatus ?? null,
+    );
   }
 
-  private async loadFiscalDocument(fiscalDocumentId: number, forceRefresh = false): Promise<FiscalDocumentResponse> {
+  private async loadFiscalDocument(
+    fiscalDocumentId: number,
+    forceRefresh = false,
+  ): Promise<FiscalDocumentResponse> {
     if (!forceRefresh) {
       const cached = this.documentCache.get(fiscalDocumentId);
       if (cached) {
@@ -912,7 +1298,10 @@ export class IssuedCfdisPageComponent {
     return document;
   }
 
-  private async loadStamp(fiscalDocumentId: number, forceRefresh = false): Promise<FiscalStampResponse | null> {
+  private async loadStamp(
+    fiscalDocumentId: number,
+    forceRefresh = false,
+  ): Promise<FiscalStampResponse | null> {
     if (!forceRefresh && this.stampCache.has(fiscalDocumentId)) {
       return this.stampCache.get(fiscalDocumentId) ?? null;
     }
@@ -934,7 +1323,7 @@ export class IssuedCfdisPageComponent {
   private async loadCancellation(
     fiscalDocumentId: number,
     fiscalDocumentStatus: string | null | undefined,
-    forceRefresh = false
+    forceRefresh = false,
   ): Promise<FiscalCancellationResponse | null> {
     if (!this.shouldLoadCancellation(fiscalDocumentStatus)) {
       this.cancellationCache.set(fiscalDocumentId, null);
@@ -960,9 +1349,11 @@ export class IssuedCfdisPageComponent {
   }
 
   private shouldLoadCancellation(status: string | null | undefined): boolean {
-    return status === 'CancellationRequested'
-      || status === 'CancellationRejected'
-      || status === 'Cancelled';
+    return (
+      status === 'CancellationRequested' ||
+      status === 'CancellationRejected' ||
+      status === 'Cancelled'
+    );
   }
 
   private updateSelectedStatuses(nextStatus: string | null): void {
@@ -971,11 +1362,12 @@ export class IssuedCfdisPageComponent {
     }
 
     const currentSelectedItem = this.selectedItem();
-    const selectedFiscalDocumentId = currentSelectedItem?.fiscalDocumentId ?? this.selectedDocument()?.id ?? null;
+    const selectedFiscalDocumentId =
+      currentSelectedItem?.fiscalDocumentId ?? this.selectedDocument()?.id ?? null;
     if (currentSelectedItem) {
       this.selectedItem.set({
         ...currentSelectedItem,
-        status: nextStatus
+        status: nextStatus,
       });
     }
 
@@ -983,10 +1375,11 @@ export class IssuedCfdisPageComponent {
       return;
     }
 
-    this.items.update((items) => items.map((item) =>
-      item.fiscalDocumentId === selectedFiscalDocumentId
-        ? { ...item, status: nextStatus }
-        : item));
+    this.items.update((items) =>
+      items.map((item) =>
+        item.fiscalDocumentId === selectedFiscalDocumentId ? { ...item, status: nextStatus } : item,
+      ),
+    );
   }
 
   private async runOperation(operation: () => Promise<void>): Promise<void> {
@@ -1000,7 +1393,10 @@ export class IssuedCfdisPageComponent {
     }
   }
 
-  private async handlePdf(item: IssuedFiscalDocumentListItemResponse, download: boolean): Promise<void> {
+  private async handlePdf(
+    item: IssuedFiscalDocumentListItemResponse,
+    download: boolean,
+  ): Promise<void> {
     this.actionKey.set(`${download ? 'pdf-download' : 'pdf-view'}:${item.fiscalDocumentId}`);
     try {
       const blob = await firstValueFrom(this.api.getStampPdf(item.fiscalDocumentId));
@@ -1009,13 +1405,16 @@ export class IssuedCfdisPageComponent {
       if (download) {
         const link = document.createElement('a');
         link.href = objectUrl;
-        link.download = buildFiscalDocumentFileName({
-          issuerRfc: item.issuerRfc,
-          series: item.series,
-          folio: item.folio,
-          receiverRfc: item.receiverRfc,
-          fallbackToken: item.uuid ?? item.fiscalDocumentId
-        }, 'pdf');
+        link.download = buildFiscalDocumentFileName(
+          {
+            issuerRfc: item.issuerRfc,
+            series: item.series,
+            folio: item.folio,
+            receiverRfc: item.receiverRfc,
+            fallbackToken: item.uuid ?? item.fiscalDocumentId,
+          },
+          'pdf',
+        );
         link.click();
       } else {
         window.open(objectUrl, '_blank', 'noopener,noreferrer');
@@ -1023,7 +1422,10 @@ export class IssuedCfdisPageComponent {
 
       window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 30000);
     } catch (error) {
-      this.feedbackService.show('error', extractApiErrorMessage(error, 'No fue posible abrir el PDF del CFDI.'));
+      this.feedbackService.show(
+        'error',
+        extractApiErrorMessage(error, 'No fue posible abrir el PDF del CFDI.'),
+      );
     } finally {
       this.actionKey.set(null);
     }
@@ -1051,8 +1453,10 @@ function triggerBlobDownload(blob: Blob, fileName: string): void {
 }
 
 function isNotFoundError(error: unknown): error is { status: number } {
-  return typeof error === 'object'
-    && error !== null
-    && 'status' in error
-    && (error as { status?: unknown }).status === 404;
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'status' in error &&
+    (error as { status?: unknown }).status === 404
+  );
 }

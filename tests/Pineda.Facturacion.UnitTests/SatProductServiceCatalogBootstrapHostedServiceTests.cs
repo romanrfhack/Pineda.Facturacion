@@ -62,6 +62,55 @@ public class SatProductServiceCatalogBootstrapHostedServiceTests
         Assert.True(await db.SatProductServiceCatalogEntries.AnyAsync(x => x.Code == "01010101"));
     }
 
+    [Fact]
+    public async Task StartAsync_SkipsBootstrap_WhenCompletedProductServiceImportExists()
+    {
+        await using var serviceProvider = BuildServiceProvider("sat-product-bootstrap-2");
+        await SeedAsync(serviceProvider, db =>
+        {
+            db.SatCatalogImports.Add(new SatCatalogImport
+            {
+                CatalogType = "sat_product_service",
+                SourceFileName = "c_ClaveProdServ.xls",
+                SourceFormat = "xls",
+                SourceVersion = "SAT-2026-04-07",
+                Status = "completed",
+                TotalRows = 1,
+                InsertedRows = 1,
+                UpdatedRows = 0,
+                DeactivatedRows = 0,
+                CreatedAtUtc = DateTime.UtcNow.AddMinutes(-5),
+                CompletedAtUtc = DateTime.UtcNow.AddMinutes(-4)
+            });
+
+            db.SatProductServiceCatalogEntries.Add(new SatProductServiceCatalogEntry
+            {
+                Code = "40161513",
+                Description = "Import oficial",
+                NormalizedDescription = "import oficial",
+                KeywordsNormalized = "import oficial",
+                IsActive = true,
+                SourceVersion = "SAT-2026-04-07",
+                CreatedAtUtc = DateTime.UtcNow.AddDays(-1),
+                UpdatedAtUtc = DateTime.UtcNow.AddDays(-1)
+            });
+        });
+
+        var service = new SatProductServiceCatalogBootstrapHostedService(
+            serviceProvider,
+            new SatProductServiceCatalogSeedSource(),
+            NullLogger<SatProductServiceCatalogBootstrapHostedService>.Instance);
+
+        await service.StartAsync(default);
+
+        await using var scope = serviceProvider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+        var row = await db.SatProductServiceCatalogEntries.SingleAsync(x => x.Code == "40161513");
+
+        Assert.Equal("Import oficial", row.Description);
+        Assert.Equal("SAT-2026-04-07", row.SourceVersion);
+    }
+
     private static ServiceProvider BuildServiceProvider(string databaseName)
     {
         var services = new ServiceCollection();

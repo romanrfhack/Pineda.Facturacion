@@ -159,6 +159,14 @@ Finish:
                 };
 
                 await _productFiscalProfileRepository.AddAsync(productFiscalProfile, cancellationToken);
+                await _productFiscalProfileRepository.EnsureEffectiveAssignmentAsync(
+                    productFiscalProfile,
+                    ProductFiscalAssignmentConventions.ImportSource,
+                    ProductFiscalAssignmentConventions.ImportConfidence,
+                    ProductFiscalAssignmentConventions.BootstrapReviewStatus,
+                    null,
+                    productFiscalProfile.UpdatedAtUtc,
+                    cancellationToken);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
 
                 row.ApplyStatus = ImportApplyStatus.Applied;
@@ -184,6 +192,14 @@ Finish:
             existing.UpdatedAtUtc = DateTime.UtcNow;
 
             await _productFiscalProfileRepository.UpdateAsync(existing, cancellationToken);
+            await _productFiscalProfileRepository.EnsureEffectiveAssignmentAsync(
+                existing,
+                ProductFiscalAssignmentConventions.ImportSource,
+                ProductFiscalAssignmentConventions.ImportConfidence,
+                ProductFiscalAssignmentConventions.BootstrapReviewStatus,
+                null,
+                existing.UpdatedAtUtc,
+                cancellationToken);
 
             row.ApplyStatus = ImportApplyStatus.Applied;
             row.AppliedAtUtc = DateTime.UtcNow;

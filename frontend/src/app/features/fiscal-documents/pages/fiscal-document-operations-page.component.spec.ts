@@ -13,222 +13,250 @@ import { OrdersApiService } from '../../orders/infrastructure/orders-api.service
 describe('FiscalDocumentOperationsPageComponent', () => {
   function createApi(overrides?: Partial<Record<keyof FiscalDocumentsApiService, unknown>>) {
     return {
-      getActiveIssuer: vi.fn().mockReturnValue(of({
-        id: 1,
-        legalName: 'Issuer SA',
-        rfc: 'AAA010101AAA',
-        fiscalRegimeCode: '601',
-        postalCode: '01000',
-        cfdiVersion: '4.0',
-        hasCertificateReference: true,
-        hasPrivateKeyReference: true,
-        hasPrivateKeyPasswordReference: true,
-        pacEnvironment: 'Sandbox',
-        isActive: true
-      })),
+      getActiveIssuer: vi.fn().mockReturnValue(
+        of({
+          id: 1,
+          legalName: 'Issuer SA',
+          rfc: 'AAA010101AAA',
+          fiscalRegimeCode: '601',
+          postalCode: '01000',
+          cfdiVersion: '4.0',
+          hasCertificateReference: true,
+          hasPrivateKeyReference: true,
+          hasPrivateKeyPasswordReference: true,
+          pacEnvironment: 'Sandbox',
+          isActive: true,
+        }),
+      ),
       searchReceivers: vi.fn().mockReturnValue(of([])),
-      getBillingDocumentById: vi.fn().mockReturnValue(of({
-        billingDocumentId: 30,
-        salesOrderId: 20,
-        legacyOrderId: 'LEG-1001',
-        status: 'Draft',
-        documentType: 'I',
-        currencyCode: 'MXN',
-        total: 100,
-        createdAtUtc: '2026-03-20T12:00:00Z',
-        fiscalDocumentId: null,
-        fiscalDocumentStatus: null,
-        associatedOrders: [
-          {
-            salesOrderId: 20,
-            legacyOrderId: 'LEG-1001-ORD-LEG-1001',
-            customerName: 'Receiver One',
-            total: 100,
-            isPrimary: true
-          }
-        ],
-        items: [
-          {
-            billingDocumentItemId: 501,
-            salesOrderId: 20,
-            salesOrderItemId: 601,
-            sourceSalesOrderLineNumber: 1,
-            sourceLegacyOrderId: 'LEG-1001-ORD-LEG-1001',
-            lineNumber: 1,
-            productInternalCode: 'MTE-4259',
-            description: 'FILTRO DE ACEITE',
-            quantity: 1,
-            total: 100
-          }
-        ]
-      })),
+      getBillingDocumentById: vi.fn().mockReturnValue(
+        of({
+          billingDocumentId: 30,
+          salesOrderId: 20,
+          legacyOrderId: 'LEG-1001',
+          status: 'Draft',
+          documentType: 'I',
+          currencyCode: 'MXN',
+          total: 100,
+          createdAtUtc: '2026-03-20T12:00:00Z',
+          fiscalDocumentId: null,
+          fiscalDocumentStatus: null,
+          associatedOrders: [
+            {
+              salesOrderId: 20,
+              legacyOrderId: 'LEG-1001-ORD-LEG-1001',
+              customerName: 'Receiver One',
+              total: 100,
+              isPrimary: true,
+            },
+          ],
+          items: [
+            {
+              billingDocumentItemId: 501,
+              salesOrderId: 20,
+              salesOrderItemId: 601,
+              sourceSalesOrderLineNumber: 1,
+              sourceLegacyOrderId: 'LEG-1001-ORD-LEG-1001',
+              lineNumber: 1,
+              productInternalCode: 'MTE-4259',
+              description: 'FILTRO DE ACEITE',
+              quantity: 1,
+              total: 100,
+            },
+          ],
+        }),
+      ),
       searchBillingDocuments: vi.fn().mockReturnValue(of([])),
       prepareFiscalDocument: vi.fn(),
-      addSalesOrderToBillingDocument: vi.fn().mockReturnValue(of({
-        outcome: 'Updated',
-        isSuccess: true,
-        billingDocumentId: 30,
-        billingDocumentStatus: 'Draft',
-        salesOrderId: 20,
-        fiscalDocumentId: 40,
-        fiscalDocumentStatus: 'ReadyForStamping',
-        associatedOrderCount: 2,
-        total: 200
-      })),
-      removeSalesOrderFromBillingDocument: vi.fn().mockReturnValue(of({
-        outcome: 'Updated',
-        isSuccess: true,
-        billingDocumentId: 30,
-        billingDocumentStatus: 'Draft',
-        salesOrderId: 20,
-        fiscalDocumentId: 40,
-        fiscalDocumentStatus: 'ReadyForStamping',
-        associatedOrderCount: 1,
-        total: 100
-      })),
-      removeBillingDocumentItem: vi.fn().mockReturnValue(of({
-        outcome: 'Removed',
-        isSuccess: true,
-        billingDocumentId: 30,
-        billingDocumentStatus: 'Draft',
-        billingDocumentItemId: 501,
-        fiscalDocumentId: 40,
-        fiscalDocumentStatus: 'ReadyForStamping',
-        removalId: 88,
-        includedItemCount: 1,
-        total: 100
-      })),
+      addSalesOrderToBillingDocument: vi.fn().mockReturnValue(
+        of({
+          outcome: 'Updated',
+          isSuccess: true,
+          billingDocumentId: 30,
+          billingDocumentStatus: 'Draft',
+          salesOrderId: 20,
+          fiscalDocumentId: 40,
+          fiscalDocumentStatus: 'ReadyForStamping',
+          associatedOrderCount: 2,
+          total: 200,
+        }),
+      ),
+      removeSalesOrderFromBillingDocument: vi.fn().mockReturnValue(
+        of({
+          outcome: 'Updated',
+          isSuccess: true,
+          billingDocumentId: 30,
+          billingDocumentStatus: 'Draft',
+          salesOrderId: 20,
+          fiscalDocumentId: 40,
+          fiscalDocumentStatus: 'ReadyForStamping',
+          associatedOrderCount: 1,
+          total: 100,
+        }),
+      ),
+      removeBillingDocumentItem: vi.fn().mockReturnValue(
+        of({
+          outcome: 'Removed',
+          isSuccess: true,
+          billingDocumentId: 30,
+          billingDocumentStatus: 'Draft',
+          billingDocumentItemId: 501,
+          fiscalDocumentId: 40,
+          fiscalDocumentStatus: 'ReadyForStamping',
+          removalId: 88,
+          includedItemCount: 1,
+          total: 100,
+        }),
+      ),
       listPendingBillingItems: vi.fn().mockReturnValue(of([])),
-      assignPendingBillingItems: vi.fn().mockReturnValue(of({
-        outcome: 'Assigned',
-        isSuccess: true,
-        billingDocumentId: 30,
-        fiscalDocumentId: 40,
-        fiscalDocumentStatus: 'ReadyForStamping',
-        assignedCount: 1,
-        includedItemCount: 2,
-        total: 158
-      })),
-      getFiscalDocumentById: vi.fn().mockReturnValue(of({
-        id: 40,
-        billingDocumentId: 30,
-        issuerProfileId: 1,
-        fiscalReceiverId: 9,
-        status: 'Stamped',
-        cfdiVersion: '4.0',
-        documentType: 'I',
-        series: 'A',
-        folio: '31787',
-        issuedAtUtc: '2026-03-20T12:00:00Z',
-        currencyCode: 'MXN',
-        exchangeRate: 1,
-        paymentMethodSat: 'PPD',
-        paymentFormSat: '99',
-        paymentCondition: 'CREDITO',
-        isCreditSale: true,
-        creditDays: 7,
-        issuerRfc: 'AAA010101AAA',
-        issuerLegalName: 'Issuer SA',
-        issuerFiscalRegimeCode: '601',
-        issuerPostalCode: '01000',
-        pacEnvironment: 'Sandbox',
-        hasCertificateReference: true,
-        hasPrivateKeyReference: true,
-        hasPrivateKeyPasswordReference: true,
-        receiverRfc: 'BBB010101BBB',
-        receiverLegalName: 'Receiver One',
-        receiverFiscalRegimeCode: '601',
-        receiverCfdiUseCode: 'G03',
-        receiverPostalCode: '02000',
-        receiverCountryCode: 'MX',
-        receiverForeignTaxRegistration: null,
-        subtotal: 100,
-        discountTotal: 0,
-        taxTotal: 0,
-        total: 100,
-        items: []
-      })),
-      getStamp: vi.fn().mockReturnValue(of({
-        id: 11,
-        fiscalDocumentId: 40,
-        providerName: 'FacturaloPlus',
-        providerOperation: 'stamp',
-        providerTrackingId: 'TRACK-1',
-        status: 'Stamped',
-        uuid: 'UUID-123',
-        stampedAtUtc: '2026-03-20T12:00:00Z',
-        providerCode: '200',
-        providerMessage: 'Stamped',
-        errorCode: null,
-        errorMessage: null,
-        xmlHash: 'HASH-1',
-        qrCodeTextOrUrl: 'https://sat.example/qr',
-        originalString: '||1.1|UUID-123||',
-        createdAtUtc: '2026-03-20T12:00:00Z',
-        updatedAtUtc: '2026-03-20T12:00:00Z'
-      })),
+      assignPendingBillingItems: vi.fn().mockReturnValue(
+        of({
+          outcome: 'Assigned',
+          isSuccess: true,
+          billingDocumentId: 30,
+          fiscalDocumentId: 40,
+          fiscalDocumentStatus: 'ReadyForStamping',
+          assignedCount: 1,
+          includedItemCount: 2,
+          total: 158,
+        }),
+      ),
+      getFiscalDocumentById: vi.fn().mockReturnValue(
+        of({
+          id: 40,
+          billingDocumentId: 30,
+          issuerProfileId: 1,
+          fiscalReceiverId: 9,
+          status: 'Stamped',
+          cfdiVersion: '4.0',
+          documentType: 'I',
+          series: 'A',
+          folio: '31787',
+          issuedAtUtc: '2026-03-20T12:00:00Z',
+          currencyCode: 'MXN',
+          exchangeRate: 1,
+          paymentMethodSat: 'PPD',
+          paymentFormSat: '99',
+          paymentCondition: 'CREDITO',
+          isCreditSale: true,
+          creditDays: 7,
+          issuerRfc: 'AAA010101AAA',
+          issuerLegalName: 'Issuer SA',
+          issuerFiscalRegimeCode: '601',
+          issuerPostalCode: '01000',
+          pacEnvironment: 'Sandbox',
+          hasCertificateReference: true,
+          hasPrivateKeyReference: true,
+          hasPrivateKeyPasswordReference: true,
+          receiverRfc: 'BBB010101BBB',
+          receiverLegalName: 'Receiver One',
+          receiverFiscalRegimeCode: '601',
+          receiverCfdiUseCode: 'G03',
+          receiverPostalCode: '02000',
+          receiverCountryCode: 'MX',
+          receiverForeignTaxRegistration: null,
+          subtotal: 100,
+          discountTotal: 0,
+          taxTotal: 0,
+          total: 100,
+          items: [],
+        }),
+      ),
+      getStamp: vi.fn().mockReturnValue(
+        of({
+          id: 11,
+          fiscalDocumentId: 40,
+          providerName: 'FacturaloPlus',
+          providerOperation: 'stamp',
+          providerTrackingId: 'TRACK-1',
+          status: 'Stamped',
+          uuid: 'UUID-123',
+          stampedAtUtc: '2026-03-20T12:00:00Z',
+          providerCode: '200',
+          providerMessage: 'Stamped',
+          errorCode: null,
+          errorMessage: null,
+          xmlHash: 'HASH-1',
+          qrCodeTextOrUrl: 'https://sat.example/qr',
+          originalString: '||1.1|UUID-123||',
+          createdAtUtc: '2026-03-20T12:00:00Z',
+          updatedAtUtc: '2026-03-20T12:00:00Z',
+        }),
+      ),
       getStampXml: vi.fn().mockReturnValue(of('<cfdi:Comprobante Version="4.0" />')),
       getStampPdf: vi.fn().mockReturnValue(of(new Blob(['%PDF-1.4'], { type: 'application/pdf' }))),
-      getEmailDraft: vi.fn().mockReturnValue(of({
-        outcome: 'Found',
-        isSuccess: true,
-        defaultRecipientEmail: 'cliente@example.com',
-        suggestedSubject: 'CFDI timbrado A8',
-        suggestedBody: 'Adjuntamos XML y PDF.'
-      })),
-      sendByEmail: vi.fn().mockReturnValue(of({
-        outcome: 'Sent',
-        isSuccess: true,
-        fiscalDocumentId: 40,
-        recipients: ['cliente@example.com'],
-        sentAtUtc: '2026-03-24T12:10:00Z'
-      })),
-      getCancellation: vi.fn().mockReturnValue(throwError(() => ({ status: 404 }))),
-      listPendingCancellationAuthorizations: vi.fn().mockReturnValue(of({
-        outcome: 'Retrieved',
-        isSuccess: true,
-        items: []
-      })),
-      respondCancellationAuthorization: vi.fn().mockReturnValue(of({
-        outcome: 'Responded',
-        isSuccess: true,
-        requestedResponse: 'Accept',
-        appliedResponse: 'Accept',
-        uuid: 'UUID-123',
-        fiscalDocumentId: 40,
-        fiscalDocumentStatus: 'CancellationRequested',
-        fiscalCancellationId: 90,
-        cancellationStatus: 'Requested',
-        authorizationStatus: 'Accepted'
-      })),
-      syncFiscalDocumentSpecialFields: vi.fn().mockReturnValue(of({
-        outcome: 'Updated',
-        isSuccess: true,
-        fiscalDocumentId: 40,
-        fiscalDocumentStatus: 'ReadyForStamping',
-        specialFieldCount: 0
-      })),
-      stampFiscalDocument: vi.fn(),
-      stampAndEmailFiscalDocument: vi.fn().mockReturnValue(of({
-        fiscalDocumentId: 40,
-        stamped: true,
-        fiscalDocumentStatus: 'Stamped',
-        providerMessage: 'Stamped',
-        supportMessage: null,
-        errorMessage: null,
-        email: {
-          attempted: true,
-          sent: true,
-          status: 'sent',
+      getEmailDraft: vi.fn().mockReturnValue(
+        of({
+          outcome: 'Found',
+          isSuccess: true,
+          defaultRecipientEmail: 'cliente@example.com',
+          suggestedSubject: 'CFDI timbrado A8',
+          suggestedBody: 'Adjuntamos XML y PDF.',
+        }),
+      ),
+      sendByEmail: vi.fn().mockReturnValue(
+        of({
+          outcome: 'Sent',
+          isSuccess: true,
+          fiscalDocumentId: 40,
           recipients: ['cliente@example.com'],
-          invalidRecipients: [],
-          message: 'El correo fue enviado automáticamente a: cliente@example.com.'
-        }
-      })),
+          sentAtUtc: '2026-03-24T12:10:00Z',
+        }),
+      ),
+      getCancellation: vi.fn().mockReturnValue(throwError(() => ({ status: 404 }))),
+      listPendingCancellationAuthorizations: vi.fn().mockReturnValue(
+        of({
+          outcome: 'Retrieved',
+          isSuccess: true,
+          items: [],
+        }),
+      ),
+      respondCancellationAuthorization: vi.fn().mockReturnValue(
+        of({
+          outcome: 'Responded',
+          isSuccess: true,
+          requestedResponse: 'Accept',
+          appliedResponse: 'Accept',
+          uuid: 'UUID-123',
+          fiscalDocumentId: 40,
+          fiscalDocumentStatus: 'CancellationRequested',
+          fiscalCancellationId: 90,
+          cancellationStatus: 'Requested',
+          authorizationStatus: 'Accepted',
+        }),
+      ),
+      syncFiscalDocumentSpecialFields: vi.fn().mockReturnValue(
+        of({
+          outcome: 'Updated',
+          isSuccess: true,
+          fiscalDocumentId: 40,
+          fiscalDocumentStatus: 'ReadyForStamping',
+          specialFieldCount: 0,
+        }),
+      ),
+      stampFiscalDocument: vi.fn(),
+      stampAndEmailFiscalDocument: vi.fn().mockReturnValue(
+        of({
+          fiscalDocumentId: 40,
+          stamped: true,
+          fiscalDocumentStatus: 'Stamped',
+          providerMessage: 'Stamped',
+          supportMessage: null,
+          errorMessage: null,
+          email: {
+            attempted: true,
+            sent: true,
+            status: 'sent',
+            recipients: ['cliente@example.com'],
+            invalidRecipients: [],
+            message: 'El correo fue enviado automáticamente a: cliente@example.com.',
+          },
+        }),
+      ),
       cancelFiscalDocument: vi.fn(),
       refreshStatus: vi.fn(),
       queryRemoteStamp: vi.fn(),
-      ...overrides
+      ...overrides,
     };
   }
 
@@ -237,7 +265,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     routeOptions?: { id?: string | null; billingDocumentId?: string | null },
     productApiOverrides?: Partial<Record<keyof ProductFiscalProfilesApiService, unknown>>,
     receiverApiOverrides?: Partial<Record<keyof FiscalReceiversApiService, unknown>>,
-    ordersApiOverrides?: Partial<Record<keyof OrdersApiService, unknown>>
+    ordersApiOverrides?: Partial<Record<keyof OrdersApiService, unknown>>,
   ) {
     const routeId = routeOptions && 'id' in routeOptions ? routeOptions.id : '40';
 
@@ -248,128 +276,138 @@ describe('FiscalDocumentOperationsPageComponent', () => {
           provide: ActivatedRoute,
           useValue: {
             snapshot: {
-              queryParamMap: convertToParamMap(routeOptions?.billingDocumentId ? { billingDocumentId: routeOptions.billingDocumentId } : {}),
-              paramMap: convertToParamMap(routeId ? { id: routeId } : {})
-            }
-          }
+              queryParamMap: convertToParamMap(
+                routeOptions?.billingDocumentId
+                  ? { billingDocumentId: routeOptions.billingDocumentId }
+                  : {},
+              ),
+              paramMap: convertToParamMap(routeId ? { id: routeId } : {}),
+            },
+          },
         },
         {
           provide: FiscalDocumentsApiService,
-          useValue: createApi(apiOverrides)
+          useValue: createApi(apiOverrides),
         },
         {
           provide: FeedbackService,
-          useValue: { show: vi.fn() }
+          useValue: { show: vi.fn() },
         },
         {
           provide: OrdersApiService,
           useValue: {
-            importLegacyOrder: vi.fn().mockReturnValue(of({
-              outcome: 'Imported',
-              isSuccess: true,
-              isIdempotent: false,
-              sourceSystem: 'legacy',
-              sourceTable: 'pedidos',
-              legacyOrderId: 'LEG-2002',
-              sourceHash: 'hash',
-              salesOrderId: 21,
-              importStatus: 'Imported'
-            })),
-            ...ordersApiOverrides
-          }
+            importLegacyOrder: vi.fn().mockReturnValue(
+              of({
+                outcome: 'Imported',
+                isSuccess: true,
+                isIdempotent: false,
+                sourceSystem: 'legacy',
+                sourceTable: 'pedidos',
+                legacyOrderId: 'LEG-2002',
+                sourceHash: 'hash',
+                salesOrderId: 21,
+                importStatus: 'Imported',
+              }),
+            ),
+            ...ordersApiOverrides,
+          },
         },
         {
           provide: ProductFiscalProfilesApiService,
           useValue: {
-            create: vi.fn().mockReturnValue(of({
-              outcome: 'Created',
-              isSuccess: true,
-              id: 15
-            })),
-            ...productApiOverrides
-          }
+            create: vi.fn().mockReturnValue(
+              of({
+                outcome: 'Created',
+                isSuccess: true,
+                id: 15,
+              }),
+            ),
+            ...productApiOverrides,
+          },
         },
         {
           provide: SatProductServicesApiService,
           useValue: {
-            search: vi.fn().mockReturnValue(of([
-              {
-                code: '40161513',
-                description: 'Filtro de aceite',
-                displayText: '40161513 — Filtro de aceite',
-                matchKind: 'text'
-              },
-              {
-                code: '01010101',
-                description: 'No existe en el catálogo',
-                displayText: '01010101 — No existe en el catálogo',
-                matchKind: 'exactCode'
-              }
-            ]))
-          }
+            search: vi.fn().mockReturnValue(
+              of([
+                {
+                  code: '40161513',
+                  description: 'Filtro de aceite',
+                  displayText: '40161513 — Filtro de aceite',
+                  matchKind: 'text',
+                },
+                {
+                  code: '01010101',
+                  description: 'No existe en el catálogo',
+                  displayText: '01010101 — No existe en el catálogo',
+                  matchKind: 'exactCode',
+                },
+              ]),
+            ),
+          },
         },
         {
           provide: FiscalReceiversApiService,
           useValue: {
             search: vi.fn().mockReturnValue(of([])),
-            getByRfc: vi.fn().mockReturnValue(of({
-              id: 9,
-              rfc: 'BBB010101BBB',
-              legalName: 'Receiver One',
-              postalCode: '02000',
-              fiscalRegimeCode: '601',
-              cfdiUseCodeDefault: 'G03',
-              countryCode: 'MX',
-              foreignTaxRegistration: null,
-              email: 'cliente@example.com',
-              phone: null,
-              searchAlias: null,
-              isActive: true,
-              createdAtUtc: '2026-03-20T12:00:00Z',
-              updatedAtUtc: '2026-03-20T12:00:00Z'
-            })),
-            getSatCatalog: vi.fn().mockReturnValue(of({
-              regimenFiscal: [
-                { code: '601', description: 'General de Ley Personas Morales' }
-              ],
-              usoCfdi: [
-                { code: 'G03', description: 'Gastos en general' }
-              ],
-              paymentMethods: [
-                { code: 'PUE', description: 'Pago en una sola exhibición' },
-                { code: 'PPD', description: 'Pago en parcialidades o diferido' }
-              ],
-              paymentForms: [
-                { code: '03', description: 'Transferencia electrónica de fondos' },
-                { code: '28', description: 'Tarjeta de débito' },
-                { code: '99', description: 'Por definir' }
-              ],
-              byRegimenFiscal: [
-                {
-                  code: '601',
-                  description: 'General de Ley Personas Morales',
-                  allowedUsoCfdi: [{ code: 'G03', description: 'Gastos en general' }]
-                }
-              ]
-            })),
+            getByRfc: vi.fn().mockReturnValue(
+              of({
+                id: 9,
+                rfc: 'BBB010101BBB',
+                legalName: 'Receiver One',
+                postalCode: '02000',
+                fiscalRegimeCode: '601',
+                cfdiUseCodeDefault: 'G03',
+                countryCode: 'MX',
+                foreignTaxRegistration: null,
+                email: 'cliente@example.com',
+                phone: null,
+                searchAlias: null,
+                isActive: true,
+                createdAtUtc: '2026-03-20T12:00:00Z',
+                updatedAtUtc: '2026-03-20T12:00:00Z',
+              }),
+            ),
+            getSatCatalog: vi.fn().mockReturnValue(
+              of({
+                regimenFiscal: [{ code: '601', description: 'General de Ley Personas Morales' }],
+                usoCfdi: [{ code: 'G03', description: 'Gastos en general' }],
+                paymentMethods: [
+                  { code: 'PUE', description: 'Pago en una sola exhibición' },
+                  { code: 'PPD', description: 'Pago en parcialidades o diferido' },
+                ],
+                paymentForms: [
+                  { code: '03', description: 'Transferencia electrónica de fondos' },
+                  { code: '28', description: 'Tarjeta de débito' },
+                  { code: '99', description: 'Por definir' },
+                ],
+                byRegimenFiscal: [
+                  {
+                    code: '601',
+                    description: 'General de Ley Personas Morales',
+                    allowedUsoCfdi: [{ code: 'G03', description: 'Gastos en general' }],
+                  },
+                ],
+              }),
+            ),
             create: vi.fn().mockReturnValue(of({ outcome: 'Created', isSuccess: true, id: 9 })),
             update: vi.fn(),
-            ...receiverApiOverrides
-          }
+            ...receiverApiOverrides,
+          },
         },
         {
           provide: Router,
-          useValue: { navigate: vi.fn().mockResolvedValue(true) }
+          useValue: { navigate: vi.fn().mockResolvedValue(true) },
         },
         {
           provide: PermissionService,
           useValue: {
             canStampFiscal: vi.fn().mockReturnValue(true),
             canCancelFiscal: vi.fn().mockReturnValue(true),
-            canWriteMasterData: vi.fn().mockReturnValue(true)
-          }
-        }
-      ]
+            canWriteMasterData: vi.fn().mockReturnValue(true),
+          },
+        },
+      ],
     }).compileComponents();
 
     const fixture = TestBed.createComponent(FiscalDocumentOperationsPageComponent);
@@ -381,10 +419,12 @@ describe('FiscalDocumentOperationsPageComponent', () => {
 
   it('shows empty evidence state when the fiscal document is not stamped yet', async () => {
     const fixture = await configure({
-      getStamp: vi.fn().mockReturnValue(throwError(() => ({ status: 404 })))
+      getStamp: vi.fn().mockReturnValue(throwError(() => ({ status: 404 }))),
     });
 
-    expect(fixture.nativeElement.textContent).toContain('Aún no hay evidencia de timbrado disponible');
+    expect(fixture.nativeElement.textContent).toContain(
+      'Aún no hay evidencia de timbrado disponible',
+    );
   });
 
   it('shows PDF actions for stamped documents without the persistent email action', async () => {
@@ -398,16 +438,20 @@ describe('FiscalDocumentOperationsPageComponent', () => {
   it('downloads the stamped PDF with RFC plus series-folio plus receiver RFC', async () => {
     const fixture = await configure();
     const createObjectUrlSpy = vi.spyOn(window.URL, 'createObjectURL').mockReturnValue('blob:pdf');
-    const revokeObjectUrlSpy = vi.spyOn(window.URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    const revokeObjectUrlSpy = vi
+      .spyOn(window.URL, 'revokeObjectURL')
+      .mockImplementation(() => undefined);
     const clickSpy = vi.fn();
     const originalCreateElement = document.createElement.bind(document);
     const createdAnchors: HTMLAnchorElement[] = [];
-    const createElementSpy = vi.spyOn(document, 'createElement').mockImplementation(((tagName: string) => {
+    const createElementSpy = vi.spyOn(document, 'createElement').mockImplementation(((
+      tagName: string,
+    ) => {
       if (tagName === 'a') {
         const anchor = {
           href: '',
           download: '',
-          click: clickSpy
+          click: clickSpy,
         } as unknown as HTMLAnchorElement;
         createdAnchors.push(anchor);
         return anchor;
@@ -446,7 +490,9 @@ describe('FiscalDocumentOperationsPageComponent', () => {
 
   it('shows an XML error state when the XML endpoint fails', async () => {
     const fixture = await configure({
-      getStampXml: vi.fn().mockReturnValue(throwError(() => ({ error: { errorMessage: 'Forbidden' } })))
+      getStampXml: vi
+        .fn()
+        .mockReturnValue(throwError(() => ({ error: { errorMessage: 'Forbidden' } }))),
     });
 
     await fixture.componentInstance['openStampXml']();
@@ -472,22 +518,24 @@ describe('FiscalDocumentOperationsPageComponent', () => {
   });
 
   it('stamps and auto-sends email with a combined confirmation message', async () => {
-    const stampAndEmailFiscalDocument = vi.fn().mockReturnValue(of({
-      fiscalDocumentId: 40,
-      stamped: true,
-      fiscalDocumentStatus: 'Stamped',
-      providerMessage: 'Stamped',
-      supportMessage: null,
-      errorMessage: null,
-      email: {
-        attempted: true,
-        sent: true,
-        status: 'sent',
-        recipients: ['cliente@example.com'],
-        invalidRecipients: [],
-        message: 'El correo fue enviado automáticamente a: cliente@example.com.'
-      }
-    }));
+    const stampAndEmailFiscalDocument = vi.fn().mockReturnValue(
+      of({
+        fiscalDocumentId: 40,
+        stamped: true,
+        fiscalDocumentStatus: 'Stamped',
+        providerMessage: 'Stamped',
+        supportMessage: null,
+        errorMessage: null,
+        email: {
+          attempted: true,
+          sent: true,
+          status: 'sent',
+          recipients: ['cliente@example.com'],
+          invalidRecipients: [],
+          message: 'El correo fue enviado automáticamente a: cliente@example.com.',
+        },
+      }),
+    );
     const readyDocument = {
       id: 40,
       billingDocumentId: 30,
@@ -525,63 +573,113 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       discountTotal: 0,
       taxTotal: 0,
       total: 100,
-      items: []
+      items: [],
     };
     const stampedDocument = { ...readyDocument, status: 'Stamped' };
     const fixture = await configure({
       stampAndEmailFiscalDocument,
-      getFiscalDocumentById: vi.fn()
+      getFiscalDocumentById: vi
+        .fn()
         .mockReturnValue(of(stampedDocument))
         .mockReturnValueOnce(of(readyDocument))
-        .mockReturnValueOnce(of(readyDocument))
+        .mockReturnValueOnce(of(readyDocument)),
     });
+    const feedback = TestBed.inject(FeedbackService) as unknown as {
+      show: ReturnType<typeof vi.fn>;
+    };
 
     await fixture.componentInstance['stamp']();
 
     expect(stampAndEmailFiscalDocument).toHaveBeenCalledWith(40, { retryRejected: false });
-    expect(fixture.componentInstance['lastOperationMessage']()).toContain('correo fue enviado automáticamente');
+    expect(fixture.componentInstance['lastOperationMessage']()).toBeNull();
     expect(fixture.componentInstance['showEmailComposer']()).toBe(false);
+    expect(feedback.show).toHaveBeenCalledWith(
+      'success',
+      'CFDI timbrado correctamente. El correo fue enviado automáticamente a: cliente@example.com.',
+    );
   });
 
   it('opens the fallback composer automatically when the receiver email is missing', async () => {
-    const stampAndEmailFiscalDocument = vi.fn().mockReturnValue(of({
-      fiscalDocumentId: 40,
-      stamped: true,
-      fiscalDocumentStatus: 'Stamped',
-      providerMessage: 'Stamped',
-      supportMessage: null,
-      errorMessage: null,
-      email: {
-        attempted: false,
-        sent: false,
-        status: 'missing',
-        recipients: [],
-        invalidRecipients: [],
-        message: 'El receptor no tiene un email registrado.'
-      }
-    }));
+    const stampAndEmailFiscalDocument = vi.fn().mockReturnValue(
+      of({
+        fiscalDocumentId: 40,
+        stamped: true,
+        fiscalDocumentStatus: 'Stamped',
+        providerMessage: 'Stamped',
+        supportMessage: null,
+        errorMessage: null,
+        email: {
+          attempted: false,
+          sent: false,
+          status: 'missing',
+          recipients: [],
+          invalidRecipients: [],
+          message: 'El receptor no tiene un email registrado.',
+        },
+      }),
+    );
     const readyDocument = {
-      id: 40, billingDocumentId: 30, issuerProfileId: 1, fiscalReceiverId: 9, status: 'ReadyForStamping', cfdiVersion: '4.0',
-      documentType: 'I', series: 'A', folio: '31787', issuedAtUtc: '2026-03-20T12:00:00Z', currencyCode: 'MXN', exchangeRate: 1,
-      paymentMethodSat: 'PPD', paymentFormSat: '99', paymentCondition: 'CREDITO', isCreditSale: true, creditDays: 7,
-      issuerRfc: 'AAA010101AAA', issuerLegalName: 'Issuer SA', issuerFiscalRegimeCode: '601', issuerPostalCode: '01000',
-      pacEnvironment: 'Sandbox', hasCertificateReference: true, hasPrivateKeyReference: true, hasPrivateKeyPasswordReference: true,
-      receiverRfc: 'BBB010101BBB', receiverLegalName: 'Receiver One', receiverFiscalRegimeCode: '601', receiverCfdiUseCode: 'G03',
-      receiverPostalCode: '02000', receiverCountryCode: 'MX', receiverForeignTaxRegistration: null, subtotal: 100, discountTotal: 0, taxTotal: 0, total: 100, items: []
+      id: 40,
+      billingDocumentId: 30,
+      issuerProfileId: 1,
+      fiscalReceiverId: 9,
+      status: 'ReadyForStamping',
+      cfdiVersion: '4.0',
+      documentType: 'I',
+      series: 'A',
+      folio: '31787',
+      issuedAtUtc: '2026-03-20T12:00:00Z',
+      currencyCode: 'MXN',
+      exchangeRate: 1,
+      paymentMethodSat: 'PPD',
+      paymentFormSat: '99',
+      paymentCondition: 'CREDITO',
+      isCreditSale: true,
+      creditDays: 7,
+      issuerRfc: 'AAA010101AAA',
+      issuerLegalName: 'Issuer SA',
+      issuerFiscalRegimeCode: '601',
+      issuerPostalCode: '01000',
+      pacEnvironment: 'Sandbox',
+      hasCertificateReference: true,
+      hasPrivateKeyReference: true,
+      hasPrivateKeyPasswordReference: true,
+      receiverRfc: 'BBB010101BBB',
+      receiverLegalName: 'Receiver One',
+      receiverFiscalRegimeCode: '601',
+      receiverCfdiUseCode: 'G03',
+      receiverPostalCode: '02000',
+      receiverCountryCode: 'MX',
+      receiverForeignTaxRegistration: null,
+      subtotal: 100,
+      discountTotal: 0,
+      taxTotal: 0,
+      total: 100,
+      items: [],
     };
     const stampedDocument = { ...readyDocument, status: 'Stamped' };
-    const getFiscalDocumentById = vi.fn()
+    const getFiscalDocumentById = vi
+      .fn()
       .mockReturnValue(of(stampedDocument))
       .mockReturnValueOnce(of(readyDocument))
       .mockReturnValueOnce(of(readyDocument));
-    const getEmailDraft = vi.fn().mockReturnValue(of({
-      outcome: 'Found',
-      isSuccess: true,
-      defaultRecipientEmail: null,
-      suggestedSubject: 'CFDI timbrado A8',
-      suggestedBody: 'Adjuntamos XML y PDF.'
-    }));
-    const fixture = await configure({ stampAndEmailFiscalDocument, getFiscalDocumentById, getEmailDraft });
+    const getEmailDraft = vi.fn().mockReturnValue(
+      of({
+        outcome: 'Found',
+        isSuccess: true,
+        defaultRecipientEmail: null,
+        suggestedSubject: 'CFDI timbrado A8',
+        suggestedBody: 'Adjuntamos XML y PDF.',
+      }),
+    );
+    const fixture = await configure({
+      stampAndEmailFiscalDocument,
+      getFiscalDocumentById,
+      getEmailDraft,
+    });
+    const feedback = TestBed.inject(FeedbackService) as unknown as {
+      show: ReturnType<typeof vi.fn>;
+    };
 
     await fixture.componentInstance['stamp']();
     await fixture.whenStable();
@@ -589,49 +687,95 @@ describe('FiscalDocumentOperationsPageComponent', () => {
 
     expect(fixture.componentInstance['showEmailComposer']()).toBe(true);
     expect(fixture.componentInstance['emailRecipientsInput']).toBe('');
-    expect(fixture.componentInstance['lastOperationMessage']()).toContain('no tiene un email registrado');
+    expect(fixture.componentInstance['lastOperationMessage']()).toBeNull();
     expect(fixture.nativeElement.textContent).toContain('Continuar sin enviar');
+    expect(feedback.show).toHaveBeenCalledWith(
+      'success',
+      'CFDI timbrado correctamente. El receptor no tiene un email registrado.',
+    );
   });
 
   it('opens the fallback composer automatically when the receiver email is invalid', async () => {
-    const stampAndEmailFiscalDocument = vi.fn().mockReturnValue(of({
-      fiscalDocumentId: 40,
-      stamped: true,
-      fiscalDocumentStatus: 'Stamped',
-      providerMessage: 'Stamped',
-      supportMessage: null,
-      errorMessage: null,
-      email: {
-        attempted: false,
-        sent: false,
-        status: 'invalid',
-        recipients: [],
-        invalidRecipients: ['correo-invalido'],
-        message: 'El email registrado del receptor no es válido.'
-      }
-    }));
+    const stampAndEmailFiscalDocument = vi.fn().mockReturnValue(
+      of({
+        fiscalDocumentId: 40,
+        stamped: true,
+        fiscalDocumentStatus: 'Stamped',
+        providerMessage: 'Stamped',
+        supportMessage: null,
+        errorMessage: null,
+        email: {
+          attempted: false,
+          sent: false,
+          status: 'invalid',
+          recipients: [],
+          invalidRecipients: ['correo-invalido'],
+          message: 'El email registrado del receptor no es válido.',
+        },
+      }),
+    );
     const readyDocument = {
-      id: 40, billingDocumentId: 30, issuerProfileId: 1, fiscalReceiverId: 9, status: 'ReadyForStamping', cfdiVersion: '4.0',
-      documentType: 'I', series: 'A', folio: '31787', issuedAtUtc: '2026-03-20T12:00:00Z', currencyCode: 'MXN', exchangeRate: 1,
-      paymentMethodSat: 'PPD', paymentFormSat: '99', paymentCondition: 'CREDITO', isCreditSale: true, creditDays: 7,
-      issuerRfc: 'AAA010101AAA', issuerLegalName: 'Issuer SA', issuerFiscalRegimeCode: '601', issuerPostalCode: '01000',
-      pacEnvironment: 'Sandbox', hasCertificateReference: true, hasPrivateKeyReference: true, hasPrivateKeyPasswordReference: true,
-      receiverRfc: 'BBB010101BBB', receiverLegalName: 'Receiver One', receiverFiscalRegimeCode: '601', receiverCfdiUseCode: 'G03',
-      receiverPostalCode: '02000', receiverCountryCode: 'MX', receiverForeignTaxRegistration: null, subtotal: 100, discountTotal: 0, taxTotal: 0, total: 100, items: []
+      id: 40,
+      billingDocumentId: 30,
+      issuerProfileId: 1,
+      fiscalReceiverId: 9,
+      status: 'ReadyForStamping',
+      cfdiVersion: '4.0',
+      documentType: 'I',
+      series: 'A',
+      folio: '31787',
+      issuedAtUtc: '2026-03-20T12:00:00Z',
+      currencyCode: 'MXN',
+      exchangeRate: 1,
+      paymentMethodSat: 'PPD',
+      paymentFormSat: '99',
+      paymentCondition: 'CREDITO',
+      isCreditSale: true,
+      creditDays: 7,
+      issuerRfc: 'AAA010101AAA',
+      issuerLegalName: 'Issuer SA',
+      issuerFiscalRegimeCode: '601',
+      issuerPostalCode: '01000',
+      pacEnvironment: 'Sandbox',
+      hasCertificateReference: true,
+      hasPrivateKeyReference: true,
+      hasPrivateKeyPasswordReference: true,
+      receiverRfc: 'BBB010101BBB',
+      receiverLegalName: 'Receiver One',
+      receiverFiscalRegimeCode: '601',
+      receiverCfdiUseCode: 'G03',
+      receiverPostalCode: '02000',
+      receiverCountryCode: 'MX',
+      receiverForeignTaxRegistration: null,
+      subtotal: 100,
+      discountTotal: 0,
+      taxTotal: 0,
+      total: 100,
+      items: [],
     };
     const stampedDocument = { ...readyDocument, status: 'Stamped' };
-    const getFiscalDocumentById = vi.fn()
+    const getFiscalDocumentById = vi
+      .fn()
       .mockReturnValue(of(stampedDocument))
       .mockReturnValueOnce(of(readyDocument))
       .mockReturnValueOnce(of(readyDocument));
-    const getEmailDraft = vi.fn().mockReturnValue(of({
-      outcome: 'Found',
-      isSuccess: true,
-      defaultRecipientEmail: 'correo-invalido',
-      suggestedSubject: 'CFDI timbrado A8',
-      suggestedBody: 'Adjuntamos XML y PDF.'
-    }));
-    const fixture = await configure({ stampAndEmailFiscalDocument, getFiscalDocumentById, getEmailDraft });
+    const getEmailDraft = vi.fn().mockReturnValue(
+      of({
+        outcome: 'Found',
+        isSuccess: true,
+        defaultRecipientEmail: 'correo-invalido',
+        suggestedSubject: 'CFDI timbrado A8',
+        suggestedBody: 'Adjuntamos XML y PDF.',
+      }),
+    );
+    const fixture = await configure({
+      stampAndEmailFiscalDocument,
+      getFiscalDocumentById,
+      getEmailDraft,
+    });
+    const feedback = TestBed.inject(FeedbackService) as unknown as {
+      show: ReturnType<typeof vi.fn>;
+    };
 
     await fixture.componentInstance['stamp']();
     await fixture.whenStable();
@@ -639,42 +783,82 @@ describe('FiscalDocumentOperationsPageComponent', () => {
 
     expect(fixture.componentInstance['showEmailComposer']()).toBe(true);
     expect(fixture.componentInstance['emailRecipientsInput']).toBe('correo-invalido');
-    expect(fixture.componentInstance['lastOperationMessage']()).toContain('no es válido');
+    expect(fixture.componentInstance['lastOperationMessage']()).toBeNull();
     expect(fixture.nativeElement.textContent).toContain('Continuar sin enviar');
+    expect(feedback.show).toHaveBeenCalledWith(
+      'success',
+      'CFDI timbrado correctamente. El email registrado del receptor no es válido.',
+    );
   });
 
   it('opens the fallback composer automatically when auto-email fails and keeps manual send available', async () => {
-    const stampAndEmailFiscalDocument = vi.fn().mockReturnValue(of({
-      fiscalDocumentId: 40,
-      stamped: true,
-      fiscalDocumentStatus: 'Stamped',
-      providerMessage: 'Stamped',
-      supportMessage: null,
-      errorMessage: null,
-      email: {
-        attempted: true,
-        sent: false,
-        status: 'failed',
-        recipients: ['cliente@example.com'],
-        invalidRecipients: [],
-        message: 'SMTP no disponible.'
-      }
-    }));
+    const stampAndEmailFiscalDocument = vi.fn().mockReturnValue(
+      of({
+        fiscalDocumentId: 40,
+        stamped: true,
+        fiscalDocumentStatus: 'Stamped',
+        providerMessage: 'Stamped',
+        supportMessage: null,
+        errorMessage: null,
+        email: {
+          attempted: true,
+          sent: false,
+          status: 'failed',
+          recipients: ['cliente@example.com'],
+          invalidRecipients: [],
+          message: 'SMTP no disponible.',
+        },
+      }),
+    );
     const readyDocument = {
-      id: 40, billingDocumentId: 30, issuerProfileId: 1, fiscalReceiverId: 9, status: 'ReadyForStamping', cfdiVersion: '4.0',
-      documentType: 'I', series: 'A', folio: '31787', issuedAtUtc: '2026-03-20T12:00:00Z', currencyCode: 'MXN', exchangeRate: 1,
-      paymentMethodSat: 'PPD', paymentFormSat: '99', paymentCondition: 'CREDITO', isCreditSale: true, creditDays: 7,
-      issuerRfc: 'AAA010101AAA', issuerLegalName: 'Issuer SA', issuerFiscalRegimeCode: '601', issuerPostalCode: '01000',
-      pacEnvironment: 'Sandbox', hasCertificateReference: true, hasPrivateKeyReference: true, hasPrivateKeyPasswordReference: true,
-      receiverRfc: 'BBB010101BBB', receiverLegalName: 'Receiver One', receiverFiscalRegimeCode: '601', receiverCfdiUseCode: 'G03',
-      receiverPostalCode: '02000', receiverCountryCode: 'MX', receiverForeignTaxRegistration: null, subtotal: 100, discountTotal: 0, taxTotal: 0, total: 100, items: []
+      id: 40,
+      billingDocumentId: 30,
+      issuerProfileId: 1,
+      fiscalReceiverId: 9,
+      status: 'ReadyForStamping',
+      cfdiVersion: '4.0',
+      documentType: 'I',
+      series: 'A',
+      folio: '31787',
+      issuedAtUtc: '2026-03-20T12:00:00Z',
+      currencyCode: 'MXN',
+      exchangeRate: 1,
+      paymentMethodSat: 'PPD',
+      paymentFormSat: '99',
+      paymentCondition: 'CREDITO',
+      isCreditSale: true,
+      creditDays: 7,
+      issuerRfc: 'AAA010101AAA',
+      issuerLegalName: 'Issuer SA',
+      issuerFiscalRegimeCode: '601',
+      issuerPostalCode: '01000',
+      pacEnvironment: 'Sandbox',
+      hasCertificateReference: true,
+      hasPrivateKeyReference: true,
+      hasPrivateKeyPasswordReference: true,
+      receiverRfc: 'BBB010101BBB',
+      receiverLegalName: 'Receiver One',
+      receiverFiscalRegimeCode: '601',
+      receiverCfdiUseCode: 'G03',
+      receiverPostalCode: '02000',
+      receiverCountryCode: 'MX',
+      receiverForeignTaxRegistration: null,
+      subtotal: 100,
+      discountTotal: 0,
+      taxTotal: 0,
+      total: 100,
+      items: [],
     };
     const stampedDocument = { ...readyDocument, status: 'Stamped' };
-    const getFiscalDocumentById = vi.fn()
+    const getFiscalDocumentById = vi
+      .fn()
       .mockReturnValue(of(stampedDocument))
       .mockReturnValueOnce(of(readyDocument))
       .mockReturnValueOnce(of(readyDocument));
     const fixture = await configure({ stampAndEmailFiscalDocument, getFiscalDocumentById });
+    const feedback = TestBed.inject(FeedbackService) as unknown as {
+      show: ReturnType<typeof vi.fn>;
+    };
 
     await fixture.componentInstance['stamp']();
     await fixture.whenStable();
@@ -682,7 +866,11 @@ describe('FiscalDocumentOperationsPageComponent', () => {
 
     expect(fixture.componentInstance['showEmailComposer']()).toBe(true);
     expect(fixture.componentInstance['emailRecipientsInput']).toBe('cliente@example.com');
-    expect(fixture.componentInstance['lastOperationMessage']()).toContain('no fue posible enviar el correo');
+    expect(fixture.componentInstance['lastOperationMessage']()).toBeNull();
+    expect(feedback.show).toHaveBeenCalledWith(
+      'success',
+      'CFDI timbrado correctamente, pero no fue posible enviar el correo.',
+    );
 
     fixture.componentInstance['closeEmailComposer']();
     fixture.detectChanges();
@@ -691,13 +879,15 @@ describe('FiscalDocumentOperationsPageComponent', () => {
   });
 
   it('sends the stamped CFDI by email and shows confirmation', async () => {
-    const sendByEmail = vi.fn().mockReturnValue(of({
-      outcome: 'Sent',
-      isSuccess: true,
-      fiscalDocumentId: 40,
-      recipients: ['cliente@example.com'],
-      sentAtUtc: '2026-03-24T12:10:00Z'
-    }));
+    const sendByEmail = vi.fn().mockReturnValue(
+      of({
+        outcome: 'Sent',
+        isSuccess: true,
+        fiscalDocumentId: 40,
+        recipients: ['cliente@example.com'],
+        sentAtUtc: '2026-03-24T12:10:00Z',
+      }),
+    );
     const fixture = await configure({ sendByEmail });
     await fixture.componentInstance['openEmailComposer']();
     fixture.componentInstance['emailRecipientsInput'] = 'cliente@example.com';
@@ -709,14 +899,18 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(sendByEmail).toHaveBeenCalledWith(40, {
       recipients: ['cliente@example.com'],
       subject: 'CFDI timbrado A8',
-      body: 'Adjuntamos XML y PDF.'
+      body: 'Adjuntamos XML y PDF.',
     });
-    expect(fixture.componentInstance['lastOperationMessage']()).toContain('CFDI enviado correctamente');
+    expect(fixture.componentInstance['lastOperationMessage']()).toContain(
+      'CFDI enviado correctamente',
+    );
   });
 
   it('keeps the email composer open when sending fails', async () => {
     const fixture = await configure({
-      sendByEmail: vi.fn().mockReturnValue(throwError(() => ({ error: { errorMessage: 'SMTP no disponible.' } })))
+      sendByEmail: vi
+        .fn()
+        .mockReturnValue(throwError(() => ({ error: { errorMessage: 'SMTP no disponible.' } }))),
     });
     await fixture.componentInstance['loadFiscalDocument'](40);
     fixture.detectChanges();
@@ -732,23 +926,25 @@ describe('FiscalDocumentOperationsPageComponent', () => {
 
   it('debounces receiver search and renders suggestions', async () => {
     vi.useFakeTimers();
-    const searchReceivers = vi.fn().mockReturnValue(of([
-      {
-        id: 9,
-        rfc: 'BBB010101BBB',
-        legalName: 'Receiver One',
-        postalCode: '02000',
-        fiscalRegimeCode: '601',
-        cfdiUseCodeDefault: 'G03',
-        isActive: true
-      }
-    ]));
+    const searchReceivers = vi.fn().mockReturnValue(
+      of([
+        {
+          id: 9,
+          rfc: 'BBB010101BBB',
+          legalName: 'Receiver One',
+          postalCode: '02000',
+          fiscalRegimeCode: '601',
+          cfdiUseCodeDefault: 'G03',
+          isActive: true,
+        },
+      ]),
+    );
 
     const fixture = await configure(
       {
-        searchReceivers
+        searchReceivers,
       },
-      { id: null, billingDocumentId: '30' }
+      { id: null, billingDocumentId: '30' },
     );
 
     fixture.componentInstance['onReceiverQueryChange']('BBB');
@@ -775,7 +971,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       postalCode: '02000',
       fiscalRegimeCode: '601',
       cfdiUseCodeDefault: 'G03',
-      isActive: true
+      isActive: true,
     });
     await fixture.whenStable();
     fixture.detectChanges();
@@ -814,15 +1010,20 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       searchAlias: null,
       isActive: true,
       createdAtUtc: '2026-03-20T12:00:00Z',
-      updatedAtUtc: '2026-03-20T12:00:00Z'
+      updatedAtUtc: '2026-03-20T12:00:00Z',
     });
     fixture.componentInstance['paymentMethodSat'] = '';
     fixture.componentInstance['paymentFormSat'] = '';
     fixture.componentInstance['paymentCondition'] = '';
     fixture.detectChanges();
 
-    const submitButton = Array.from(fixture.nativeElement.querySelectorAll('button[type="submit"]') as NodeListOf<HTMLButtonElement>)
-      .find((button: HTMLButtonElement) => button.textContent?.includes('Preparar documento fiscal')) as HTMLButtonElement;
+    const submitButton = Array.from(
+      fixture.nativeElement.querySelectorAll(
+        'button[type="submit"]',
+      ) as NodeListOf<HTMLButtonElement>,
+    ).find((button: HTMLButtonElement) =>
+      button.textContent?.includes('Preparar documento fiscal'),
+    ) as HTMLButtonElement;
     expect(fixture.nativeElement.textContent).toContain('PUE - Pago en una sola exhibición');
     expect(fixture.nativeElement.textContent).toContain('99 - Por definir');
     expect(submitButton.disabled).toBe(true);
@@ -846,19 +1047,21 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(fixture.componentInstance['paymentFormSat']).toBe('99');
     expect(fixture.componentInstance['paymentCondition']).toBe('Crédito a 21 días');
     expect(fixture.componentInstance['availablePaymentFormOptions']()).toEqual([
-      { code: '99', description: 'Por definir' }
+      { code: '99', description: 'Por definir' },
     ]);
   });
 
   it('sends only SAT codes plus payment condition text when preparing', async () => {
-    const prepareFiscalDocument = vi.fn().mockReturnValue(of({
-      outcome: 'Created',
-      isSuccess: true,
-      fiscalDocumentId: 40
-    }));
+    const prepareFiscalDocument = vi.fn().mockReturnValue(
+      of({
+        outcome: 'Created',
+        isSuccess: true,
+        fiscalDocumentId: 40,
+      }),
+    );
     const fixture = await configure(
       { prepareFiscalDocument },
-      { id: null, billingDocumentId: '30' }
+      { id: null, billingDocumentId: '30' },
     );
 
     fixture.componentInstance['selectedReceiverId'] = 9;
@@ -869,12 +1072,15 @@ describe('FiscalDocumentOperationsPageComponent', () => {
 
     await fixture.componentInstance['prepare']();
 
-    expect(prepareFiscalDocument).toHaveBeenCalledWith(30, expect.objectContaining({
-      fiscalReceiverId: 9,
-      paymentMethodSat: 'PUE',
-      paymentFormSat: '03',
-      paymentCondition: 'Contado'
-    }));
+    expect(prepareFiscalDocument).toHaveBeenCalledWith(
+      30,
+      expect.objectContaining({
+        fiscalReceiverId: 9,
+        paymentMethodSat: 'PUE',
+        paymentFormSat: '03',
+        paymentCondition: 'Contado',
+      }),
+    );
   });
 
   it('shows SAT cancellation reasons with code plus description in the cancellation dialog', async () => {
@@ -883,10 +1089,16 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     fixture.componentInstance['openCancelDialog']();
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.textContent).toContain('01 - Comprobante emitido con errores con relación');
-    expect(fixture.nativeElement.textContent).toContain('02 - Comprobante emitido con errores sin relación');
+    expect(fixture.nativeElement.textContent).toContain(
+      '01 - Comprobante emitido con errores con relación',
+    );
+    expect(fixture.nativeElement.textContent).toContain(
+      '02 - Comprobante emitido con errores sin relación',
+    );
     expect(fixture.nativeElement.textContent).toContain('03 - No se llevó a cabo la operación');
-    expect(fixture.nativeElement.textContent).toContain('04 - Operación nominativa relacionada en una factura global');
+    expect(fixture.nativeElement.textContent).toContain(
+      '04 - Operación nominativa relacionada en una factura global',
+    );
   });
 
   it('requires replacementUuid only for reason 01 and clears it when switching to another reason', async () => {
@@ -897,7 +1109,9 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     fixture.detectChanges();
 
     expect(fixture.componentInstance['requiresCancellationReplacementUuid']()).toBe(true);
-    expect(fixture.componentInstance['getCancellationValidationError']()).toContain('UUID de sustitución');
+    expect(fixture.componentInstance['getCancellationValidationError']()).toContain(
+      'UUID de sustitución',
+    );
 
     fixture.componentInstance['onCancellationReplacementUuidChange']('UUID-SUSTITUTO');
     expect(fixture.componentInstance['getCancellationValidationError']()).toBeNull();
@@ -911,18 +1125,19 @@ describe('FiscalDocumentOperationsPageComponent', () => {
   });
 
   it('submits cancellation with SAT reason and replacementUuid only when reason 01 applies', async () => {
-    const cancelFiscalDocument = vi.fn().mockReturnValue(of({
-      outcome: 'Cancelled',
-      isSuccess: true,
-      fiscalDocumentId: 40,
-      fiscalDocumentStatus: 'Cancelled',
-      fiscalCancellationId: 90,
-      cancellationStatus: 'Cancelled',
-      providerName: 'FacturaloPlus',
-      providerTrackingId: 'TRACK-CANCEL-1',
-      cancelledAtUtc: '2026-03-28T12:00:00Z'
-    }));
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const cancelFiscalDocument = vi.fn().mockReturnValue(
+      of({
+        outcome: 'Cancelled',
+        isSuccess: true,
+        fiscalDocumentId: 40,
+        fiscalDocumentStatus: 'Cancelled',
+        fiscalCancellationId: 90,
+        cancellationStatus: 'Cancelled',
+        providerName: 'FacturaloPlus',
+        providerTrackingId: 'TRACK-CANCEL-1',
+        cancelledAtUtc: '2026-03-28T12:00:00Z',
+      }),
+    );
     const fixture = await configure({ cancelFiscalDocument });
 
     fixture.componentInstance['openCancelDialog']();
@@ -930,123 +1145,159 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     fixture.componentInstance['onCancellationReplacementUuidChange']('UUID-SUSTITUTO');
 
     await fixture.componentInstance['cancel']();
+    expect(fixture.componentInstance['showCancelConfirmationDialog']()).toBe(true);
 
-    expect(confirmSpy).toHaveBeenCalled();
+    await fixture.componentInstance['confirmCancellation']();
+
     expect(cancelFiscalDocument).toHaveBeenCalledWith(40, {
       cancellationReasonCode: '01',
-      replacementUuid: 'UUID-SUSTITUTO'
+      replacementUuid: 'UUID-SUSTITUTO',
     });
     expect(fixture.componentInstance['showCancelDialog']()).toBe(false);
-
-    confirmSpy.mockRestore();
+    expect(fixture.componentInstance['showCancelConfirmationDialog']()).toBe(false);
   });
 
   it('reconciles the local cancellation card immediately after a successful cancellation', async () => {
-    const cancelFiscalDocument = vi.fn().mockReturnValue(of({
-      outcome: 'Cancelled',
-      isSuccess: true,
-      fiscalDocumentId: 40,
-      fiscalDocumentStatus: 'Cancelled',
-      fiscalCancellationId: 90,
-      cancellationStatus: 'Cancelled',
-      providerName: 'FacturaloPlus',
-      providerTrackingId: 'TRACK-CANCEL-201',
-      providerCode: '201',
-      providerMessage: 'Solicitud de cancelación de UUID exitosa. - ',
-      errorCode: null,
-      rawResponseSummaryJson: '{"httpStatusCode":200}',
-      supportMessage: 'ProviderCode=201 | ProviderMessage=Solicitud de cancelación de UUID exitosa. - ',
-      cancelledAtUtc: '2026-03-29T18:40:00Z'
-    }));
-    const getCancellation = vi.fn().mockReturnValue(of({
-      fiscalDocumentId: 40,
-      status: 'Rejected',
-      cancellationReasonCode: '03',
-      replacementUuid: null,
-      providerName: 'FacturaloPlus',
-      providerTrackingId: null,
-      providerCode: '404',
-      providerMessage: 'Viejo rechazo',
-      errorCode: '404',
-      errorMessage: 'Old error',
-      supportMessage: 'old',
-      rawResponseSummaryJson: '{"old":true}',
-      requestedAtUtc: '2026-03-29T12:00:00Z',
-      cancelledAtUtc: null
-    }));
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    const fixture = await configure({ cancelFiscalDocument, getCancellation });
-
-    fixture.componentInstance['openCancelDialog']();
-    fixture.componentInstance['onCancellationReasonChange']('03');
-
-    await fixture.componentInstance['cancel']();
-
-    expect(fixture.componentInstance['fiscalDocument']()?.status).toBe('Cancelled');
-    expect(fixture.componentInstance['cancellation']()?.status).toBe('Cancelled');
-    expect(fixture.componentInstance['cancellation']()?.providerCode).toBe('201');
-    expect(fixture.componentInstance['lastOperationMessage']()).toContain('Cancelación exitosa');
-    expect(fixture.componentInstance['canCancelCurrentFiscalDocument']()).toBe(false);
-    confirmSpy.mockRestore();
-  });
-
-  it('allows reopening cancellation when the document is in CancellationRejected', async () => {
-    const fixture = await configure({
-      getFiscalDocumentById: vi.fn().mockReturnValue(of({
-        id: 40,
-        billingDocumentId: 30,
-        issuerProfileId: 1,
-        fiscalReceiverId: 9,
-        status: 'CancellationRejected',
-        cfdiVersion: '4.0',
-        documentType: 'I',
-        series: 'A',
-        folio: '31787',
-        issuedAtUtc: '2026-03-20T12:00:00Z',
-        currencyCode: 'MXN',
-        exchangeRate: 1,
-        paymentMethodSat: 'PPD',
-        paymentFormSat: '99',
-        paymentCondition: 'CREDITO',
-        isCreditSale: true,
-        creditDays: 7,
-        issuerRfc: 'AAA010101AAA',
-        issuerLegalName: 'Issuer SA',
-        issuerFiscalRegimeCode: '601',
-        issuerPostalCode: '01000',
-        pacEnvironment: 'Sandbox',
-        hasCertificateReference: true,
-        hasPrivateKeyReference: true,
-        hasPrivateKeyPasswordReference: true,
-        receiverRfc: 'BBB010101BBB',
-        receiverLegalName: 'Receiver One',
-        receiverFiscalRegimeCode: '601',
-        receiverCfdiUseCode: 'G03',
-        receiverPostalCode: '02000',
-        receiverCountryCode: 'MX',
-        receiverForeignTaxRegistration: null,
-        subtotal: 100,
-        discountTotal: 0,
-        taxTotal: 0,
-        total: 100,
-        items: []
-      })),
-      getCancellation: vi.fn().mockReturnValue(of({
+    const cancelFiscalDocument = vi.fn().mockReturnValue(
+      of({
+        outcome: 'Cancelled',
+        isSuccess: true,
+        fiscalDocumentId: 40,
+        fiscalDocumentStatus: 'Cancelled',
+        fiscalCancellationId: 90,
+        cancellationStatus: 'Cancelled',
+        providerName: 'FacturaloPlus',
+        providerTrackingId: 'TRACK-CANCEL-201',
+        providerCode: '201',
+        providerMessage: 'Solicitud de cancelación de UUID exitosa. - ',
+        errorCode: null,
+        rawResponseSummaryJson: '{"httpStatusCode":200}',
+        supportMessage:
+          'ProviderCode=201 | ProviderMessage=Solicitud de cancelación de UUID exitosa. - ',
+        cancelledAtUtc: '2026-03-29T18:40:00Z',
+      }),
+    );
+    const getCancellation = vi.fn().mockReturnValue(
+      of({
         fiscalDocumentId: 40,
         status: 'Rejected',
         cancellationReasonCode: '03',
         replacementUuid: null,
         providerName: 'FacturaloPlus',
         providerTrackingId: null,
-        providerCode: '203',
-        providerMessage: 'Solicitud rechazada',
-        errorCode: '203',
-        errorMessage: 'Provider rejected the cancellation request.',
-        supportMessage: 'ProviderCode=203 | ProviderMessage=Solicitud rechazada',
-        rawResponseSummaryJson: '{"httpStatusCode":400}',
+        providerCode: '404',
+        providerMessage: 'Viejo rechazo',
+        errorCode: '404',
+        errorMessage: 'Old error',
+        supportMessage: 'old',
+        rawResponseSummaryJson: '{"old":true}',
         requestedAtUtc: '2026-03-29T12:00:00Z',
-        cancelledAtUtc: null
-      }))
+        cancelledAtUtc: null,
+      }),
+    );
+    const fixture = await configure({ cancelFiscalDocument, getCancellation });
+    const feedback = TestBed.inject(FeedbackService) as unknown as {
+      show: ReturnType<typeof vi.fn>;
+    };
+
+    fixture.componentInstance['openCancelDialog']();
+    fixture.componentInstance['onCancellationReasonChange']('03');
+
+    await fixture.componentInstance['cancel']();
+    await fixture.componentInstance['confirmCancellation']();
+
+    expect(fixture.componentInstance['fiscalDocument']()?.status).toBe('Cancelled');
+    expect(fixture.componentInstance['cancellation']()?.status).toBe('Cancelled');
+    expect(fixture.componentInstance['cancellation']()?.providerCode).toBe('201');
+    expect(fixture.componentInstance['lastOperationMessage']()).toBeNull();
+    expect(fixture.componentInstance['canCancelCurrentFiscalDocument']()).toBe(false);
+    expect(feedback.show).toHaveBeenCalledWith(
+      'success',
+      'CFDI cancelado correctamente ante SAT/PAC.',
+    );
+  });
+
+  it('keeps the SAT reason selection when the user closes the final cancellation confirmation', async () => {
+    const fixture = await configure();
+
+    fixture.componentInstance['openCancelDialog']();
+    fixture.componentInstance['onCancellationReasonChange']('01');
+    fixture.componentInstance['onCancellationReplacementUuidChange']('UUID-SUSTITUTO');
+
+    await fixture.componentInstance['cancel']();
+
+    expect(fixture.componentInstance['showCancelDialog']()).toBe(true);
+    expect(fixture.componentInstance['showCancelConfirmationDialog']()).toBe(true);
+
+    fixture.componentInstance['closeCancelConfirmationDialog']();
+
+    expect(fixture.componentInstance['showCancelDialog']()).toBe(true);
+    expect(fixture.componentInstance['showCancelConfirmationDialog']()).toBe(false);
+    expect(fixture.componentInstance['cancellationReasonCode']).toBe('01');
+    expect(fixture.componentInstance['cancellationReplacementUuid']).toBe('UUID-SUSTITUTO');
+  });
+
+  it('allows reopening cancellation when the document is in CancellationRejected', async () => {
+    const fixture = await configure({
+      getFiscalDocumentById: vi.fn().mockReturnValue(
+        of({
+          id: 40,
+          billingDocumentId: 30,
+          issuerProfileId: 1,
+          fiscalReceiverId: 9,
+          status: 'CancellationRejected',
+          cfdiVersion: '4.0',
+          documentType: 'I',
+          series: 'A',
+          folio: '31787',
+          issuedAtUtc: '2026-03-20T12:00:00Z',
+          currencyCode: 'MXN',
+          exchangeRate: 1,
+          paymentMethodSat: 'PPD',
+          paymentFormSat: '99',
+          paymentCondition: 'CREDITO',
+          isCreditSale: true,
+          creditDays: 7,
+          issuerRfc: 'AAA010101AAA',
+          issuerLegalName: 'Issuer SA',
+          issuerFiscalRegimeCode: '601',
+          issuerPostalCode: '01000',
+          pacEnvironment: 'Sandbox',
+          hasCertificateReference: true,
+          hasPrivateKeyReference: true,
+          hasPrivateKeyPasswordReference: true,
+          receiverRfc: 'BBB010101BBB',
+          receiverLegalName: 'Receiver One',
+          receiverFiscalRegimeCode: '601',
+          receiverCfdiUseCode: 'G03',
+          receiverPostalCode: '02000',
+          receiverCountryCode: 'MX',
+          receiverForeignTaxRegistration: null,
+          subtotal: 100,
+          discountTotal: 0,
+          taxTotal: 0,
+          total: 100,
+          items: [],
+        }),
+      ),
+      getCancellation: vi.fn().mockReturnValue(
+        of({
+          fiscalDocumentId: 40,
+          status: 'Rejected',
+          cancellationReasonCode: '03',
+          replacementUuid: null,
+          providerName: 'FacturaloPlus',
+          providerTrackingId: null,
+          providerCode: '203',
+          providerMessage: 'Solicitud rechazada',
+          errorCode: '203',
+          errorMessage: 'Provider rejected the cancellation request.',
+          supportMessage: 'ProviderCode=203 | ProviderMessage=Solicitud rechazada',
+          rawResponseSummaryJson: '{"httpStatusCode":400}',
+          requestedAtUtc: '2026-03-29T12:00:00Z',
+          cancelledAtUtc: null,
+        }),
+      ),
     });
 
     expect(fixture.componentInstance['canCancelCurrentFiscalDocument']()).toBe(true);
@@ -1058,108 +1309,126 @@ describe('FiscalDocumentOperationsPageComponent', () => {
   });
 
   it('shows PAC diagnostic details after a rejected cancellation attempt', async () => {
-    const cancelFiscalDocument = vi.fn().mockReturnValue(of({
-      outcome: 'ProviderRejected',
-      isSuccess: false,
-      errorMessage: 'Provider rejected the cancellation request.',
-      fiscalDocumentId: 40,
-      fiscalDocumentStatus: 'CancellationRejected',
-      fiscalCancellationId: 90,
-      cancellationStatus: 'Rejected',
-      providerName: 'FacturaloPlus',
-      providerTrackingId: null,
-      providerCode: '203',
-      providerMessage: 'Solicitud rechazada',
-      errorCode: '203',
-      rawResponseSummaryJson: '{"httpStatusCode":400}',
-      supportMessage: 'ProviderCode=203 | ProviderMessage=Solicitud rechazada',
-      cancelledAtUtc: null
-    }));
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const cancelFiscalDocument = vi.fn().mockReturnValue(
+      of({
+        outcome: 'ProviderRejected',
+        isSuccess: false,
+        errorMessage: 'Provider rejected the cancellation request.',
+        fiscalDocumentId: 40,
+        fiscalDocumentStatus: 'CancellationRejected',
+        fiscalCancellationId: 90,
+        cancellationStatus: 'Rejected',
+        providerName: 'FacturaloPlus',
+        providerTrackingId: null,
+        providerCode: '203',
+        providerMessage: 'Solicitud rechazada',
+        errorCode: '203',
+        rawResponseSummaryJson: '{"httpStatusCode":400}',
+        supportMessage: 'ProviderCode=203 | ProviderMessage=Solicitud rechazada',
+        cancelledAtUtc: null,
+      }),
+    );
     const fixture = await configure({ cancelFiscalDocument });
+    const feedback = TestBed.inject(FeedbackService) as unknown as {
+      show: ReturnType<typeof vi.fn>;
+    };
 
     fixture.componentInstance['openCancelDialog']();
     fixture.componentInstance['onCancellationReasonChange']('03');
 
     await fixture.componentInstance['cancel']();
+    await fixture.componentInstance['confirmCancellation']();
 
-    expect(fixture.componentInstance['lastOperationMessage']()).toContain('Solicitud rechazada');
-    confirmSpy.mockRestore();
+    expect(fixture.componentInstance['lastOperationMessage']()).toBeNull();
+    expect(feedback.show).toHaveBeenCalledWith('error', 'Solicitud rechazada');
   });
 
   it('prefers the operational SAT message when refreshing status', async () => {
-    const refreshStatus = vi.fn().mockReturnValue(of({
-      outcome: 'Refreshed',
-      isSuccess: true,
-      fiscalDocumentId: 40,
-      fiscalDocumentStatus: 'CancellationRequested',
-      uuid: 'UUID-123',
-      lastKnownExternalStatus: 'Vigente',
-      providerCode: 'S - Comprobante obtenido satisfactoriamente.',
-      providerMessage: 'Estado=Vigente | EstatusCancelacion=En proceso',
-      operationalStatus: 'CancellationPending',
-      operationalMessage: 'La cancelación fue solicitada y sigue en proceso en SAT.',
-      supportMessage: 'CodigoEstatus=S - Comprobante obtenido satisfactoriamente. | Estado=Vigente | EstatusCancelacion=En proceso',
-      checkedAtUtc: '2026-03-29T10:00:00Z'
-    }));
+    const refreshStatus = vi.fn().mockReturnValue(
+      of({
+        outcome: 'Refreshed',
+        isSuccess: true,
+        fiscalDocumentId: 40,
+        fiscalDocumentStatus: 'CancellationRequested',
+        uuid: 'UUID-123',
+        lastKnownExternalStatus: 'Vigente',
+        providerCode: 'S - Comprobante obtenido satisfactoriamente.',
+        providerMessage: 'Estado=Vigente | EstatusCancelacion=En proceso',
+        operationalStatus: 'CancellationPending',
+        operationalMessage: 'La cancelación fue solicitada y sigue en proceso en SAT.',
+        supportMessage:
+          'CodigoEstatus=S - Comprobante obtenido satisfactoriamente. | Estado=Vigente | EstatusCancelacion=En proceso',
+        checkedAtUtc: '2026-03-29T10:00:00Z',
+      }),
+    );
     const fixture = await configure({ refreshStatus });
 
     await fixture.componentInstance['refreshStatus']();
 
     expect(refreshStatus).toHaveBeenCalledWith(40);
-    expect(fixture.componentInstance['lastOperationMessage']()).toContain('sigue en proceso en SAT');
+    expect(fixture.componentInstance['lastOperationMessage']()).toContain(
+      'sigue en proceso en SAT',
+    );
   });
 
   it('updates support message and reloads stamp evidence after remote CFDI lookup', async () => {
-    const queryRemoteStamp = vi.fn().mockReturnValue(of({
-      outcome: 'FoundRemote',
-      isSuccess: true,
-      fiscalDocumentId: 40,
-      fiscalDocumentStatus: 'Stamped',
-      fiscalStampId: 11,
-      uuid: 'UUID-123',
-      hasLocalXml: false,
-      remoteExists: true,
-      hasRemoteXml: true,
-      xmlRecoveredLocally: true,
-      providerCode: '200',
-      providerMessage: 'CFDI encontrado',
-      supportMessage: 'El CFDI existe en el PAC y el XML faltante se recuperó en la evidencia local.',
-      checkedAtUtc: '2026-03-30T12:00:00Z'
-    }));
-    const getStamp = vi.fn()
-      .mockReturnValueOnce(of({
-        id: 11,
+    const queryRemoteStamp = vi.fn().mockReturnValue(
+      of({
+        outcome: 'FoundRemote',
+        isSuccess: true,
         fiscalDocumentId: 40,
-        providerName: 'FacturaloPlus',
-        providerOperation: 'stamp',
-        providerTrackingId: 'TRACK-1',
-        status: 'Stamped',
+        fiscalDocumentStatus: 'Stamped',
+        fiscalStampId: 11,
         uuid: 'UUID-123',
-        stampedAtUtc: '2026-03-20T12:00:00Z',
+        hasLocalXml: false,
+        remoteExists: true,
+        hasRemoteXml: true,
+        xmlRecoveredLocally: true,
         providerCode: '200',
-        providerMessage: 'Stamped',
-        createdAtUtc: '2026-03-20T12:00:00Z',
-        updatedAtUtc: '2026-03-20T12:00:00Z'
-      }))
-      .mockReturnValueOnce(of({
-        id: 11,
-        fiscalDocumentId: 40,
-        providerName: 'FacturaloPlus',
-        providerOperation: 'stamp',
-        providerTrackingId: 'TRACK-1',
-        status: 'Stamped',
-        uuid: 'UUID-123',
-        stampedAtUtc: '2026-03-20T12:00:00Z',
-        providerCode: '200',
-        providerMessage: 'Stamped',
-        lastRemoteQueryAtUtc: '2026-03-30T12:00:00Z',
-        lastRemoteProviderCode: '200',
-        lastRemoteProviderMessage: 'CFDI encontrado',
-        xmlRecoveredFromProviderAtUtc: '2026-03-30T12:00:00Z',
-        createdAtUtc: '2026-03-20T12:00:00Z',
-        updatedAtUtc: '2026-03-30T12:00:00Z'
-      }));
+        providerMessage: 'CFDI encontrado',
+        supportMessage:
+          'El CFDI existe en el PAC y el XML faltante se recuperó en la evidencia local.',
+        checkedAtUtc: '2026-03-30T12:00:00Z',
+      }),
+    );
+    const getStamp = vi
+      .fn()
+      .mockReturnValueOnce(
+        of({
+          id: 11,
+          fiscalDocumentId: 40,
+          providerName: 'FacturaloPlus',
+          providerOperation: 'stamp',
+          providerTrackingId: 'TRACK-1',
+          status: 'Stamped',
+          uuid: 'UUID-123',
+          stampedAtUtc: '2026-03-20T12:00:00Z',
+          providerCode: '200',
+          providerMessage: 'Stamped',
+          createdAtUtc: '2026-03-20T12:00:00Z',
+          updatedAtUtc: '2026-03-20T12:00:00Z',
+        }),
+      )
+      .mockReturnValueOnce(
+        of({
+          id: 11,
+          fiscalDocumentId: 40,
+          providerName: 'FacturaloPlus',
+          providerOperation: 'stamp',
+          providerTrackingId: 'TRACK-1',
+          status: 'Stamped',
+          uuid: 'UUID-123',
+          stampedAtUtc: '2026-03-20T12:00:00Z',
+          providerCode: '200',
+          providerMessage: 'Stamped',
+          lastRemoteQueryAtUtc: '2026-03-30T12:00:00Z',
+          lastRemoteProviderCode: '200',
+          lastRemoteProviderMessage: 'CFDI encontrado',
+          xmlRecoveredFromProviderAtUtc: '2026-03-30T12:00:00Z',
+          createdAtUtc: '2026-03-20T12:00:00Z',
+          updatedAtUtc: '2026-03-30T12:00:00Z',
+        }),
+      );
 
     const fixture = await configure({ queryRemoteStamp, getStamp });
     fixture.componentInstance['stampEvidence'].set({
@@ -1174,7 +1443,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       providerCode: '200',
       providerMessage: 'Stamped',
       createdAtUtc: '2026-03-20T12:00:00Z',
-      updatedAtUtc: '2026-03-20T12:00:00Z'
+      updatedAtUtc: '2026-03-20T12:00:00Z',
     });
 
     await fixture.componentInstance['queryRemoteStamp']();
@@ -1186,101 +1455,109 @@ describe('FiscalDocumentOperationsPageComponent', () => {
 
   it('disables refresh-status when the document has no stamped UUID evidence', async () => {
     const fixture = await configure({
-      getFiscalDocumentById: vi.fn().mockReturnValue(of({
-        id: 40,
-        billingDocumentId: 30,
-        issuerProfileId: 1,
-        fiscalReceiverId: 9,
-        status: 'Prepared',
-        cfdiVersion: '4.0',
-        documentType: 'I',
-        series: 'A',
-        folio: '31787',
-        issuedAtUtc: '2026-03-20T12:00:00Z',
-        currencyCode: 'MXN',
-        exchangeRate: 1,
-        paymentMethodSat: 'PPD',
-        paymentFormSat: '99',
-        paymentCondition: 'CREDITO',
-        isCreditSale: true,
-        creditDays: 7,
-        issuerRfc: 'AAA010101AAA',
-        issuerLegalName: 'Issuer SA',
-        issuerFiscalRegimeCode: '601',
-        issuerPostalCode: '01000',
-        pacEnvironment: 'Sandbox',
-        hasCertificateReference: true,
-        hasPrivateKeyReference: true,
-        hasPrivateKeyPasswordReference: true,
-        receiverRfc: 'BBB010101BBB',
-        receiverLegalName: 'Receiver One',
-        receiverFiscalRegimeCode: '601',
-        receiverCfdiUseCode: 'G03',
-        receiverPostalCode: '02000',
-        receiverCountryCode: 'MX',
-        receiverForeignTaxRegistration: null,
-        subtotal: 100,
-        discountTotal: 0,
-        taxTotal: 0,
-        total: 100,
-        items: []
-      })),
-      getStamp: vi.fn().mockReturnValue(throwError(() => ({ status: 404 })))
+      getFiscalDocumentById: vi.fn().mockReturnValue(
+        of({
+          id: 40,
+          billingDocumentId: 30,
+          issuerProfileId: 1,
+          fiscalReceiverId: 9,
+          status: 'Prepared',
+          cfdiVersion: '4.0',
+          documentType: 'I',
+          series: 'A',
+          folio: '31787',
+          issuedAtUtc: '2026-03-20T12:00:00Z',
+          currencyCode: 'MXN',
+          exchangeRate: 1,
+          paymentMethodSat: 'PPD',
+          paymentFormSat: '99',
+          paymentCondition: 'CREDITO',
+          isCreditSale: true,
+          creditDays: 7,
+          issuerRfc: 'AAA010101AAA',
+          issuerLegalName: 'Issuer SA',
+          issuerFiscalRegimeCode: '601',
+          issuerPostalCode: '01000',
+          pacEnvironment: 'Sandbox',
+          hasCertificateReference: true,
+          hasPrivateKeyReference: true,
+          hasPrivateKeyPasswordReference: true,
+          receiverRfc: 'BBB010101BBB',
+          receiverLegalName: 'Receiver One',
+          receiverFiscalRegimeCode: '601',
+          receiverCfdiUseCode: 'G03',
+          receiverPostalCode: '02000',
+          receiverCountryCode: 'MX',
+          receiverForeignTaxRegistration: null,
+          subtotal: 100,
+          discountTotal: 0,
+          taxTotal: 0,
+          total: 100,
+          items: [],
+        }),
+      ),
+      getStamp: vi.fn().mockReturnValue(throwError(() => ({ status: 404 }))),
     });
 
     fixture.detectChanges();
 
     expect(fixture.componentInstance['canRefreshCurrentFiscalDocument']()).toBe(false);
-    expect(fixture.nativeElement.textContent).toContain('Actualizar estatus solo está disponible para CFDI timbrados con UUID.');
+    expect(fixture.nativeElement.textContent).toContain(
+      'Actualizar estatus solo está disponible para CFDI timbrados con UUID.',
+    );
   });
 
   it('disables stamp when the fiscal document is already being stamped', async () => {
     const fixture = await configure({
-      getFiscalDocumentById: vi.fn().mockReturnValue(of({
-        id: 40,
-        billingDocumentId: 30,
-        issuerProfileId: 1,
-        fiscalReceiverId: 9,
-        status: 'StampingRequested',
-        cfdiVersion: '4.0',
-        documentType: 'I',
-        series: 'A',
-        folio: '31787',
-        issuedAtUtc: '2026-03-20T12:00:00Z',
-        currencyCode: 'MXN',
-        exchangeRate: 1,
-        paymentMethodSat: 'PPD',
-        paymentFormSat: '99',
-        paymentCondition: 'CREDITO',
-        isCreditSale: true,
-        creditDays: 7,
-        issuerRfc: 'AAA010101AAA',
-        issuerLegalName: 'Issuer SA',
-        issuerFiscalRegimeCode: '601',
-        issuerPostalCode: '01000',
-        pacEnvironment: 'Sandbox',
-        hasCertificateReference: true,
-        hasPrivateKeyReference: true,
-        hasPrivateKeyPasswordReference: true,
-        receiverRfc: 'BBB010101BBB',
-        receiverLegalName: 'Receiver One',
-        receiverFiscalRegimeCode: '601',
-        receiverCfdiUseCode: 'G03',
-        receiverPostalCode: '02000',
-        receiverCountryCode: 'MX',
-        receiverForeignTaxRegistration: null,
-        subtotal: 100,
-        discountTotal: 0,
-        taxTotal: 0,
-        total: 100,
-        items: []
-      }))
+      getFiscalDocumentById: vi.fn().mockReturnValue(
+        of({
+          id: 40,
+          billingDocumentId: 30,
+          issuerProfileId: 1,
+          fiscalReceiverId: 9,
+          status: 'StampingRequested',
+          cfdiVersion: '4.0',
+          documentType: 'I',
+          series: 'A',
+          folio: '31787',
+          issuedAtUtc: '2026-03-20T12:00:00Z',
+          currencyCode: 'MXN',
+          exchangeRate: 1,
+          paymentMethodSat: 'PPD',
+          paymentFormSat: '99',
+          paymentCondition: 'CREDITO',
+          isCreditSale: true,
+          creditDays: 7,
+          issuerRfc: 'AAA010101AAA',
+          issuerLegalName: 'Issuer SA',
+          issuerFiscalRegimeCode: '601',
+          issuerPostalCode: '01000',
+          pacEnvironment: 'Sandbox',
+          hasCertificateReference: true,
+          hasPrivateKeyReference: true,
+          hasPrivateKeyPasswordReference: true,
+          receiverRfc: 'BBB010101BBB',
+          receiverLegalName: 'Receiver One',
+          receiverFiscalRegimeCode: '601',
+          receiverCfdiUseCode: 'G03',
+          receiverPostalCode: '02000',
+          receiverCountryCode: 'MX',
+          receiverForeignTaxRegistration: null,
+          subtotal: 100,
+          discountTotal: 0,
+          taxTotal: 0,
+          total: 100,
+          items: [],
+        }),
+      ),
     });
 
     fixture.detectChanges();
 
     expect(fixture.componentInstance['canStampCurrentFiscalDocument']()).toBe(false);
-    expect(fixture.nativeElement.textContent).toContain('Timbrar solo está disponible para documentos listos para timbrar o reintentos explícitos de rechazo.');
+    expect(fixture.nativeElement.textContent).toContain(
+      'Timbrar solo está disponible para documentos listos para timbrar o reintentos explícitos de rechazo.',
+    );
   });
 
   it('syncs special fields and retries a rejected stamp with retryRejected=true', async () => {
@@ -1322,93 +1599,99 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       taxTotal: 0,
       total: 100,
       specialFields: [],
-      items: []
+      items: [],
     };
-    const syncFiscalDocumentSpecialFields = vi.fn().mockReturnValue(of({
-      outcome: 'Updated',
-      isSuccess: true,
-      fiscalDocumentId: 40,
-      fiscalDocumentStatus: 'StampingRejected',
-      specialFieldCount: 3
-    }));
-    const stampAndEmailFiscalDocument = vi.fn().mockReturnValue(of({
-      fiscalDocumentId: 40,
-      stamped: true,
-      fiscalDocumentStatus: 'Stamped',
-      providerMessage: 'Stamped',
-      supportMessage: null,
-      errorMessage: null,
-      email: {
-        attempted: false,
-        sent: false,
-        status: 'missing',
-        recipients: [],
-        invalidRecipients: [],
-        message: 'El receptor no tiene un email registrado.'
-      }
-    }));
+    const syncFiscalDocumentSpecialFields = vi.fn().mockReturnValue(
+      of({
+        outcome: 'Updated',
+        isSuccess: true,
+        fiscalDocumentId: 40,
+        fiscalDocumentStatus: 'StampingRejected',
+        specialFieldCount: 3,
+      }),
+    );
+    const stampAndEmailFiscalDocument = vi.fn().mockReturnValue(
+      of({
+        fiscalDocumentId: 40,
+        stamped: true,
+        fiscalDocumentStatus: 'Stamped',
+        providerMessage: 'Stamped',
+        supportMessage: null,
+        errorMessage: null,
+        email: {
+          attempted: false,
+          sent: false,
+          status: 'missing',
+          recipients: [],
+          invalidRecipients: [],
+          message: 'El receptor no tiene un email registrado.',
+        },
+      }),
+    );
 
     const fixture = await configure(
       {
         getFiscalDocumentById: vi.fn().mockReturnValue(of(rejectedDocument)),
         syncFiscalDocumentSpecialFields,
-        stampAndEmailFiscalDocument
+        stampAndEmailFiscalDocument,
       },
       undefined,
       undefined,
       {
-        getByRfc: vi.fn().mockReturnValue(of({
-          id: 9,
-          rfc: 'XAXX010101000',
-          legalName: 'PUBLICO EN GENERAL',
-          postalCode: '02000',
-          fiscalRegimeCode: '616',
-          cfdiUseCodeDefault: 'S01',
-          countryCode: 'MX',
-          foreignTaxRegistration: null,
-          email: null,
-          phone: null,
-          searchAlias: null,
-          isActive: true,
-          createdAtUtc: '2026-03-20T12:00:00Z',
-          updatedAtUtc: '2026-03-20T12:00:00Z',
-          specialFields: [
-            {
-              id: 31,
-              code: 'PERIODICIDAD',
-              label: 'Periodicidad',
-              dataType: 'text',
-              maxLength: 2,
-              helpText: null,
-              isRequired: true,
-              isActive: true,
-              displayOrder: 1
-            },
-            {
-              id: 32,
-              code: 'MESES',
-              label: 'Meses',
-              dataType: 'text',
-              maxLength: 2,
-              helpText: null,
-              isRequired: true,
-              isActive: true,
-              displayOrder: 2
-            },
-            {
-              id: 33,
-              code: 'AÑO',
-              label: 'Año',
-              dataType: 'text',
-              maxLength: 4,
-              helpText: null,
-              isRequired: true,
-              isActive: true,
-              displayOrder: 3
-            }
-          ]
-        }))
-      }
+        getByRfc: vi.fn().mockReturnValue(
+          of({
+            id: 9,
+            rfc: 'XAXX010101000',
+            legalName: 'PUBLICO EN GENERAL',
+            postalCode: '02000',
+            fiscalRegimeCode: '616',
+            cfdiUseCodeDefault: 'S01',
+            countryCode: 'MX',
+            foreignTaxRegistration: null,
+            email: null,
+            phone: null,
+            searchAlias: null,
+            isActive: true,
+            createdAtUtc: '2026-03-20T12:00:00Z',
+            updatedAtUtc: '2026-03-20T12:00:00Z',
+            specialFields: [
+              {
+                id: 31,
+                code: 'PERIODICIDAD',
+                label: 'Periodicidad',
+                dataType: 'text',
+                maxLength: 2,
+                helpText: null,
+                isRequired: true,
+                isActive: true,
+                displayOrder: 1,
+              },
+              {
+                id: 32,
+                code: 'MESES',
+                label: 'Meses',
+                dataType: 'text',
+                maxLength: 2,
+                helpText: null,
+                isRequired: true,
+                isActive: true,
+                displayOrder: 2,
+              },
+              {
+                id: 33,
+                code: 'AÑO',
+                label: 'Año',
+                dataType: 'text',
+                maxLength: 4,
+                helpText: null,
+                isRequired: true,
+                isActive: true,
+                displayOrder: 3,
+              },
+            ],
+          }),
+        ),
+      },
     );
 
     fixture.componentInstance['specialFieldDrafts'].set([
@@ -1420,7 +1703,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         isActive: true,
         maxLength: 2,
         helpText: null,
-        value: '01'
+        value: '01',
       },
       {
         fieldCode: 'MESES',
@@ -1430,7 +1713,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         isActive: true,
         maxLength: 2,
         helpText: null,
-        value: '03'
+        value: '03',
       },
       {
         fieldCode: 'AÑO',
@@ -1440,8 +1723,8 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         isActive: true,
         maxLength: 4,
         helpText: null,
-        value: '2026'
-      }
+        value: '2026',
+      },
     ]);
 
     await fixture.componentInstance['stamp']();
@@ -1450,61 +1733,65 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       specialFields: [
         { fieldCode: 'PERIODICIDAD', value: '01' },
         { fieldCode: 'MESES', value: '03' },
-        { fieldCode: 'AÑO', value: '2026' }
-      ]
+        { fieldCode: 'AÑO', value: '2026' },
+      ],
     });
     expect(stampAndEmailFiscalDocument).toHaveBeenCalledWith(40, { retryRejected: true });
   });
 
   it('syncs current fiscal document special fields on demand', async () => {
-    const syncFiscalDocumentSpecialFields = vi.fn().mockReturnValue(of({
-      outcome: 'Updated',
-      isSuccess: true,
-      fiscalDocumentId: 40,
-      fiscalDocumentStatus: 'ReadyForStamping',
-      specialFieldCount: 1
-    }));
+    const syncFiscalDocumentSpecialFields = vi.fn().mockReturnValue(
+      of({
+        outcome: 'Updated',
+        isSuccess: true,
+        fiscalDocumentId: 40,
+        fiscalDocumentStatus: 'ReadyForStamping',
+        specialFieldCount: 1,
+      }),
+    );
     const fixture = await configure({
       syncFiscalDocumentSpecialFields,
-      getFiscalDocumentById: vi.fn().mockReturnValue(of({
-        id: 40,
-        billingDocumentId: 30,
-        issuerProfileId: 1,
-        fiscalReceiverId: 9,
-        status: 'ReadyForStamping',
-        cfdiVersion: '4.0',
-        documentType: 'I',
-        series: 'A',
-        folio: '31787',
-        issuedAtUtc: '2026-03-20T12:00:00Z',
-        currencyCode: 'MXN',
-        exchangeRate: 1,
-        paymentMethodSat: 'PPD',
-        paymentFormSat: '99',
-        paymentCondition: 'CREDITO',
-        isCreditSale: true,
-        creditDays: 7,
-        issuerRfc: 'AAA010101AAA',
-        issuerLegalName: 'Issuer SA',
-        issuerFiscalRegimeCode: '601',
-        issuerPostalCode: '01000',
-        pacEnvironment: 'Sandbox',
-        hasCertificateReference: true,
-        hasPrivateKeyReference: true,
-        hasPrivateKeyPasswordReference: true,
-        receiverRfc: 'BBB010101BBB',
-        receiverLegalName: 'Receiver One',
-        receiverFiscalRegimeCode: '601',
-        receiverCfdiUseCode: 'G03',
-        receiverPostalCode: '02000',
-        receiverCountryCode: 'MX',
-        receiverForeignTaxRegistration: null,
-        subtotal: 100,
-        discountTotal: 0,
-        taxTotal: 0,
-        total: 100,
-        items: []
-      }))
+      getFiscalDocumentById: vi.fn().mockReturnValue(
+        of({
+          id: 40,
+          billingDocumentId: 30,
+          issuerProfileId: 1,
+          fiscalReceiverId: 9,
+          status: 'ReadyForStamping',
+          cfdiVersion: '4.0',
+          documentType: 'I',
+          series: 'A',
+          folio: '31787',
+          issuedAtUtc: '2026-03-20T12:00:00Z',
+          currencyCode: 'MXN',
+          exchangeRate: 1,
+          paymentMethodSat: 'PPD',
+          paymentFormSat: '99',
+          paymentCondition: 'CREDITO',
+          isCreditSale: true,
+          creditDays: 7,
+          issuerRfc: 'AAA010101AAA',
+          issuerLegalName: 'Issuer SA',
+          issuerFiscalRegimeCode: '601',
+          issuerPostalCode: '01000',
+          pacEnvironment: 'Sandbox',
+          hasCertificateReference: true,
+          hasPrivateKeyReference: true,
+          hasPrivateKeyPasswordReference: true,
+          receiverRfc: 'BBB010101BBB',
+          receiverLegalName: 'Receiver One',
+          receiverFiscalRegimeCode: '601',
+          receiverCfdiUseCode: 'G03',
+          receiverPostalCode: '02000',
+          receiverCountryCode: 'MX',
+          receiverForeignTaxRegistration: null,
+          subtotal: 100,
+          discountTotal: 0,
+          taxTotal: 0,
+          total: 100,
+          items: [],
+        }),
+      ),
     });
     await fixture.componentInstance['loadFiscalDocument'](40);
     fixture.detectChanges();
@@ -1518,26 +1805,21 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         isActive: true,
         maxLength: 2,
         helpText: null,
-        value: '01'
-      }
+        value: '01',
+      },
     ]);
 
     await fixture.componentInstance['syncCurrentFiscalDocumentSpecialFields']();
 
     expect(syncFiscalDocumentSpecialFields).toHaveBeenCalledWith(40, {
-      specialFields: [
-        { fieldCode: 'PERIODICIDAD', value: '01' }
-      ]
+      specialFields: [{ fieldCode: 'PERIODICIDAD', value: '01' }],
     });
   });
 
   it('renders dynamic special billing fields for the selected receiver', async () => {
-    const fixture = await configure(
-      undefined,
-      { id: null, billingDocumentId: '30' },
-      undefined,
-      {
-        getByRfc: vi.fn().mockReturnValue(of({
+    const fixture = await configure(undefined, { id: null, billingDocumentId: '30' }, undefined, {
+      getByRfc: vi.fn().mockReturnValue(
+        of({
           id: 9,
           rfc: 'BBB010101BBB',
           legalName: 'Receiver One',
@@ -1562,7 +1844,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
               helpText: 'Nombre del agente',
               isRequired: true,
               isActive: true,
-              displayOrder: 1
+              displayOrder: 1,
             },
             {
               id: 32,
@@ -1573,12 +1855,12 @@ describe('FiscalDocumentOperationsPageComponent', () => {
               helpText: null,
               isRequired: false,
               isActive: true,
-              displayOrder: 2
-            }
-          ]
-        }))
-      }
-    );
+              displayOrder: 2,
+            },
+          ],
+        }),
+      ),
+    });
 
     await fixture.componentInstance['selectReceiver']({
       id: 9,
@@ -1587,7 +1869,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       postalCode: '02000',
       fiscalRegimeCode: '601',
       cfdiUseCodeDefault: 'G03',
-      isActive: true
+      isActive: true,
     });
     await fixture.whenStable();
     fixture.detectChanges();
@@ -1604,38 +1886,42 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       { id: null, billingDocumentId: '30' },
       undefined,
       {
-        getByRfc: vi.fn().mockReturnValue(of({
-          id: 9,
-          rfc: 'BBB010101BBB',
-          legalName: 'Receiver One',
-          postalCode: '02000',
-          fiscalRegimeCode: '601',
-          cfdiUseCodeDefault: 'G03',
-          countryCode: 'MX',
-          foreignTaxRegistration: null,
-          email: 'cliente@example.com',
-          phone: null,
-          searchAlias: null,
-          isActive: true,
-          createdAtUtc: '2026-03-20T12:00:00Z',
-          updatedAtUtc: '2026-03-20T12:00:00Z',
-          specialFields: [
-            {
-              id: 31,
-              code: 'AGENTE',
-              label: 'Agente',
-              dataType: 'text',
-              maxLength: 80,
-              helpText: null,
-              isRequired: true,
-              isActive: true,
-              displayOrder: 1
-            }
-          ]
-        }))
-      }
+        getByRfc: vi.fn().mockReturnValue(
+          of({
+            id: 9,
+            rfc: 'BBB010101BBB',
+            legalName: 'Receiver One',
+            postalCode: '02000',
+            fiscalRegimeCode: '601',
+            cfdiUseCodeDefault: 'G03',
+            countryCode: 'MX',
+            foreignTaxRegistration: null,
+            email: 'cliente@example.com',
+            phone: null,
+            searchAlias: null,
+            isActive: true,
+            createdAtUtc: '2026-03-20T12:00:00Z',
+            updatedAtUtc: '2026-03-20T12:00:00Z',
+            specialFields: [
+              {
+                id: 31,
+                code: 'AGENTE',
+                label: 'Agente',
+                dataType: 'text',
+                maxLength: 80,
+                helpText: null,
+                isRequired: true,
+                isActive: true,
+                displayOrder: 1,
+              },
+            ],
+          }),
+        ),
+      },
     );
-    const feedback = TestBed.inject(FeedbackService) as unknown as { show: ReturnType<typeof vi.fn> };
+    const feedback = TestBed.inject(FeedbackService) as unknown as {
+      show: ReturnType<typeof vi.fn>;
+    };
 
     await fixture.componentInstance['selectReceiver']({
       id: 9,
@@ -1644,7 +1930,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       postalCode: '02000',
       fiscalRegimeCode: '601',
       cfdiUseCodeDefault: 'G03',
-      isActive: true
+      isActive: true,
     });
     await fixture.whenStable();
 
@@ -1669,22 +1955,24 @@ describe('FiscalDocumentOperationsPageComponent', () => {
 
   it('creates a receiver from the modal and selects it automatically', async () => {
     const create = vi.fn().mockReturnValue(of({ outcome: 'Created', isSuccess: true, id: 12 }));
-    const getByRfc = vi.fn().mockReturnValue(of({
-      id: 12,
-      rfc: 'XAXX010101000',
-      legalName: 'Publico General',
-      postalCode: '01000',
-      fiscalRegimeCode: '616',
-      cfdiUseCodeDefault: 'S01',
-      countryCode: 'MX',
-      foreignTaxRegistration: null,
-      email: null,
-      phone: null,
-      searchAlias: null,
-      isActive: true,
-      createdAtUtc: '2026-03-20T12:00:00Z',
-      updatedAtUtc: '2026-03-20T12:00:00Z'
-    }));
+    const getByRfc = vi.fn().mockReturnValue(
+      of({
+        id: 12,
+        rfc: 'XAXX010101000',
+        legalName: 'Publico General',
+        postalCode: '01000',
+        fiscalRegimeCode: '616',
+        cfdiUseCodeDefault: 'S01',
+        countryCode: 'MX',
+        foreignTaxRegistration: null,
+        email: null,
+        phone: null,
+        searchAlias: null,
+        isActive: true,
+        createdAtUtc: '2026-03-20T12:00:00Z',
+        updatedAtUtc: '2026-03-20T12:00:00Z',
+      }),
+    );
     const feedback = { show: vi.fn() };
 
     await TestBed.configureTestingModule({
@@ -1695,13 +1983,21 @@ describe('FiscalDocumentOperationsPageComponent', () => {
           useValue: {
             snapshot: {
               queryParamMap: convertToParamMap({ billingDocumentId: '30' }),
-              paramMap: convertToParamMap({})
-            }
-          }
+              paramMap: convertToParamMap({}),
+            },
+          },
         },
         { provide: FiscalDocumentsApiService, useValue: createApi() },
-        { provide: ProductFiscalProfilesApiService, useValue: { create: vi.fn().mockReturnValue(of({ outcome: 'Created', isSuccess: true, id: 15 })) } },
-        { provide: FiscalReceiversApiService, useValue: { search: vi.fn(), create, getByRfc, update: vi.fn() } },
+        {
+          provide: ProductFiscalProfilesApiService,
+          useValue: {
+            create: vi.fn().mockReturnValue(of({ outcome: 'Created', isSuccess: true, id: 15 })),
+          },
+        },
+        {
+          provide: FiscalReceiversApiService,
+          useValue: { search: vi.fn(), create, getByRfc, update: vi.fn() },
+        },
         { provide: FeedbackService, useValue: feedback },
         { provide: Router, useValue: { navigate: vi.fn().mockResolvedValue(true) } },
         {
@@ -1709,10 +2005,10 @@ describe('FiscalDocumentOperationsPageComponent', () => {
           useValue: {
             canStampFiscal: vi.fn().mockReturnValue(true),
             canCancelFiscal: vi.fn().mockReturnValue(true),
-            canWriteMasterData: vi.fn().mockReturnValue(true)
-          }
-        }
-      ]
+            canWriteMasterData: vi.fn().mockReturnValue(true),
+          },
+        },
+      ],
     }).compileComponents();
 
     const fixture = TestBed.createComponent(FiscalDocumentOperationsPageComponent);
@@ -1733,7 +2029,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       phone: null,
       searchAlias: null,
       isActive: true,
-      specialFields: []
+      specialFields: [],
     });
     fixture.detectChanges();
 
@@ -1746,14 +2042,11 @@ describe('FiscalDocumentOperationsPageComponent', () => {
   });
 
   it('keeps the receiver creation modal open and preserves data when creation fails', async () => {
-    const fixture = await configure(
-      undefined,
-      { id: null, billingDocumentId: '30' },
-      undefined,
-      {
-        create: vi.fn().mockReturnValue(throwError(() => ({ error: { errorMessage: 'RFC ya existe.' } })))
-      }
-    );
+    const fixture = await configure(undefined, { id: null, billingDocumentId: '30' }, undefined, {
+      create: vi
+        .fn()
+        .mockReturnValue(throwError(() => ({ error: { errorMessage: 'RFC ya existe.' } }))),
+    });
 
     fixture.componentInstance['receiverQuery'].set('XAXX010101000');
     fixture.componentInstance['openReceiverCreateModal']();
@@ -1769,7 +2062,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       phone: null,
       searchAlias: null,
       isActive: true,
-      specialFields: []
+      specialFields: [],
     });
     fixture.detectChanges();
 
@@ -1782,9 +2075,11 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     vi.useFakeTimers();
     const fixture = await configure(
       {
-        searchReceivers: vi.fn().mockReturnValue(throwError(() => ({ error: { errorMessage: 'Forbidden' } })))
+        searchReceivers: vi
+          .fn()
+          .mockReturnValue(throwError(() => ({ error: { errorMessage: 'Forbidden' } }))),
       },
-      { id: null, billingDocumentId: '30' }
+      { id: null, billingDocumentId: '30' },
     );
 
     fixture.componentInstance['onReceiverQueryChange']('BBB');
@@ -1797,22 +2092,24 @@ describe('FiscalDocumentOperationsPageComponent', () => {
   });
 
   it('loads billing document context from query params', async () => {
-    const getBillingDocumentById = vi.fn().mockReturnValue(of({
-      billingDocumentId: 30,
-      salesOrderId: 20,
-      legacyOrderId: 'LEG-1001',
-      status: 'Draft',
-      documentType: 'I',
-      currencyCode: 'MXN',
-      total: 100,
-      createdAtUtc: '2026-03-20T12:00:00Z',
-      fiscalDocumentId: null,
-      fiscalDocumentStatus: null
-    }));
+    const getBillingDocumentById = vi.fn().mockReturnValue(
+      of({
+        billingDocumentId: 30,
+        salesOrderId: 20,
+        legacyOrderId: 'LEG-1001',
+        status: 'Draft',
+        documentType: 'I',
+        currencyCode: 'MXN',
+        total: 100,
+        createdAtUtc: '2026-03-20T12:00:00Z',
+        fiscalDocumentId: null,
+        fiscalDocumentStatus: null,
+      }),
+    );
 
     const fixture = await configure(
       { getBillingDocumentById },
-      { id: null, billingDocumentId: '30' }
+      { id: null, billingDocumentId: '30' },
     );
 
     expect(getBillingDocumentById).toHaveBeenCalledWith(30);
@@ -1821,8 +2118,24 @@ describe('FiscalDocumentOperationsPageComponent', () => {
   });
 
   it('searches and loads an existing billing document from the selector', async () => {
-    const searchBillingDocuments = vi.fn().mockReturnValue(of([
-      {
+    const searchBillingDocuments = vi.fn().mockReturnValue(
+      of([
+        {
+          billingDocumentId: 31,
+          salesOrderId: 21,
+          legacyOrderId: 'LEG-2002',
+          status: 'Draft',
+          documentType: 'I',
+          currencyCode: 'MXN',
+          total: 150,
+          createdAtUtc: '2026-03-20T12:00:00Z',
+          fiscalDocumentId: null,
+          fiscalDocumentStatus: null,
+        },
+      ]),
+    );
+    const getBillingDocumentById = vi.fn().mockReturnValue(
+      of({
         billingDocumentId: 31,
         salesOrderId: 21,
         legacyOrderId: 'LEG-2002',
@@ -1832,25 +2145,13 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         total: 150,
         createdAtUtc: '2026-03-20T12:00:00Z',
         fiscalDocumentId: null,
-        fiscalDocumentStatus: null
-      }
-    ]));
-    const getBillingDocumentById = vi.fn().mockReturnValue(of({
-      billingDocumentId: 31,
-      salesOrderId: 21,
-      legacyOrderId: 'LEG-2002',
-      status: 'Draft',
-      documentType: 'I',
-      currencyCode: 'MXN',
-      total: 150,
-      createdAtUtc: '2026-03-20T12:00:00Z',
-      fiscalDocumentId: null,
-      fiscalDocumentStatus: null
-    }));
+        fiscalDocumentStatus: null,
+      }),
+    );
 
     const fixture = await configure(
       { searchBillingDocuments, getBillingDocumentById },
-      { id: null }
+      { id: null },
     );
 
     fixture.componentInstance['billingDocumentQuery'] = 'LEG-2002';
@@ -1870,7 +2171,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       total: 150,
       createdAtUtc: '2026-03-20T12:00:00Z',
       fiscalDocumentId: null,
-      fiscalDocumentStatus: null
+      fiscalDocumentStatus: null,
     });
     fixture.detectChanges();
 
@@ -1879,17 +2180,20 @@ describe('FiscalDocumentOperationsPageComponent', () => {
   });
 
   it('opens the recovery form automatically when preparation fails due to missing product fiscal profile via HttpErrorResponse', async () => {
-    const prepareFiscalDocument = vi.fn().mockReturnValue(throwError(() => ({
-      status: 400,
-      error: {
-        outcome: 'MissingProductFiscalProfile',
-        isSuccess: false,
-        errorMessage: "No active product fiscal profile exists for item line '1' and internal code 'MTE-4259'.",
-        billingDocumentId: 30,
-        fiscalDocumentId: null,
-        status: null
-      }
-    })));
+    const prepareFiscalDocument = vi.fn().mockReturnValue(
+      throwError(() => ({
+        status: 400,
+        error: {
+          outcome: 'MissingProductFiscalProfile',
+          isSuccess: false,
+          errorMessage:
+            "No active product fiscal profile exists for item line '1' and internal code 'MTE-4259'.",
+          billingDocumentId: 30,
+          fiscalDocumentId: null,
+          status: null,
+        },
+      })),
+    );
     const feedback = { show: vi.fn() };
 
     await TestBed.configureTestingModule({
@@ -1900,39 +2204,46 @@ describe('FiscalDocumentOperationsPageComponent', () => {
           useValue: {
             snapshot: {
               queryParamMap: convertToParamMap({ billingDocumentId: '30' }),
-              paramMap: convertToParamMap({})
-            }
-          }
+              paramMap: convertToParamMap({}),
+            },
+          },
         },
         { provide: FiscalDocumentsApiService, useValue: createApi({ prepareFiscalDocument }) },
-        { provide: ProductFiscalProfilesApiService, useValue: { create: vi.fn().mockReturnValue(of({ outcome: 'Created', isSuccess: true, id: 15 })) } },
+        {
+          provide: ProductFiscalProfilesApiService,
+          useValue: {
+            create: vi.fn().mockReturnValue(of({ outcome: 'Created', isSuccess: true, id: 15 })),
+          },
+        },
         {
           provide: FiscalReceiversApiService,
           useValue: {
             search: vi.fn().mockReturnValue(of([])),
             getByRfc: vi.fn(),
-            getSatCatalog: vi.fn().mockReturnValue(of({
-              regimenFiscal: [{ code: '601', description: 'General de Ley Personas Morales' }],
-              usoCfdi: [{ code: 'G03', description: 'Gastos en general' }],
-              paymentMethods: [
-                { code: 'PUE', description: 'Pago en una sola exhibición' },
-                { code: 'PPD', description: 'Pago en parcialidades o diferido' }
-              ],
-              paymentForms: [
-                { code: '03', description: 'Transferencia electrónica de fondos' },
-                { code: '99', description: 'Por definir' }
-              ],
-              byRegimenFiscal: [
-                {
-                  code: '601',
-                  description: 'General de Ley Personas Morales',
-                  allowedUsoCfdi: [{ code: 'G03', description: 'Gastos en general' }]
-                }
-              ]
-            })),
+            getSatCatalog: vi.fn().mockReturnValue(
+              of({
+                regimenFiscal: [{ code: '601', description: 'General de Ley Personas Morales' }],
+                usoCfdi: [{ code: 'G03', description: 'Gastos en general' }],
+                paymentMethods: [
+                  { code: 'PUE', description: 'Pago en una sola exhibición' },
+                  { code: 'PPD', description: 'Pago en parcialidades o diferido' },
+                ],
+                paymentForms: [
+                  { code: '03', description: 'Transferencia electrónica de fondos' },
+                  { code: '99', description: 'Por definir' },
+                ],
+                byRegimenFiscal: [
+                  {
+                    code: '601',
+                    description: 'General de Ley Personas Morales',
+                    allowedUsoCfdi: [{ code: 'G03', description: 'Gastos en general' }],
+                  },
+                ],
+              }),
+            ),
             create: vi.fn(),
-            update: vi.fn()
-          }
+            update: vi.fn(),
+          },
         },
         { provide: FeedbackService, useValue: feedback },
         { provide: Router, useValue: { navigate: vi.fn().mockResolvedValue(true) } },
@@ -1941,10 +2252,10 @@ describe('FiscalDocumentOperationsPageComponent', () => {
           useValue: {
             canStampFiscal: vi.fn().mockReturnValue(true),
             canCancelFiscal: vi.fn().mockReturnValue(true),
-            canWriteMasterData: vi.fn().mockReturnValue(true)
-          }
-        }
-      ]
+            canWriteMasterData: vi.fn().mockReturnValue(true),
+          },
+        },
+      ],
     }).compileComponents();
 
     const fixture = TestBed.createComponent(FiscalDocumentOperationsPageComponent);
@@ -1955,37 +2266,53 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     fixture.detectChanges();
 
     expect(prepareFiscalDocument).toHaveBeenCalled();
-    expect(fixture.nativeElement.textContent).toContain('Falta el perfil fiscal del producto MTE-4259');
+    expect(fixture.nativeElement.textContent).toContain(
+      'Falta el perfil fiscal del producto MTE-4259',
+    );
     expect(fixture.nativeElement.textContent).toContain('Agregar producto fiscal');
     expect(fixture.nativeElement.textContent).toContain('Guardar y reintentar');
-    expect(feedback.show).toHaveBeenCalledWith('warning', 'Falta el perfil fiscal del producto MTE-4259. Debes darlo de alta para continuar.');
-    expect(fixture.componentInstance['missingProductFiscalProfile']()?.description).toBe('FILTRO DE ACEITE');
-    expect(fixture.componentInstance['missingProductFiscalProfile']()?.draft.description).toBe('FILTRO DE ACEITE');
-    expect(fixture.componentInstance['missingProductFiscalProfile']()?.draft.satProductServiceCode).toBe('');
+    expect(feedback.show).toHaveBeenCalledWith(
+      'warning',
+      'Falta el perfil fiscal del producto MTE-4259. Debes darlo de alta para continuar.',
+    );
+    expect(fixture.componentInstance['missingProductFiscalProfile']()?.description).toBe(
+      'FILTRO DE ACEITE',
+    );
+    expect(fixture.componentInstance['missingProductFiscalProfile']()?.draft.description).toBe(
+      'FILTRO DE ACEITE',
+    );
+    expect(
+      fixture.componentInstance['missingProductFiscalProfile']()?.draft.satProductServiceCode,
+    ).toBe('');
   });
 
   it('creates the missing product fiscal profile and retries preparation', async () => {
     const prepareFiscalDocument = vi
       .fn()
-      .mockReturnValueOnce(throwError(() => ({
-        status: 400,
-        error: {
-          outcome: 'MissingProductFiscalProfile',
-          isSuccess: false,
-          errorMessage: "No active product fiscal profile exists for item line '1' and internal code 'MTE-4259'.",
+      .mockReturnValueOnce(
+        throwError(() => ({
+          status: 400,
+          error: {
+            outcome: 'MissingProductFiscalProfile',
+            isSuccess: false,
+            errorMessage:
+              "No active product fiscal profile exists for item line '1' and internal code 'MTE-4259'.",
+            billingDocumentId: 30,
+            fiscalDocumentId: null,
+            status: null,
+          },
+        })),
+      )
+      .mockReturnValueOnce(
+        of({
+          outcome: 'Prepared',
+          isSuccess: true,
+          errorMessage: null,
           billingDocumentId: 30,
-          fiscalDocumentId: null,
-          status: null
-        }
-      })))
-      .mockReturnValueOnce(of({
-        outcome: 'Prepared',
-        isSuccess: true,
-        errorMessage: null,
-        billingDocumentId: 30,
-        fiscalDocumentId: 40,
-        status: 'ReadyForStamping'
-      }));
+          fiscalDocumentId: 40,
+          status: 'ReadyForStamping',
+        }),
+      );
     const create = vi.fn().mockReturnValue(of({ outcome: 'Created', isSuccess: true, id: 15 }));
     const feedback = { show: vi.fn() };
 
@@ -1997,9 +2324,9 @@ describe('FiscalDocumentOperationsPageComponent', () => {
           useValue: {
             snapshot: {
               queryParamMap: convertToParamMap({ billingDocumentId: '30' }),
-              paramMap: convertToParamMap({})
-            }
-          }
+              paramMap: convertToParamMap({}),
+            },
+          },
         },
         { provide: FiscalDocumentsApiService, useValue: createApi({ prepareFiscalDocument }) },
         { provide: ProductFiscalProfilesApiService, useValue: { create } },
@@ -2008,28 +2335,30 @@ describe('FiscalDocumentOperationsPageComponent', () => {
           useValue: {
             search: vi.fn().mockReturnValue(of([])),
             getByRfc: vi.fn(),
-            getSatCatalog: vi.fn().mockReturnValue(of({
-              regimenFiscal: [{ code: '601', description: 'General de Ley Personas Morales' }],
-              usoCfdi: [{ code: 'G03', description: 'Gastos en general' }],
-              paymentMethods: [
-                { code: 'PUE', description: 'Pago en una sola exhibición' },
-                { code: 'PPD', description: 'Pago en parcialidades o diferido' }
-              ],
-              paymentForms: [
-                { code: '03', description: 'Transferencia electrónica de fondos' },
-                { code: '99', description: 'Por definir' }
-              ],
-              byRegimenFiscal: [
-                {
-                  code: '601',
-                  description: 'General de Ley Personas Morales',
-                  allowedUsoCfdi: [{ code: 'G03', description: 'Gastos en general' }]
-                }
-              ]
-            })),
+            getSatCatalog: vi.fn().mockReturnValue(
+              of({
+                regimenFiscal: [{ code: '601', description: 'General de Ley Personas Morales' }],
+                usoCfdi: [{ code: 'G03', description: 'Gastos en general' }],
+                paymentMethods: [
+                  { code: 'PUE', description: 'Pago en una sola exhibición' },
+                  { code: 'PPD', description: 'Pago en parcialidades o diferido' },
+                ],
+                paymentForms: [
+                  { code: '03', description: 'Transferencia electrónica de fondos' },
+                  { code: '99', description: 'Por definir' },
+                ],
+                byRegimenFiscal: [
+                  {
+                    code: '601',
+                    description: 'General de Ley Personas Morales',
+                    allowedUsoCfdi: [{ code: 'G03', description: 'Gastos en general' }],
+                  },
+                ],
+              }),
+            ),
             create: vi.fn(),
-            update: vi.fn()
-          }
+            update: vi.fn(),
+          },
         },
         { provide: FeedbackService, useValue: feedback },
         { provide: Router, useValue: { navigate: vi.fn().mockResolvedValue(true) } },
@@ -2038,10 +2367,10 @@ describe('FiscalDocumentOperationsPageComponent', () => {
           useValue: {
             canStampFiscal: vi.fn().mockReturnValue(true),
             canCancelFiscal: vi.fn().mockReturnValue(true),
-            canWriteMasterData: vi.fn().mockReturnValue(true)
-          }
-        }
-      ]
+            canWriteMasterData: vi.fn().mockReturnValue(true),
+          },
+        },
+      ],
     }).compileComponents();
 
     const fixture = TestBed.createComponent(FiscalDocumentOperationsPageComponent);
@@ -2058,7 +2387,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       taxObjectCode: '02',
       vatRate: 0.16,
       defaultUnitText: 'PIEZA',
-      isActive: true
+      isActive: true,
     });
 
     expect(create).toHaveBeenCalledWith({
@@ -2069,55 +2398,66 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       taxObjectCode: '02',
       vatRate: 0.16,
       defaultUnitText: 'PIEZA',
-      isActive: true
+      isActive: true,
     });
     expect(prepareFiscalDocument).toHaveBeenCalledTimes(2);
-    expect(feedback.show).toHaveBeenCalledWith('success', 'Perfil fiscal del producto MTE-4259 creado.');
+    expect(feedback.show).toHaveBeenCalledWith(
+      'success',
+      'Perfil fiscal del producto MTE-4259 creado.',
+    );
     expect(feedback.show).toHaveBeenCalledWith('success', 'Documento fiscal preparado.');
   });
 
   it('keeps SAT product selection pending in the recovery form until the user chooses one explicitly', async () => {
     const fixture = await configure(
       {
-        prepareFiscalDocument: vi.fn().mockReturnValue(throwError(() => ({
-          status: 400,
-          error: {
-            outcome: 'MissingProductFiscalProfile',
-            isSuccess: false,
-            errorMessage: "No active product fiscal profile exists for item line '1' and internal code 'MTE-4259'.",
-            billingDocumentId: 30,
-            fiscalDocumentId: null,
-            status: null
-          }
-        })))
+        prepareFiscalDocument: vi.fn().mockReturnValue(
+          throwError(() => ({
+            status: 400,
+            error: {
+              outcome: 'MissingProductFiscalProfile',
+              isSuccess: false,
+              errorMessage:
+                "No active product fiscal profile exists for item line '1' and internal code 'MTE-4259'.",
+              billingDocumentId: 30,
+              fiscalDocumentId: null,
+              status: null,
+            },
+          })),
+        ),
       },
-      { id: null, billingDocumentId: '30' }
+      { id: null, billingDocumentId: '30' },
     );
 
     fixture.componentInstance['selectedReceiverId'] = 9;
     await fixture.componentInstance['prepare']();
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.textContent).toContain('Pendiente de seleccionar un producto/servicio SAT.');
+    expect(fixture.nativeElement.textContent).toContain(
+      'Pendiente de seleccionar un producto/servicio SAT.',
+    );
     expect(fixture.nativeElement.textContent).toContain('Usar 01010101 explícitamente');
   });
 
   it('keeps a visible recovery action after the user cancels the auto-opened form', async () => {
-    const prepareFiscalDocument = vi.fn().mockReturnValue(throwError(() => ({
-      status: 400,
-      error: {
-        outcome: 'MissingProductFiscalProfile',
-        isSuccess: false,
-        errorMessage: "No active product fiscal profile exists for item line '1' and internal code 'MTE-4259'.",
-        billingDocumentId: 30,
-        fiscalDocumentId: null,
-        status: null
-      }
-    })));
+    const prepareFiscalDocument = vi.fn().mockReturnValue(
+      throwError(() => ({
+        status: 400,
+        error: {
+          outcome: 'MissingProductFiscalProfile',
+          isSuccess: false,
+          errorMessage:
+            "No active product fiscal profile exists for item line '1' and internal code 'MTE-4259'.",
+          billingDocumentId: 30,
+          fiscalDocumentId: null,
+          status: null,
+        },
+      })),
+    );
 
     const fixture = await configure(
       { prepareFiscalDocument },
-      { id: null, billingDocumentId: '30' }
+      { id: null, billingDocumentId: '30' },
     );
 
     fixture.componentInstance['selectedReceiverId'] = 9;
@@ -2125,7 +2465,9 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     fixture.componentInstance['closeMissingProductProfileForm']();
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.textContent).toContain('Falta el perfil fiscal del producto MTE-4259');
+    expect(fixture.nativeElement.textContent).toContain(
+      'Falta el perfil fiscal del producto MTE-4259',
+    );
     expect(fixture.nativeElement.textContent).toContain('Agregar producto fiscal');
     expect(fixture.nativeElement.textContent).not.toContain('Guardar y reintentar');
   });
@@ -2133,34 +2475,40 @@ describe('FiscalDocumentOperationsPageComponent', () => {
   it('opens recovery again for the next missing product after a successful save', async () => {
     const prepareFiscalDocument = vi
       .fn()
-      .mockReturnValueOnce(throwError(() => ({
-        status: 400,
-        error: {
-          outcome: 'MissingProductFiscalProfile',
-          isSuccess: false,
-          errorMessage: "No active product fiscal profile exists for item line '1' and internal code 'MTE-4259'.",
-          billingDocumentId: 30,
-          fiscalDocumentId: null,
-          status: null
-        }
-      })))
-      .mockReturnValueOnce(throwError(() => ({
-        status: 400,
-        error: {
-          outcome: 'MissingProductFiscalProfile',
-          isSuccess: false,
-          errorMessage: "No active product fiscal profile exists for item line '2' and internal code 'PS-317'.",
-          billingDocumentId: 30,
-          fiscalDocumentId: null,
-          status: null
-        }
-      })));
+      .mockReturnValueOnce(
+        throwError(() => ({
+          status: 400,
+          error: {
+            outcome: 'MissingProductFiscalProfile',
+            isSuccess: false,
+            errorMessage:
+              "No active product fiscal profile exists for item line '1' and internal code 'MTE-4259'.",
+            billingDocumentId: 30,
+            fiscalDocumentId: null,
+            status: null,
+          },
+        })),
+      )
+      .mockReturnValueOnce(
+        throwError(() => ({
+          status: 400,
+          error: {
+            outcome: 'MissingProductFiscalProfile',
+            isSuccess: false,
+            errorMessage:
+              "No active product fiscal profile exists for item line '2' and internal code 'PS-317'.",
+            billingDocumentId: 30,
+            fiscalDocumentId: null,
+            status: null,
+          },
+        })),
+      );
     const create = vi.fn().mockReturnValue(of({ outcome: 'Created', isSuccess: true, id: 15 }));
 
     const fixture = await configure(
       { prepareFiscalDocument },
       { id: null, billingDocumentId: '30' },
-      { create }
+      { create },
     );
 
     fixture.componentInstance['selectedReceiverId'] = 9;
@@ -2173,117 +2521,141 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       taxObjectCode: '02',
       vatRate: 0.16,
       defaultUnitText: 'PIEZA',
-      isActive: true
+      isActive: true,
     });
     fixture.detectChanges();
 
     expect(prepareFiscalDocument).toHaveBeenCalledTimes(2);
-    expect(fixture.nativeElement.textContent).toContain('Falta el perfil fiscal del producto PS-317');
+    expect(fixture.nativeElement.textContent).toContain(
+      'Falta el perfil fiscal del producto PS-317',
+    );
     expect(fixture.nativeElement.textContent).toContain('Guardar y reintentar');
   });
 
   it('falls back to internal code when the billing document item description is not available', async () => {
-    const prepareFiscalDocument = vi.fn().mockReturnValue(throwError(() => ({
-      status: 400,
-      error: {
-        outcome: 'MissingProductFiscalProfile',
-        isSuccess: false,
-        errorMessage: "No active product fiscal profile exists for item line '1' and internal code 'GP-149'.",
-        billingDocumentId: 30,
-        fiscalDocumentId: null,
-        status: null
-      }
-    })));
+    const prepareFiscalDocument = vi.fn().mockReturnValue(
+      throwError(() => ({
+        status: 400,
+        error: {
+          outcome: 'MissingProductFiscalProfile',
+          isSuccess: false,
+          errorMessage:
+            "No active product fiscal profile exists for item line '1' and internal code 'GP-149'.",
+          billingDocumentId: 30,
+          fiscalDocumentId: null,
+          status: null,
+        },
+      })),
+    );
 
-    const fixture = await configure({
-      prepareFiscalDocument,
-      getBillingDocumentById: vi.fn().mockReturnValue(of({
-        billingDocumentId: 30,
-        salesOrderId: 20,
-        legacyOrderId: 'LEG-1001',
-        status: 'Draft',
-        documentType: 'I',
-        currencyCode: 'MXN',
-        total: 100,
-        createdAtUtc: '2026-03-20T12:00:00Z',
-        fiscalDocumentId: null,
-        fiscalDocumentStatus: null,
-        items: []
-      }))
-    }, { id: null, billingDocumentId: '30' });
+    const fixture = await configure(
+      {
+        prepareFiscalDocument,
+        getBillingDocumentById: vi.fn().mockReturnValue(
+          of({
+            billingDocumentId: 30,
+            salesOrderId: 20,
+            legacyOrderId: 'LEG-1001',
+            status: 'Draft',
+            documentType: 'I',
+            currencyCode: 'MXN',
+            total: 100,
+            createdAtUtc: '2026-03-20T12:00:00Z',
+            fiscalDocumentId: null,
+            fiscalDocumentStatus: null,
+            items: [],
+          }),
+        ),
+      },
+      { id: null, billingDocumentId: '30' },
+    );
 
     fixture.componentInstance['selectedReceiverId'] = 9;
     await fixture.componentInstance['prepare']();
 
     expect(fixture.componentInstance['missingProductFiscalProfile']()?.description).toBe('GP-149');
-    expect(fixture.componentInstance['missingProductFiscalProfile']()?.draft.description).toBe('GP-149');
+    expect(fixture.componentInstance['missingProductFiscalProfile']()?.draft.description).toBe(
+      'GP-149',
+    );
   });
 
   it('adds another legacy order to the current billing document before stamping', async () => {
-    const importLegacyOrder = vi.fn().mockReturnValue(of({
-      outcome: 'Imported',
-      isSuccess: true,
-      isIdempotent: false,
-      sourceSystem: 'legacy',
-      sourceTable: 'pedidos',
-      legacyOrderId: 'LEG-2002',
-      sourceHash: 'hash',
-      salesOrderId: 21,
-      importStatus: 'Imported'
-    }));
-    const addSalesOrderToBillingDocument = vi.fn().mockReturnValue(of({
-      outcome: 'Updated',
-      isSuccess: true,
-      billingDocumentId: 30,
-      billingDocumentStatus: 'Draft',
-      salesOrderId: 21,
-      fiscalDocumentId: 40,
-      fiscalDocumentStatus: 'ReadyForStamping',
-      associatedOrderCount: 2,
-      total: 200
-    }));
-    const fixture = await configure({
-      addSalesOrderToBillingDocument,
-      getFiscalDocumentById: vi.fn().mockReturnValue(of({
-        id: 40,
+    const importLegacyOrder = vi.fn().mockReturnValue(
+      of({
+        outcome: 'Imported',
+        isSuccess: true,
+        isIdempotent: false,
+        sourceSystem: 'legacy',
+        sourceTable: 'pedidos',
+        legacyOrderId: 'LEG-2002',
+        sourceHash: 'hash',
+        salesOrderId: 21,
+        importStatus: 'Imported',
+      }),
+    );
+    const addSalesOrderToBillingDocument = vi.fn().mockReturnValue(
+      of({
+        outcome: 'Updated',
+        isSuccess: true,
         billingDocumentId: 30,
-        issuerProfileId: 1,
-        fiscalReceiverId: 9,
-        status: 'ReadyForStamping',
-        cfdiVersion: '4.0',
-        documentType: 'I',
-        series: 'A',
-        folio: '31787',
-        issuedAtUtc: '2026-03-20T12:00:00Z',
-        currencyCode: 'MXN',
-        exchangeRate: 1,
-        paymentMethodSat: 'PPD',
-        paymentFormSat: '99',
-        paymentCondition: 'CREDITO',
-        isCreditSale: true,
-        creditDays: 7,
-        issuerRfc: 'AAA010101AAA',
-        issuerLegalName: 'Issuer SA',
-        issuerFiscalRegimeCode: '601',
-        issuerPostalCode: '01000',
-        pacEnvironment: 'Sandbox',
-        hasCertificateReference: true,
-        hasPrivateKeyReference: true,
-        hasPrivateKeyPasswordReference: true,
-        receiverRfc: 'BBB010101BBB',
-        receiverLegalName: 'Receiver One',
-        receiverFiscalRegimeCode: '601',
-        receiverCfdiUseCode: 'G03',
-        receiverPostalCode: '02000',
-        receiverCountryCode: 'MX',
-        receiverForeignTaxRegistration: null,
-        subtotal: 100,
-        discountTotal: 0,
-        taxTotal: 16,
-        total: 116,
-        items: []
-      }))
-    }, undefined, undefined, undefined, { importLegacyOrder });
+        billingDocumentStatus: 'Draft',
+        salesOrderId: 21,
+        fiscalDocumentId: 40,
+        fiscalDocumentStatus: 'ReadyForStamping',
+        associatedOrderCount: 2,
+        total: 200,
+      }),
+    );
+    const fixture = await configure(
+      {
+        addSalesOrderToBillingDocument,
+        getFiscalDocumentById: vi.fn().mockReturnValue(
+          of({
+            id: 40,
+            billingDocumentId: 30,
+            issuerProfileId: 1,
+            fiscalReceiverId: 9,
+            status: 'ReadyForStamping',
+            cfdiVersion: '4.0',
+            documentType: 'I',
+            series: 'A',
+            folio: '31787',
+            issuedAtUtc: '2026-03-20T12:00:00Z',
+            currencyCode: 'MXN',
+            exchangeRate: 1,
+            paymentMethodSat: 'PPD',
+            paymentFormSat: '99',
+            paymentCondition: 'CREDITO',
+            isCreditSale: true,
+            creditDays: 7,
+            issuerRfc: 'AAA010101AAA',
+            issuerLegalName: 'Issuer SA',
+            issuerFiscalRegimeCode: '601',
+            issuerPostalCode: '01000',
+            pacEnvironment: 'Sandbox',
+            hasCertificateReference: true,
+            hasPrivateKeyReference: true,
+            hasPrivateKeyPasswordReference: true,
+            receiverRfc: 'BBB010101BBB',
+            receiverLegalName: 'Receiver One',
+            receiverFiscalRegimeCode: '601',
+            receiverCfdiUseCode: 'G03',
+            receiverPostalCode: '02000',
+            receiverCountryCode: 'MX',
+            receiverForeignTaxRegistration: null,
+            subtotal: 100,
+            discountTotal: 0,
+            taxTotal: 16,
+            total: 116,
+            items: [],
+          }),
+        ),
+      },
+      undefined,
+      undefined,
+      undefined,
+      { importLegacyOrder },
+    );
     await fixture.componentInstance['loadFiscalDocument'](40);
     fixture.detectChanges();
 
@@ -2295,77 +2667,95 @@ describe('FiscalDocumentOperationsPageComponent', () => {
   });
 
   it('removes an associated order from the current billing document before stamping', async () => {
-    const removeSalesOrderFromBillingDocument = vi.fn().mockReturnValue(of({
-      outcome: 'Updated',
-      isSuccess: true,
-      billingDocumentId: 30,
-      billingDocumentStatus: 'Draft',
-      salesOrderId: 21,
-      fiscalDocumentId: 40,
-      fiscalDocumentStatus: 'ReadyForStamping',
-      associatedOrderCount: 1,
-      total: 116
-    }));
-    const getBillingDocumentById = vi.fn().mockReturnValue(of({
-      billingDocumentId: 30,
-      salesOrderId: 20,
-      legacyOrderId: 'LEG-1001-ORD-LEG-1001',
-      status: 'Draft',
-      documentType: 'I',
-      currencyCode: 'MXN',
-      total: 174,
-      createdAtUtc: '2026-03-20T12:00:00Z',
-      fiscalDocumentId: 40,
-      fiscalDocumentStatus: 'ReadyForStamping',
-      associatedOrders: [
-        { salesOrderId: 20, legacyOrderId: 'LEG-1001-ORD-LEG-1001', customerName: 'Receiver One', total: 116, isPrimary: true },
-        { salesOrderId: 21, legacyOrderId: 'LEG-2002-ORD-LEG-2002', customerName: 'Receiver One', total: 58, isPrimary: false }
-      ],
-      items: []
-    }));
+    const removeSalesOrderFromBillingDocument = vi.fn().mockReturnValue(
+      of({
+        outcome: 'Updated',
+        isSuccess: true,
+        billingDocumentId: 30,
+        billingDocumentStatus: 'Draft',
+        salesOrderId: 21,
+        fiscalDocumentId: 40,
+        fiscalDocumentStatus: 'ReadyForStamping',
+        associatedOrderCount: 1,
+        total: 116,
+      }),
+    );
+    const getBillingDocumentById = vi.fn().mockReturnValue(
+      of({
+        billingDocumentId: 30,
+        salesOrderId: 20,
+        legacyOrderId: 'LEG-1001-ORD-LEG-1001',
+        status: 'Draft',
+        documentType: 'I',
+        currencyCode: 'MXN',
+        total: 174,
+        createdAtUtc: '2026-03-20T12:00:00Z',
+        fiscalDocumentId: 40,
+        fiscalDocumentStatus: 'ReadyForStamping',
+        associatedOrders: [
+          {
+            salesOrderId: 20,
+            legacyOrderId: 'LEG-1001-ORD-LEG-1001',
+            customerName: 'Receiver One',
+            total: 116,
+            isPrimary: true,
+          },
+          {
+            salesOrderId: 21,
+            legacyOrderId: 'LEG-2002-ORD-LEG-2002',
+            customerName: 'Receiver One',
+            total: 58,
+            isPrimary: false,
+          },
+        ],
+        items: [],
+      }),
+    );
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const fixture = await configure({
       removeSalesOrderFromBillingDocument,
       getBillingDocumentById,
-      getFiscalDocumentById: vi.fn().mockReturnValue(of({
-        id: 40,
-        billingDocumentId: 30,
-        issuerProfileId: 1,
-        fiscalReceiverId: 9,
-        status: 'ReadyForStamping',
-        cfdiVersion: '4.0',
-        documentType: 'I',
-        series: 'A',
-        folio: '31787',
-        issuedAtUtc: '2026-03-20T12:00:00Z',
-        currencyCode: 'MXN',
-        exchangeRate: 1,
-        paymentMethodSat: 'PPD',
-        paymentFormSat: '99',
-        paymentCondition: 'CREDITO',
-        isCreditSale: true,
-        creditDays: 7,
-        issuerRfc: 'AAA010101AAA',
-        issuerLegalName: 'Issuer SA',
-        issuerFiscalRegimeCode: '601',
-        issuerPostalCode: '01000',
-        pacEnvironment: 'Sandbox',
-        hasCertificateReference: true,
-        hasPrivateKeyReference: true,
-        hasPrivateKeyPasswordReference: true,
-        receiverRfc: 'BBB010101BBB',
-        receiverLegalName: 'Receiver One',
-        receiverFiscalRegimeCode: '601',
-        receiverCfdiUseCode: 'G03',
-        receiverPostalCode: '02000',
-        receiverCountryCode: 'MX',
-        receiverForeignTaxRegistration: null,
-        subtotal: 150,
-        discountTotal: 0,
-        taxTotal: 24,
-        total: 174,
-        items: []
-      }))
+      getFiscalDocumentById: vi.fn().mockReturnValue(
+        of({
+          id: 40,
+          billingDocumentId: 30,
+          issuerProfileId: 1,
+          fiscalReceiverId: 9,
+          status: 'ReadyForStamping',
+          cfdiVersion: '4.0',
+          documentType: 'I',
+          series: 'A',
+          folio: '31787',
+          issuedAtUtc: '2026-03-20T12:00:00Z',
+          currencyCode: 'MXN',
+          exchangeRate: 1,
+          paymentMethodSat: 'PPD',
+          paymentFormSat: '99',
+          paymentCondition: 'CREDITO',
+          isCreditSale: true,
+          creditDays: 7,
+          issuerRfc: 'AAA010101AAA',
+          issuerLegalName: 'Issuer SA',
+          issuerFiscalRegimeCode: '601',
+          issuerPostalCode: '01000',
+          pacEnvironment: 'Sandbox',
+          hasCertificateReference: true,
+          hasPrivateKeyReference: true,
+          hasPrivateKeyPasswordReference: true,
+          receiverRfc: 'BBB010101BBB',
+          receiverLegalName: 'Receiver One',
+          receiverFiscalRegimeCode: '601',
+          receiverCfdiUseCode: 'G03',
+          receiverPostalCode: '02000',
+          receiverCountryCode: 'MX',
+          receiverForeignTaxRegistration: null,
+          subtotal: 150,
+          discountTotal: 0,
+          taxTotal: 24,
+          total: 174,
+          items: [],
+        }),
+      ),
     });
     await fixture.componentInstance['loadFiscalDocument'](40);
     fixture.detectChanges();
@@ -2377,59 +2767,63 @@ describe('FiscalDocumentOperationsPageComponent', () => {
   });
 
   it('removes a complete billing line with reason and disposition before stamping', async () => {
-    const removeBillingDocumentItem = vi.fn().mockReturnValue(of({
-      outcome: 'Removed',
-      isSuccess: true,
-      billingDocumentId: 30,
-      billingDocumentStatus: 'Draft',
-      billingDocumentItemId: 501,
-      fiscalDocumentId: 40,
-      fiscalDocumentStatus: 'ReadyForStamping',
-      removalId: 91,
-      includedItemCount: 1,
-      total: 58
-    }));
+    const removeBillingDocumentItem = vi.fn().mockReturnValue(
+      of({
+        outcome: 'Removed',
+        isSuccess: true,
+        billingDocumentId: 30,
+        billingDocumentStatus: 'Draft',
+        billingDocumentItemId: 501,
+        fiscalDocumentId: 40,
+        fiscalDocumentStatus: 'ReadyForStamping',
+        removalId: 91,
+        includedItemCount: 1,
+        total: 58,
+      }),
+    );
     const fixture = await configure({
       removeBillingDocumentItem,
-      getFiscalDocumentById: vi.fn().mockReturnValue(of({
-        id: 40,
-        billingDocumentId: 30,
-        issuerProfileId: 1,
-        fiscalReceiverId: 9,
-        status: 'ReadyForStamping',
-        cfdiVersion: '4.0',
-        documentType: 'I',
-        series: 'A',
-        folio: '31787',
-        issuedAtUtc: '2026-03-20T12:00:00Z',
-        currencyCode: 'MXN',
-        exchangeRate: 1,
-        paymentMethodSat: 'PPD',
-        paymentFormSat: '99',
-        paymentCondition: 'CREDITO',
-        isCreditSale: true,
-        creditDays: 7,
-        issuerRfc: 'AAA010101AAA',
-        issuerLegalName: 'Issuer SA',
-        issuerFiscalRegimeCode: '601',
-        issuerPostalCode: '01000',
-        pacEnvironment: 'Sandbox',
-        hasCertificateReference: true,
-        hasPrivateKeyReference: true,
-        hasPrivateKeyPasswordReference: true,
-        receiverRfc: 'BBB010101BBB',
-        receiverLegalName: 'Receiver One',
-        receiverFiscalRegimeCode: '601',
-        receiverCfdiUseCode: 'G03',
-        receiverPostalCode: '02000',
-        receiverCountryCode: 'MX',
-        receiverForeignTaxRegistration: null,
-        subtotal: 100,
-        discountTotal: 0,
-        taxTotal: 16,
-        total: 116,
-        items: []
-      }))
+      getFiscalDocumentById: vi.fn().mockReturnValue(
+        of({
+          id: 40,
+          billingDocumentId: 30,
+          issuerProfileId: 1,
+          fiscalReceiverId: 9,
+          status: 'ReadyForStamping',
+          cfdiVersion: '4.0',
+          documentType: 'I',
+          series: 'A',
+          folio: '31787',
+          issuedAtUtc: '2026-03-20T12:00:00Z',
+          currencyCode: 'MXN',
+          exchangeRate: 1,
+          paymentMethodSat: 'PPD',
+          paymentFormSat: '99',
+          paymentCondition: 'CREDITO',
+          isCreditSale: true,
+          creditDays: 7,
+          issuerRfc: 'AAA010101AAA',
+          issuerLegalName: 'Issuer SA',
+          issuerFiscalRegimeCode: '601',
+          issuerPostalCode: '01000',
+          pacEnvironment: 'Sandbox',
+          hasCertificateReference: true,
+          hasPrivateKeyReference: true,
+          hasPrivateKeyPasswordReference: true,
+          receiverRfc: 'BBB010101BBB',
+          receiverLegalName: 'Receiver One',
+          receiverFiscalRegimeCode: '601',
+          receiverCfdiUseCode: 'G03',
+          receiverPostalCode: '02000',
+          receiverCountryCode: 'MX',
+          receiverForeignTaxRegistration: null,
+          subtotal: 100,
+          discountTotal: 0,
+          taxTotal: 16,
+          total: 116,
+          items: [],
+        }),
+      ),
     });
     await fixture.componentInstance['loadFiscalDocument'](40);
     fixture.detectChanges();
@@ -2444,7 +2838,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       productInternalCode: 'MTE-4259',
       description: 'FILTRO DE ACEITE',
       quantity: 1,
-      total: 116
+      total: 116,
     });
     fixture.componentInstance['onBillingItemRemovalReasonChange']('WrongDocument');
     fixture.componentInstance['onBillingItemRemovalDispositionChange']('PendingBilling');
@@ -2455,51 +2849,53 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(removeBillingDocumentItem).toHaveBeenCalledWith(30, 501, {
       removalReason: 'WrongDocument',
       observations: 'Se facturará aparte',
-      removalDisposition: 'PendingBilling'
+      removalDisposition: 'PendingBilling',
     });
   });
 
   it('enables removal confirmation when product reason and disposition are selected', async () => {
     const fixture = await configure({
-      getFiscalDocumentById: vi.fn().mockReturnValue(of({
-        id: 40,
-        billingDocumentId: 30,
-        issuerProfileId: 1,
-        fiscalReceiverId: 9,
-        status: 'ReadyForStamping',
-        cfdiVersion: '4.0',
-        documentType: 'I',
-        series: 'A',
-        folio: '31787',
-        issuedAtUtc: '2026-03-20T12:00:00Z',
-        currencyCode: 'MXN',
-        exchangeRate: 1,
-        paymentMethodSat: 'PPD',
-        paymentFormSat: '99',
-        paymentCondition: 'CREDITO',
-        isCreditSale: true,
-        creditDays: 7,
-        issuerRfc: 'AAA010101AAA',
-        issuerLegalName: 'Issuer SA',
-        issuerFiscalRegimeCode: '601',
-        issuerPostalCode: '01000',
-        pacEnvironment: 'Sandbox',
-        hasCertificateReference: true,
-        hasPrivateKeyReference: true,
-        hasPrivateKeyPasswordReference: true,
-        receiverRfc: 'BBB010101BBB',
-        receiverLegalName: 'Receiver One',
-        receiverFiscalRegimeCode: '601',
-        receiverCfdiUseCode: 'G03',
-        receiverPostalCode: '02000',
-        receiverCountryCode: 'MX',
-        receiverForeignTaxRegistration: null,
-        subtotal: 100,
-        discountTotal: 0,
-        taxTotal: 16,
-        total: 116,
-        items: []
-      }))
+      getFiscalDocumentById: vi.fn().mockReturnValue(
+        of({
+          id: 40,
+          billingDocumentId: 30,
+          issuerProfileId: 1,
+          fiscalReceiverId: 9,
+          status: 'ReadyForStamping',
+          cfdiVersion: '4.0',
+          documentType: 'I',
+          series: 'A',
+          folio: '31787',
+          issuedAtUtc: '2026-03-20T12:00:00Z',
+          currencyCode: 'MXN',
+          exchangeRate: 1,
+          paymentMethodSat: 'PPD',
+          paymentFormSat: '99',
+          paymentCondition: 'CREDITO',
+          isCreditSale: true,
+          creditDays: 7,
+          issuerRfc: 'AAA010101AAA',
+          issuerLegalName: 'Issuer SA',
+          issuerFiscalRegimeCode: '601',
+          issuerPostalCode: '01000',
+          pacEnvironment: 'Sandbox',
+          hasCertificateReference: true,
+          hasPrivateKeyReference: true,
+          hasPrivateKeyPasswordReference: true,
+          receiverRfc: 'BBB010101BBB',
+          receiverLegalName: 'Receiver One',
+          receiverFiscalRegimeCode: '601',
+          receiverCfdiUseCode: 'G03',
+          receiverPostalCode: '02000',
+          receiverCountryCode: 'MX',
+          receiverForeignTaxRegistration: null,
+          subtotal: 100,
+          discountTotal: 0,
+          taxTotal: 16,
+          total: 116,
+          items: [],
+        }),
+      ),
     });
 
     fixture.componentInstance['openRemoveBillingItemDialog']({
@@ -2512,12 +2908,14 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       productInternalCode: 'MTE-4259',
       description: 'FILTRO DE ACEITE',
       quantity: 1,
-      total: 116
+      total: 116,
     });
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).toContain('Quitar producto completo');
-    expect(fixture.nativeElement.textContent).toContain('Selecciona el motivo base del producto removido.');
+    expect(fixture.nativeElement.textContent).toContain(
+      'Selecciona el motivo base del producto removido.',
+    );
 
     fixture.componentInstance['onBillingItemRemovalReasonChange']('WrongDocument');
     fixture.componentInstance['onBillingItemRemovalDispositionChange']('PendingBilling');
@@ -2526,67 +2924,77 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    const buttons = Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[];
-    const confirmButton = buttons.find((button) => button.textContent?.includes('Confirmar remoción'));
+    const buttons = Array.from(
+      fixture.nativeElement.querySelectorAll('button'),
+    ) as HTMLButtonElement[];
+    const confirmButton = buttons.find((button) =>
+      button.textContent?.includes('Confirmar remoción'),
+    );
 
     expect(confirmButton).toBeTruthy();
     expect(fixture.componentInstance['billingItemRemovalValidationError']()).toBeNull();
-    expect(fixture.nativeElement.textContent).not.toContain('Selecciona el motivo base del producto removido.');
+    expect(fixture.nativeElement.textContent).not.toContain(
+      'Selecciona el motivo base del producto removido.',
+    );
   });
 
   it('assigns selected pending billing items to the current editable document', async () => {
-    const assignPendingBillingItems = vi.fn().mockReturnValue(of({
-      outcome: 'Assigned',
-      isSuccess: true,
-      billingDocumentId: 30,
-      fiscalDocumentId: 40,
-      fiscalDocumentStatus: 'ReadyForStamping',
-      assignedCount: 2,
-      includedItemCount: 3,
-      total: 174
-    }));
+    const assignPendingBillingItems = vi.fn().mockReturnValue(
+      of({
+        outcome: 'Assigned',
+        isSuccess: true,
+        billingDocumentId: 30,
+        fiscalDocumentId: 40,
+        fiscalDocumentStatus: 'ReadyForStamping',
+        assignedCount: 2,
+        includedItemCount: 3,
+        total: 174,
+      }),
+    );
 
     const fixture = await configure(
       {
         assignPendingBillingItems,
-        listPendingBillingItems: vi.fn().mockReturnValue(of([
-          {
-            removalId: 91,
-            billingDocumentId: 29,
-            fiscalDocumentId: 39,
-            salesOrderId: 19,
-            salesOrderItemId: 601,
-            sourceLegacyOrderId: 'LEG-5001-ORD-LEG-5001',
-            customerName: 'Receiver One',
-            sourceSalesOrderLineNumber: 2,
-            productInternalCode: 'MTE-4259',
-            description: 'FILTRO DE ACEITE',
-            quantityRemoved: 1,
-            removalReason: 'WrongDocument',
-            observations: 'Se facturará aparte',
-            removalDisposition: 'PendingBilling',
-            removedAtUtc: '2026-03-30T12:00:00Z'
-          },
-          {
-            removalId: 92,
-            billingDocumentId: 28,
-            fiscalDocumentId: 38,
-            salesOrderId: 18,
-            salesOrderItemId: 602,
-            sourceLegacyOrderId: 'LEG-5002-ORD-LEG-5002',
-            customerName: 'Receiver One',
-            sourceSalesOrderLineNumber: 3,
-            productInternalCode: 'PS-317',
-            description: 'PASTILLA DE FRENO',
-            quantityRemoved: 1,
-            removalReason: 'CommercialValidationPending',
-            observations: null,
-            removalDisposition: 'PendingBilling',
-            removedAtUtc: '2026-03-30T13:00:00Z'
-          }
-        ]))
+        listPendingBillingItems: vi.fn().mockReturnValue(
+          of([
+            {
+              removalId: 91,
+              billingDocumentId: 29,
+              fiscalDocumentId: 39,
+              salesOrderId: 19,
+              salesOrderItemId: 601,
+              sourceLegacyOrderId: 'LEG-5001-ORD-LEG-5001',
+              customerName: 'Receiver One',
+              sourceSalesOrderLineNumber: 2,
+              productInternalCode: 'MTE-4259',
+              description: 'FILTRO DE ACEITE',
+              quantityRemoved: 1,
+              removalReason: 'WrongDocument',
+              observations: 'Se facturará aparte',
+              removalDisposition: 'PendingBilling',
+              removedAtUtc: '2026-03-30T12:00:00Z',
+            },
+            {
+              removalId: 92,
+              billingDocumentId: 28,
+              fiscalDocumentId: 38,
+              salesOrderId: 18,
+              salesOrderItemId: 602,
+              sourceLegacyOrderId: 'LEG-5002-ORD-LEG-5002',
+              customerName: 'Receiver One',
+              sourceSalesOrderLineNumber: 3,
+              productInternalCode: 'PS-317',
+              description: 'PASTILLA DE FRENO',
+              quantityRemoved: 1,
+              removalReason: 'CommercialValidationPending',
+              observations: null,
+              removalDisposition: 'PendingBilling',
+              removedAtUtc: '2026-03-30T13:00:00Z',
+            },
+          ]),
+        ),
       },
-      { id: null, billingDocumentId: '30' }
+      { id: null, billingDocumentId: '30' },
     );
 
     await fixture.componentInstance['loadBillingDocumentContext'](30);
@@ -2603,77 +3011,80 @@ describe('FiscalDocumentOperationsPageComponent', () => {
   it('renders removed product trace including destination document and final cfdi when available', async () => {
     const fixture = await configure(
       {
-        getBillingDocumentById: vi.fn().mockReturnValue(of({
-          billingDocumentId: 30,
-          salesOrderId: 20,
-          legacyOrderId: 'LEG-1001',
-          status: 'Draft',
-          documentType: 'I',
-          currencyCode: 'MXN',
-          total: 100,
-          createdAtUtc: '2026-03-20T12:00:00Z',
-          fiscalDocumentId: null,
-          fiscalDocumentStatus: null,
-          associatedOrders: [
-            {
-              salesOrderId: 20,
-              legacyOrderId: 'LEG-1001-ORD-LEG-1001',
-              customerName: 'Receiver One',
-              total: 100,
-              isPrimary: true
-            }
-          ],
-          items: [],
-          removedItems: [
-            {
-              removalId: 91,
-              billingDocumentId: 30,
-              fiscalDocumentId: 40,
-              salesOrderId: 20,
-              salesOrderItemId: 601,
-              sourceLegacyOrderId: 'LEG-1001-ORD-LEG-1001',
-              customerName: 'Receiver One',
-              sourceSalesOrderLineNumber: 2,
-              productInternalCode: 'MTE-4259',
-              description: 'FILTRO DE ACEITE',
-              quantityRemoved: 1,
-              removalReason: 'WrongDocument',
-              observations: 'Se facturó en otro CFDI',
-              removalDisposition: 'PendingBilling',
-              availableForPendingBillingReuse: false,
-              removedAtUtc: '2026-03-30T12:00:00Z',
-              currentTraceStatus: 'ReassignedAndStamped',
-              currentTraceMessage: 'Producto reasignado y timbrado finalmente en el CFDI UUID-PENDING-1.',
-              currentDestinationBillingDocumentId: 31,
-              currentDestinationBillingDocumentStatus: 'Draft',
-              currentDestinationFiscalDocumentId: 41,
-              currentDestinationFiscalDocumentStatus: 'Stamped',
-              finalCfdiUuid: 'UUID-PENDING-1',
-              finalCfdiSeries: 'A',
-              finalCfdiFolio: '501',
-              finalStampedAtUtc: '2026-03-30T15:00:00Z',
-              assignmentHistory: [
-                {
-                  assignmentId: 1001,
-                  destinationBillingDocumentId: 31,
-                  destinationBillingDocumentStatus: 'Draft',
-                  destinationFiscalDocumentId: 41,
-                  destinationFiscalDocumentStatus: 'Stamped',
-                  destinationFinalCfdiUuid: 'UUID-PENDING-1',
-                  destinationFinalCfdiSeries: 'A',
-                  destinationFinalCfdiFolio: '501',
-                  destinationStampedAtUtc: '2026-03-30T15:00:00Z',
-                  assignedAtUtc: '2026-03-30T13:00:00Z',
-                  assignedByDisplayName: 'Operador',
-                  releasedAtUtc: null,
-                  releasedByDisplayName: null
-                }
-              ]
-            }
-          ]
-        }))
+        getBillingDocumentById: vi.fn().mockReturnValue(
+          of({
+            billingDocumentId: 30,
+            salesOrderId: 20,
+            legacyOrderId: 'LEG-1001',
+            status: 'Draft',
+            documentType: 'I',
+            currencyCode: 'MXN',
+            total: 100,
+            createdAtUtc: '2026-03-20T12:00:00Z',
+            fiscalDocumentId: null,
+            fiscalDocumentStatus: null,
+            associatedOrders: [
+              {
+                salesOrderId: 20,
+                legacyOrderId: 'LEG-1001-ORD-LEG-1001',
+                customerName: 'Receiver One',
+                total: 100,
+                isPrimary: true,
+              },
+            ],
+            items: [],
+            removedItems: [
+              {
+                removalId: 91,
+                billingDocumentId: 30,
+                fiscalDocumentId: 40,
+                salesOrderId: 20,
+                salesOrderItemId: 601,
+                sourceLegacyOrderId: 'LEG-1001-ORD-LEG-1001',
+                customerName: 'Receiver One',
+                sourceSalesOrderLineNumber: 2,
+                productInternalCode: 'MTE-4259',
+                description: 'FILTRO DE ACEITE',
+                quantityRemoved: 1,
+                removalReason: 'WrongDocument',
+                observations: 'Se facturó en otro CFDI',
+                removalDisposition: 'PendingBilling',
+                availableForPendingBillingReuse: false,
+                removedAtUtc: '2026-03-30T12:00:00Z',
+                currentTraceStatus: 'ReassignedAndStamped',
+                currentTraceMessage:
+                  'Producto reasignado y timbrado finalmente en el CFDI UUID-PENDING-1.',
+                currentDestinationBillingDocumentId: 31,
+                currentDestinationBillingDocumentStatus: 'Draft',
+                currentDestinationFiscalDocumentId: 41,
+                currentDestinationFiscalDocumentStatus: 'Stamped',
+                finalCfdiUuid: 'UUID-PENDING-1',
+                finalCfdiSeries: 'A',
+                finalCfdiFolio: '501',
+                finalStampedAtUtc: '2026-03-30T15:00:00Z',
+                assignmentHistory: [
+                  {
+                    assignmentId: 1001,
+                    destinationBillingDocumentId: 31,
+                    destinationBillingDocumentStatus: 'Draft',
+                    destinationFiscalDocumentId: 41,
+                    destinationFiscalDocumentStatus: 'Stamped',
+                    destinationFinalCfdiUuid: 'UUID-PENDING-1',
+                    destinationFinalCfdiSeries: 'A',
+                    destinationFinalCfdiFolio: '501',
+                    destinationStampedAtUtc: '2026-03-30T15:00:00Z',
+                    assignedAtUtc: '2026-03-30T13:00:00Z',
+                    assignedByDisplayName: 'Operador',
+                    releasedAtUtc: null,
+                    releasedByDisplayName: null,
+                  },
+                ],
+              },
+            ],
+          }),
+        ),
       },
-      { id: null, billingDocumentId: '30' }
+      { id: null, billingDocumentId: '30' },
     );
 
     await fixture.componentInstance['loadBillingDocumentContext'](30);
@@ -2686,49 +3097,54 @@ describe('FiscalDocumentOperationsPageComponent', () => {
   });
 
   it('lists pending cancellation authorizations and allows responding from the page', async () => {
-    const listPendingCancellationAuthorizations = vi.fn().mockReturnValue(of({
-      outcome: 'Retrieved',
-      isSuccess: true,
-      items: [
-        {
-          uuid: 'UUID-PENDING-1',
-          issuerRfc: 'AAA010101AAA',
-          receiverRfc: 'BBB010101BBB',
-          fiscalDocumentId: 40,
-          fiscalDocumentStatus: 'CancellationRequested',
-          authorizationStatus: 'Pending'
-        }
-      ]
-    }));
-    const respondCancellationAuthorization = vi.fn().mockReturnValue(of({
-      outcome: 'Responded',
-      isSuccess: true,
-      requestedResponse: 'Accept',
-      appliedResponse: 'Accept',
-      uuid: 'UUID-PENDING-1',
-      fiscalDocumentId: 40,
-      fiscalDocumentStatus: 'CancellationRequested',
-      fiscalCancellationId: 90,
-      cancellationStatus: 'Requested',
-      authorizationStatus: 'Accepted',
-      providerMessage: 'Aceptado'
-    }));
+    const listPendingCancellationAuthorizations = vi.fn().mockReturnValue(
+      of({
+        outcome: 'Retrieved',
+        isSuccess: true,
+        items: [
+          {
+            uuid: 'UUID-PENDING-1',
+            issuerRfc: 'AAA010101AAA',
+            receiverRfc: 'BBB010101BBB',
+            fiscalDocumentId: 40,
+            fiscalDocumentStatus: 'CancellationRequested',
+            authorizationStatus: 'Pending',
+          },
+        ],
+      }),
+    );
+    const respondCancellationAuthorization = vi.fn().mockReturnValue(
+      of({
+        outcome: 'Responded',
+        isSuccess: true,
+        requestedResponse: 'Accept',
+        appliedResponse: 'Accept',
+        uuid: 'UUID-PENDING-1',
+        fiscalDocumentId: 40,
+        fiscalDocumentStatus: 'CancellationRequested',
+        fiscalCancellationId: 90,
+        cancellationStatus: 'Requested',
+        authorizationStatus: 'Accepted',
+        providerMessage: 'Aceptado',
+      }),
+    );
     vi.spyOn(window, 'confirm').mockReturnValue(true);
 
     const fixture = await configure({
       listPendingCancellationAuthorizations,
-      respondCancellationAuthorization
+      respondCancellationAuthorization,
     });
 
     await fixture.componentInstance['loadPendingCancellationAuthorizations']();
     await fixture.componentInstance['respondCancellationAuthorization'](
       fixture.componentInstance['pendingCancellationAuthorizations']()[0],
-      'Accept');
+      'Accept',
+    );
 
     expect(listPendingCancellationAuthorizations).toHaveBeenCalled();
     expect(respondCancellationAuthorization).toHaveBeenCalledWith({
       uuid: 'UUID-PENDING-1',
-      response: 'Accept'
+      response: 'Accept',
     });
   });
 });

@@ -147,6 +147,48 @@ public class FiscalDocumentServicesTests
     }
 
     [Fact]
+    public async Task PrepareFiscalDocument_UsesEffectiveFiscalAssignment_WhenAvailable()
+    {
+        var repository = new FakeFiscalDocumentRepository();
+        var productRepository = new FakeProductFiscalProfileRepository
+        {
+            ExistingByCode = CreateProductFiscalProfile(),
+            EffectiveByCode = new ProductFiscalProfile
+            {
+                InternalCode = "SKU-1",
+                SatProductServiceCode = "20101500",
+                SatUnitCode = "E48",
+                TaxObjectCode = "02",
+                VatRate = 0.16m,
+                DefaultUnitText = "SERVICIO",
+                IsActive = true
+            }
+        };
+        var service = new PrepareFiscalDocumentService(
+            new FakeBillingDocumentRepository { BillingDocumentById = CreateBillingDocument() },
+            repository,
+            new FakeIssuerProfileRepository { Active = CreateIssuerProfile() },
+            new FakeFiscalReceiverRepository { ExistingById = CreateReceiver() },
+            productRepository,
+            new FakeSatCatalogDescriptionProvider(),
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new PrepareFiscalDocumentCommand
+        {
+            BillingDocumentId = 5,
+            FiscalReceiverId = 11,
+            PaymentMethodSat = "PUE",
+            PaymentFormSat = "03",
+            PaymentCondition = "Contado"
+        });
+
+        Assert.Equal(PrepareFiscalDocumentOutcome.Created, result.Outcome);
+        Assert.Equal("20101500", repository.Added!.Items[0].SatProductServiceCode);
+        Assert.Equal("E48", repository.Added.Items[0].SatUnitCode);
+        Assert.Equal("SERVICIO", repository.Added.Items[0].UnitText);
+    }
+
+    [Fact]
     public async Task PrepareFiscalDocument_UsesReceiverCfdiUseOverride_ElseFallsBackToDefault()
     {
         var repository = new FakeFiscalDocumentRepository();
@@ -1148,12 +1190,19 @@ public class FiscalDocumentServicesTests
     private sealed class FakeProductFiscalProfileRepository : IProductFiscalProfileRepository
     {
         public ProductFiscalProfile? ExistingByCode { get; init; }
+        public ProductFiscalProfile? EffectiveByCode { get; init; }
 
         public Task<IReadOnlyList<ProductFiscalProfile>> SearchAsync(string query, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<ProductFiscalProfile>>([]);
 
         public Task<ProductFiscalProfile?> GetByInternalCodeAsync(string normalizedInternalCode, CancellationToken cancellationToken = default)
             => Task.FromResult(ExistingByCode?.InternalCode == normalizedInternalCode ? ExistingByCode : null);
+
+        public Task<ProductFiscalProfile?> GetEffectiveByInternalCodeAsync(
+            string normalizedInternalCode,
+            DateTime asOfUtc,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(EffectiveByCode?.InternalCode == normalizedInternalCode ? EffectiveByCode : ExistingByCode);
 
         public Task<ProductFiscalProfile?> GetByIdAsync(long productFiscalProfileId, CancellationToken cancellationToken = default)
             => Task.FromResult<ProductFiscalProfile?>(null);

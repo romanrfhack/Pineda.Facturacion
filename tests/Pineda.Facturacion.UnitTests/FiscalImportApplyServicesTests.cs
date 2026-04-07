@@ -216,6 +216,9 @@ public class FiscalImportApplyServicesTests
         Assert.Equal(1, result.AppliedRows);
         Assert.NotNull(repository.Added);
         Assert.Equal("SKU-1", repository.Added!.InternalCode);
+        Assert.NotNull(repository.AssignmentSyncedProfile);
+        Assert.Equal("product_fiscal_profile_import", repository.AssignmentSyncSource);
+        Assert.Equal(0.9500m, repository.AssignmentSyncConfidence);
     }
 
     [Fact]
@@ -522,6 +525,9 @@ public class FiscalImportApplyServicesTests
     {
         public ProductFiscalProfile? ExistingByCode { get; init; }
         public ProductFiscalProfile? Added { get; private set; }
+        public ProductFiscalProfile? AssignmentSyncedProfile { get; private set; }
+        public string? AssignmentSyncSource { get; private set; }
+        public decimal AssignmentSyncConfidence { get; private set; }
 
         public Task<IReadOnlyList<ProductFiscalProfile>> SearchAsync(string query, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<ProductFiscalProfile>>([]);
@@ -540,6 +546,21 @@ public class FiscalImportApplyServicesTests
         }
 
         public Task UpdateAsync(ProductFiscalProfile productFiscalProfile, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task EnsureEffectiveAssignmentAsync(
+            ProductFiscalProfile productFiscalProfile,
+            string source,
+            decimal confidence,
+            string reviewStatus,
+            string? reviewReason,
+            DateTime effectiveAtUtc,
+            CancellationToken cancellationToken = default)
+        {
+            AssignmentSyncedProfile = productFiscalProfile;
+            AssignmentSyncSource = source;
+            AssignmentSyncConfidence = confidence;
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class FakeUnitOfWork : IUnitOfWork

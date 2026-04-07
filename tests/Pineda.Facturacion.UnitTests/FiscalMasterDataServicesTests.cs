@@ -124,6 +124,32 @@ public class FiscalMasterDataServicesTests
     }
 
     [Fact]
+    public async Task CreateProductFiscalProfile_SyncsEffectiveAssignmentCompatibilityRow()
+    {
+        var repository = new FakeProductFiscalProfileRepository();
+        var service = new CreateProductFiscalProfileService(repository, new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new CreateProductFiscalProfileCommand
+        {
+            InternalCode = "SKU-1",
+            Description = "Demo",
+            SatProductServiceCode = "10101504",
+            SatUnitCode = "H87",
+            TaxObjectCode = "02",
+            VatRate = 0.16m,
+            DefaultUnitText = "PIEZA",
+            IsActive = true
+        });
+
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(repository.AssignmentSyncedProfile);
+        Assert.Equal("SKU-1", repository.AssignmentSyncedProfile!.InternalCode);
+        Assert.Equal("product_fiscal_profile_manual", repository.AssignmentSyncSource);
+        Assert.Equal(1.0000m, repository.AssignmentSyncConfidence);
+        Assert.Equal("approved", repository.AssignmentSyncReviewStatus);
+    }
+
+    [Fact]
     public async Task GetByRfc_And_ByCode_ReturnHappyPaths()
     {
         var receiverService = new GetFiscalReceiverByRfcService(new FakeFiscalReceiverRepository
@@ -323,6 +349,10 @@ public class FiscalMasterDataServicesTests
     {
         public ProductFiscalProfile? ExistingByCode { get; init; }
         public IReadOnlyList<ProductFiscalProfile> SearchResults { get; init; } = [];
+        public ProductFiscalProfile? AssignmentSyncedProfile { get; private set; }
+        public string? AssignmentSyncSource { get; private set; }
+        public decimal AssignmentSyncConfidence { get; private set; }
+        public string? AssignmentSyncReviewStatus { get; private set; }
 
         public Task<IReadOnlyList<ProductFiscalProfile>> SearchAsync(string query, CancellationToken cancellationToken = default)
             => Task.FromResult(SearchResults);
@@ -340,6 +370,22 @@ public class FiscalMasterDataServicesTests
         }
 
         public Task UpdateAsync(ProductFiscalProfile productFiscalProfile, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task EnsureEffectiveAssignmentAsync(
+            ProductFiscalProfile productFiscalProfile,
+            string source,
+            decimal confidence,
+            string reviewStatus,
+            string? reviewReason,
+            DateTime effectiveAtUtc,
+            CancellationToken cancellationToken = default)
+        {
+            AssignmentSyncedProfile = productFiscalProfile;
+            AssignmentSyncSource = source;
+            AssignmentSyncConfidence = confidence;
+            AssignmentSyncReviewStatus = reviewStatus;
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class FakeFiscalReceiverSatCatalogProvider : IFiscalReceiverSatCatalogProvider

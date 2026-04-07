@@ -159,7 +159,14 @@ public sealed class AssignPendingBillingItemsService
         {
             try
             {
-                nextFiscalItems = await BuildFiscalItemsAsync(nextBillingItems, fiscalDocument.Id, cancellationToken);
+                var preservedSemanticsByKey = FiscalDocumentItemCompositionBuilder.BuildPreservedSemanticMap(
+                    billingDocument.Items,
+                    fiscalDocument.Items);
+                nextFiscalItems = await BuildFiscalItemsAsync(
+                    nextBillingItems,
+                    fiscalDocument.Id,
+                    preservedSemanticsByKey,
+                    cancellationToken);
             }
             catch (InvalidOperationException exception)
             {
@@ -268,50 +275,16 @@ public sealed class AssignPendingBillingItemsService
     private async Task<List<FiscalDocumentItem>> BuildFiscalItemsAsync(
         IReadOnlyList<BillingDocumentItem> billingDocumentItems,
         long fiscalDocumentId,
+        Dictionary<string, FiscalDocumentItem>? preservedSemanticsByKey,
         CancellationToken cancellationToken)
     {
-        var now = DateTime.UtcNow;
-        var fiscalItems = new List<FiscalDocumentItem>(billingDocumentItems.Count);
-
-        foreach (var billingDocumentItem in billingDocumentItems.OrderBy(x => x.LineNumber))
-        {
-            if (string.IsNullOrWhiteSpace(billingDocumentItem.ProductInternalCode))
-            {
-                throw new InvalidOperationException(
-                    $"Billing document item line '{billingDocumentItem.LineNumber}' does not contain the persisted product internal code required for fiscal resolution.");
-            }
-
-            var internalCode = FiscalMasterDataNormalization.NormalizeRequiredCode(billingDocumentItem.ProductInternalCode);
-            var productFiscalProfile = await _productFiscalProfileRepository.GetByInternalCodeAsync(internalCode, cancellationToken);
-            if (productFiscalProfile is null || !productFiscalProfile.IsActive)
-            {
-                throw new InvalidOperationException(
-                    $"No active product fiscal profile exists for item line '{billingDocumentItem.LineNumber}' and internal code '{internalCode}'.");
-            }
-
-            fiscalItems.Add(new FiscalDocumentItem
-            {
-                FiscalDocumentId = fiscalDocumentId,
-                BillingDocumentItemId = billingDocumentItem.Id > 0 ? billingDocumentItem.Id : null,
-                LineNumber = billingDocumentItem.LineNumber,
-                InternalCode = productFiscalProfile.InternalCode,
-                Description = billingDocumentItem.Description,
-                Quantity = billingDocumentItem.Quantity,
-                UnitPrice = billingDocumentItem.UnitPrice,
-                DiscountAmount = billingDocumentItem.DiscountAmount,
-                Subtotal = billingDocumentItem.LineTotal,
-                TaxTotal = billingDocumentItem.TaxAmount,
-                Total = billingDocumentItem.LineTotal + billingDocumentItem.TaxAmount,
-                SatProductServiceCode = productFiscalProfile.SatProductServiceCode,
-                SatUnitCode = productFiscalProfile.SatUnitCode,
-                TaxObjectCode = productFiscalProfile.TaxObjectCode,
-                VatRate = productFiscalProfile.VatRate,
-                UnitText = productFiscalProfile.DefaultUnitText,
-                CreatedAtUtc = now
-            });
-        }
-
-        return fiscalItems;
+        return await FiscalDocumentItemCompositionBuilder.BuildAsync(
+            billingDocumentItems,
+            fiscalDocumentId,
+            _productFiscalProfileRepository,
+            preservedSemanticsByKey,
+            DateTime.UtcNow,
+            cancellationToken);
     }
 
     private static bool CanEditFiscalComposition(FiscalDocument? fiscalDocument)
@@ -327,11 +300,7 @@ public sealed class AssignPendingBillingItemsService
         IReadOnlyList<SalesOrder> salesOrders,
         IReadOnlyList<BillingDocumentItem> items)
     {
-        billingDocument.SalesOrderId = salesOrders[0].Id;
-        billingDocument.Items.Clear();
-        billingDocument.Items.AddRange(items);
-        StandardVat16Calculator.ApplyStandardVat(billingDocument);
-        billingDocument.UpdatedAtUtc = DateTime.UtcNow;
+        BillingDocumentItemCompositionApplier.Apply(billingDocument, salesOrders, items);
     }
 
     private static void ApplyFiscalDocumentComposition(

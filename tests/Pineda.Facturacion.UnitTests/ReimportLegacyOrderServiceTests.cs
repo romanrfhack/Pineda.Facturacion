@@ -59,6 +59,31 @@ public class ReimportLegacyOrderServiceTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_PreservesExistingFiscalSemantics_ForMatchingLineDuringRebuild()
+    {
+        var currentLegacyOrder = CreateLegacyOrder(quantity: 2m, unitPrice: 75m);
+        var importRecord = CreateImportRecord("old-hash", billingDocumentId: 40);
+        var salesOrder = CreateSalesOrder();
+        var billingDocument = CreateBillingDocument();
+        var fiscalDocument = CreateFiscalDocument();
+        fiscalDocument.Items[0].SatProductServiceCode = "99999999";
+        fiscalDocument.Items[0].SatUnitCode = "E48";
+        fiscalDocument.Items[0].TaxObjectCode = "01";
+        fiscalDocument.Items[0].UnitText = "SERVICIO";
+        var repositories = CreateRepositories(currentLegacyOrder, importRecord, salesOrder, billingDocument, fiscalDocument);
+        var service = CreateService(repositories, currentLegacyOrder, "new-hash");
+
+        var result = await service.ExecuteAsync(CreateCommand());
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("99999999", fiscalDocument.Items[0].SatProductServiceCode);
+        Assert.Equal("E48", fiscalDocument.Items[0].SatUnitCode);
+        Assert.Equal("01", fiscalDocument.Items[0].TaxObjectCode);
+        Assert.Equal("SERVICIO", fiscalDocument.Items[0].UnitText);
+        Assert.Equal(2m, fiscalDocument.Items[0].Quantity);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_Blocks_WhenFiscalDocumentIsStamped()
     {
         var currentLegacyOrder = CreateLegacyOrder(quantity: 2m, unitPrice: 75m);

@@ -64,6 +64,14 @@ public class UpdateProductFiscalProfileService
         productFiscalProfile.UpdatedAtUtc = DateTime.UtcNow;
 
         await _productFiscalProfileRepository.UpdateAsync(productFiscalProfile, cancellationToken);
+        await _productFiscalProfileRepository.EnsureEffectiveAssignmentAsync(
+            productFiscalProfile,
+            ProductFiscalAssignmentConventions.ManualSource,
+            ProductFiscalAssignmentConventions.ManualConfidence,
+            ProductFiscalAssignmentConventions.BootstrapReviewStatus,
+            null,
+            productFiscalProfile.UpdatedAtUtc,
+            cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return new UpdateProductFiscalProfileResult
