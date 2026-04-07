@@ -22,7 +22,7 @@ describe('AccountsReceivablePageComponent', () => {
     searchPayments: vi.fn().mockReturnValue(of({ items: [] }))
   };
 
-  beforeEach(async () => {
+  beforeEach(() => {
     queryParams$.next(convertToParamMap({ invoiceId: '2', paymentId: '6' }));
     api.getReceiverWorkspace.mockReturnValue(of({
       fiscalReceiverId: 77,
@@ -218,7 +218,7 @@ describe('AccountsReceivablePageComponent', () => {
       }
     }));
 
-    await TestBed.configureTestingModule({
+    TestBed.configureTestingModule({
       imports: [AccountsReceivablePageComponent],
       providers: [
         provideRouter([]),
@@ -246,7 +246,7 @@ describe('AccountsReceivablePageComponent', () => {
           useValue: { queryParamMap: queryParams$.asObservable(), snapshot: { queryParamMap: convertToParamMap({}) } }
         }
       ]
-    }).compileComponents();
+    });
   });
 
   it('queries the same receiver portfolio when loading remainder candidates from invoice detail', async () => {

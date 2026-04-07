@@ -52,12 +52,12 @@ export function formatDateTimeLocalValue(date: Date): string {
             <small class="helper">Saldo pendiente operativo: {{ normalizedMaxOperationalAmount()!.toFixed(2) }} MXN</small>
           }
           @if (getAmountGuardrailMessage(); as amountGuardrailMessage) {
-            <small class="helper error">{{ amountGuardrailMessage }}</small>
+            <small class="helper error" data-testid="payment-create-amount-guardrail">{{ amountGuardrailMessage }}</small>
           }
         </label>
         <label><span>Referencia</span><input class="field-control" [(ngModel)]="model.reference" name="reference" /></label>
         <label><span>Notas</span><input class="field-control" [(ngModel)]="model.notes" name="notes" /></label>
-        <button type="submit" [disabled]="loading() || loadingCatalog() || !canSubmit()"> {{ loading() ? 'Guardando...' : 'Crear pago' }} </button>
+        <button type="submit" data-testid="payment-create-submit" [disabled]="loading() || loadingCatalog() || !canSubmit()"> {{ loading() ? 'Guardando...' : 'Crear pago' }} </button>
       </form>
     </section>
   `,

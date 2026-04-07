@@ -245,12 +245,19 @@ export async function mockAccountsReceivableJourney(page: Page): Promise<void> {
   });
 
   await page.route('**/api/accounts-receivable/payments', async (route) => {
+    const payload = route.request().postDataJSON() as Record<string, unknown>;
+    const amount = typeof payload.amount === 'number' ? payload.amount : Number(payload.amount ?? 0);
+    const reference = typeof payload.reference === 'string' ? payload.reference : 'PAY-701';
+    const notes = typeof payload.notes === 'string' ? payload.notes : 'Partial payment';
+
     payment = createPayment({
       id: 701,
-      amount: 40,
+      amount,
       appliedTotal: 0,
-      remainingAmount: 40,
-      applications: []
+      remainingAmount: amount,
+      applications: [],
+      reference,
+      notes
     });
 
     await route.fulfill({
@@ -879,6 +886,8 @@ function createPayment(input: {
   appliedTotal: number;
   remainingAmount: number;
   applications: Record<string, unknown>[];
+  reference?: string;
+  notes?: string;
 }): Record<string, unknown> {
   return {
     id: input.id,
@@ -888,8 +897,8 @@ function createPayment(input: {
     amount: input.amount,
     appliedTotal: input.appliedTotal,
     remainingAmount: input.remainingAmount,
-    reference: 'PAY-701',
-    notes: 'Partial payment',
+    reference: input.reference ?? 'PAY-701',
+    notes: input.notes ?? 'Partial payment',
     receivedFromFiscalReceiverId: 9,
     createdAtUtc: '2026-03-20T14:00:00Z',
     updatedAtUtc: '2026-03-20T14:05:00Z',
