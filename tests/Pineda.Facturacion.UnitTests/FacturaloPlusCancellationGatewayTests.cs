@@ -86,6 +86,28 @@ public class FacturaloPlusCancellationGatewayTests
     }
 
     [Fact]
+    public async Task CancelAsync_Composes_Provider_Url_When_BaseUrl_Has_No_Trailing_Slash()
+    {
+        var gateway = CreateGateway(
+            """
+            {
+              "codigo": "201",
+              "mensaje": "Cancelado"
+            }
+            """,
+            HttpStatusCode.OK,
+            "application/json",
+            "https://dev.facturaloplus.com/api/rest/servicio");
+
+        var result = await gateway.CancelAsync(CreateRequest());
+
+        Assert.Equal(FiscalCancellationGatewayOutcome.Cancelled, result.Outcome);
+        var handler = gateway.GetHandlerForTests();
+        Assert.NotNull(handler.LastRequest);
+        Assert.Equal("https://dev.facturaloplus.com/api/rest/servicio/cancelar2", handler.LastRequest!.RequestUri!.ToString());
+    }
+
+    [Fact]
     public async Task CancelAsync_Treats_Code201_As_Cancelled()
     {
         var gateway = CreateGateway(
@@ -160,6 +182,27 @@ public class FacturaloPlusCancellationGatewayTests
 
         Assert.Equal(FiscalCancellationGatewayOutcome.Rejected, result.Outcome);
         Assert.Equal("203", result.ProviderCode);
+    }
+
+    [Fact]
+    public async Task CancelAsync_Treats_Html_404_As_Unavailable()
+    {
+        var gateway = CreateGateway(
+            """
+            <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+            <html><head><title>404 Not Found</title></head><body>Not Found</body></html>
+            """,
+            HttpStatusCode.NotFound,
+            "text/html");
+
+        var result = await gateway.CancelAsync(CreateRequest());
+
+        Assert.Equal(FiscalCancellationGatewayOutcome.Unavailable, result.Outcome);
+        Assert.Equal("404", result.ProviderCode);
+        Assert.Equal("HTTP_404", result.ErrorCode);
+        Assert.Contains("endpoint was not found", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\"responseContentType\":\"text/html\"", result.RawResponseSummaryJson);
+        Assert.Contains("\"requestUrl\":\"https://dev.facturaloplus.com/api/rest/servicio/cancelar2\"", result.RawResponseSummaryJson);
     }
 
     [Fact]
@@ -306,15 +349,19 @@ public class FacturaloPlusCancellationGatewayTests
         Assert.Equal("Aceptar", form["respuesta"]);
     }
 
-    private static FacturaloPlusCancellationGateway CreateGateway(string responseJson, HttpStatusCode statusCode)
+    private static TestableFacturaloPlusCancellationGateway CreateGateway(
+        string responseJson,
+        HttpStatusCode statusCode,
+        string responseContentType = "application/json",
+        string baseUrl = "https://dev.facturaloplus.com/api/rest/servicio/")
     {
         var handler = new RecordingHandler(new HttpResponseMessage(statusCode)
         {
-            Content = new StringContent(responseJson, Encoding.UTF8, "application/json")
+            Content = new StringContent(responseJson, Encoding.UTF8, responseContentType)
         });
         var client = new HttpClient(handler)
         {
-            BaseAddress = new Uri("https://dev.facturaloplus.com/api/rest/servicio/")
+            BaseAddress = new Uri(baseUrl, UriKind.Absolute)
         };
         var secretResolver = new RecordingSecretResolver(new Dictionary<string, string?>
         {
@@ -324,16 +371,17 @@ public class FacturaloPlusCancellationGatewayTests
             ["PWD_REF"] = "PRIVATE-KEY-PASSWORD"
         });
 
-        return new FacturaloPlusCancellationGateway(
+        return new TestableFacturaloPlusCancellationGateway(
             client,
             Options.Create(new FacturaloPlusOptions
             {
-                BaseUrl = "https://dev.facturaloplus.com/api/rest/servicio/",
+                BaseUrl = baseUrl,
                 CancelPath = "cancelar2",
                 ApiKeyReference = "FACTURALOPLUS_API_KEY_REFERENCE",
                 ApiKeyHeaderName = "X-Api-Key"
             }),
-            secretResolver);
+            secretResolver,
+            handler);
     }
 
     private static FiscalCancellationRequest CreateRequest()
@@ -371,7 +419,7 @@ public class FacturaloPlusCancellationGatewayTests
 
     private sealed class RecordingHandler : HttpMessageHandler
     {
-        private readonly HttpResponseMessage _response;
+        private HttpResponseMessage _response;
 
         public RecordingHandler(HttpResponseMessage response)
         {
@@ -407,5 +455,22 @@ public class FacturaloPlusCancellationGatewayTests
             RequestedKeys.Add(referenceKey);
             return Task.FromResult(_values.TryGetValue(referenceKey, out var value) ? value : null);
         }
+    }
+
+    private sealed class TestableFacturaloPlusCancellationGateway : FacturaloPlusCancellationGateway
+    {
+        private readonly RecordingHandler _handler;
+
+        public TestableFacturaloPlusCancellationGateway(
+            HttpClient httpClient,
+            IOptions<FacturaloPlusOptions> options,
+            ISecretReferenceResolver secretReferenceResolver,
+            RecordingHandler handler)
+            : base(httpClient, options, secretReferenceResolver)
+        {
+            _handler = handler;
+        }
+
+        public RecordingHandler GetHandlerForTests() => _handler;
     }
 }

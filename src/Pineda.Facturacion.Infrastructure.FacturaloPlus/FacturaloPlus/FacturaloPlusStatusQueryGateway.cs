@@ -52,7 +52,9 @@ public class FacturaloPlusStatusQueryGateway : IFiscalStatusQueryGateway
             new("total", request.Total.ToString("0.######", CultureInfo.InvariantCulture))
         };
 
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _options.StatusQueryPath)
+        using var httpRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            FacturaloPlusOperationUri.BuildRelative(_options.BaseUrl, _options.StatusQueryPath))
         {
             Content = new FormUrlEncodedContent(formPayload)
         };

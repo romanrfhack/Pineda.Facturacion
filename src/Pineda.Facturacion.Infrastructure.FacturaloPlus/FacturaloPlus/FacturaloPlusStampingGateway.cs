@@ -87,7 +87,9 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
         var payloadJson = JsonSerializer.Serialize(payload, JsonOptions);
         var formPayload = BuildFormPayload(apiKey, payloadJson, privateKeyValue, certificateValue);
 
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _options.StampPath)
+        using var httpRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            FacturaloPlusOperationUri.BuildRelative(_options.BaseUrl, _options.StampPath))
         {
             Content = new FormUrlEncodedContent(formPayload)
         };
@@ -183,7 +185,9 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
             return RemoteValidationFailed("Configured PAC API key reference could not be resolved.");
         }
 
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _options.RemoteCfdiQueryPath)
+        using var httpRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            FacturaloPlusOperationUri.BuildRelative(_options.BaseUrl, _options.RemoteCfdiQueryPath))
         {
             Content = new FormUrlEncodedContent(new Dictionary<string, string>
             {
