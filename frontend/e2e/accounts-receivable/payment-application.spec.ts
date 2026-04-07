@@ -16,7 +16,7 @@ test('operator creates an AR invoice then records and applies a payment', async 
   await expect(page.getByText('Cuenta #601 · CFDI A-401')).toBeVisible();
   await expect(page.locator('app-accounts-receivable-card').getByText('100.00 MXN')).toBeVisible();
 
-  await page.locator('app-payment-create-form').getByLabel('Monto', { exact: true }).fill('40');
+  await page.locator('app-payment-create-form').getByTestId('payment-create-amount').fill('40');
   await page.locator('app-payment-create-form').getByLabel('Referencia').fill('PAY-701');
   await page.getByRole('button', { name: 'Crear pago' }).click();
 

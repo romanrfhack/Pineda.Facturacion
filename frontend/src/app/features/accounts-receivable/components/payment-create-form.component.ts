@@ -47,7 +47,7 @@ export function formatDateTimeLocalValue(date: Date): string {
 
         <label>
           <span>Monto</span>
-          <input class="field-control" [(ngModel)]="model.amount" name="amount" type="number" min="0.01" step="0.01" required />
+          <input class="field-control" data-testid="payment-create-amount" [(ngModel)]="model.amount" name="amount" type="number" min="0.01" step="0.01" required />
           @if (normalizedMaxOperationalAmount() != null) {
             <small class="helper">Saldo pendiente operativo: {{ normalizedMaxOperationalAmount()!.toFixed(2) }} MXN</small>
           }
