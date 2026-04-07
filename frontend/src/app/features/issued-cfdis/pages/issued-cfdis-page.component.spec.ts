@@ -157,7 +157,6 @@ describe('IssuedCfdisPageComponent', () => {
 
   it('loads and renders the issued CFDI grid', async () => {
     const fixture = await configure();
-    await fixture.componentInstance['load']();
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).toContain('UUID-123');
@@ -166,6 +165,16 @@ describe('IssuedCfdisPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Ver detalle');
     expect(fixture.nativeElement.textContent).not.toContain('Descargar PDF');
     expect(fixture.nativeElement.textContent).not.toContain('Reenviar por correo');
+  });
+
+  it('does not eager-load the first CFDI detail on initial page load', async () => {
+    await configure();
+    const api = TestBed.inject(FiscalDocumentsApiService) as unknown as ReturnType<typeof createApi>;
+
+    expect(api.searchIssued).toHaveBeenCalledTimes(1);
+    expect(api.getFiscalDocumentById).not.toHaveBeenCalled();
+    expect(api.getStamp).not.toHaveBeenCalled();
+    expect(api.getCancellation).not.toHaveBeenCalled();
   });
 
   it('applies filters through the paged issued-search endpoint', async () => {
@@ -192,6 +201,7 @@ describe('IssuedCfdisPageComponent', () => {
 
   it('opens the detail in a modal and hides the fixed summary sections from the page', async () => {
     const fixture = await configure();
+    const api = TestBed.inject(FiscalDocumentsApiService) as unknown as ReturnType<typeof createApi>;
 
     expect(fixture.nativeElement.textContent).not.toContain('Detalle de CFDI emitido');
 
@@ -207,11 +217,120 @@ describe('IssuedCfdisPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Orden de trabajo');
     expect(fixture.nativeElement.textContent).toContain('OT-45678');
     expect(fixture.nativeElement.textContent).toContain('TRACK-1-ABCDEF1234567890-ABCDEFGHIJKLMNOPQRSTUVWXYZ-1234567890');
+    expect(api.getFiscalDocumentById).toHaveBeenCalledTimes(1);
+    expect(api.getStamp).toHaveBeenCalledTimes(1);
+    expect(api.getCancellation).not.toHaveBeenCalled();
 
     fixture.componentInstance['closeDetailModal']();
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).not.toContain('Detalle de CFDI emitido');
+  });
+
+  it('reuses cached detail data when reopening the same CFDI in the same session', async () => {
+    const fixture = await configure();
+    const api = TestBed.inject(FiscalDocumentsApiService) as unknown as ReturnType<typeof createApi>;
+    const item = fixture.componentInstance['items']()[0];
+
+    await fixture.componentInstance['openDetailModal'](item);
+    fixture.componentInstance['closeDetailModal']();
+    await fixture.componentInstance['openDetailModal'](item);
+
+    expect(api.getFiscalDocumentById).toHaveBeenCalledTimes(1);
+    expect(api.getStamp).toHaveBeenCalledTimes(1);
+    expect(api.getCancellation).not.toHaveBeenCalled();
+  });
+
+  it('loads cancellation evidence only for statuses that can already have persisted cancellation data', async () => {
+    const searchIssued = vi.fn().mockReturnValue(of({
+      page: 1,
+      pageSize: 25,
+      totalCount: 1,
+      totalPages: 1,
+      items: [
+        {
+          fiscalDocumentId: 40,
+          billingDocumentId: 30,
+          status: 'Cancelled',
+          issuedAtUtc: '2026-03-24T12:00:00Z',
+          stampedAtUtc: '2026-03-24T12:05:00Z',
+          issuerRfc: 'AAA010101AAA',
+          issuerLegalName: 'Issuer SA',
+          series: 'A',
+          folio: '31787',
+          uuid: 'UUID-123',
+          receiverRfc: 'BBB010101BBB',
+          receiverLegalName: 'Receiver One',
+          receiverCfdiUseCode: 'G03',
+          paymentMethodSat: 'PPD',
+          paymentFormSat: '99',
+          documentType: 'I',
+          total: 116
+        }
+      ]
+    }));
+    const getFiscalDocumentById = vi.fn().mockReturnValue(of({
+      id: 40,
+      billingDocumentId: 30,
+      issuerProfileId: 1,
+      fiscalReceiverId: 9,
+      status: 'Cancelled',
+      cfdiVersion: '4.0',
+      documentType: 'I',
+      series: 'A',
+      folio: '31787',
+      issuedAtUtc: '2026-03-24T12:00:00Z',
+      currencyCode: 'MXN',
+      exchangeRate: 1,
+      paymentMethodSat: 'PPD',
+      paymentFormSat: '99',
+      paymentCondition: 'CREDITO',
+      isCreditSale: true,
+      creditDays: 7,
+      issuerRfc: 'AAA010101AAA',
+      issuerLegalName: 'Issuer SA',
+      issuerFiscalRegimeCode: '601',
+      issuerPostalCode: '01000',
+      pacEnvironment: 'Sandbox',
+      hasCertificateReference: true,
+      hasPrivateKeyReference: true,
+      hasPrivateKeyPasswordReference: true,
+      receiverRfc: 'BBB010101BBB',
+      receiverLegalName: 'Receiver One',
+      receiverFiscalRegimeCode: '601',
+      receiverCfdiUseCode: 'G03',
+      receiverPostalCode: '02000',
+      receiverCountryCode: 'MX',
+      receiverForeignTaxRegistration: null,
+      subtotal: 100,
+      discountTotal: 0,
+      taxTotal: 16,
+      total: 116,
+      items: [],
+      specialFields: []
+    }));
+    const getCancellation = vi.fn().mockReturnValue(of({
+      fiscalDocumentId: 40,
+      status: 'Cancelled',
+      cancellationReasonCode: '03',
+      replacementUuid: null,
+      providerName: 'FacturaloPlus',
+      providerTrackingId: 'TRACK-CANCEL-201',
+      providerCode: '201',
+      providerMessage: 'Cancelado',
+      errorCode: null,
+      errorMessage: null,
+      supportMessage: null,
+      rawResponseSummaryJson: '{"codigo":"201"}',
+      requestedAtUtc: '2026-03-29T12:00:00Z',
+      cancelledAtUtc: '2026-03-29T12:10:00Z'
+    }));
+    const fixture = await configure({ searchIssued, getFiscalDocumentById, getCancellation });
+
+    await fixture.componentInstance['openDetailModal'](fixture.componentInstance['items']()[0]);
+
+    expect(getCancellation).toHaveBeenCalledTimes(1);
+    expect(fixture.componentInstance['selectedCancellation']()?.status).toBe('Cancelled');
   });
 
   it('keeps the detail modal stable when the document has no special billing fields', async () => {
@@ -394,9 +513,11 @@ describe('IssuedCfdisPageComponent', () => {
     const fixture = await configure({ refreshStatus, getFiscalDocumentById, getCancellation });
 
     await fixture.componentInstance['openDetailModal'](fixture.componentInstance['items']()[0]);
+    expect(getCancellation).toHaveBeenCalledTimes(1);
     await fixture.componentInstance['refreshStatus']();
 
     expect(refreshStatus).toHaveBeenCalledWith(40);
+    expect(getCancellation).toHaveBeenCalledTimes(2);
     expect(fixture.componentInstance['lastOperationMessage']()).toContain('sigue en proceso en SAT');
     expect(fixture.componentInstance['selectedDocument']()?.status).toBe('CancellationRequested');
     expect(fixture.componentInstance['selectedCancellation']()?.status).toBe('Requested');

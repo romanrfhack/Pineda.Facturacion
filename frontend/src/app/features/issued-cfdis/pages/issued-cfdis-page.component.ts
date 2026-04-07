@@ -357,6 +357,9 @@ import {
 export class IssuedCfdisPageComponent {
   private readonly api = inject(FiscalDocumentsApiService);
   private readonly feedbackService = inject(FeedbackService);
+  private readonly documentCache = new Map<number, FiscalDocumentResponse>();
+  private readonly stampCache = new Map<number, FiscalStampResponse | null>();
+  private readonly cancellationCache = new Map<number, FiscalCancellationResponse | null>();
   protected readonly permissionService = inject(PermissionService);
   protected readonly getDisplayLabel = getDisplayLabel;
   protected readonly cancellationReasonOptions = cancellationReasonOptions;
@@ -456,22 +459,22 @@ export class IssuedCfdisPageComponent {
     await this.load(false);
   }
 
-  protected async selectItem(item: IssuedFiscalDocumentListItemResponse): Promise<void> {
+  protected async selectItem(item: IssuedFiscalDocumentListItemResponse, forceRefresh = false): Promise<void> {
     this.selectedItem.set(item);
     this.showStampDetail.set(false);
     this.lastOperationMessage.set(null);
+
     try {
-      this.selectedDocument.set(await firstValueFrom(this.api.getFiscalDocumentById(item.fiscalDocumentId)));
-      this.selectedStamp.set(await firstValueFrom(this.api.getStamp(item.fiscalDocumentId)));
+      const document = await this.loadFiscalDocument(item.fiscalDocumentId, forceRefresh);
+      const stamp = await this.loadStamp(item.fiscalDocumentId, forceRefresh);
+      const cancellation = await this.loadCancellation(item.fiscalDocumentId, document.status, forceRefresh);
+
+      this.selectedDocument.set(document);
+      this.selectedStamp.set(stamp);
+      this.selectedCancellation.set(cancellation);
     } catch (error) {
       this.feedbackService.show('error', extractApiErrorMessage(error, 'No fue posible cargar el detalle del CFDI.'));
       return;
-    }
-
-    try {
-      this.selectedCancellation.set(await firstValueFrom(this.api.getCancellation(item.fiscalDocumentId)));
-    } catch {
-      this.selectedCancellation.set(null);
     }
   }
 
@@ -799,12 +802,13 @@ export class IssuedCfdisPageComponent {
       this.pageSize.set(response.pageSize);
 
       const currentSelected = this.selectedItem();
-      const nextSelected = response.items.find((item) => item.fiscalDocumentId === currentSelected?.fiscalDocumentId)
-        ?? (selectFirst ? response.items[0] ?? null : currentSelected ?? null);
+      const nextSelected = currentSelected
+        ? response.items.find((item) => item.fiscalDocumentId === currentSelected.fiscalDocumentId) ?? null
+        : null;
 
       if (nextSelected) {
-        await this.selectItem(nextSelected);
-      } else {
+        this.selectedItem.set(nextSelected);
+      } else if (!selectFirst || !response.items.length || !this.showDetailModal()) {
         this.selectedItem.set(null);
         this.selectedDocument.set(null);
         this.selectedStamp.set(null);
@@ -858,23 +862,25 @@ export class IssuedCfdisPageComponent {
   }
 
   private async reloadSelectedContext(fiscalDocumentId: number): Promise<void> {
-    this.selectedDocument.set(await firstValueFrom(this.api.getFiscalDocumentById(fiscalDocumentId)));
+    const selectedItem = this.selectedItem();
+    const document = await this.loadFiscalDocument(fiscalDocumentId, true);
+    this.selectedDocument.set(document);
     this.updateSelectedStatuses(this.selectedDocument()?.status ?? null);
-
-    try {
-      this.selectedStamp.set(await firstValueFrom(this.api.getStamp(fiscalDocumentId)));
-    } catch {
-      this.selectedStamp.set(null);
+    if (selectedItem && selectedItem.fiscalDocumentId === fiscalDocumentId) {
+      this.selectedItem.set({
+        ...selectedItem,
+        status: document.status
+      });
     }
 
-    try {
-      const fetchedCancellation = await firstValueFrom(this.api.getCancellation(fiscalDocumentId));
-      if (!shouldKeepCurrentCancelledCancellation(this.selectedCancellation(), fetchedCancellation)) {
-        this.selectedCancellation.set(fetchedCancellation);
-      }
-    } catch {
-      this.selectedCancellation.set(null);
+    this.selectedStamp.set(await this.loadStamp(fiscalDocumentId, true));
+
+    const fetchedCancellation = await this.loadCancellation(fiscalDocumentId, document.status, true);
+    if (fetchedCancellation && shouldKeepCurrentCancelledCancellation(this.selectedCancellation(), fetchedCancellation)) {
+      return;
     }
+
+    this.selectedCancellation.set(fetchedCancellation);
   }
 
   private reconcileCancellationAfterOperation(response: CancelFiscalDocumentResponse, request: CancelFiscalDocumentRequest): void {
@@ -886,7 +892,77 @@ export class IssuedCfdisPageComponent {
     );
     this.selectedDocument.set(reconciliation.nextDocument);
     this.selectedCancellation.set(reconciliation.nextCancellation);
+    if (reconciliation.nextDocument) {
+      this.documentCache.set(reconciliation.nextDocument.id, reconciliation.nextDocument);
+    }
+    this.cancellationCache.set(response.fiscalDocumentId, reconciliation.nextCancellation);
     this.updateSelectedStatuses(reconciliation.nextDocument?.status ?? response.fiscalDocumentStatus ?? null);
+  }
+
+  private async loadFiscalDocument(fiscalDocumentId: number, forceRefresh = false): Promise<FiscalDocumentResponse> {
+    if (!forceRefresh) {
+      const cached = this.documentCache.get(fiscalDocumentId);
+      if (cached) {
+        return cached;
+      }
+    }
+
+    const document = await firstValueFrom(this.api.getFiscalDocumentById(fiscalDocumentId));
+    this.documentCache.set(fiscalDocumentId, document);
+    return document;
+  }
+
+  private async loadStamp(fiscalDocumentId: number, forceRefresh = false): Promise<FiscalStampResponse | null> {
+    if (!forceRefresh && this.stampCache.has(fiscalDocumentId)) {
+      return this.stampCache.get(fiscalDocumentId) ?? null;
+    }
+
+    try {
+      const stamp = await firstValueFrom(this.api.getStamp(fiscalDocumentId));
+      this.stampCache.set(fiscalDocumentId, stamp);
+      return stamp;
+    } catch (error) {
+      if (!isNotFoundError(error)) {
+        throw error;
+      }
+
+      this.stampCache.set(fiscalDocumentId, null);
+      return null;
+    }
+  }
+
+  private async loadCancellation(
+    fiscalDocumentId: number,
+    fiscalDocumentStatus: string | null | undefined,
+    forceRefresh = false
+  ): Promise<FiscalCancellationResponse | null> {
+    if (!this.shouldLoadCancellation(fiscalDocumentStatus)) {
+      this.cancellationCache.set(fiscalDocumentId, null);
+      return null;
+    }
+
+    if (!forceRefresh && this.cancellationCache.has(fiscalDocumentId)) {
+      return this.cancellationCache.get(fiscalDocumentId) ?? null;
+    }
+
+    try {
+      const cancellation = await firstValueFrom(this.api.getCancellation(fiscalDocumentId));
+      this.cancellationCache.set(fiscalDocumentId, cancellation);
+      return cancellation;
+    } catch (error) {
+      if (!isNotFoundError(error)) {
+        throw error;
+      }
+
+      this.cancellationCache.set(fiscalDocumentId, null);
+      return null;
+    }
+  }
+
+  private shouldLoadCancellation(status: string | null | undefined): boolean {
+    return status === 'CancellationRequested'
+      || status === 'CancellationRejected'
+      || status === 'Cancelled';
   }
 
   private updateSelectedStatuses(nextStatus: string | null): void {
@@ -972,4 +1048,11 @@ function triggerBlobDownload(blob: Blob, fileName: string): void {
   link.download = fileName;
   link.click();
   window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 30000);
+}
+
+function isNotFoundError(error: unknown): error is { status: number } {
+  return typeof error === 'object'
+    && error !== null
+    && 'status' in error
+    && (error as { status?: unknown }).status === 404;
 }
