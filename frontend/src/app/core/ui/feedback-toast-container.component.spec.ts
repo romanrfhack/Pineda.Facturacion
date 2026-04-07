@@ -32,6 +32,7 @@ describe('FeedbackToastContainerComponent', () => {
     expect(getComputedStyle(region).top).toBe('1rem');
     expect(getComputedStyle(region).right).toBe('1rem');
     expect(cards).toHaveLength(2);
+    expect(fixture.nativeElement.querySelectorAll('.sr-only')).toHaveLength(0);
     expect(cards[0].textContent).toContain('No se pudo guardar.');
     expect(cards[0].getAttribute('role')).toBe('alert');
     expect(cards[1].textContent).toContain('Guardado correctamente.');

@@ -13,15 +13,11 @@ export interface FeedbackMessage {
 export class FeedbackService {
   private readonly destroyRef = inject(DestroyRef);
   private readonly toastStore = signal<FeedbackMessage[]>([]);
-  private readonly politeAnnouncementStore = signal('');
-  private readonly assertiveAnnouncementStore = signal('');
   private readonly timeouts = new Map<number, ReturnType<typeof setTimeout>>();
   private nextId = 0;
 
   readonly toasts = this.toastStore.asReadonly();
   readonly message = computed<FeedbackMessage | null>(() => this.toastStore()[0] ?? null);
-  readonly politeAnnouncement = this.politeAnnouncementStore.asReadonly();
-  readonly assertiveAnnouncement = this.assertiveAnnouncementStore.asReadonly();
 
   constructor() {
     this.destroyRef.onDestroy(() => this.clear());
@@ -42,7 +38,6 @@ export class FeedbackService {
 
     this.toastStore.update((current) => [toast, ...current]);
     this.scheduleAutoDismiss(toast);
-    this.announce(toast);
 
     return toast.id;
   }
@@ -54,8 +49,6 @@ export class FeedbackService {
 
     this.timeouts.clear();
     this.toastStore.set([]);
-    this.politeAnnouncementStore.set('');
-    this.assertiveAnnouncementStore.set('');
   }
 
   dismiss(id: number): void {
@@ -70,15 +63,6 @@ export class FeedbackService {
     }, toast.durationMs);
 
     this.timeouts.set(toast.id, handle);
-  }
-
-  private announce(toast: FeedbackMessage): void {
-    const announcementStore = toast.level === 'error'
-      ? this.assertiveAnnouncementStore
-      : this.politeAnnouncementStore;
-
-    announcementStore.set('');
-    queueMicrotask(() => announcementStore.set(toast.text));
   }
 
   private clearTimer(id: number): void {

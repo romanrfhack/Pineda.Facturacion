@@ -6,9 +6,6 @@ import { FeedbackToastComponent } from './feedback-toast.component';
   selector: 'app-feedback-toast-container',
   imports: [FeedbackToastComponent],
   template: `
-    <div class="sr-only" aria-live="polite" aria-atomic="true">{{ feedbackService.politeAnnouncement() }}</div>
-    <div class="sr-only" aria-live="assertive" aria-atomic="true">{{ feedbackService.assertiveAnnouncement() }}</div>
-
     @if (feedbackService.toasts().length) {
       <section class="toast-region" aria-label="Notificaciones globales">
         @for (toast of feedbackService.toasts(); track toast.id) {
@@ -38,17 +35,6 @@ import { FeedbackToastComponent } from './feedback-toast.component';
     }
     .toast-leave {
       animation: toast-leave 160ms ease-in forwards;
-    }
-    .sr-only {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      margin: -1px;
-      padding: 0;
-      overflow: hidden;
-      clip: rect(0, 0, 0, 0);
-      white-space: nowrap;
-      border: 0;
     }
     @keyframes toast-enter {
       from {

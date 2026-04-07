@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 import { LoginPage } from '../support/login-page';
 import {
   mockMixedReceiversComplementFailure,
@@ -7,6 +8,10 @@ import {
 } from '../support/mock-operational-scenarios';
 
 const APP_BOOTSTRAP_TIMEOUT_MS = 15000;
+
+function globalNotifications(page: Page) {
+  return page.getByLabel('Notificaciones globales');
+}
 
 test('operator sees read-only fiscal document actions', async ({ page }) => {
   await mockOperatorReadOnlyFiscalDocument(page);
@@ -32,7 +37,7 @@ test('supervisor sees provider unavailable feedback when invoice stamp fails', a
   await page.goto('/app/fiscal-documents/406', { waitUntil: 'commit' });
   await expect(page.getByText('Aún no hay evidencia de timbrado disponible')).toBeVisible({ timeout: APP_BOOTSTRAP_TIMEOUT_MS });
   await page.getByRole('button', { name: 'Timbrar' }).click();
-  await expect(page.getByText('PAC no disponible. Intenta de nuevo después de verificar el estatus.')).toBeVisible();
+  await expect(globalNotifications(page).getByText('PAC no disponible. Intenta de nuevo después de verificar el estatus.')).toBeVisible();
 });
 
 test('mixed receivers validation is shown during payment complement preparation', async ({ page }) => {
@@ -45,5 +50,5 @@ test('mixed receivers validation is shown during payment complement preparation'
   await page.goto('/app/payment-complements?paymentId=703', { waitUntil: 'commit' });
   await expect(page.getByRole('button', { name: 'Preparar complemento de pago' })).toBeVisible({ timeout: APP_BOOTSTRAP_TIMEOUT_MS });
   await page.getByRole('button', { name: 'Preparar complemento de pago' }).click();
-  await expect(page.getByText('Las facturas aplicadas pertenecen a receptores distintos.')).toBeVisible();
+  await expect(globalNotifications(page).getByText('Las facturas aplicadas pertenecen a receptores distintos.')).toBeVisible();
 });
