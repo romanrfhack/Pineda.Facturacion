@@ -4,7 +4,6 @@ import { filter } from 'rxjs';
 import { SessionService } from '../auth/session.service';
 import { PermissionService } from '../auth/permission.service';
 import { NAVIGATION_ITEMS } from './navigation.config';
-import { FeedbackBannerComponent } from '../ui/feedback-banner.component';
 import { getRoleDisplayLabel } from '../../shared/ui/display-labels';
 
 const MOBILE_BREAKPOINT = 768;
@@ -12,7 +11,7 @@ const SIDEBAR_COLLAPSED_STORAGE_KEY = 'app-shell-sidebar-collapsed';
 
 @Component({
   selector: 'app-shell',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, FeedbackBannerComponent],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive],
   template: `
     <div class="shell" [class.mobile]="isMobile()" [class.desktop-collapsed]="isDesktopCollapsed()">
       @if (isMobile() && isMobileMenuOpen()) {
@@ -84,7 +83,6 @@ const SIDEBAR_COLLAPSED_STORAGE_KEY = 'app-shell-sidebar-collapsed';
             </div>
           </header>
         }
-        <app-feedback-banner />
         <router-outlet />
       </main>
     </div>
