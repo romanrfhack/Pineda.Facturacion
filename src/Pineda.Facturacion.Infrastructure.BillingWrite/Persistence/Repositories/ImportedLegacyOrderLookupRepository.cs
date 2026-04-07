@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
+using Pineda.Facturacion.Domain.Entities;
+using Pineda.Facturacion.Domain.Enums;
 
 namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Repositories;
 
@@ -76,11 +78,11 @@ public sealed class ImportedLegacyOrderLookupRepository : IImportedLegacyOrderLo
             .Select(importRecord =>
             {
                 var salesOrder = salesOrders.FirstOrDefault(x => x.LegacyImportRecordId == importRecord.Id);
-                var billingDocument = importRecord.BillingDocumentId.HasValue
-                    ? billingDocuments.FirstOrDefault(x => x.Id == importRecord.BillingDocumentId.Value)
-                    : salesOrder is null
-                        ? null
-                        : billingDocuments.FirstOrDefault(x => x.SalesOrderId == salesOrder.Id);
+                var relatedBillingDocuments = billingDocuments
+                    .Where(x => (salesOrder is not null && x.SalesOrderId == salesOrder.Id)
+                        || (importRecord.BillingDocumentId.HasValue && x.Id == importRecord.BillingDocumentId.Value))
+                    .ToArray();
+                var billingDocument = SelectOperationalBillingDocument(relatedBillingDocuments, fiscalDocuments);
                 var fiscalDocument = billingDocument is null
                     ? null
                     : fiscalDocuments.FirstOrDefault(x => x.BillingDocumentId == billingDocument.Id);
@@ -115,5 +117,21 @@ public sealed class ImportedLegacyOrderLookupRepository : IImportedLegacyOrderLo
                     .ThenByDescending(y => y.FiscalDocumentId.HasValue)
                     .First(),
                 StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static BillingDocument? SelectOperationalBillingDocument(
+        IReadOnlyCollection<BillingDocument> relatedBillingDocuments,
+        IReadOnlyCollection<FiscalDocument> fiscalDocuments)
+    {
+        return relatedBillingDocuments
+            .Select(billingDocument => new
+            {
+                BillingDocument = billingDocument,
+                FiscalDocument = fiscalDocuments.FirstOrDefault(x => x.BillingDocumentId == billingDocument.Id)
+            })
+            .Where(x => x.FiscalDocument is null || x.FiscalDocument.Status != FiscalDocumentStatus.Cancelled)
+            .OrderByDescending(x => x.BillingDocument.Id)
+            .Select(x => x.BillingDocument)
+            .FirstOrDefault();
     }
 }

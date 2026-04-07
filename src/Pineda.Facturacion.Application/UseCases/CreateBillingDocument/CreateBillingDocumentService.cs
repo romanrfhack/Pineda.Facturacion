@@ -86,7 +86,7 @@ public class CreateBillingDocumentService
         await _billingDocumentRepository.AddAsync(billingDocument, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        if (legacyImportRecord is not null)
+        if (legacyImportRecord is not null && !legacyImportRecord.BillingDocumentId.HasValue)
         {
             legacyImportRecord.BillingDocumentId = billingDocument.Id;
             await _legacyImportRecordRepository.UpdateAsync(legacyImportRecord, cancellationToken);
