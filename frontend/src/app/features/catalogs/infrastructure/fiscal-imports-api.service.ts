@@ -5,6 +5,7 @@ import {
   ApplyImportBatchRequest,
   ApplyImportBatchResponse,
   ImportBatchSummary,
+  OfficialSatCatalogImportResponse,
   ProductImportRow,
   ReceiverImportRow
 } from '../models/catalogs.models';
@@ -57,6 +58,16 @@ export class FiscalImportsApiService {
 
   applyProductBatch(batchId: number, request: ApplyImportBatchRequest): Observable<ApplyImportBatchResponse> {
     return this.http.post<ApplyImportBatchResponse>(buildApiUrl(`/fiscal/imports/products/batches/${batchId}/apply`), mapApplyRequest(request));
+  }
+
+  importOfficialSatCatalog(file: File, sourceChecksum?: string): Observable<OfficialSatCatalogImportResponse> {
+    const form = new FormData();
+    form.append('file', file);
+    if (sourceChecksum) {
+      form.append('sourceChecksum', sourceChecksum);
+    }
+
+    return this.http.post<OfficialSatCatalogImportResponse>(buildApiUrl('/fiscal/imports/sat/official'), form);
   }
 }
 

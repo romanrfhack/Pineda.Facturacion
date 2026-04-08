@@ -535,7 +535,26 @@ import {
                 <div class="section-header">
                   <div>
                     <h4>Historial de pagos registrados</h4>
-                    <p class="helper">Cada pago aplicado al CFDI puede preparar un REP una sola vez. Si ya existe un complemento para el pago, se muestra como ligado.</p>
+                    <p class="helper">Cada pago aplicado al CFDI puede preparar un REP una sola vez. Puedes seleccionar varios pagos elegibles para agruparlos en un solo REP; si ya existe un complemento para un pago, se muestra como ligado.</p>
+                  </div>
+                  <div class="row-actions">
+                    @if (groupedPaymentSelectionCount() > 0) {
+                      <span class="helper">{{ groupedPaymentSelectionCount() }} pago(s) seleccionado(s)</span>
+                    }
+                    <button
+                      type="button"
+                      class="secondary small"
+                      [disabled]="groupedPaymentSelectionCount() < 2 || preparingComplement() !== null || stampingComplement() !== null"
+                      (click)="prepareSelectedPaymentComplement()">
+                      {{ preparingComplement() === GROUPED_PREPARE_TOKEN ? 'Preparando...' : 'Preparar REP agrupado' }}
+                    </button>
+                    <button
+                      type="button"
+                      class="secondary small"
+                      [disabled]="!groupedPaymentSelectionCount() || preparingComplement() !== null || stampingComplement() !== null"
+                      (click)="clearGroupedPaymentSelection()">
+                      Limpiar selección
+                    </button>
                   </div>
                 </div>
 
@@ -550,6 +569,7 @@ import {
                     <table>
                       <thead>
                         <tr>
+                          <th>Agrupar</th>
                           <th>PaymentId</th>
                           <th>Fecha</th>
                           <th>Forma</th>
@@ -565,6 +585,17 @@ import {
                       <tbody>
                         @for (payment of detail.paymentHistory; track payment.accountsReceivablePaymentId + '-' + payment.createdAtUtc) {
                           <tr>
+                            <td>
+                              @if (canPrepareComplement(payment)) {
+                                <input
+                                  type="checkbox"
+                                  [checked]="isGroupedPaymentSelected(payment.accountsReceivablePaymentId)"
+                                  [disabled]="preparingComplement() !== null || stampingComplement() !== null"
+                                  (change)="toggleGroupedPaymentSelection(payment.accountsReceivablePaymentId, $any($event.target).checked)" />
+                              } @else {
+                                <span class="helper">—</span>
+                              }
+                            </td>
                             <td>{{ payment.accountsReceivablePaymentId }}</td>
                             <td>{{ formatUtc(payment.paymentDateUtc) }}</td>
                             <td>{{ payment.paymentFormSat }}</td>
@@ -813,6 +844,7 @@ import {
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class PaymentComplementBaseDocumentsPageComponent {
+  protected readonly GROUPED_PREPARE_TOKEN = -1;
   private readonly api = inject(PaymentComplementsApiService);
   private readonly accountsReceivableApi = inject(AccountsReceivableApiService);
   private readonly feedbackService = inject(FeedbackService);
@@ -860,6 +892,7 @@ export class PaymentComplementBaseDocumentsPageComponent {
   protected readonly refreshingComplement = signal<number | null>(null);
   protected readonly cancellingComplement = signal<number | null>(null);
   protected readonly repActionError = signal<string | null>(null);
+  protected readonly groupedPaymentIds = signal<number[]>([]);
   protected paymentDate = todayInputValue();
   protected paymentFormSat = '03';
   protected paymentAmount: number | null = null;
@@ -926,6 +959,7 @@ export class PaymentComplementBaseDocumentsPageComponent {
     this.loadingDetail.set(false);
     this.detailError.set(null);
     this.repActionError.set(null);
+    this.clearGroupedPaymentSelection();
     this.cancelRegisterPaymentForm();
   }
 
@@ -1048,12 +1082,46 @@ export class PaymentComplementBaseDocumentsPageComponent {
     this.preparingComplement.set(payment.accountsReceivablePaymentId);
 
     try {
+      const additionalPaymentIds = this.getSelectedGroupedPaymentIdsExcluding(payment.accountsReceivablePaymentId);
       const result = await firstValueFrom(this.api.prepareInternalBaseDocumentPaymentComplement(detail.summary.fiscalDocumentId, {
-        accountsReceivablePaymentId: payment.accountsReceivablePaymentId
+        accountsReceivablePaymentId: payment.accountsReceivablePaymentId,
+        ...(additionalPaymentIds.length ? { additionalPaymentIds } : {})
       }));
       await this.handleSuccessfulPrepare(detail.summary.fiscalDocumentId, result);
     } catch (error) {
       const message = extractApiErrorMessage(error, 'No fue posible preparar el REP desde el CFDI base.');
+      this.repActionError.set(message);
+      this.feedbackService.show('error', message);
+    } finally {
+      this.preparingComplement.set(null);
+    }
+  }
+
+  protected async prepareSelectedPaymentComplement(): Promise<void> {
+    const detail = this.selectedDetail();
+    if (!detail) {
+      return;
+    }
+
+    const selectedPayments = detail.paymentHistory.filter((payment) =>
+      this.groupedPaymentIds().includes(payment.accountsReceivablePaymentId) && this.canPrepareComplement(payment));
+    if (selectedPayments.length < 2) {
+      this.repActionError.set('Selecciona al menos dos pagos elegibles para preparar un REP agrupado.');
+      return;
+    }
+
+    const [anchorPayment, ...additionalPayments] = selectedPayments;
+    this.repActionError.set(null);
+    this.preparingComplement.set(this.GROUPED_PREPARE_TOKEN);
+
+    try {
+      const result = await firstValueFrom(this.api.prepareInternalBaseDocumentPaymentComplement(detail.summary.fiscalDocumentId, {
+        accountsReceivablePaymentId: anchorPayment.accountsReceivablePaymentId,
+        additionalPaymentIds: additionalPayments.map((payment) => payment.accountsReceivablePaymentId)
+      }));
+      await this.handleSuccessfulPrepare(detail.summary.fiscalDocumentId, result);
+    } catch (error) {
+      const message = extractApiErrorMessage(error, 'No fue posible preparar el REP agrupado desde el CFDI base.');
       this.repActionError.set(message);
       this.feedbackService.show('error', message);
     } finally {
@@ -1245,6 +1313,27 @@ export class PaymentComplementBaseDocumentsPageComponent {
     this.bulkRefreshError.set(null);
   }
 
+  protected isGroupedPaymentSelected(accountsReceivablePaymentId: number): boolean {
+    return this.groupedPaymentIds().includes(accountsReceivablePaymentId);
+  }
+
+  protected groupedPaymentSelectionCount(): number {
+    return this.groupedPaymentIds().length;
+  }
+
+  protected toggleGroupedPaymentSelection(accountsReceivablePaymentId: number, checked: boolean): void {
+    if (checked) {
+      this.groupedPaymentIds.set([...new Set([...this.groupedPaymentIds(), accountsReceivablePaymentId])]);
+      return;
+    }
+
+    this.groupedPaymentIds.set(this.groupedPaymentIds().filter((id) => id !== accountsReceivablePaymentId));
+  }
+
+  protected clearGroupedPaymentSelection(): void {
+    this.groupedPaymentIds.set([]);
+  }
+
   protected async refreshSelectedDocuments(): Promise<void> {
     if (!this.selectedCount()) {
       return;
@@ -1287,6 +1376,7 @@ export class PaymentComplementBaseDocumentsPageComponent {
     }
 
     this.feedbackService.show('success', `REP ${complementLabel} ${statusLabel.toLowerCase()}.`);
+    this.clearGroupedPaymentSelection();
     await this.loadDetail(fiscalDocumentId);
     await this.load();
   }
@@ -1311,6 +1401,7 @@ export class PaymentComplementBaseDocumentsPageComponent {
     this.selectedDetail.set(null);
     this.paymentError.set(null);
     this.repActionError.set(null);
+    this.clearGroupedPaymentSelection();
 
     try {
       const detail = await firstValueFrom(this.api.getInternalBaseDocumentByFiscalDocumentId(fiscalDocumentId));
@@ -1412,6 +1503,12 @@ export class PaymentComplementBaseDocumentsPageComponent {
     } finally {
       this.bulkRefreshing.set(false);
     }
+  }
+
+  private getSelectedGroupedPaymentIdsExcluding(anchorPaymentId: number): number[] {
+    return this.groupedPaymentIds()
+      .filter((paymentId) => paymentId !== anchorPaymentId)
+      .sort((left, right) => left - right);
   }
 }
 

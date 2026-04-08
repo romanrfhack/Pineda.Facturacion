@@ -367,6 +367,25 @@ export interface SyncFiscalDocumentSpecialFieldsResponse {
   specialFieldCount: number;
 }
 
+export interface StampAndEmailFiscalDocumentEmailResponse {
+  attempted: boolean;
+  sent: boolean;
+  status: 'sent' | 'missing' | 'invalid' | 'failed' | 'not_attempted';
+  recipients: string[];
+  invalidRecipients: string[];
+  message?: string | null;
+}
+
+export interface StampAndEmailFiscalDocumentResponse {
+  fiscalDocumentId: number;
+  stamped: boolean;
+  fiscalDocumentStatus?: string | null;
+  providerMessage?: string | null;
+  supportMessage?: string | null;
+  errorMessage?: string | null;
+  email: StampAndEmailFiscalDocumentEmailResponse;
+}
+
 export interface FiscalStampResponse {
   id: number;
   fiscalDocumentId: number;

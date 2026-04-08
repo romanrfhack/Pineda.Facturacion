@@ -3,10 +3,10 @@ import { By } from '@angular/platform-browser';
 import { PaymentApplicationFormComponent } from './payment-application-form.component';
 
 describe('PaymentApplicationFormComponent', () => {
-  beforeEach(async () => {
-    await TestBed.configureTestingModule({
+  beforeEach(() => {
+    TestBed.configureTestingModule({
       imports: [PaymentApplicationFormComponent]
-    }).compileComponents();
+    });
   });
 
   it('uses the current invoice context and does not ask for an editable invoice id', () => {

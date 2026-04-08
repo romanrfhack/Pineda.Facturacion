@@ -206,7 +206,14 @@ public sealed class ReimportLegacyOrderService
                         : ProtectedStateConflict(preview, $"Reimport is blocked because fiscal document '{fiscalDocument.Id}' is in protected state '{fiscalDocument.Status}'.");
                 }
 
-                var fiscalItems = await BuildFiscalItemsAsync(billingDocument.Items, fiscalDocument.Id, cancellationToken);
+                var preservedSemanticsByKey = FiscalDocumentItemCompositionBuilder.BuildPreservedSemanticMap(
+                    billingDocument.Items,
+                    fiscalDocument.Items);
+                var fiscalItems = await BuildFiscalItemsAsync(
+                    billingDocument.Items,
+                    fiscalDocument.Id,
+                    preservedSemanticsByKey,
+                    cancellationToken);
                 ApplyFiscalDocumentReplacement(fiscalDocument, billingDocument, fiscalItems);
             }
 
@@ -445,82 +452,22 @@ public sealed class ReimportLegacyOrderService
             })
             .ToList();
 
-        SyncCollection(
-            billingDocument.Items,
-            nextItems,
-            () => new BillingDocumentItem(),
-            static (current, next) =>
-            {
-                current.SalesOrderId = next.SalesOrderId;
-                current.SalesOrderItemId = next.SalesOrderItemId;
-                current.SourceBillingDocumentItemRemovalId = next.SourceBillingDocumentItemRemovalId;
-                current.SourceSalesOrderLineNumber = next.SourceSalesOrderLineNumber;
-                current.SourceLegacyOrderId = next.SourceLegacyOrderId;
-                current.LineNumber = next.LineNumber;
-                current.Sku = next.Sku;
-                current.ProductInternalCode = next.ProductInternalCode;
-                current.Description = next.Description;
-                current.Quantity = next.Quantity;
-                current.UnitPrice = next.UnitPrice;
-                current.DiscountAmount = next.DiscountAmount;
-                current.TaxRate = next.TaxRate;
-                current.TaxAmount = next.TaxAmount;
-                current.LineTotal = next.LineTotal;
-                current.SatProductServiceCode = next.SatProductServiceCode;
-                current.SatUnitCode = next.SatUnitCode;
-                current.TaxObjectCode = next.TaxObjectCode;
-            });
-        StandardVat16Calculator.ApplyStandardVat(billingDocument);
-        billingDocument.UpdatedAtUtc = DateTime.UtcNow;
+        BillingDocumentItemCompositionApplier.Apply(billingDocument, [salesOrder], nextItems);
     }
 
     private async Task<List<FiscalDocumentItem>> BuildFiscalItemsAsync(
         IReadOnlyList<BillingDocumentItem> billingDocumentItems,
         long fiscalDocumentId,
+        Dictionary<string, FiscalDocumentItem>? preservedSemanticsByKey,
         CancellationToken cancellationToken)
     {
-        var now = DateTime.UtcNow;
-        var fiscalItems = new List<FiscalDocumentItem>(billingDocumentItems.Count);
-
-        foreach (var billingDocumentItem in billingDocumentItems.OrderBy(x => x.LineNumber))
-        {
-            if (string.IsNullOrWhiteSpace(billingDocumentItem.ProductInternalCode))
-            {
-                throw new InvalidOperationException(
-                    $"Billing document item line '{billingDocumentItem.LineNumber}' does not contain the persisted product internal code required for fiscal resolution.");
-            }
-
-            var internalCode = billingDocumentItem.ProductInternalCode.Trim().ToUpperInvariant();
-            var productFiscalProfile = await _productFiscalProfileRepository.GetByInternalCodeAsync(internalCode, cancellationToken);
-            if (productFiscalProfile is null || !productFiscalProfile.IsActive)
-            {
-                throw new InvalidOperationException(
-                    $"No active product fiscal profile exists for item line '{billingDocumentItem.LineNumber}' and internal code '{internalCode}'.");
-            }
-
-            fiscalItems.Add(new FiscalDocumentItem
-            {
-                FiscalDocumentId = fiscalDocumentId,
-                BillingDocumentItemId = billingDocumentItem.Id > 0 ? billingDocumentItem.Id : null,
-                LineNumber = billingDocumentItem.LineNumber,
-                InternalCode = productFiscalProfile.InternalCode,
-                Description = billingDocumentItem.Description,
-                Quantity = billingDocumentItem.Quantity,
-                UnitPrice = billingDocumentItem.UnitPrice,
-                DiscountAmount = billingDocumentItem.DiscountAmount,
-                Subtotal = billingDocumentItem.LineTotal,
-                TaxTotal = billingDocumentItem.TaxAmount,
-                Total = billingDocumentItem.LineTotal + billingDocumentItem.TaxAmount,
-                SatProductServiceCode = productFiscalProfile.SatProductServiceCode,
-                SatUnitCode = productFiscalProfile.SatUnitCode,
-                TaxObjectCode = productFiscalProfile.TaxObjectCode,
-                VatRate = productFiscalProfile.VatRate,
-                UnitText = productFiscalProfile.DefaultUnitText,
-                CreatedAtUtc = now
-            });
-        }
-
-        return fiscalItems;
+        return await FiscalDocumentItemCompositionBuilder.BuildAsync(
+            billingDocumentItems,
+            fiscalDocumentId,
+            _productFiscalProfileRepository,
+            preservedSemanticsByKey,
+            DateTime.UtcNow,
+            cancellationToken);
     }
 
     private static void ApplyFiscalDocumentReplacement(

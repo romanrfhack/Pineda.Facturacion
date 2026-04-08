@@ -11,7 +11,6 @@ namespace Pineda.Facturacion.Application.UseCases.PaymentComplements;
 
 public class StampPaymentComplementService
 {
-    private const string DefaultTaxCode = "002";
     private readonly IPaymentComplementDocumentRepository _paymentComplementDocumentRepository;
     private readonly IPaymentComplementStampRepository _paymentComplementStampRepository;
     private readonly IAccountsReceivablePaymentRepository _accountsReceivablePaymentRepository;
@@ -213,38 +212,95 @@ public class StampPaymentComplementService
             return RequestBuildResult.Fail("Payment complement related documents must contain persisted original invoice UUIDs.");
         }
 
-        var payment = await _accountsReceivablePaymentRepository.GetByIdAsync(document.AccountsReceivablePaymentId, cancellationToken);
-        if (payment is null)
+        var requestPayments = new List<PaymentComplementStampingRequestPayment>();
+        var flattenedRelatedDocuments = new List<PaymentComplementStampingRequestRelatedDocument>();
+
+        var paymentSnapshots = document.Payments.Count > 0
+            ? document.Payments.OrderBy(x => x.Id).ToList()
+            : await BuildLegacyPaymentSnapshotsAsync(document, cancellationToken);
+
+        if (paymentSnapshots.Count == 0)
         {
-            return RequestBuildResult.Fail($"Accounts receivable payment '{document.AccountsReceivablePaymentId}' was not found.");
+            return RequestBuildResult.Fail("Payment complement must contain at least one payment snapshot.");
         }
 
-        if (string.IsNullOrWhiteSpace(payment.PaymentFormSat))
+        foreach (var paymentSnapshot in paymentSnapshots)
         {
-            return RequestBuildResult.Fail("Payment complement payment form SAT is required.");
-        }
-
-        var relatedDocuments = new List<PaymentComplementStampingRequestRelatedDocument>();
-        foreach (var relatedDocument in document.RelatedDocuments.OrderBy(x => x.Id))
-        {
-            var enrichment = await BuildRelatedDocumentFiscalSnapshotAsync(relatedDocument, cancellationToken);
-            if (!enrichment.IsSuccess)
+            if (string.IsNullOrWhiteSpace(paymentSnapshot.PaymentFormSat))
             {
-                return RequestBuildResult.Fail(enrichment.ErrorMessage!);
+                return RequestBuildResult.Fail($"Payment complement payment '{paymentSnapshot.AccountsReceivablePaymentId}' is missing SAT payment form.");
             }
 
-            relatedDocuments.Add(new PaymentComplementStampingRequestRelatedDocument
+            if (string.IsNullOrWhiteSpace(paymentSnapshot.CurrencyCode))
             {
-                AccountsReceivableInvoiceId = relatedDocument.AccountsReceivableInvoiceId,
-                FiscalDocumentId = relatedDocument.FiscalDocumentId,
-                RelatedDocumentUuid = relatedDocument.RelatedDocumentUuid,
-                InstallmentNumber = relatedDocument.InstallmentNumber,
-                PreviousBalance = relatedDocument.PreviousBalance,
-                PaidAmount = relatedDocument.PaidAmount,
-                RemainingBalance = relatedDocument.RemainingBalance,
-                CurrencyCode = relatedDocument.CurrencyCode,
-                TaxObjectCode = enrichment.TaxObjectCode,
-                TaxTransfers = enrichment.TaxTransfers
+                return RequestBuildResult.Fail($"Payment complement payment '{paymentSnapshot.AccountsReceivablePaymentId}' is missing currency code.");
+            }
+
+            if (paymentSnapshot.Amount <= 0)
+            {
+                return RequestBuildResult.Fail($"Payment complement payment '{paymentSnapshot.AccountsReceivablePaymentId}' must have an amount greater than zero.");
+            }
+
+            var relatedDocuments = new List<PaymentComplementStampingRequestRelatedDocument>();
+            var paymentRelatedDocuments = document.RelatedDocuments
+                .Where(x => x.PaymentComplementPaymentId == paymentSnapshot.Id || x.PaymentComplementPaymentId == 0 && x.PaymentComplementDocumentId == document.Id && document.Payments.Count == 0)
+                .OrderBy(x => x.Id)
+                .ToList();
+
+            if (paymentRelatedDocuments.Count == 0)
+            {
+                return RequestBuildResult.Fail($"Payment complement payment '{paymentSnapshot.AccountsReceivablePaymentId}' must contain at least one related document.");
+            }
+
+            foreach (var relatedDocument in paymentRelatedDocuments)
+            {
+                var enrichment = await BuildRelatedDocumentFiscalSnapshotAsync(relatedDocument, cancellationToken);
+                if (!enrichment.IsSuccess)
+                {
+                    return RequestBuildResult.Fail(enrichment.ErrorMessage!);
+                }
+
+                var requestRelatedDocument = new PaymentComplementStampingRequestRelatedDocument
+                {
+                    AccountsReceivablePaymentId = paymentSnapshot.AccountsReceivablePaymentId,
+                    AccountsReceivableInvoiceId = relatedDocument.AccountsReceivableInvoiceId,
+                    FiscalDocumentId = relatedDocument.FiscalDocumentId,
+                    RelatedDocumentUuid = relatedDocument.RelatedDocumentUuid,
+                    Series = relatedDocument.Series,
+                    Folio = relatedDocument.Folio,
+                    InstallmentNumber = relatedDocument.InstallmentNumber,
+                    PreviousBalance = relatedDocument.PreviousBalance,
+                    PaidAmount = relatedDocument.PaidAmount,
+                    RemainingBalance = relatedDocument.RemainingBalance,
+                    CurrencyCode = relatedDocument.CurrencyCode,
+                    CurrencyEquivalence = relatedDocument.CurrencyEquivalence,
+                    TaxObjectCode = enrichment.TaxObjectCode,
+                    TaxTransfers = enrichment.TaxTransfers,
+                    TaxRetentions = enrichment.TaxRetentions
+                };
+
+                relatedDocuments.Add(requestRelatedDocument);
+                flattenedRelatedDocuments.Add(requestRelatedDocument);
+            }
+
+            requestPayments.Add(new PaymentComplementStampingRequestPayment
+            {
+                AccountsReceivablePaymentId = paymentSnapshot.AccountsReceivablePaymentId,
+                PaymentDateUtc = paymentSnapshot.PaymentDateUtc,
+                PaymentFormSat = FiscalMasterDataNormalization.NormalizeRequiredCode(paymentSnapshot.PaymentFormSat),
+                CurrencyCode = FiscalMasterDataNormalization.NormalizeRequiredCode(paymentSnapshot.CurrencyCode),
+                Amount = paymentSnapshot.Amount,
+                ExchangeRate = paymentSnapshot.ExchangeRate,
+                OperationNumber = paymentSnapshot.OperationNumber,
+                OrderingBankRfc = paymentSnapshot.OrderingBankRfc,
+                OrderingAccountNumber = paymentSnapshot.OrderingAccountNumber,
+                BeneficiaryBankRfc = paymentSnapshot.BeneficiaryBankRfc,
+                BeneficiaryAccountNumber = paymentSnapshot.BeneficiaryAccountNumber,
+                PaymentChainType = paymentSnapshot.PaymentChainType,
+                PaymentCertificate = paymentSnapshot.PaymentCertificate,
+                PaymentChain = paymentSnapshot.PaymentChain,
+                PaymentSeal = paymentSnapshot.PaymentSeal,
+                RelatedDocuments = relatedDocuments
             });
         }
 
@@ -258,8 +314,8 @@ public class StampPaymentComplementService
             CfdiVersion = document.CfdiVersion,
             DocumentType = document.DocumentType,
             IssuedAtUtc = document.IssuedAtUtc,
-            PaymentDateUtc = document.PaymentDateUtc,
-            PaymentFormSat = FiscalMasterDataNormalization.NormalizeRequiredCode(payment.PaymentFormSat),
+            PaymentDateUtc = requestPayments[0].PaymentDateUtc,
+            PaymentFormSat = requestPayments[0].PaymentFormSat,
             CurrencyCode = "MXN",
             TotalPaymentsAmount = document.TotalPaymentsAmount,
             IssuerRfc = document.IssuerRfc,
@@ -272,10 +328,37 @@ public class StampPaymentComplementService
             ReceiverPostalCode = document.ReceiverPostalCode,
             ReceiverCountryCode = document.ReceiverCountryCode,
             ReceiverForeignTaxRegistration = document.ReceiverForeignTaxRegistration,
-            RelatedDocuments = relatedDocuments
+            Payments = requestPayments,
+            RelatedDocuments = flattenedRelatedDocuments
         };
 
         return RequestBuildResult.Success(request);
+    }
+
+    private async Task<List<PaymentComplementPayment>> BuildLegacyPaymentSnapshotsAsync(
+        PaymentComplementDocument document,
+        CancellationToken cancellationToken)
+    {
+        var payment = await _accountsReceivablePaymentRepository.GetByIdAsync(document.AccountsReceivablePaymentId, cancellationToken);
+        if (payment is null)
+        {
+            return [];
+        }
+
+        return
+        [
+            new PaymentComplementPayment
+            {
+                Id = 0,
+                PaymentComplementDocumentId = document.Id,
+                AccountsReceivablePaymentId = payment.Id,
+                PaymentDateUtc = payment.PaymentDateUtc,
+                PaymentFormSat = payment.PaymentFormSat,
+                CurrencyCode = payment.CurrencyCode,
+                Amount = document.TotalPaymentsAmount,
+                CreatedAtUtc = document.CreatedAtUtc
+            }
+        ];
     }
 
     private async Task<RelatedDocumentFiscalSnapshot> BuildRelatedDocumentFiscalSnapshotAsync(
@@ -330,7 +413,7 @@ public class StampPaymentComplementService
             .Where(x => string.Equals(x.TaxObjectCode, "02", StringComparison.OrdinalIgnoreCase))
             .GroupBy(x => new
             {
-                TaxCode = DefaultTaxCode,
+                TaxCode = "002",
                 FactorType = "Tasa",
                 Rate = NormalizeRate(x.VatRate)
             })
@@ -377,16 +460,27 @@ public class StampPaymentComplementService
                 .Where(x => x.Parent is not null && string.Equals(x.Parent.Name.LocalName, "Traslados", StringComparison.Ordinal))
                 .Select(x => new TaxTransferSource
                 {
-                    TaxCode = NormalizeOptionalCode(GetAttribute(x, "Impuesto")) ?? DefaultTaxCode,
+                    TaxCode = NormalizeOptionalCode(GetAttribute(x, "Impuesto")) ?? "002",
                     FactorType = NormalizeOptionalCode(GetAttribute(x, "TipoFactor")) ?? "Tasa",
                     Rate = ParseOptionalDecimal(GetAttribute(x, "TasaOCuota")) ?? 0m,
                     BaseAmount = ParseOptionalDecimal(GetAttribute(x, "Base")) ?? 0m,
                     TaxAmount = ParseOptionalDecimal(GetAttribute(x, "Importe")) ?? 0m
                 })
-                .Where(x => string.Equals(x.TaxCode, DefaultTaxCode, StringComparison.OrdinalIgnoreCase))
                 .ToList();
 
-            return BuildRelatedDocumentSnapshotFromTransferSources(total, conceptoTraslados, relatedDocument);
+            var conceptoRetenciones = root
+                .Descendants()
+                .Where(x => string.Equals(x.Name.LocalName, "Retencion", StringComparison.Ordinal))
+                .Where(x => x.Parent is not null && string.Equals(x.Parent.Name.LocalName, "Retenciones", StringComparison.Ordinal))
+                .Select(x => new TaxRetentionSource
+                {
+                    TaxCode = NormalizeOptionalCode(GetAttribute(x, "Impuesto")) ?? string.Empty,
+                    BaseAmount = ParseOptionalDecimal(GetAttribute(x, "Base")) ?? 0m,
+                    TaxAmount = ParseOptionalDecimal(GetAttribute(x, "Importe")) ?? 0m
+                })
+                .ToList();
+
+            return BuildRelatedDocumentSnapshotFromTaxSources(total, conceptoTraslados, conceptoRetenciones, relatedDocument);
         }
         catch (Exception)
         {
@@ -398,6 +492,15 @@ public class StampPaymentComplementService
     private static RelatedDocumentFiscalSnapshot BuildRelatedDocumentSnapshotFromTransferSources(
         decimal originalDocumentTotal,
         IReadOnlyCollection<TaxTransferSource> transferSources,
+        PaymentComplementRelatedDocument relatedDocument)
+    {
+        return BuildRelatedDocumentSnapshotFromTaxSources(originalDocumentTotal, transferSources, [], relatedDocument);
+    }
+
+    private static RelatedDocumentFiscalSnapshot BuildRelatedDocumentSnapshotFromTaxSources(
+        decimal originalDocumentTotal,
+        IReadOnlyCollection<TaxTransferSource> transferSources,
+        IReadOnlyCollection<TaxRetentionSource> retentionSources,
         PaymentComplementRelatedDocument relatedDocument)
     {
         if (originalDocumentTotal <= 0)
@@ -413,9 +516,9 @@ public class StampPaymentComplementService
                 $"Payment complement related document '{relatedDocument.RelatedDocumentUuid}' has an invalid paid ratio.");
         }
 
-        if (transferSources.Count == 0)
+        if (transferSources.Count == 0 && retentionSources.Count == 0)
         {
-            return RelatedDocumentFiscalSnapshot.Success("01", []);
+            return RelatedDocumentFiscalSnapshot.Success("01", [], []);
         }
 
         var paidTransfers = transferSources
@@ -428,12 +531,24 @@ public class StampPaymentComplementService
                 BaseAmount = NormalizeMoney(group.Sum(x => x.BaseAmount) * paidRatio),
                 TaxAmount = NormalizeMoney(group.Sum(x => x.TaxAmount) * paidRatio)
             })
-            .Where(x => x.BaseAmount > 0 || x.TaxAmount > 0 || x.Rate == 0m)
+            .Where(x => x.BaseAmount > 0 || x.TaxAmount > 0 || x.Rate == 0m || string.Equals(x.FactorType, "Exento", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        var paidRetentions = retentionSources
+            .GroupBy(x => x.TaxCode)
+            .Select(group => new PaymentComplementStampingRequestTaxRetention
+            {
+                TaxCode = group.Key,
+                BaseAmount = NormalizeMoney(group.Sum(x => x.BaseAmount) * paidRatio),
+                TaxAmount = NormalizeMoney(group.Sum(x => x.TaxAmount) * paidRatio)
+            })
+            .Where(x => x.TaxAmount > 0 || x.BaseAmount > 0)
             .ToList();
 
         return RelatedDocumentFiscalSnapshot.Success(
-            paidTransfers.Count == 0 ? "01" : "02",
-            paidTransfers);
+            paidTransfers.Count == 0 && paidRetentions.Count == 0 ? "01" : "02",
+            paidTransfers,
+            paidRetentions);
     }
 
     private static decimal NormalizeMoney(decimal amount)
@@ -496,6 +611,15 @@ public class StampPaymentComplementService
         public decimal TaxAmount { get; init; }
     }
 
+    private sealed class TaxRetentionSource
+    {
+        public string TaxCode { get; init; } = string.Empty;
+
+        public decimal BaseAmount { get; init; }
+
+        public decimal TaxAmount { get; init; }
+    }
+
     private sealed class RelatedDocumentFiscalSnapshot
     {
         public bool IsSuccess { get; init; }
@@ -506,15 +630,19 @@ public class StampPaymentComplementService
 
         public List<PaymentComplementStampingRequestTaxTransfer> TaxTransfers { get; init; } = [];
 
+        public List<PaymentComplementStampingRequestTaxRetention> TaxRetentions { get; init; } = [];
+
         public static RelatedDocumentFiscalSnapshot Success(
             string taxObjectCode,
-            List<PaymentComplementStampingRequestTaxTransfer> taxTransfers)
+            List<PaymentComplementStampingRequestTaxTransfer> taxTransfers,
+            List<PaymentComplementStampingRequestTaxRetention> taxRetentions)
         {
             return new RelatedDocumentFiscalSnapshot
             {
                 IsSuccess = true,
                 TaxObjectCode = taxObjectCode,
-                TaxTransfers = taxTransfers
+                TaxTransfers = taxTransfers,
+                TaxRetentions = taxRetentions
             };
         }
 

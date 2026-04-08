@@ -47,4 +47,25 @@ describe('FiscalImportsApiService', () => {
     });
     httpTesting.verify();
   });
+
+  it('uploads the official SAT catalog as multipart form data without manual version or file name fields', () => {
+    const service = TestBed.inject(FiscalImportsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+    const file = new File(['excel'], 'catalogos_sat.xlsx', {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    });
+
+    service.importOfficialSatCatalog(file, 'sha256:preview').subscribe();
+
+    const req = httpTesting.expectOne('/api/fiscal/imports/sat/official');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body instanceof FormData).toBe(true);
+
+    const form = req.request.body as FormData;
+    expect(form.get('file')).toBe(file);
+    expect(form.get('sourceChecksum')).toBe('sha256:preview');
+    expect(form.has('sourceVersion')).toBe(false);
+    expect(form.has('sourceFileName')).toBe(false);
+    httpTesting.verify();
+  });
 });

@@ -63,6 +63,48 @@ public class FacturaloPlusStatusQueryGatewayTests
     }
 
     [Fact]
+    public async Task QueryStatusAsync_Composes_Provider_Url_When_BaseUrl_Has_No_Trailing_Slash()
+    {
+        var handler = new RecordingHandler(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""
+                {
+                  "CodigoEstatus": "S - Comprobante obtenido satisfactoriamente.",
+                  "EsCancelable": "Cancelable con aceptación",
+                  "Estado": "Vigente",
+                  "EstatusCancelacion": "En proceso"
+                }
+                """, Encoding.UTF8, "application/json")
+        });
+
+        var client = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://dev.facturaloplus.com/api/rest/servicio", UriKind.Absolute)
+        };
+        var secretResolver = new RecordingSecretResolver(new Dictionary<string, string?>
+        {
+            ["FACTURALOPLUS_API_KEY_REFERENCE"] = "APIKEY-TEST"
+        });
+
+        var gateway = new FacturaloPlusStatusQueryGateway(
+            client,
+            Options.Create(new FacturaloPlusOptions
+            {
+                BaseUrl = "https://dev.facturaloplus.com/api/rest/servicio",
+                StatusQueryPath = "consultarEstadoSAT",
+                ApiKeyReference = "FACTURALOPLUS_API_KEY_REFERENCE",
+                ApiKeyHeaderName = "X-Api-Key"
+            }),
+            secretResolver);
+
+        var result = await gateway.QueryStatusAsync(CreateRequest());
+
+        Assert.Equal(FiscalStatusQueryGatewayOutcome.Refreshed, result.Outcome);
+        Assert.NotNull(handler.LastRequest);
+        Assert.Equal("https://dev.facturaloplus.com/api/rest/servicio/consultarEstadoSAT", handler.LastRequest!.RequestUri!.ToString());
+    }
+
+    [Fact]
     public async Task QueryStatusAsync_Maps_Sat_Response_Fields()
     {
         var gateway = CreateGateway(

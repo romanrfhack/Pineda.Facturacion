@@ -464,6 +464,124 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('timbrar');
   });
 
+  it('prepares a grouped REP from selected eligible payments', async () => {
+    const detailWithMultiplePayments = {
+      summary: {
+        fiscalDocumentId: 501,
+        billingDocumentId: 401,
+        salesOrderId: 301,
+        accountsReceivableInvoiceId: 201,
+        fiscalStampId: 101,
+        uuid: 'UUID-REP-1',
+        series: 'A',
+        folio: '1001',
+        receiverRfc: 'BBB010101BBB',
+        receiverLegalName: 'Cliente Elegible',
+        issuedAtUtc: '2026-04-01T00:00:00Z',
+        paymentMethodSat: 'PPD',
+        paymentFormSat: '99',
+        currencyCode: 'MXN',
+        total: 116,
+        paidTotal: 76,
+        outstandingBalance: 40,
+        fiscalStatus: 'Stamped',
+        accountsReceivableStatus: 'PartiallyPaid',
+        repOperationalStatus: 'Eligible',
+        isEligible: true,
+        isBlocked: false,
+        eligibilityReason: 'CFDI interno vigente, timbrado, con PPD/99 y saldo pendiente.',
+        eligibility: {
+          status: 'Eligible',
+          primaryReasonCode: 'EligibleInternalRep',
+          primaryReasonMessage: 'CFDI interno vigente, timbrado, con PPD/99 y saldo pendiente.',
+          evaluatedAtUtc: '2026-04-03T08:00:00Z',
+          secondarySignals: []
+        },
+        registeredPaymentCount: 2,
+        paymentComplementCount: 0,
+        stampedPaymentComplementCount: 0,
+        lastRepIssuedAtUtc: null,
+        hasAppliedPaymentsWithoutStampedRep: true,
+        hasPreparedRepPendingStamp: false,
+        hasRepWithError: false,
+        hasBlockedOperation: false,
+        nextRecommendedAction: 'PrepareRep',
+        availableActions: ['ViewDetail', 'PrepareRep'],
+        alerts: [],
+        operationalState: {
+          lastEligibilityEvaluatedAtUtc: '2026-04-03T08:00:00Z',
+          lastEligibilityStatus: 'Eligible',
+          lastPrimaryReasonCode: 'EligibleInternalRep',
+          lastPrimaryReasonMessage: 'CFDI interno vigente, timbrado, con PPD/99 y saldo pendiente.',
+          repPendingFlag: true,
+          lastRepIssuedAtUtc: null,
+          repCount: 0,
+          totalPaidApplied: 76
+        }
+      },
+      operationalState: null,
+      paymentHistory: [
+        {
+          accountsReceivablePaymentId: 9002,
+          paymentDateUtc: '2026-04-03T09:00:00Z',
+          paymentFormSat: '03',
+          paymentAmount: 36,
+          amountAppliedToDocument: 36,
+          remainingPaymentAmount: 0,
+          reference: 'TRX-2',
+          notes: null,
+          paymentComplementId: null,
+          paymentComplementStatus: null,
+          paymentComplementUuid: null,
+          createdAtUtc: '2026-04-03T09:00:00Z'
+        },
+        {
+          accountsReceivablePaymentId: 9003,
+          paymentDateUtc: '2026-04-03T10:00:00Z',
+          paymentFormSat: '03',
+          paymentAmount: 40,
+          amountAppliedToDocument: 40,
+          remainingPaymentAmount: 0,
+          reference: 'TRX-3',
+          notes: null,
+          paymentComplementId: null,
+          paymentComplementStatus: null,
+          paymentComplementUuid: null,
+          createdAtUtc: '2026-04-03T10:00:00Z'
+        }
+      ],
+      paymentApplications: [],
+      timeline: [],
+      issuedReps: []
+    };
+    const prepareInternalBaseDocumentPaymentComplement = vi.fn().mockReturnValue(of({
+      outcome: 'Prepared',
+      isSuccess: true,
+      errorMessage: null,
+      warningMessages: [],
+      fiscalDocumentId: 501,
+      accountsReceivablePaymentId: 9002,
+      paymentComplementDocumentId: 7002,
+      status: 'ReadyForStamping',
+      relatedDocumentCount: 2,
+      operationalState: null
+    }));
+    const fixture = await configure({
+      getInternalBaseDocumentByFiscalDocumentId: vi.fn().mockReturnValue(of(detailWithMultiplePayments)),
+      prepareInternalBaseDocumentPaymentComplement
+    });
+
+    await fixture.componentInstance['openDetailModal']({ fiscalDocumentId: 501 } as never);
+    fixture.componentInstance['toggleGroupedPaymentSelection'](9002, true);
+    fixture.componentInstance['toggleGroupedPaymentSelection'](9003, true);
+    await fixture.componentInstance['prepareSelectedPaymentComplement']();
+
+    expect(prepareInternalBaseDocumentPaymentComplement).toHaveBeenCalledWith(501, {
+      accountsReceivablePaymentId: 9002,
+      additionalPaymentIds: [9003]
+    });
+  });
+
   it('applies filters through the internal base-document search endpoint', async () => {
     const searchInternalBaseDocuments = vi.fn().mockReturnValue(of({
       page: 1,

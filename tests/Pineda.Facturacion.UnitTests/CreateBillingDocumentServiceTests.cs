@@ -129,6 +129,39 @@ public class CreateBillingDocumentServiceTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_PreservesHistoricalBillingDocumentLink_WhenLegacyImportRecordAlreadyHasOne()
+    {
+        var salesOrder = CreateSalesOrder();
+        var importRecord = new LegacyImportRecord
+        {
+            Id = salesOrder.LegacyImportRecordId,
+            BillingDocumentId = 77
+        };
+
+        var billingDocumentRepository = new FakeBillingDocumentRepository();
+        var legacyImportRecordRepository = new FakeLegacyImportRecordRepository { Existing = importRecord };
+        var unitOfWork = new FakeUnitOfWork();
+        var service = CreateService(
+            new FakeSalesOrderSnapshotRepository { Existing = salesOrder },
+            billingDocumentRepository,
+            legacyImportRecordRepository,
+            unitOfWork);
+
+        var result = await service.ExecuteAsync(new CreateBillingDocumentCommand
+        {
+            SalesOrderId = salesOrder.Id,
+            DocumentType = "Invoice"
+        });
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(CreateBillingDocumentOutcome.Created, result.Outcome);
+        Assert.Equal(303, result.BillingDocumentId);
+        Assert.Equal(77, importRecord.BillingDocumentId);
+        Assert.Null(legacyImportRecordRepository.Updated);
+        Assert.Equal(1, unitOfWork.SaveChangesCallCount);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_ReturnsValidationFailed_WhenSalesOrderCurrencyIsNotMxn()
     {
         var salesOrder = CreateSalesOrder();
@@ -241,6 +274,8 @@ public class CreateBillingDocumentServiceTests
     {
         public LegacyImportRecord? Existing { get; init; }
 
+        public LegacyImportRecord? Updated { get; private set; }
+
         public Task<LegacyImportRecord?> GetByIdAsync(long legacyImportRecordId, CancellationToken cancellationToken = default)
             => Task.FromResult(Existing?.Id == legacyImportRecordId ? Existing : null);
 
@@ -252,7 +287,11 @@ public class CreateBillingDocumentServiceTests
 
         public Task AddAsync(LegacyImportRecord legacyImportRecord, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
-        public Task UpdateAsync(LegacyImportRecord legacyImportRecord, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task UpdateAsync(LegacyImportRecord legacyImportRecord, CancellationToken cancellationToken = default)
+        {
+            Updated = legacyImportRecord;
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class FakeUnitOfWork : IUnitOfWork

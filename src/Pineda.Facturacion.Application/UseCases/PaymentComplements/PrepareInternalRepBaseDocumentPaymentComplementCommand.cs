@@ -5,4 +5,6 @@ public sealed class PrepareInternalRepBaseDocumentPaymentComplementCommand
     public long FiscalDocumentId { get; set; }
 
     public long? AccountsReceivablePaymentId { get; set; }
+
+    public IReadOnlyList<long> AdditionalAccountsReceivablePaymentIds { get; set; } = [];
 }

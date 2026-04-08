@@ -6,12 +6,15 @@ using Pineda.Facturacion.Application.Abstractions.Security;
 using Pineda.Facturacion.Application.Security;
 using Pineda.Facturacion.Application.UseCases.FiscalReceivers;
 using Pineda.Facturacion.Application.UseCases.ProductFiscalProfiles;
+using Pineda.Facturacion.Application.UseCases.SatCatalogs;
 using Pineda.Facturacion.Domain.Entities;
 
 namespace Pineda.Facturacion.Api.Endpoints;
 
 public static class FiscalImportEndpoints
 {
+    private const long OfficialSatCatalogUploadLimitBytes = 128L * 1024 * 1024;
+
     public static IEndpointRouteBuilder MapFiscalImportEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -77,6 +80,22 @@ public static class FiscalImportEndpoints
             .Produces<ApplyImportBatchResponse>(StatusCodes.Status200OK)
             .Produces<ApplyImportBatchResponse>(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status404NotFound);
+
+        group.MapPost("/sat/official", ImportOfficialSatCatalogAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
+            .DisableAntiforgery()
+            .WithName("ImportOfficialSatCatalog")
+            .WithSummary("Import official SAT product/service and unit catalogs from Excel")
+            .WithMetadata(
+                new RequestFormLimitsAttribute
+                {
+                    MultipartBodyLengthLimit = OfficialSatCatalogUploadLimitBytes
+                },
+                new RequestSizeLimitAttribute(OfficialSatCatalogUploadLimitBytes))
+            .Accepts<ImportOfficialSatCatalogRequest>("multipart/form-data")
+            .Produces<ImportOfficialSatCatalogResponse>(StatusCodes.Status200OK)
+            .Produces<ImportOfficialSatCatalogResponse>(StatusCodes.Status400BadRequest)
+            .Produces<ImportOfficialSatCatalogResponse>(StatusCodes.Status413PayloadTooLarge);
 
         return endpoints;
     }
@@ -277,12 +296,98 @@ public static class FiscalImportEndpoints
         };
     }
 
+    private static async Task<Results<Ok<ImportOfficialSatCatalogResponse>, BadRequest<ImportOfficialSatCatalogResponse>>> ImportOfficialSatCatalogAsync(
+        [FromForm] ImportOfficialSatCatalogRequest request,
+        HttpContext httpContext,
+        ImportOfficialSatCatalogService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var fileBytes = await ReadFileAsync(request.File, cancellationToken);
+        var result = await service.ExecuteAsync(new ImportOfficialSatCatalogCommand
+        {
+            FileContent = fileBytes,
+            SourceVersion = request.SourceVersion ?? string.Empty,
+            SourceFileName = string.IsNullOrWhiteSpace(request.File.FileName) ? request.SourceFileName ?? string.Empty : request.File.FileName,
+            SourceChecksum = request.SourceChecksum ?? string.Empty
+        }, cancellationToken);
+
+        var response = new ImportOfficialSatCatalogResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            CorrelationId = httpContext.TraceIdentifier,
+            SourceFileName = result.SourceFileName,
+            SourceVersion = result.SourceVersion,
+            SourceChecksum = result.SourceChecksum,
+            ClientChecksumMatchesServer = result.ClientChecksumMatchesServer,
+            ProductServices = MapCatalogImportExecution(result.ProductServices),
+            Units = MapCatalogImportExecution(result.Units)
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "SatCatalogImport.Official",
+            "SatCatalogImport",
+            null,
+            result.Outcome.ToString(),
+            new
+            {
+                request.File.FileName,
+                request.File.Length,
+                request.SourceVersion,
+                request.SourceFileName,
+                request.SourceChecksum,
+                ServerSourceFileName = result.SourceFileName,
+                ServerSourceVersion = result.SourceVersion,
+                ServerSourceChecksum = result.SourceChecksum,
+                result.ClientChecksumMatchesServer,
+                CorrelationId = httpContext.TraceIdentifier
+            },
+            new
+            {
+                ProductServicesImportId = response.ProductServices.ImportId,
+                ProductServicesStatus = response.ProductServices.Status,
+                UnitsImportId = response.Units.ImportId,
+                UnitsStatus = response.Units.Status
+            },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome is ImportOfficialSatCatalogOutcome.ValidationFailed or ImportOfficialSatCatalogOutcome.Failed
+            ? TypedResults.BadRequest(response)
+            : TypedResults.Ok(response);
+    }
+
     private static async Task<byte[]> ReadFileAsync(IFormFile file, CancellationToken cancellationToken)
     {
         await using var stream = file.OpenReadStream();
-        using var memoryStream = new MemoryStream();
-        await stream.CopyToAsync(memoryStream, cancellationToken);
-        return memoryStream.ToArray();
+        if (file.Length <= 0)
+        {
+            return [];
+        }
+
+        if (file.Length > int.MaxValue)
+        {
+            throw new InvalidOperationException("The SAT file exceeds the supported in-memory upload size.");
+        }
+
+        var buffer = GC.AllocateUninitializedArray<byte>((int)file.Length);
+        var offset = 0;
+
+        while (offset < buffer.Length)
+        {
+            var bytesRead = await stream.ReadAsync(buffer.AsMemory(offset), cancellationToken);
+            if (bytesRead == 0)
+            {
+                break;
+            }
+
+            offset += bytesRead;
+        }
+
+        return offset == buffer.Length ? buffer : buffer[..offset];
     }
 
     private static ImportBatchSummaryResponse MapBatchSummary(FiscalReceiverImportBatch? batch, string? errorMessage = null)
@@ -425,6 +530,33 @@ public static class FiscalImportEndpoints
         return JsonSerializer.Deserialize<List<string>>(json) ?? [];
     }
 
+    private static SatCatalogImportExecutionResponse MapCatalogImportExecution(SatCatalogImportExecutionResult result)
+    {
+        return new SatCatalogImportExecutionResponse
+        {
+            CatalogType = result.CatalogType,
+            ImportId = result.ImportId,
+            Status = result.Status,
+            WasAlreadyImported = result.WasAlreadyImported,
+            TotalRows = result.TotalRows,
+            InsertedRows = result.InsertedRows,
+            UpdatedRows = result.UpdatedRows,
+            DeactivatedRows = result.DeactivatedRows,
+            ErrorMessage = result.ErrorMessage
+        };
+    }
+
+    public sealed class ImportOfficialSatCatalogRequest
+    {
+        public IFormFile File { get; init; } = default!;
+
+        public string? SourceVersion { get; init; }
+
+        public string? SourceFileName { get; init; }
+
+        public string? SourceChecksum { get; init; }
+    }
+
     public sealed class PreviewProductFiscalProfileImportRequest
     {
         public IFormFile File { get; init; } = default!;
@@ -449,6 +581,50 @@ public static class FiscalImportEndpoints
         public int ApplySkippedRows { get; init; }
         public DateTime? CompletedAtUtc { get; init; }
         public DateTime? LastAppliedAtUtc { get; init; }
+        public string? ErrorMessage { get; init; }
+    }
+
+    public sealed class ImportOfficialSatCatalogResponse
+    {
+        public string Outcome { get; init; } = string.Empty;
+
+        public bool IsSuccess { get; init; }
+
+        public string? ErrorMessage { get; init; }
+
+        public string CorrelationId { get; init; } = string.Empty;
+
+        public string SourceFileName { get; init; } = string.Empty;
+
+        public string SourceVersion { get; init; } = string.Empty;
+
+        public string SourceChecksum { get; init; } = string.Empty;
+
+        public bool? ClientChecksumMatchesServer { get; init; }
+
+        public SatCatalogImportExecutionResponse ProductServices { get; init; } = new();
+
+        public SatCatalogImportExecutionResponse Units { get; init; } = new();
+    }
+
+    public sealed class SatCatalogImportExecutionResponse
+    {
+        public string CatalogType { get; init; } = string.Empty;
+
+        public long? ImportId { get; init; }
+
+        public string Status { get; init; } = string.Empty;
+
+        public bool WasAlreadyImported { get; init; }
+
+        public int TotalRows { get; init; }
+
+        public int InsertedRows { get; init; }
+
+        public int UpdatedRows { get; init; }
+
+        public int DeactivatedRows { get; init; }
+
         public string? ErrorMessage { get; init; }
     }
 

@@ -38,6 +38,11 @@ import { PermissionService } from '../../../core/auth/permission.service';
           <h3>Importaciones de productos</h3>
           <p>Consulta la vista previa y aplica lotes de perfiles fiscales de producto, incluyendo faltantes de enriquecimiento.</p>
         </a>
+
+        <a routerLink="/app/catalogs/imports/sat" class="card">
+          <h3>Importar catálogo SAT</h3>
+          <p>Sube el archivo oficial completo, revisa checksum y ejecuta la carga canónica de claves SAT y unidades.</p>
+        </a>
       </div>
 
       @if (!permissionService.canWriteMasterData()) {

@@ -17,6 +17,7 @@ public class PaymentComplementDocumentRepository : IPaymentComplementDocumentRep
     {
         return _dbContext.PaymentComplementDocuments
             .AsNoTracking()
+            .Include(x => x.Payments)
             .Include(x => x.RelatedDocuments)
             .FirstOrDefaultAsync(x => x.Id == paymentComplementDocumentId, cancellationToken);
     }
@@ -24,6 +25,7 @@ public class PaymentComplementDocumentRepository : IPaymentComplementDocumentRep
     public Task<PaymentComplementDocument?> GetTrackedByIdAsync(long paymentComplementDocumentId, CancellationToken cancellationToken = default)
     {
         return _dbContext.PaymentComplementDocuments
+            .Include(x => x.Payments)
             .Include(x => x.RelatedDocuments)
             .FirstOrDefaultAsync(x => x.Id == paymentComplementDocumentId, cancellationToken);
     }
@@ -32,15 +34,17 @@ public class PaymentComplementDocumentRepository : IPaymentComplementDocumentRep
     {
         return _dbContext.PaymentComplementDocuments
             .AsNoTracking()
+            .Include(x => x.Payments)
             .Include(x => x.RelatedDocuments)
-            .FirstOrDefaultAsync(x => x.AccountsReceivablePaymentId == accountsReceivablePaymentId, cancellationToken);
+            .FirstOrDefaultAsync(x => x.Payments.Any(payment => payment.AccountsReceivablePaymentId == accountsReceivablePaymentId), cancellationToken);
     }
 
     public Task<PaymentComplementDocument?> GetTrackedByPaymentIdAsync(long accountsReceivablePaymentId, CancellationToken cancellationToken = default)
     {
         return _dbContext.PaymentComplementDocuments
+            .Include(x => x.Payments)
             .Include(x => x.RelatedDocuments)
-            .FirstOrDefaultAsync(x => x.AccountsReceivablePaymentId == accountsReceivablePaymentId, cancellationToken);
+            .FirstOrDefaultAsync(x => x.Payments.Any(payment => payment.AccountsReceivablePaymentId == accountsReceivablePaymentId), cancellationToken);
     }
 
     public async Task<IReadOnlyList<PaymentComplementDocument>> GetByPaymentIdsAsync(IReadOnlyCollection<long> accountsReceivablePaymentIds, CancellationToken cancellationToken = default)
@@ -52,8 +56,9 @@ public class PaymentComplementDocumentRepository : IPaymentComplementDocumentRep
 
         return await _dbContext.PaymentComplementDocuments
             .AsNoTracking()
+            .Include(x => x.Payments)
             .Include(x => x.RelatedDocuments)
-            .Where(x => accountsReceivablePaymentIds.Contains(x.AccountsReceivablePaymentId))
+            .Where(x => x.Payments.Any(payment => accountsReceivablePaymentIds.Contains(payment.AccountsReceivablePaymentId)))
             .ToListAsync(cancellationToken);
     }
 

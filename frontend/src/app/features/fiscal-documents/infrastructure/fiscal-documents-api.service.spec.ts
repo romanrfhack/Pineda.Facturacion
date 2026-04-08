@@ -83,6 +83,20 @@ describe('FiscalDocumentsApiService', () => {
     httpTesting.verify();
   });
 
+  it('posts the stamp-and-email orchestration request', () => {
+    const service = TestBed.inject(FiscalDocumentsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.stampAndEmailFiscalDocument(40, {
+      retryRejected: false
+    }).subscribe();
+
+    const req = httpTesting.expectOne('/api/fiscal-documents/40/stamp-and-email');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body.retryRejected).toBe(false);
+    httpTesting.verify();
+  });
+
   it('gets billing document context by id', () => {
     const service = TestBed.inject(FiscalDocumentsApiService);
     const httpTesting = TestBed.inject(HttpTestingController);

@@ -3,13 +3,18 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using ClosedXML.Excel;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using NPOI.HSSF.UserModel;
 using Pineda.Facturacion.Api.Endpoints;
 using Pineda.Facturacion.Application.Abstractions.Legacy;
 using Pineda.Facturacion.Application.Abstractions.Pac;
@@ -164,6 +169,100 @@ public class MvpLifecycleApiTests
         Assert.False(fiscalJson.RootElement.TryGetProperty("certificateReference", out _));
         Assert.False(fiscalJson.RootElement.TryGetProperty("privateKeyReference", out _));
         Assert.False(fiscalJson.RootElement.TryGetProperty("privateKeyPasswordReference", out _));
+    }
+
+    [Fact]
+    public async Task ImportSuggestAndApproveLegacySatAssignment_HappyPath()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        using var content = new MultipartFormDataContent();
+        var file = new ByteArrayContent(CreateOfficialSatCatalogWorkbookBytes());
+        file.Headers.ContentType = new MediaTypeHeaderValue("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        content.Add(file, "file", "catalogos_sat.xlsx");
+
+        var importResponse = await client.PostAsync("/api/fiscal/imports/sat/official", content);
+        Assert.Equal(HttpStatusCode.OK, importResponse.StatusCode);
+        var importBody = await importResponse.Content.ReadFromJsonAsync<FiscalImportEndpoints.ImportOfficialSatCatalogResponse>();
+        Assert.NotNull(importBody);
+        Assert.Equal("4.0", importBody!.SourceVersion);
+        Assert.Equal("catalogos_sat.xlsx", importBody.SourceFileName);
+        Assert.StartsWith("sha256:", importBody.SourceChecksum, StringComparison.Ordinal);
+
+        var suggestResponse = await client.PostAsJsonAsync("/api/fiscal/product-fiscal-profiles/legacy-suggestions", new ProductFiscalProfilesEndpoints.SuggestLegacyItemSatAssignmentRequest
+        {
+            InternalCode = "SKU-LEGACY-IT-1",
+            Description = "Filtro de aceite premium",
+            UnitName = "Pieza"
+        });
+        Assert.Equal(HttpStatusCode.OK, suggestResponse.StatusCode);
+
+        var suggestBody = await suggestResponse.Content.ReadFromJsonAsync<ProductFiscalProfilesEndpoints.LegacySatAssignmentSuggestionResponse>();
+        Assert.NotNull(suggestBody);
+        Assert.Equal("40161513", suggestBody!.SuggestedProductService!.Code);
+        Assert.Equal("H87", suggestBody.SuggestedUnit!.Code);
+
+        var approveResponse = await client.PostAsJsonAsync("/api/fiscal/product-fiscal-profiles/legacy-suggestions/approve", new ProductFiscalProfilesEndpoints.ApproveLegacyItemSatAssignmentRequest
+        {
+            InternalCode = "SKU-LEGACY-IT-1",
+            Description = "Filtro de aceite premium",
+            SatProductServiceCode = suggestBody.SuggestedProductService.Code,
+            SatUnitCode = suggestBody.SuggestedUnit.Code
+        });
+        Assert.Equal(HttpStatusCode.OK, approveResponse.StatusCode);
+
+        var profileResponse = await client.GetAsync("/api/fiscal/product-fiscal-profiles/by-code/SKU-LEGACY-IT-1");
+        Assert.Equal(HttpStatusCode.OK, profileResponse.StatusCode);
+
+        var profile = await profileResponse.Content.ReadFromJsonAsync<ProductFiscalProfilesEndpoints.ProductFiscalProfileResponse>();
+        Assert.NotNull(profile);
+        Assert.Equal("40161513", profile!.SatProductServiceCode);
+        Assert.Equal("H87", profile.SatUnitCode);
+    }
+
+    [Fact]
+    public async Task ImportOfficialSatCatalog_AcceptsOfficialXlsWorkbook()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        using var content = new MultipartFormDataContent();
+        var file = new ByteArrayContent(CreateOfficialSatCatalogWorkbookBytesAsXls());
+        file.Headers.ContentType = new MediaTypeHeaderValue("application/vnd.ms-excel");
+        content.Add(file, "file", "catalogos_sat.xls");
+
+        var response = await client.PostAsync("/api/fiscal/imports/sat/official", content);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<FiscalImportEndpoints.ImportOfficialSatCatalogResponse>();
+        Assert.NotNull(body);
+        Assert.Equal("catalogos_sat.xls", body!.SourceFileName);
+        Assert.Equal("4.0", body.SourceVersion);
+        Assert.True(body.IsSuccess);
+        Assert.StartsWith("sha256:", body.SourceChecksum, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ImportOfficialSatCatalog_UsesEndpointSpecificUploadLimits()
+    {
+        using var factory = new MvpApiFactory();
+        using var scope = factory.Services.CreateScope();
+        var dataSource = scope.ServiceProvider.GetRequiredService<EndpointDataSource>();
+
+        var endpoint = dataSource.Endpoints
+            .OfType<RouteEndpoint>()
+            .Single(x =>
+                string.Equals(x.RoutePattern.RawText, "/api/fiscal/imports/sat/official", StringComparison.Ordinal)
+                && x.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods.Contains("POST", StringComparer.OrdinalIgnoreCase) == true);
+
+        var requestFormLimits = endpoint.Metadata.GetMetadata<RequestFormLimitsAttribute>();
+        var requestSizeLimit = endpoint.Metadata.GetMetadata<RequestSizeLimitAttribute>();
+
+        Assert.NotNull(requestFormLimits);
+        Assert.Equal(128L * 1024 * 1024, requestFormLimits!.MultipartBodyLengthLimit);
+        Assert.NotNull(requestSizeLimit);
+        Assert.Equal(128L * 1024 * 1024, ((IRequestSizeLimitMetadata)requestSizeLimit!).MaxRequestBodySize);
     }
 
     [Fact]
@@ -351,6 +450,107 @@ public class MvpLifecycleApiTests
         Assert.Equal(1, body.ChangeSummary.ModifiedLines);
         Assert.Equal("Allowed", body.ReimportEligibility.Status);
         Assert.Contains("preview_reimport", body.AllowedActions);
+    }
+
+    [Fact]
+    public async Task CancelledFiscalHistory_AllowsNewBillingDocument_WithoutReusingHistoricalDocument()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        var seed = await factory.SeedStandardFiscalMasterDataAsync();
+
+        const string legacyOrderId = "LEG-REFACT-1001";
+        factory.LegacyOrderReader.Orders[legacyOrderId] = CreateLegacyOrder(legacyOrderId, "SKU-1", 100m);
+
+        var importBody = await (await client.PostAsync($"/api/orders/{legacyOrderId}/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+        Assert.NotNull(importBody);
+        var salesOrderId = importBody!.SalesOrderId!.Value;
+
+        var firstBillingBody = await (await client.PostAsJsonAsync($"/api/sales-orders/{salesOrderId}/billing-documents", new SalesOrdersEndpoints.CreateBillingDocumentRequest
+        {
+            DocumentType = "I"
+        })).Content.ReadFromJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>();
+        Assert.NotNull(firstBillingBody);
+        var firstBillingDocumentId = firstBillingBody!.BillingDocumentId!.Value;
+
+        var firstFiscalBody = await (await client.PostAsJsonAsync($"/api/billing-documents/{firstBillingDocumentId}/fiscal-documents", new BillingDocumentsEndpoints.PrepareFiscalDocumentRequest
+        {
+            FiscalReceiverId = seed.ReceiverId,
+            IssuerProfileId = seed.IssuerId,
+            PaymentMethodSat = "PUE",
+            PaymentFormSat = "01",
+            PaymentCondition = "CONTADO"
+        })).Content.ReadFromJsonAsync<BillingDocumentsEndpoints.PrepareFiscalDocumentResponse>();
+        Assert.NotNull(firstFiscalBody);
+        var firstFiscalDocumentId = firstFiscalBody!.FiscalDocumentId!.Value;
+
+        var stampResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{firstFiscalDocumentId}/stamp", new FiscalDocumentsEndpoints.StampFiscalDocumentRequest());
+        Assert.Equal(HttpStatusCode.OK, stampResponse.StatusCode);
+
+        var cancelResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{firstFiscalDocumentId}/cancel", new FiscalDocumentsEndpoints.CancelFiscalDocumentRequest
+        {
+            CancellationReasonCode = "02"
+        });
+        Assert.Equal(HttpStatusCode.OK, cancelResponse.StatusCode);
+
+        factory.LegacyOrderReader.Orders[legacyOrderId] = CreateLegacyOrder(legacyOrderId, "SKU-1", 150m, quantity: 2m);
+
+        var importConflictResponse = await client.PostAsync($"/api/orders/{legacyOrderId}/import", null);
+        Assert.Equal(HttpStatusCode.Conflict, importConflictResponse.StatusCode);
+        var importConflictBody = await importConflictResponse.Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+        Assert.NotNull(importConflictBody);
+        Assert.Equal(salesOrderId, importConflictBody!.ExistingSalesOrderId);
+        Assert.Null(importConflictBody.ExistingBillingDocumentId);
+        Assert.Null(importConflictBody.ExistingFiscalDocumentId);
+
+        var previewResponse = await client.GetAsync($"/api/orders/{legacyOrderId}/import-preview");
+        Assert.Equal(HttpStatusCode.OK, previewResponse.StatusCode);
+        var previewBody = await previewResponse.Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderPreviewResponse>();
+        Assert.NotNull(previewBody);
+        Assert.Equal("Allowed", previewBody!.ReimportEligibility.Status);
+        Assert.Null(previewBody.ExistingBillingDocumentId);
+        Assert.Null(previewBody.ExistingFiscalDocumentId);
+
+        var secondBillingResponse = await client.PostAsJsonAsync($"/api/sales-orders/{salesOrderId}/billing-documents", new SalesOrdersEndpoints.CreateBillingDocumentRequest
+        {
+            DocumentType = "I"
+        });
+        Assert.Equal(HttpStatusCode.OK, secondBillingResponse.StatusCode);
+        var secondBillingBody = await secondBillingResponse.Content.ReadFromJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>();
+        Assert.NotNull(secondBillingBody);
+        var secondBillingDocumentId = secondBillingBody!.BillingDocumentId!.Value;
+        Assert.NotEqual(firstBillingDocumentId, secondBillingDocumentId);
+
+        var duplicateBillingResponse = await client.PostAsJsonAsync($"/api/sales-orders/{salesOrderId}/billing-documents", new SalesOrdersEndpoints.CreateBillingDocumentRequest
+        {
+            DocumentType = "I"
+        });
+        Assert.Equal(HttpStatusCode.Conflict, duplicateBillingResponse.StatusCode);
+        var duplicateBillingBody = await duplicateBillingResponse.Content.ReadFromJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>();
+        Assert.NotNull(duplicateBillingBody);
+        Assert.Equal(secondBillingDocumentId, duplicateBillingBody!.BillingDocumentId);
+
+        var secondImportConflictResponse = await client.PostAsync($"/api/orders/{legacyOrderId}/import", null);
+        Assert.Equal(HttpStatusCode.Conflict, secondImportConflictResponse.StatusCode);
+        var secondImportConflictBody = await secondImportConflictResponse.Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+        Assert.NotNull(secondImportConflictBody);
+        Assert.Equal(secondBillingDocumentId, secondImportConflictBody!.ExistingBillingDocumentId);
+        Assert.Null(secondImportConflictBody.ExistingFiscalDocumentId);
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+        var importRecord = await db.LegacyImportRecords.SingleAsync(x => x.SourceDocumentId == legacyOrderId);
+        var billingDocuments = await db.BillingDocuments
+            .Where(x => x.SalesOrderId == salesOrderId)
+            .OrderBy(x => x.Id)
+            .ToListAsync();
+        var firstFiscalDocument = await db.FiscalDocuments.SingleAsync(x => x.Id == firstFiscalDocumentId);
+
+        Assert.Equal(firstBillingDocumentId, importRecord.BillingDocumentId);
+        Assert.Equal(2, billingDocuments.Count);
+        Assert.Equal(FiscalDocumentStatus.Cancelled, firstFiscalDocument.Status);
+        Assert.False(await db.FiscalDocuments.AnyAsync(x => x.BillingDocumentId == secondBillingDocumentId));
     }
 
     [Fact]
@@ -3060,6 +3260,7 @@ public class MvpLifecycleApiTests
         await using var factory = new MvpApiFactory();
         var client = await factory.CreateAuthenticatedClientAsync();
         await factory.SeedStandardFiscalMasterDataAsync();
+        var timelineBaseUtc = DateTime.UtcNow.AddMinutes(5);
 
         factory.FiscalStatusQueryGateway.ResponseFactory = _ => new FiscalStatusQueryGatewayResult
         {
@@ -3074,7 +3275,7 @@ public class MvpLifecycleApiTests
             ProviderOperation = "payment-complement-stamp",
             ProviderTrackingId = "TRACK-PC-EXT-5-1001",
             Uuid = "UUID-PC-EXT-5-1001",
-            StampedAtUtc = new DateTime(2026, 04, 08, 14, 0, 0, DateTimeKind.Utc),
+            StampedAtUtc = timelineBaseUtc,
             XmlContent = "<cfdi:Comprobante Version=\"4.0\"><pago20:Pagos /></cfdi:Comprobante>",
             XmlHash = "XML-HASH-PC-EXT-5-1001",
             OriginalString = "||1.1|UUID-PC-EXT-5-1001||"
@@ -3085,7 +3286,7 @@ public class MvpLifecycleApiTests
             ProviderName = "FacturaloPlus",
             ProviderOperation = "payment-complement-status-query",
             ExternalStatus = "VIGENTE",
-            CheckedAtUtc = new DateTime(2026, 04, 08, 14, 30, 0, DateTimeKind.Utc)
+            CheckedAtUtc = timelineBaseUtc.AddMinutes(30)
         };
 
         long externalId;
@@ -3160,7 +3361,7 @@ public class MvpLifecycleApiTests
             ProviderName = "FacturaloPlus",
             ProviderOperation = "payment-complement-status-query",
             ExternalStatus = "CANCELLED",
-            CheckedAtUtc = new DateTime(2026, 04, 08, 15, 0, 0, DateTimeKind.Utc)
+            CheckedAtUtc = timelineBaseUtc.AddMinutes(60)
         };
 
         var postCancelRefreshResponse = await client.PostAsJsonAsync(
@@ -3368,6 +3569,56 @@ public class MvpLifecycleApiTests
                 }
             ]
         };
+    }
+
+    private static byte[] CreateOfficialSatCatalogWorkbookBytes()
+    {
+        using var workbook = new XLWorkbook();
+
+        var productSheet = workbook.Worksheets.Add("c_ClaveProdServ");
+        productSheet.Cell(1, 1).Value = "c_ClaveProdServ";
+        productSheet.Cell(1, 2).Value = "Descripción";
+        productSheet.Cell(1, 3).Value = "Palabras similares";
+        productSheet.Cell(2, 1).Value = "40161513";
+        productSheet.Cell(2, 2).Value = "Filtro de aceite";
+        productSheet.Cell(2, 3).Value = "filtro aceite lubricacion motor";
+
+        var unitSheet = workbook.Worksheets.Add("c_ClaveUnidad");
+        unitSheet.Cell(1, 1).Value = "c_ClaveUnidad";
+        unitSheet.Cell(1, 2).Value = "Nombre";
+        unitSheet.Cell(1, 3).Value = "Símbolo";
+        unitSheet.Cell(2, 1).Value = "H87";
+        unitSheet.Cell(2, 2).Value = "Pieza";
+        unitSheet.Cell(2, 3).Value = "PZA";
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
+
+    private static byte[] CreateOfficialSatCatalogWorkbookBytesAsXls()
+    {
+        using var workbook = new HSSFWorkbook();
+
+        var productSheet = workbook.CreateSheet("c_ClaveProdServ");
+        productSheet.CreateRow(0).CreateCell(0).SetCellValue("c_ClaveProdServ");
+        productSheet.GetRow(0).CreateCell(1).SetCellValue("Descripción");
+        productSheet.GetRow(0).CreateCell(2).SetCellValue("Palabras similares");
+        productSheet.CreateRow(1).CreateCell(0).SetCellValue("40161513");
+        productSheet.GetRow(1).CreateCell(1).SetCellValue("Filtro de aceite");
+        productSheet.GetRow(1).CreateCell(2).SetCellValue("filtro aceite lubricacion motor");
+
+        var unitSheet = workbook.CreateSheet("c_ClaveUnidad");
+        unitSheet.CreateRow(0).CreateCell(0).SetCellValue("c_ClaveUnidad");
+        unitSheet.GetRow(0).CreateCell(1).SetCellValue("Nombre");
+        unitSheet.GetRow(0).CreateCell(2).SetCellValue("Símbolo");
+        unitSheet.CreateRow(1).CreateCell(0).SetCellValue("H87");
+        unitSheet.GetRow(1).CreateCell(1).SetCellValue("Pieza");
+        unitSheet.GetRow(1).CreateCell(2).SetCellValue("PZA");
+
+        using var stream = new MemoryStream();
+        workbook.Write(stream);
+        return stream.ToArray();
     }
 
     private static string CreateExternalRepXmlContent(

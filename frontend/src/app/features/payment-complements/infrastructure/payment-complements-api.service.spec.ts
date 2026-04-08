@@ -119,6 +119,31 @@ describe('PaymentComplementsApiService', () => {
     httpTesting.verify();
   });
 
+  it('prepares a grouped payment complement from the internal base-document context', () => {
+    const service = TestBed.inject(PaymentComplementsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.prepareInternalBaseDocumentPaymentComplement(501, {
+      accountsReceivablePaymentId: 9002,
+      additionalPaymentIds: [9003]
+    }).subscribe();
+
+    const req = httpTesting.expectOne('/api/payment-complements/base-documents/internal/501/prepare');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ accountsReceivablePaymentId: 9002, additionalPaymentIds: [9003] });
+    req.flush({
+      outcome: 'Prepared',
+      isSuccess: true,
+      warningMessages: [],
+      fiscalDocumentId: 501,
+      accountsReceivablePaymentId: 9002,
+      paymentComplementDocumentId: 7003,
+      status: 'ReadyForStamping',
+      relatedDocumentCount: 2
+    });
+    httpTesting.verify();
+  });
+
   it('stamps a payment complement from the internal base-document context', () => {
     const service = TestBed.inject(PaymentComplementsApiService);
     const httpTesting = TestBed.inject(HttpTestingController);

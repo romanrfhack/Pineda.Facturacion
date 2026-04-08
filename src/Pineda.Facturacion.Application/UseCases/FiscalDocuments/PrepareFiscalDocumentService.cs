@@ -223,7 +223,7 @@ public class PrepareFiscalDocumentService
             }
 
             var internalCode = FiscalMasterDataNormalization.NormalizeRequiredCode(billingDocumentItem.ProductInternalCode);
-            var productFiscalProfile = await _productFiscalProfileRepository.GetByInternalCodeAsync(internalCode, cancellationToken);
+            var productFiscalProfile = await _productFiscalProfileRepository.GetEffectiveByInternalCodeAsync(internalCode, now, cancellationToken);
             if (productFiscalProfile is null || !productFiscalProfile.IsActive)
             {
                 return new PrepareFiscalDocumentResult

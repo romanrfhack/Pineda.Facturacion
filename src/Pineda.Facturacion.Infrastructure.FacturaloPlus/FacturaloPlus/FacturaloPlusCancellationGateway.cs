@@ -84,7 +84,8 @@ public class FacturaloPlusCancellationGateway : IFiscalCancellationGateway
             privateKeyPassword,
             request);
 
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _options.CancelPath)
+        var requestUri = FacturaloPlusOperationUri.BuildRelative(_options.BaseUrl, _options.CancelPath);
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, requestUri)
         {
             Content = new FormUrlEncodedContent(formPayload)
         };
@@ -106,10 +107,29 @@ public class FacturaloPlusCancellationGateway : IFiscalCancellationGateway
         }
 
         var providerResponse = TryParseProviderResponse(responseContent);
-        var rawResponseSummaryJson = BuildRawResponseSummary(response.StatusCode, providerResponse, responseContent, redactedSummary, rawRequestHash);
+        var responseContentType = response.Content.Headers.ContentType?.MediaType;
+        var rawResponseSummaryJson = BuildRawResponseSummary(response.StatusCode, responseContentType, requestUri, providerResponse, responseContent, redactedSummary, rawRequestHash);
         var providerCode = providerResponse?.Code ?? ((int)response.StatusCode).ToString(CultureInfo.InvariantCulture);
         var providerMessage = providerResponse?.Message;
         var supportMessage = BuildSupportMessage(providerCode, providerMessage, providerResponse?.TrackingId, providerResponse?.ErrorCode, providerResponse?.ErrorMessage);
+
+        if (IsTechnicalFailure(response.StatusCode, responseContentType, responseContent))
+        {
+            var errorMessage = BuildTechnicalFailureMessage(response.StatusCode, responseContentType);
+            return new FiscalCancellationGatewayResult
+            {
+                Outcome = FiscalCancellationGatewayOutcome.Unavailable,
+                ProviderName = _options.ProviderName,
+                ProviderOperation = "cancelar2",
+                ProviderTrackingId = providerResponse?.TrackingId,
+                ProviderCode = providerCode,
+                ProviderMessage = providerMessage,
+                RawResponseSummaryJson = rawResponseSummaryJson,
+                ErrorCode = providerResponse?.ErrorCode ?? "HTTP_" + (int)response.StatusCode,
+                ErrorMessage = errorMessage,
+                SupportMessage = supportMessage ?? errorMessage
+            };
+        }
 
         if ((int)response.StatusCode >= 500)
         {
@@ -196,7 +216,8 @@ public class FacturaloPlusCancellationGateway : IFiscalCancellationGateway
             new("cerPEM", certificateValue.Trim())
         };
 
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _options.PendingCancellationAuthorizationsPath)
+        var requestUri = FacturaloPlusOperationUri.BuildRelative(_options.BaseUrl, _options.PendingCancellationAuthorizationsPath);
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, requestUri)
         {
             Content = new FormUrlEncodedContent(formPayload)
         };
@@ -309,7 +330,8 @@ public class FacturaloPlusCancellationGateway : IFiscalCancellationGateway
             new("respuesta", request.Response)
         };
 
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _options.CancellationAuthorizationDecisionPath)
+        var requestUri = FacturaloPlusOperationUri.BuildRelative(_options.BaseUrl, _options.CancellationAuthorizationDecisionPath);
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, requestUri)
         {
             Content = new FormUrlEncodedContent(formPayload)
         };
@@ -442,6 +464,8 @@ public class FacturaloPlusCancellationGateway : IFiscalCancellationGateway
 
     private static string BuildRawResponseSummary(
         HttpStatusCode statusCode,
+        string? responseContentType,
+        Uri requestUri,
         FacturaloPlusCancellationResponse? response,
         string rawContent,
         object requestSummary,
@@ -450,6 +474,8 @@ public class FacturaloPlusCancellationGateway : IFiscalCancellationGateway
         var summary = new
         {
             HttpStatusCode = (int)statusCode,
+            ResponseContentType = responseContentType,
+            RequestUrl = requestUri.ToString(),
             RequestSummary = requestSummary,
             RequestHash = requestHash,
             response?.Code,
@@ -464,6 +490,40 @@ public class FacturaloPlusCancellationGateway : IFiscalCancellationGateway
         };
 
         return JsonSerializer.Serialize(summary, JsonOptions);
+    }
+
+    private static bool IsTechnicalFailure(HttpStatusCode statusCode, string? responseContentType, string rawContent)
+    {
+        if (statusCode == HttpStatusCode.NotFound)
+        {
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(responseContentType)
+            && responseContentType.Contains("html", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var trimmed = rawContent.TrimStart();
+        return trimmed.StartsWith("<!DOCTYPE HTML", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith("<html", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string BuildTechnicalFailureMessage(HttpStatusCode statusCode, string? responseContentType)
+    {
+        if (statusCode == HttpStatusCode.NotFound)
+        {
+            return "Provider cancellation endpoint was not found.";
+        }
+
+        if (!string.IsNullOrWhiteSpace(responseContentType)
+            && responseContentType.Contains("html", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Provider returned an unexpected HTML response for the cancellation request.";
+        }
+
+        return "Provider returned an unexpected technical response for the cancellation request.";
     }
 
     private static FacturaloPlusCancellationResponse? TryParseProviderResponse(string rawContent)

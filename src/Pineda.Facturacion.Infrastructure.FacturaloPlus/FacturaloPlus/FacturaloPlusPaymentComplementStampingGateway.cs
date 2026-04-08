@@ -85,14 +85,22 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
             return ValidationFailed(issuedAtValidationError!);
         }
 
-        if (!TryBuildCfdiLocalDateTime(request.PaymentDateUtc, out var paymentFecha, out var paymentDateValidationError))
+        if (!TryBuildCfdiLocalDateTime(request.PaymentDateUtc, out _, out var paymentDateValidationError))
         {
             return ValidationFailed(paymentDateValidationError!);
         }
 
+        foreach (var payment in request.Payments)
+        {
+            if (!TryBuildCfdiLocalDateTime(payment.PaymentDateUtc, out _, out var currentPaymentValidationError))
+            {
+                return ValidationFailed(currentPaymentValidationError!);
+            }
+        }
+
         var redactedSummary = BuildRedactedRequestSummary(request);
         var providerRequestHash = ComputeSha256(JsonSerializer.Serialize(redactedSummary, JsonOptions));
-        var payload = BuildPayload(request, certificateMetadata, comprobanteFecha!, paymentFecha!);
+        var payload = BuildPayload(request, certificateMetadata, comprobanteFecha!);
         var payloadJson = JsonSerializer.Serialize(payload, JsonOptions);
         var formPayload = BuildFormPayload(apiKey, payloadJson, privateKeyValue, certificateValue);
 
@@ -189,26 +197,22 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
     private static FacturaloPlusPaymentComplementStampingPayload BuildPayload(
         PaymentComplementStampingRequest request,
         CertificateMetadata certificateMetadata,
-        string comprobanteFecha,
-        string paymentFecha)
+        string comprobanteFecha)
     {
-        var relatedDocuments = request.RelatedDocuments
-            .OrderBy(x => x.AccountsReceivableInvoiceId)
-            .ThenBy(x => x.InstallmentNumber)
-            .Select(BuildRelatedDocument)
-            .ToList();
-        var paymentTransfers = relatedDocuments
-            .Where(x => x.ImpuestosDR?.TrasladosDR is { Count: > 0 })
-            .SelectMany(x => x.ImpuestosDR!.TrasladosDR!)
-            .GroupBy(x => new { x.ImpuestoDR, x.TipoFactorDR, x.TasaOCuotaDR })
-            .Select(group => new FacturaloPlusPagoTrasladoP
-            {
-                BaseP = NormalizeMoney(group.Sum(x => x.BaseDR)),
-                ImpuestoP = group.Key.ImpuestoDR,
-                TipoFactorP = group.Key.TipoFactorDR,
-                TasaOCuotaP = group.Key.TasaOCuotaDR,
-                ImporteP = NormalizeMoney(group.Sum(x => x.ImporteDR))
-            })
+        var pagos = request.Payments.Count > 0
+            ? request.Payments.OrderBy(x => x.PaymentDateUtc).ThenBy(x => x.AccountsReceivablePaymentId).ToList()
+            : [new PaymentComplementStampingRequestPayment
+                {
+                    AccountsReceivablePaymentId = request.PaymentComplementDocumentId,
+                    PaymentDateUtc = request.PaymentDateUtc,
+                    PaymentFormSat = request.PaymentFormSat,
+                    CurrencyCode = request.CurrencyCode,
+                    Amount = request.TotalPaymentsAmount,
+                    RelatedDocuments = request.RelatedDocuments
+                }];
+
+        var payloadPagos = pagos
+            .Select(BuildPago)
             .ToList();
 
         return new FacturaloPlusPaymentComplementStampingPayload
@@ -261,27 +265,83 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
                     Pagos20 = new FacturaloPlusPaymentComplementPagos20
                     {
                         Version = "2.0",
-                        Totales = BuildTotales(request.TotalPaymentsAmount, paymentTransfers),
-                        Pago =
-                        [
-                            new FacturaloPlusPago
-                            {
-                                FechaPago = paymentFecha,
-                                FormaDePagoP = request.PaymentFormSat,
-                                MonedaP = request.CurrencyCode,
-                                Monto = NormalizeMoney(request.TotalPaymentsAmount),
-                                DoctoRelacionado = relatedDocuments,
-                                ImpuestosP = paymentTransfers.Count == 0
-                                    ? null
-                                    : new FacturaloPlusPagoImpuestosP
-                                    {
-                                        TrasladosP = paymentTransfers
-                                    }
-                            }
-                        ]
+                        Totales = BuildTotales(payloadPagos),
+                        Pago = payloadPagos
                     }
                 }
             }
+        };
+    }
+
+    private static FacturaloPlusPago BuildPago(PaymentComplementStampingRequestPayment payment)
+    {
+        var relatedDocuments = payment.RelatedDocuments
+            .OrderBy(x => x.AccountsReceivableInvoiceId)
+            .ThenBy(x => x.InstallmentNumber)
+            .Select(BuildRelatedDocument)
+            .ToList();
+
+        var transfers = relatedDocuments
+            .Where(x => x.ImpuestosDR?.TrasladosDR is { Count: > 0 })
+            .SelectMany(x => x.ImpuestosDR!.TrasladosDR!)
+            .GroupBy(x => new { x.ImpuestoDR, x.TipoFactorDR, x.TasaOCuotaDR })
+            .Select(group =>
+            {
+                var factorType = group.Key.TipoFactorDR;
+                var tasa = string.Equals(factorType, "Exento", StringComparison.OrdinalIgnoreCase)
+                    ? null
+                    : group.Key.TasaOCuotaDR;
+                decimal? importe = string.Equals(factorType, "Exento", StringComparison.OrdinalIgnoreCase)
+                    ? null
+                    : NormalizeMoney(group.Sum(x => x.ImporteDR ?? 0m));
+
+                return new FacturaloPlusPagoTrasladoP
+                {
+                    BaseP = NormalizeMoney(group.Sum(x => x.BaseDR)),
+                    ImpuestoP = group.Key.ImpuestoDR,
+                    TipoFactorP = factorType,
+                    TasaOCuotaP = tasa,
+                    ImporteP = importe
+                };
+            })
+            .ToList();
+
+        var retentions = relatedDocuments
+            .Where(x => x.ImpuestosDR?.RetencionesDR is { Count: > 0 })
+            .SelectMany(x => x.ImpuestosDR!.RetencionesDR!)
+            .GroupBy(x => x.ImpuestoDR)
+            .Select(group => new FacturaloPlusPagoRetencionP
+            {
+                ImpuestoP = group.Key,
+                ImporteP = NormalizeMoney(group.Sum(x => x.ImporteDR))
+            })
+            .ToList();
+
+        return new FacturaloPlusPago
+        {
+            FechaPago = BuildPaymentFecha(payment.PaymentDateUtc),
+            FormaDePagoP = payment.PaymentFormSat,
+            MonedaP = payment.CurrencyCode,
+            TipoCambioP = payment.ExchangeRate.HasValue ? FormatRate(payment.ExchangeRate.Value) : null,
+            Monto = NormalizeMoney(payment.Amount),
+            NumOperacion = payment.OperationNumber,
+            RfcEmisorCtaOrd = payment.OrderingBankRfc,
+            NomBancoOrdExt = null,
+            CtaOrdenante = payment.OrderingAccountNumber,
+            RfcEmisorCtaBen = payment.BeneficiaryBankRfc,
+            CtaBeneficiario = payment.BeneficiaryAccountNumber,
+            TipoCadPago = payment.PaymentChainType,
+            CertPago = payment.PaymentCertificate,
+            CadPago = payment.PaymentChain,
+            SelloPago = payment.PaymentSeal,
+            DoctoRelacionado = relatedDocuments,
+            ImpuestosP = transfers.Count == 0 && retentions.Count == 0
+                ? null
+                : new FacturaloPlusPagoImpuestosP
+                {
+                    RetencionesP = retentions.Count == 0 ? null : retentions,
+                    TrasladosP = transfers.Count == 0 ? null : transfers
+                }
         };
     }
 
@@ -293,7 +353,16 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
                 BaseDR = NormalizeMoney(x.BaseAmount),
                 ImpuestoDR = x.TaxCode,
                 TipoFactorDR = x.FactorType,
-                TasaOCuotaDR = FormatRate(x.Rate),
+                TasaOCuotaDR = string.Equals(x.FactorType, "Exento", StringComparison.OrdinalIgnoreCase) ? null : FormatRate(x.Rate),
+                ImporteDR = string.Equals(x.FactorType, "Exento", StringComparison.OrdinalIgnoreCase) ? null : NormalizeMoney(x.TaxAmount)
+            })
+            .ToList();
+
+        var retentions = relatedDocument.TaxRetentions
+            .Select(x => new FacturaloPlusPagoRetencionDR
+            {
+                BaseDR = NormalizeMoney(x.BaseAmount),
+                ImpuestoDR = x.TaxCode,
                 ImporteDR = NormalizeMoney(x.TaxAmount)
             })
             .ToList();
@@ -301,57 +370,93 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
         return new FacturaloPlusPagoDoctoRelacionado
         {
             IdDocumento = relatedDocument.RelatedDocumentUuid,
+            Serie = relatedDocument.Series,
+            Folio = relatedDocument.Folio,
             MonedaDR = relatedDocument.CurrencyCode,
+            EquivalenciaDR = relatedDocument.CurrencyEquivalence.HasValue ? FormatRate(relatedDocument.CurrencyEquivalence.Value) : null,
             NumParcialidad = relatedDocument.InstallmentNumber,
             ImpSaldoAnt = NormalizeMoney(relatedDocument.PreviousBalance),
             ImpPagado = NormalizeMoney(relatedDocument.PaidAmount),
             ImpSaldoInsoluto = NormalizeMoney(relatedDocument.RemainingBalance),
             ObjetoImpDR = string.IsNullOrWhiteSpace(relatedDocument.TaxObjectCode) ? "01" : relatedDocument.TaxObjectCode,
             MetodoDePagoDR = "PPD",
-            ImpuestosDR = transfers.Count == 0
+            ImpuestosDR = transfers.Count == 0 && retentions.Count == 0
                 ? null
                 : new FacturaloPlusPagoImpuestosDR
                 {
-                    TrasladosDR = transfers
+                    RetencionesDR = retentions.Count == 0 ? null : retentions,
+                    TrasladosDR = transfers.Count == 0 ? null : transfers
                 }
         };
     }
 
-    private static FacturaloPlusPagoTotales BuildTotales(
-        decimal totalPaymentsAmount,
-        IReadOnlyCollection<FacturaloPlusPagoTrasladoP> paymentTransfers)
+    private static FacturaloPlusPagoTotales BuildTotales(IReadOnlyCollection<FacturaloPlusPago> pagos)
     {
         var totals = new FacturaloPlusPagoTotales
         {
-            MontoTotalPagos = NormalizeMoney(totalPaymentsAmount)
+            MontoTotalPagos = NormalizeMoney(pagos.Sum(x => x.Monto))
         };
 
-        foreach (var transfer in paymentTransfers)
+        foreach (var retention in pagos
+                     .Where(x => x.ImpuestosP?.RetencionesP is { Count: > 0 })
+                     .SelectMany(x => x.ImpuestosP!.RetencionesP!))
+        {
+            if (string.Equals(retention.ImpuestoP, "001", StringComparison.OrdinalIgnoreCase))
+            {
+                totals.TotalRetencionesISR = NormalizeMoney((totals.TotalRetencionesISR ?? 0m) + retention.ImporteP);
+            }
+            else if (string.Equals(retention.ImpuestoP, "002", StringComparison.OrdinalIgnoreCase))
+            {
+                totals.TotalRetencionesIVA = NormalizeMoney((totals.TotalRetencionesIVA ?? 0m) + retention.ImporteP);
+            }
+            else if (string.Equals(retention.ImpuestoP, "003", StringComparison.OrdinalIgnoreCase))
+            {
+                totals.TotalRetencionesIEPS = NormalizeMoney((totals.TotalRetencionesIEPS ?? 0m) + retention.ImporteP);
+            }
+        }
+
+        foreach (var transfer in pagos
+                     .Where(x => x.ImpuestosP?.TrasladosP is { Count: > 0 })
+                     .SelectMany(x => x.ImpuestosP!.TrasladosP!))
         {
             if (!string.Equals(transfer.ImpuestoP, "002", StringComparison.OrdinalIgnoreCase)
-                || !string.Equals(transfer.TipoFactorP, "Tasa", StringComparison.OrdinalIgnoreCase))
+                || string.IsNullOrWhiteSpace(transfer.TipoFactorP))
             {
                 continue;
             }
 
-            if (string.Equals(transfer.TasaOCuotaP, "0.160000", StringComparison.Ordinal))
+            if (string.Equals(transfer.TipoFactorP, "Exento", StringComparison.OrdinalIgnoreCase))
+            {
+                totals.TotalTrasladosBaseIVAExento = NormalizeMoney((totals.TotalTrasladosBaseIVAExento ?? 0m) + transfer.BaseP);
+            }
+            else if (string.Equals(transfer.TasaOCuotaP, "0.160000", StringComparison.Ordinal))
             {
                 totals.TotalTrasladosBaseIVA16 = NormalizeMoney((totals.TotalTrasladosBaseIVA16 ?? 0m) + transfer.BaseP);
-                totals.TotalTrasladosImpuestoIVA16 = NormalizeMoney((totals.TotalTrasladosImpuestoIVA16 ?? 0m) + transfer.ImporteP);
+                totals.TotalTrasladosImpuestoIVA16 = NormalizeMoney((totals.TotalTrasladosImpuestoIVA16 ?? 0m) + (transfer.ImporteP ?? 0m));
             }
             else if (string.Equals(transfer.TasaOCuotaP, "0.080000", StringComparison.Ordinal))
             {
                 totals.TotalTrasladosBaseIVA8 = NormalizeMoney((totals.TotalTrasladosBaseIVA8 ?? 0m) + transfer.BaseP);
-                totals.TotalTrasladosImpuestoIVA8 = NormalizeMoney((totals.TotalTrasladosImpuestoIVA8 ?? 0m) + transfer.ImporteP);
+                totals.TotalTrasladosImpuestoIVA8 = NormalizeMoney((totals.TotalTrasladosImpuestoIVA8 ?? 0m) + (transfer.ImporteP ?? 0m));
             }
             else if (string.Equals(transfer.TasaOCuotaP, "0.000000", StringComparison.Ordinal))
             {
                 totals.TotalTrasladosBaseIVA0 = NormalizeMoney((totals.TotalTrasladosBaseIVA0 ?? 0m) + transfer.BaseP);
-                totals.TotalTrasladosImpuestoIVA0 = NormalizeMoney((totals.TotalTrasladosImpuestoIVA0 ?? 0m) + transfer.ImporteP);
+                totals.TotalTrasladosImpuestoIVA0 = NormalizeMoney((totals.TotalTrasladosImpuestoIVA0 ?? 0m) + (transfer.ImporteP ?? 0m));
             }
         }
 
         return totals;
+    }
+
+    private static string BuildPaymentFecha(DateTime utcDateTime)
+    {
+        if (!TryBuildCfdiLocalDateTime(utcDateTime, out var paymentFecha, out _))
+        {
+            throw new InvalidOperationException("Payment complement payment date could not be converted to CFDI local time.");
+        }
+
+        return paymentFecha!;
     }
 
     private static object BuildRedactedRequestSummary(PaymentComplementStampingRequest request)
@@ -377,22 +482,75 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
             request.ReceiverPostalCode,
             request.ReceiverCountryCode,
             request.ReceiverForeignTaxRegistration,
+            Payments = request.Payments.Select(payment => new
+            {
+                payment.AccountsReceivablePaymentId,
+                payment.PaymentDateUtc,
+                payment.PaymentFormSat,
+                payment.CurrencyCode,
+                payment.Amount,
+                payment.ExchangeRate,
+                payment.OperationNumber,
+                payment.OrderingBankRfc,
+                payment.OrderingAccountNumber,
+                payment.BeneficiaryBankRfc,
+                payment.BeneficiaryAccountNumber,
+                payment.PaymentChainType,
+                RelatedDocuments = payment.RelatedDocuments.Select(x => new
+                {
+                    x.AccountsReceivableInvoiceId,
+                    x.FiscalDocumentId,
+                    x.RelatedDocumentUuid,
+                    x.Series,
+                    x.Folio,
+                    x.InstallmentNumber,
+                    x.PreviousBalance,
+                    x.PaidAmount,
+                    x.RemainingBalance,
+                    x.CurrencyCode,
+                    x.CurrencyEquivalence,
+                    x.TaxObjectCode,
+                    TaxTransfers = x.TaxTransfers.Select(y => new
+                    {
+                        y.TaxCode,
+                        y.FactorType,
+                        y.Rate,
+                        y.BaseAmount,
+                        y.TaxAmount
+                    }),
+                    TaxRetentions = x.TaxRetentions.Select(y => new
+                    {
+                        y.TaxCode,
+                        y.BaseAmount,
+                        y.TaxAmount
+                    })
+                })
+            }),
             RelatedDocuments = request.RelatedDocuments.Select(x => new
             {
                 x.AccountsReceivableInvoiceId,
                 x.FiscalDocumentId,
                 x.RelatedDocumentUuid,
+                x.Series,
+                x.Folio,
                 x.InstallmentNumber,
                 x.PreviousBalance,
                 x.PaidAmount,
                 x.RemainingBalance,
                 x.CurrencyCode,
+                x.CurrencyEquivalence,
                 x.TaxObjectCode,
                 TaxTransfers = x.TaxTransfers.Select(y => new
                 {
                     y.TaxCode,
                     y.FactorType,
                     y.Rate,
+                    y.BaseAmount,
+                    y.TaxAmount
+                }),
+                TaxRetentions = x.TaxRetentions.Select(y => new
+                {
+                    y.TaxCode,
                     y.BaseAmount,
                     y.TaxAmount
                 })
@@ -911,6 +1069,12 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
     {
         [JsonPropertyName("MontoTotalPagos")]
         public decimal MontoTotalPagos { get; init; }
+        [JsonPropertyName("TotalRetencionesISR")]
+        public decimal? TotalRetencionesISR { get; set; }
+        [JsonPropertyName("TotalRetencionesIVA")]
+        public decimal? TotalRetencionesIVA { get; set; }
+        [JsonPropertyName("TotalRetencionesIEPS")]
+        public decimal? TotalRetencionesIEPS { get; set; }
         [JsonPropertyName("TotalTrasladosBaseIVA16")]
         public decimal? TotalTrasladosBaseIVA16 { get; set; }
         [JsonPropertyName("TotalTrasladosImpuestoIVA16")]
@@ -923,6 +1087,8 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
         public decimal? TotalTrasladosBaseIVA0 { get; set; }
         [JsonPropertyName("TotalTrasladosImpuestoIVA0")]
         public decimal? TotalTrasladosImpuestoIVA0 { get; set; }
+        [JsonPropertyName("TotalTrasladosBaseIVAExento")]
+        public decimal? TotalTrasladosBaseIVAExento { get; set; }
     }
 
     private sealed class FacturaloPlusPago
@@ -933,8 +1099,30 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
         public string FormaDePagoP { get; init; } = string.Empty;
         [JsonPropertyName("MonedaP")]
         public string MonedaP { get; init; } = string.Empty;
+        [JsonPropertyName("TipoCambioP")]
+        public string? TipoCambioP { get; init; }
         [JsonPropertyName("Monto")]
         public decimal Monto { get; init; }
+        [JsonPropertyName("NumOperacion")]
+        public string? NumOperacion { get; init; }
+        [JsonPropertyName("RfcEmisorCtaOrd")]
+        public string? RfcEmisorCtaOrd { get; init; }
+        [JsonPropertyName("NomBancoOrdExt")]
+        public string? NomBancoOrdExt { get; init; }
+        [JsonPropertyName("CtaOrdenante")]
+        public string? CtaOrdenante { get; init; }
+        [JsonPropertyName("RfcEmisorCtaBen")]
+        public string? RfcEmisorCtaBen { get; init; }
+        [JsonPropertyName("CtaBeneficiario")]
+        public string? CtaBeneficiario { get; init; }
+        [JsonPropertyName("TipoCadPago")]
+        public string? TipoCadPago { get; init; }
+        [JsonPropertyName("CertPago")]
+        public string? CertPago { get; init; }
+        [JsonPropertyName("CadPago")]
+        public string? CadPago { get; init; }
+        [JsonPropertyName("SelloPago")]
+        public string? SelloPago { get; init; }
         [JsonPropertyName("ImpuestosP")]
         public FacturaloPlusPagoImpuestosP? ImpuestosP { get; init; }
         [JsonPropertyName("DoctoRelacionado")]
@@ -943,8 +1131,18 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
 
     private sealed class FacturaloPlusPagoImpuestosP
     {
+        [JsonPropertyName("RetencionesP")]
+        public List<FacturaloPlusPagoRetencionP>? RetencionesP { get; init; }
         [JsonPropertyName("TrasladosP")]
-        public List<FacturaloPlusPagoTrasladoP> TrasladosP { get; init; } = [];
+        public List<FacturaloPlusPagoTrasladoP>? TrasladosP { get; init; }
+    }
+
+    private sealed class FacturaloPlusPagoRetencionP
+    {
+        [JsonPropertyName("ImpuestoP")]
+        public string ImpuestoP { get; init; } = string.Empty;
+        [JsonPropertyName("ImporteP")]
+        public decimal ImporteP { get; init; }
     }
 
     private sealed class FacturaloPlusPagoTrasladoP
@@ -956,17 +1154,23 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
         [JsonPropertyName("TipoFactorP")]
         public string TipoFactorP { get; init; } = string.Empty;
         [JsonPropertyName("TasaOCuotaP")]
-        public string TasaOCuotaP { get; init; } = string.Empty;
+        public string? TasaOCuotaP { get; init; }
         [JsonPropertyName("ImporteP")]
-        public decimal ImporteP { get; init; }
+        public decimal? ImporteP { get; init; }
     }
 
     private sealed class FacturaloPlusPagoDoctoRelacionado
     {
         [JsonPropertyName("IdDocumento")]
         public string IdDocumento { get; init; } = string.Empty;
+        [JsonPropertyName("Serie")]
+        public string? Serie { get; init; }
+        [JsonPropertyName("Folio")]
+        public string? Folio { get; init; }
         [JsonPropertyName("MonedaDR")]
         public string MonedaDR { get; init; } = string.Empty;
+        [JsonPropertyName("EquivalenciaDR")]
+        public string? EquivalenciaDR { get; init; }
         [JsonPropertyName("MetodoDePagoDR")]
         public string MetodoDePagoDR { get; init; } = string.Empty;
         [JsonPropertyName("NumParcialidad")]
@@ -985,8 +1189,20 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
 
     private sealed class FacturaloPlusPagoImpuestosDR
     {
+        [JsonPropertyName("RetencionesDR")]
+        public List<FacturaloPlusPagoRetencionDR>? RetencionesDR { get; init; }
         [JsonPropertyName("TrasladosDR")]
         public List<FacturaloPlusPagoTrasladoDR>? TrasladosDR { get; init; }
+    }
+
+    private sealed class FacturaloPlusPagoRetencionDR
+    {
+        [JsonPropertyName("BaseDR")]
+        public decimal BaseDR { get; init; }
+        [JsonPropertyName("ImpuestoDR")]
+        public string ImpuestoDR { get; init; } = string.Empty;
+        [JsonPropertyName("ImporteDR")]
+        public decimal ImporteDR { get; init; }
     }
 
     private sealed class FacturaloPlusPagoTrasladoDR
@@ -998,9 +1214,9 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
         [JsonPropertyName("TipoFactorDR")]
         public string TipoFactorDR { get; init; } = string.Empty;
         [JsonPropertyName("TasaOCuotaDR")]
-        public string TasaOCuotaDR { get; init; } = string.Empty;
+        public string? TasaOCuotaDR { get; init; }
         [JsonPropertyName("ImporteDR")]
-        public decimal ImporteDR { get; init; }
+        public decimal? ImporteDR { get; init; }
     }
 
     private sealed record CertificateMetadata(string NoCertificado, string Certificado);

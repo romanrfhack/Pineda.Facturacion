@@ -20,40 +20,70 @@ import {
   CreateCollectionNoteRequest,
   CreateAccountsReceivablePaymentRequest,
   SearchAccountsReceivablePortfolioRequest,
-  SearchAccountsReceivablePaymentsRequest
+  SearchAccountsReceivablePaymentsRequest,
 } from '../models/accounts-receivable.models';
 import { AccountsReceivableCardComponent } from '../components/accounts-receivable-card.component';
 import { PaymentCreateFormComponent } from '../components/payment-create-form.component';
 import { PaymentApplicationFormComponent } from '../components/payment-application-form.component';
 import { PaymentRemainderApplicationFormComponent } from '../components/payment-remainder-application-form.component';
 import { extractApiErrorMessage } from '../../../core/http/api-error-message';
+import {
+  StatusBadgeComponent,
+  StatusBadgeTone,
+} from '../../../shared/components/status-badge.component';
 
 @Component({
   selector: 'app-accounts-receivable-page',
-  imports: [RouterLink, FormsModule, CurrencyPipe, DatePipe, AccountsReceivableCardComponent, PaymentCreateFormComponent, PaymentApplicationFormComponent, PaymentRemainderApplicationFormComponent],
+  imports: [
+    RouterLink,
+    FormsModule,
+    CurrencyPipe,
+    DatePipe,
+    AccountsReceivableCardComponent,
+    PaymentCreateFormComponent,
+    PaymentApplicationFormComponent,
+    PaymentRemainderApplicationFormComponent,
+    StatusBadgeComponent,
+  ],
   template: `
     <section class="page">
       <header>
         <p class="eyebrow">Cuentas por cobrar</p>
-        <h2>{{ detailMode() ? 'Cuenta por cobrar, pagos y aplicaciones' : receiverWorkspaceMode() ? 'Workspace del receptor' : 'Cartera operativa mínima' }}</h2>
+        <h2>
+          {{
+            detailMode()
+              ? 'Cuenta por cobrar, pagos y aplicaciones'
+              : receiverWorkspaceMode()
+                ? 'Workspace del receptor'
+                : 'Cartera operativa mínima'
+          }}
+        </h2>
       </header>
 
       @if (!detailMode()) {
         <section class="card filters">
           <div class="section-head compact">
             <h3>Workspace del receptor</h3>
-            <p class="helper">Busca por RFC o razón social para abrir una vista consolidada por receptor.</p>
+            <p class="helper">
+              Busca por RFC o razón social para abrir una vista consolidada por receptor.
+            </p>
           </div>
 
           <div class="filter-grid">
             <label class="wide-field">
               <span>Buscar receptor</span>
-              <input type="text" [(ngModel)]="receiverLookupQuery" placeholder="RFC o razón social" />
+              <input
+                type="text"
+                [(ngModel)]="receiverLookupQuery"
+                placeholder="RFC o razón social"
+              />
             </label>
           </div>
 
           <div class="actions">
-            <button type="button" (click)="searchReceiverWorkspace()" [disabled]="loading()">Buscar receptor</button>
+            <button type="button" (click)="searchReceiverWorkspace()" [disabled]="loading()">
+              Buscar receptor
+            </button>
             @if (receiverWorkspaceMode()) {
               <a class="secondary" [routerLink]="['/app/accounts-receivable']">Volver a cartera</a>
             }
@@ -67,7 +97,11 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
                     <strong>{{ receiver.legalName }}</strong>
                     <div class="subtle">{{ receiver.rfc }} · #{{ receiver.id }}</div>
                   </div>
-                  <a [routerLink]="['/app/accounts-receivable']" [queryParams]="{ fiscalReceiverId: receiver.id }">Abrir workspace</a>
+                  <a
+                    [routerLink]="['/app/accounts-receivable']"
+                    [queryParams]="{ fiscalReceiverId: receiver.id }"
+                    >Abrir workspace</a
+                  >
                 </article>
               }
             </div>
@@ -85,7 +119,11 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
 
             <label>
               <span>FiscalReceiverId</span>
-              <input type="number" [(ngModel)]="filters.fiscalReceiverIdText" placeholder="Id receptor" />
+              <input
+                type="number"
+                [(ngModel)]="filters.fiscalReceiverIdText"
+                placeholder="Id receptor"
+              />
             </label>
 
             <label>
@@ -147,8 +185,17 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
           </div>
 
           <div class="actions">
-            <button type="button" (click)="applyPortfolioFilters()" [disabled]="loading()">Filtrar</button>
-            <button type="button" class="secondary" (click)="resetPortfolioFilters()" [disabled]="loading()">Limpiar</button>
+            <button type="button" (click)="applyPortfolioFilters()" [disabled]="loading()">
+              Filtrar
+            </button>
+            <button
+              type="button"
+              class="secondary"
+              (click)="resetPortfolioFilters()"
+              [disabled]="loading()"
+            >
+              Limpiar
+            </button>
           </div>
         </section>
 
@@ -171,7 +218,7 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
                     <th>Saldo</th>
                     <th>Vencimiento</th>
                     <th>Atraso</th>
-                    <th>Estatus</th>
+                    <th>Estado</th>
                     <th>Cobranza</th>
                     <th></th>
                   </tr>
@@ -187,23 +234,42 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
                         <div>{{ formatFiscalLabel(item) }}</div>
                         <div class="subtle">{{ item.fiscalUuid || 'UUID pendiente' }}</div>
                       </td>
-                      <td>{{ item.total | currency:'MXN':'symbol':'1.2-2' }}</td>
-                      <td>{{ item.outstandingBalance | currency:'MXN':'symbol':'1.2-2' }}</td>
-                      <td>{{ item.dueAtUtc ? (item.dueAtUtc | date:'yyyy-MM-dd') : 'Sin vencimiento' }}</td>
+                      <td>{{ item.total | currency: 'MXN' : 'symbol' : '1.2-2' }}</td>
+                      <td>{{ item.outstandingBalance | currency: 'MXN' : 'symbol' : '1.2-2' }}</td>
+                      <td>
+                        {{
+                          item.dueAtUtc ? (item.dueAtUtc | date: 'yyyy-MM-dd') : 'Sin vencimiento'
+                        }}
+                      </td>
                       <td>{{ item.daysPastDue }}</td>
                       <td>
-                        <span class="badge" [attr.data-status]="item.status">{{ item.status }}</span>
-                        <div class="subtle"><span class="badge" [attr.data-status]="item.agingBucket">{{ item.agingBucket }}</span></div>
+                        <app-status-badge
+                          [label]="item.status"
+                          [tone]="accountsReceivableStatusTone(item.status)"
+                        />
+                        <div class="subtle">
+                          <app-status-badge
+                            [label]="item.agingBucket"
+                            [tone]="agingBucketTone(item.agingBucket)"
+                          />
+                        </div>
                       </td>
                       <td>
                         @if (item.hasPendingCommitment) {
-                          <div class="subtle">Compromiso {{ item.nextCommitmentDateUtc ? (item.nextCommitmentDateUtc | date:'yyyy-MM-dd') : 'pendiente' }}</div>
+                          <div class="subtle">
+                            Compromiso
+                            {{
+                              item.nextCommitmentDateUtc
+                                ? (item.nextCommitmentDateUtc | date: 'yyyy-MM-dd')
+                                : 'pendiente'
+                            }}
+                          </div>
                         } @else {
                           <div class="subtle">Sin compromiso</div>
                         }
                         <div class="subtle">
                           @if (item.nextFollowUpAtUtc) {
-                            Seguimiento {{ item.nextFollowUpAtUtc | date:'yyyy-MM-dd HH:mm' }}
+                            Seguimiento {{ item.nextFollowUpAtUtc | date: 'yyyy-MM-dd HH:mm' }}
                           } @else {
                             Sin seguimiento
                           }
@@ -214,9 +280,18 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
                       </td>
                       <td>
                         <div class="link-stack">
-                          <a [routerLink]="['/app/accounts-receivable']" [queryParams]="{ invoiceId: item.accountsReceivableInvoiceId }">Ver detalle</a>
+                          <a
+                            [routerLink]="['/app/accounts-receivable']"
+                            [queryParams]="{ invoiceId: item.accountsReceivableInvoiceId }"
+                            >Ver detalle</a
+                          >
                           @if (item.fiscalReceiverId) {
-                            <a class="secondary-link" [routerLink]="['/app/accounts-receivable']" [queryParams]="{ fiscalReceiverId: item.fiscalReceiverId }">Workspace</a>
+                            <a
+                              class="secondary-link"
+                              [routerLink]="['/app/accounts-receivable']"
+                              [queryParams]="{ fiscalReceiverId: item.fiscalReceiverId }"
+                              >Workspace</a
+                            >
                           }
                         </div>
                       </td>
@@ -237,7 +312,11 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
           <div class="filter-grid">
             <label>
               <span>FiscalReceiverId</span>
-              <input type="number" [(ngModel)]="paymentFilters.fiscalReceiverIdText" placeholder="Id receptor" />
+              <input
+                type="number"
+                [(ngModel)]="paymentFilters.fiscalReceiverIdText"
+                placeholder="Id receptor"
+              />
             </label>
 
             <label>
@@ -271,13 +350,26 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
 
             <label>
               <span>FiscalDocumentId</span>
-              <input type="number" [(ngModel)]="paymentFilters.linkedFiscalDocumentIdText" placeholder="Documento ligado" />
+              <input
+                type="number"
+                [(ngModel)]="paymentFilters.linkedFiscalDocumentIdText"
+                placeholder="Documento ligado"
+              />
             </label>
           </div>
 
           <div class="actions">
-            <button type="button" (click)="applyPaymentFilters()" [disabled]="loading()">Filtrar pagos</button>
-            <button type="button" class="secondary" (click)="resetPaymentFilters()" [disabled]="loading()">Limpiar pagos</button>
+            <button type="button" (click)="applyPaymentFilters()" [disabled]="loading()">
+              Filtrar pagos
+            </button>
+            <button
+              type="button"
+              class="secondary"
+              (click)="resetPaymentFilters()"
+              [disabled]="loading()"
+            >
+              Limpiar pagos
+            </button>
           </div>
 
           @if (!paymentItems().length) {
@@ -301,23 +393,29 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
                     <tr>
                       <td>
                         <strong>#{{ item.paymentId }}</strong>
-                        <div class="subtle">{{ item.receivedAtUtc | date:'yyyy-MM-dd' }}</div>
+                        <div class="subtle">{{ item.receivedAtUtc | date: 'yyyy-MM-dd' }}</div>
                         <div class="subtle">{{ item.reference || 'Sin referencia' }}</div>
                       </td>
-                      <td>{{ item.amount | currency:'MXN':'symbol':'1.2-2' }}</td>
-                      <td>{{ item.appliedAmount | currency:'MXN':'symbol':'1.2-2' }}</td>
-                      <td>{{ item.unappliedAmount | currency:'MXN':'symbol':'1.2-2' }}</td>
+                      <td>{{ item.amount | currency: 'MXN' : 'symbol' : '1.2-2' }}</td>
+                      <td>{{ item.appliedAmount | currency: 'MXN' : 'symbol' : '1.2-2' }}</td>
+                      <td>{{ item.unappliedAmount | currency: 'MXN' : 'symbol' : '1.2-2' }}</td>
                       <td>
-                        <span class="badge" [attr.data-status]="item.operationalStatus">{{ item.operationalStatus }}</span>
+                        <span class="badge" [attr.data-status]="item.operationalStatus">{{
+                          item.operationalStatus
+                        }}</span>
                         <div class="subtle">{{ item.applicationsCount }} aplicacion(es)</div>
                       </td>
                       <td>
-                        <span class="badge" [attr.data-status]="item.repStatus">{{ item.repStatus }}</span>
+                        <span class="badge" [attr.data-status]="item.repStatus">{{
+                          item.repStatus
+                        }}</span>
                         <div class="subtle">
                           @if (item.repFiscalizedAmount > 0) {
-                            Fiscalizado {{ item.repFiscalizedAmount | currency:'MXN':'symbol':'1.2-2' }}
+                            Fiscalizado
+                            {{ item.repFiscalizedAmount | currency: 'MXN' : 'symbol' : '1.2-2' }}
                           } @else if (item.repReservedAmount > 0) {
-                            Reservado {{ item.repReservedAmount | currency:'MXN':'symbol':'1.2-2' }}
+                            Reservado
+                            {{ item.repReservedAmount | currency: 'MXN' : 'symbol' : '1.2-2' }}
                           } @else {
                             Sin REP
                           }
@@ -325,9 +423,18 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
                       </td>
                       <td>
                         <div class="link-stack">
-                          <a [routerLink]="['/app/accounts-receivable']" [queryParams]="{ paymentId: item.paymentId }">Ver detalle</a>
+                          <a
+                            [routerLink]="['/app/accounts-receivable']"
+                            [queryParams]="{ paymentId: item.paymentId }"
+                            >Ver detalle</a
+                          >
                           @if (item.fiscalReceiverId) {
-                            <a class="secondary-link" [routerLink]="['/app/accounts-receivable']" [queryParams]="{ fiscalReceiverId: item.fiscalReceiverId }">Workspace</a>
+                            <a
+                              class="secondary-link"
+                              [routerLink]="['/app/accounts-receivable']"
+                              [queryParams]="{ fiscalReceiverId: item.fiscalReceiverId }"
+                              >Workspace</a
+                            >
                           }
                         </div>
                       </td>
@@ -345,14 +452,20 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
           <div class="section-head compact">
             <div>
               <h3>{{ workspace.legalName || 'Receptor sin nombre' }}</h3>
-              <p class="helper">{{ workspace.rfc || 'RFC no disponible' }} · FiscalReceiver #{{ workspace.fiscalReceiverId }}</p>
+              <p class="helper">
+                {{ workspace.rfc || 'RFC no disponible' }} · FiscalReceiver #{{
+                  workspace.fiscalReceiverId
+                }}
+              </p>
             </div>
             <div class="detail-badges">
               @if (workspace.summary.hasPendingCommitment) {
                 <span class="badge" data-status="PendingCommitment">Compromiso pendiente</span>
               }
               @if (workspace.summary.overdueInvoicesCount > 0) {
-                <span class="badge" data-status="Overdue">{{ workspace.summary.overdueInvoicesCount }} vencida(s)</span>
+                <span class="badge" data-status="Overdue"
+                  >{{ workspace.summary.overdueInvoicesCount }} vencida(s)</span
+                >
               }
             </div>
           </div>
@@ -360,15 +473,21 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
           <div class="summary-grid">
             <article class="summary-card">
               <strong>Saldo pendiente</strong>
-              <div>{{ workspace.summary.pendingBalanceTotal | currency:'MXN':'symbol':'1.2-2' }}</div>
+              <div>
+                {{ workspace.summary.pendingBalanceTotal | currency: 'MXN' : 'symbol' : '1.2-2' }}
+              </div>
             </article>
             <article class="summary-card">
               <strong>Total vencido</strong>
-              <div>{{ workspace.summary.overdueBalanceTotal | currency:'MXN':'symbol':'1.2-2' }}</div>
+              <div>
+                {{ workspace.summary.overdueBalanceTotal | currency: 'MXN' : 'symbol' : '1.2-2' }}
+              </div>
             </article>
             <article class="summary-card">
               <strong>Vigente / por vencer</strong>
-              <div>{{ workspace.summary.currentBalanceTotal | currency:'MXN':'symbol':'1.2-2' }}</div>
+              <div>
+                {{ workspace.summary.currentBalanceTotal | currency: 'MXN' : 'symbol' : '1.2-2' }}
+              </div>
             </article>
             <article class="summary-card">
               <strong>Facturas abiertas</strong>
@@ -380,7 +499,13 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
             </article>
             <article class="summary-card">
               <strong>Siguiente seguimiento</strong>
-              <div>{{ workspace.summary.nextFollowUpAtUtc ? (workspace.summary.nextFollowUpAtUtc | date:'yyyy-MM-dd HH:mm') : 'Sin fecha' }}</div>
+              <div>
+                {{
+                  workspace.summary.nextFollowUpAtUtc
+                    ? (workspace.summary.nextFollowUpAtUtc | date: 'yyyy-MM-dd HH:mm')
+                    : 'Sin fecha'
+                }}
+              </div>
             </article>
           </div>
         </section>
@@ -415,17 +540,31 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
                         <div class="subtle">{{ item.fiscalUuid || 'UUID pendiente' }}</div>
                         <div class="subtle">CxC #{{ item.accountsReceivableInvoiceId }}</div>
                       </td>
-                      <td>{{ item.issuedAtUtc | date:'yyyy-MM-dd' }}</td>
-                      <td>{{ item.dueAtUtc ? (item.dueAtUtc | date:'yyyy-MM-dd') : 'Sin vencimiento' }}</td>
-                      <td>{{ item.total | currency:'MXN':'symbol':'1.2-2' }}</td>
-                      <td>{{ item.paidTotal | currency:'MXN':'symbol':'1.2-2' }}</td>
-                      <td>{{ item.outstandingBalance | currency:'MXN':'symbol':'1.2-2' }}</td>
+                      <td>{{ item.issuedAtUtc | date: 'yyyy-MM-dd' }}</td>
                       <td>
-                        <span class="badge" [attr.data-status]="item.status">{{ item.status }}</span>
-                        <div class="subtle"><span class="badge" [attr.data-status]="item.agingBucket">{{ item.agingBucket }}</span></div>
+                        {{
+                          item.dueAtUtc ? (item.dueAtUtc | date: 'yyyy-MM-dd') : 'Sin vencimiento'
+                        }}
+                      </td>
+                      <td>{{ item.total | currency: 'MXN' : 'symbol' : '1.2-2' }}</td>
+                      <td>{{ item.paidTotal | currency: 'MXN' : 'symbol' : '1.2-2' }}</td>
+                      <td>{{ item.outstandingBalance | currency: 'MXN' : 'symbol' : '1.2-2' }}</td>
+                      <td>
+                        <span class="badge" [attr.data-status]="item.status">{{
+                          item.status
+                        }}</span>
+                        <div class="subtle">
+                          <span class="badge" [attr.data-status]="item.agingBucket">{{
+                            item.agingBucket
+                          }}</span>
+                        </div>
                       </td>
                       <td>
-                        <a [routerLink]="['/app/accounts-receivable']" [queryParams]="{ invoiceId: item.accountsReceivableInvoiceId }">Ver detalle</a>
+                        <a
+                          [routerLink]="['/app/accounts-receivable']"
+                          [queryParams]="{ invoiceId: item.accountsReceivableInvoiceId }"
+                          >Ver detalle</a
+                        >
                       </td>
                     </tr>
                   }
@@ -461,30 +600,40 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
                     <tr>
                       <td>
                         <strong>#{{ item.paymentId }}</strong>
-                        <div class="subtle">{{ item.receivedAtUtc | date:'yyyy-MM-dd' }}</div>
+                        <div class="subtle">{{ item.receivedAtUtc | date: 'yyyy-MM-dd' }}</div>
                         <div class="subtle">{{ item.reference || 'Sin referencia' }}</div>
                       </td>
-                      <td>{{ item.amount | currency:'MXN':'symbol':'1.2-2' }}</td>
-                      <td>{{ item.appliedAmount | currency:'MXN':'symbol':'1.2-2' }}</td>
-                      <td>{{ item.unappliedAmount | currency:'MXN':'symbol':'1.2-2' }}</td>
+                      <td>{{ item.amount | currency: 'MXN' : 'symbol' : '1.2-2' }}</td>
+                      <td>{{ item.appliedAmount | currency: 'MXN' : 'symbol' : '1.2-2' }}</td>
+                      <td>{{ item.unappliedAmount | currency: 'MXN' : 'symbol' : '1.2-2' }}</td>
                       <td>
-                        <span class="badge" [attr.data-status]="item.operationalStatus">{{ item.operationalStatus }}</span>
+                        <span class="badge" [attr.data-status]="item.operationalStatus">{{
+                          item.operationalStatus
+                        }}</span>
                         <div class="subtle">{{ item.applicationsCount }} aplicacion(es)</div>
                       </td>
                       <td>
-                        <span class="badge" [attr.data-status]="item.repStatus">{{ item.repStatus }}</span>
+                        <span class="badge" [attr.data-status]="item.repStatus">{{
+                          item.repStatus
+                        }}</span>
                         <div class="subtle">
                           @if (item.repFiscalizedAmount > 0) {
-                            Fiscalizado {{ item.repFiscalizedAmount | currency:'MXN':'symbol':'1.2-2' }}
+                            Fiscalizado
+                            {{ item.repFiscalizedAmount | currency: 'MXN' : 'symbol' : '1.2-2' }}
                           } @else if (item.repReservedAmount > 0) {
-                            Reservado {{ item.repReservedAmount | currency:'MXN':'symbol':'1.2-2' }}
+                            Reservado
+                            {{ item.repReservedAmount | currency: 'MXN' : 'symbol' : '1.2-2' }}
                           } @else {
                             Sin REP
                           }
                         </div>
                       </td>
                       <td>
-                        <a [routerLink]="['/app/accounts-receivable']" [queryParams]="{ paymentId: item.paymentId }">Ver detalle</a>
+                        <a
+                          [routerLink]="['/app/accounts-receivable']"
+                          [queryParams]="{ paymentId: item.paymentId }"
+                          >Ver detalle</a
+                        >
                       </td>
                     </tr>
                   }
@@ -499,7 +648,9 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
             <div>
               <div class="section-head compact">
                 <h3>Cobranza</h3>
-                <p class="helper">{{ workspace.pendingCommitments.length }} compromiso(s) pendiente(s)</p>
+                <p class="helper">
+                  {{ workspace.pendingCommitments.length }} compromiso(s) pendiente(s)
+                </p>
               </div>
               @if (!workspace.pendingCommitments.length) {
                 <p class="helper">Sin compromisos pendientes.</p>
@@ -516,10 +667,20 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
                   <tbody>
                     @for (item of workspace.pendingCommitments; track item.id) {
                       <tr>
-                        <td><a [routerLink]="['/app/accounts-receivable']" [queryParams]="{ invoiceId: item.accountsReceivableInvoiceId }">#{{ item.accountsReceivableInvoiceId }}</a></td>
-                        <td>{{ item.promisedDateUtc | date:'yyyy-MM-dd' }}</td>
-                        <td>{{ item.promisedAmount | currency:'MXN':'symbol':'1.2-2' }}</td>
-                        <td><span class="badge" [attr.data-status]="item.status">{{ item.status }}</span></td>
+                        <td>
+                          <a
+                            [routerLink]="['/app/accounts-receivable']"
+                            [queryParams]="{ invoiceId: item.accountsReceivableInvoiceId }"
+                            >#{{ item.accountsReceivableInvoiceId }}</a
+                          >
+                        </td>
+                        <td>{{ item.promisedDateUtc | date: 'yyyy-MM-dd' }}</td>
+                        <td>{{ item.promisedAmount | currency: 'MXN' : 'symbol' : '1.2-2' }}</td>
+                        <td>
+                          <span class="badge" [attr.data-status]="item.status">{{
+                            item.status
+                          }}</span>
+                        </td>
                       </tr>
                     }
                   </tbody>
@@ -547,13 +708,28 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
                   <tbody>
                     @for (item of workspace.recentNotes; track item.id) {
                       <tr>
-                        <td><a [routerLink]="['/app/accounts-receivable']" [queryParams]="{ invoiceId: item.accountsReceivableInvoiceId }">#{{ item.accountsReceivableInvoiceId }}</a></td>
-                        <td>{{ item.createdAtUtc | date:'yyyy-MM-dd HH:mm' }}</td>
-                        <td><span class="badge" [attr.data-status]="item.noteType">{{ item.noteType }}</span></td>
+                        <td>
+                          <a
+                            [routerLink]="['/app/accounts-receivable']"
+                            [queryParams]="{ invoiceId: item.accountsReceivableInvoiceId }"
+                            >#{{ item.accountsReceivableInvoiceId }}</a
+                          >
+                        </td>
+                        <td>{{ item.createdAtUtc | date: 'yyyy-MM-dd HH:mm' }}</td>
+                        <td>
+                          <span class="badge" [attr.data-status]="item.noteType">{{
+                            item.noteType
+                          }}</span>
+                        </td>
                         <td>
                           {{ item.content }}
                           <div class="subtle">
-                            {{ item.nextFollowUpAtUtc ? ('Siguiente seguimiento ' + (item.nextFollowUpAtUtc | date:'yyyy-MM-dd HH:mm')) : 'Sin seguimiento' }}
+                            {{
+                              item.nextFollowUpAtUtc
+                                ? 'Siguiente seguimiento ' +
+                                  (item.nextFollowUpAtUtc | date: 'yyyy-MM-dd HH:mm')
+                                : 'Sin seguimiento'
+                            }}
                           </div>
                         </td>
                       </tr>
@@ -595,7 +771,9 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
         <section class="card">
           <h3>Cuenta por cobrar del documento fiscal #{{ fiscalDocumentId() }}</h3>
           @if (permissionService.canManagePayments()) {
-            <button type="button" (click)="createInvoice()" [disabled]="loading()">Crear cuenta por cobrar</button>
+            <button type="button" (click)="createInvoice()" [disabled]="loading()">
+              Crear cuenta por cobrar
+            </button>
           }
         </section>
       }
@@ -606,7 +784,9 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
         <section class="card">
           <div class="section-head compact">
             <h3>Resumen consolidado</h3>
-            <p class="helper">Cuenta #{{ currentInvoice.id }} · CFDI {{ formatInvoiceFiscalLabel(currentInvoice) }}</p>
+            <p class="helper">
+              Cuenta #{{ currentInvoice.id }} · CFDI {{ formatInvoiceFiscalLabel(currentInvoice) }}
+            </p>
           </div>
           <div class="filter-grid">
             <div>
@@ -615,15 +795,21 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
             </div>
             <div>
               <strong>Total</strong>
-              <div class="subtle">{{ currentInvoice.total | currency:'MXN':'symbol':'1.2-2' }}</div>
+              <div class="subtle">
+                {{ currentInvoice.total | currency: 'MXN' : 'symbol' : '1.2-2' }}
+              </div>
             </div>
             <div>
               <strong>Pagado</strong>
-              <div class="subtle">{{ currentInvoice.paidTotal | currency:'MXN':'symbol':'1.2-2' }}</div>
+              <div class="subtle">
+                {{ currentInvoice.paidTotal | currency: 'MXN' : 'symbol' : '1.2-2' }}
+              </div>
             </div>
             <div>
               <strong>Saldo</strong>
-              <div class="subtle">{{ currentInvoice.outstandingBalance | currency:'MXN':'symbol':'1.2-2' }}</div>
+              <div class="subtle">
+                {{ currentInvoice.outstandingBalance | currency: 'MXN' : 'symbol' : '1.2-2' }}
+              </div>
             </div>
           </div>
         </section>
@@ -650,15 +836,31 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
                 @for (relatedPayment of currentInvoice.relatedPayments; track relatedPayment.id) {
                   <tr>
                     <td>
-                      <a [routerLink]="['/app/accounts-receivable']" [queryParams]="{ paymentId: relatedPayment.id }">#{{ relatedPayment.id }}</a>
-                      <div class="subtle">{{ relatedPayment.paymentDateUtc | date:'yyyy-MM-dd' }}</div>
+                      <a
+                        [routerLink]="['/app/accounts-receivable']"
+                        [queryParams]="{ paymentId: relatedPayment.id }"
+                        >#{{ relatedPayment.id }}</a
+                      >
+                      <div class="subtle">
+                        {{ relatedPayment.paymentDateUtc | date: 'yyyy-MM-dd' }}
+                      </div>
                     </td>
-                    <td>{{ relatedPayment.amount | currency:'MXN':'symbol':'1.2-2' }}</td>
-                    <td>{{ relatedPayment.appliedTotal | currency:'MXN':'symbol':'1.2-2' }}</td>
-                    <td>{{ relatedPayment.remainingAmount | currency:'MXN':'symbol':'1.2-2' }}</td>
+                    <td>{{ relatedPayment.amount | currency: 'MXN' : 'symbol' : '1.2-2' }}</td>
                     <td>
-                      <span class="badge" [attr.data-status]="relatedPayment.operationalStatus">{{ relatedPayment.operationalStatus }}</span>
-                      <div class="subtle"><span class="badge" [attr.data-status]="relatedPayment.repStatus">{{ relatedPayment.repStatus }}</span></div>
+                      {{ relatedPayment.appliedTotal | currency: 'MXN' : 'symbol' : '1.2-2' }}
+                    </td>
+                    <td>
+                      {{ relatedPayment.remainingAmount | currency: 'MXN' : 'symbol' : '1.2-2' }}
+                    </td>
+                    <td>
+                      <span class="badge" [attr.data-status]="relatedPayment.operationalStatus">{{
+                        relatedPayment.operationalStatus
+                      }}</span>
+                      <div class="subtle">
+                        <span class="badge" [attr.data-status]="relatedPayment.repStatus">{{
+                          relatedPayment.repStatus
+                        }}</span>
+                      </div>
                     </td>
                   </tr>
                 }
@@ -685,11 +887,19 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
                 </tr>
               </thead>
               <tbody>
-                @for (rep of currentInvoice.relatedPaymentComplements; track rep.paymentComplementId) {
+                @for (
+                  rep of currentInvoice.relatedPaymentComplements;
+                  track rep.paymentComplementId
+                ) {
                   <tr>
-                    <td>#{{ rep.paymentComplementId }}<div class="subtle">{{ rep.issuedAtUtc | date:'yyyy-MM-dd' }}</div></td>
+                    <td>
+                      #{{ rep.paymentComplementId }}
+                      <div class="subtle">{{ rep.issuedAtUtc | date: 'yyyy-MM-dd' }}</div>
+                    </td>
                     <td>#{{ rep.accountsReceivablePaymentId }}</td>
-                    <td><span class="badge" [attr.data-status]="rep.status">{{ rep.status }}</span></td>
+                    <td>
+                      <span class="badge" [attr.data-status]="rep.status">{{ rep.status }}</span>
+                    </td>
                     <td>{{ rep.uuid || 'Pendiente' }}</td>
                   </tr>
                 }
@@ -702,7 +912,9 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
           <div class="section-head compact">
             <h3>Seguimiento de cobranza</h3>
             <div class="detail-badges">
-              <span class="badge" [attr.data-status]="currentInvoice.agingBucket">{{ currentInvoice.agingBucket }}</span>
+              <span class="badge" [attr.data-status]="currentInvoice.agingBucket">{{
+                currentInvoice.agingBucket
+              }}</span>
               @if (currentInvoice.hasPendingCommitment) {
                 <span class="badge" data-status="PendingCommitment">Compromiso pendiente</span>
               }
@@ -713,8 +925,18 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
           </div>
 
           <p class="helper">
-            Próximo compromiso {{ currentInvoice.nextCommitmentDateUtc ? (currentInvoice.nextCommitmentDateUtc | date:'yyyy-MM-dd') : 'sin fecha' }}
-            · Próximo seguimiento {{ currentInvoice.nextFollowUpAtUtc ? (currentInvoice.nextFollowUpAtUtc | date:'yyyy-MM-dd HH:mm') : 'sin fecha' }}
+            Próximo compromiso
+            {{
+              currentInvoice.nextCommitmentDateUtc
+                ? (currentInvoice.nextCommitmentDateUtc | date: 'yyyy-MM-dd')
+                : 'sin fecha'
+            }}
+            · Próximo seguimiento
+            {{
+              currentInvoice.nextFollowUpAtUtc
+                ? (currentInvoice.nextFollowUpAtUtc | date: 'yyyy-MM-dd HH:mm')
+                : 'sin fecha'
+            }}
           </p>
 
           @if (permissionService.canManagePayments()) {
@@ -723,15 +945,29 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
                 <h4>Registrar compromiso</h4>
                 <label>
                   <span>Monto prometido</span>
-                  <input type="number" min="0.01" step="0.01" [(ngModel)]="collectionCommitmentForm.promisedAmount" name="promisedAmount" />
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    [(ngModel)]="collectionCommitmentForm.promisedAmount"
+                    name="promisedAmount"
+                  />
                 </label>
                 <label>
                   <span>Fecha compromiso</span>
-                  <input type="date" [(ngModel)]="collectionCommitmentForm.promisedDateUtc" name="promisedDateUtc" />
+                  <input
+                    type="date"
+                    [(ngModel)]="collectionCommitmentForm.promisedDateUtc"
+                    name="promisedDateUtc"
+                  />
                 </label>
                 <label>
                   <span>Notas</span>
-                  <textarea rows="3" [(ngModel)]="collectionCommitmentForm.notes" name="promisedNotes"></textarea>
+                  <textarea
+                    rows="3"
+                    [(ngModel)]="collectionCommitmentForm.notes"
+                    name="promisedNotes"
+                  ></textarea>
                 </label>
                 <button type="submit" [disabled]="loading()">Guardar compromiso</button>
               </form>
@@ -750,11 +986,19 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
                 </label>
                 <label>
                   <span>Contenido</span>
-                  <textarea rows="3" [(ngModel)]="collectionNoteForm.content" name="noteContent"></textarea>
+                  <textarea
+                    rows="3"
+                    [(ngModel)]="collectionNoteForm.content"
+                    name="noteContent"
+                  ></textarea>
                 </label>
                 <label>
                   <span>Siguiente seguimiento</span>
-                  <input type="datetime-local" [(ngModel)]="collectionNoteForm.nextFollowUpAtUtc" name="nextFollowUpAtUtc" />
+                  <input
+                    type="datetime-local"
+                    [(ngModel)]="collectionNoteForm.nextFollowUpAtUtc"
+                    name="nextFollowUpAtUtc"
+                  />
                 </label>
                 <button type="submit" [disabled]="loading()">Guardar nota</button>
               </form>
@@ -779,9 +1023,15 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
                   <tbody>
                     @for (commitment of currentInvoice.collectionCommitments; track commitment.id) {
                       <tr>
-                        <td>{{ commitment.promisedDateUtc | date:'yyyy-MM-dd' }}</td>
-                        <td>{{ commitment.promisedAmount | currency:'MXN':'symbol':'1.2-2' }}</td>
-                        <td><span class="badge" [attr.data-status]="commitment.status">{{ commitment.status }}</span></td>
+                        <td>{{ commitment.promisedDateUtc | date: 'yyyy-MM-dd' }}</td>
+                        <td>
+                          {{ commitment.promisedAmount | currency: 'MXN' : 'symbol' : '1.2-2' }}
+                        </td>
+                        <td>
+                          <span class="badge" [attr.data-status]="commitment.status">{{
+                            commitment.status
+                          }}</span>
+                        </td>
                         <td>{{ commitment.notes || 'Sin notas' }}</td>
                       </tr>
                     }
@@ -807,10 +1057,20 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
                   <tbody>
                     @for (note of currentInvoice.collectionNotes; track note.id) {
                       <tr>
-                        <td>{{ note.createdAtUtc | date:'yyyy-MM-dd HH:mm' }}</td>
-                        <td><span class="badge" [attr.data-status]="note.noteType">{{ note.noteType }}</span></td>
+                        <td>{{ note.createdAtUtc | date: 'yyyy-MM-dd HH:mm' }}</td>
+                        <td>
+                          <span class="badge" [attr.data-status]="note.noteType">{{
+                            note.noteType
+                          }}</span>
+                        </td>
                         <td>{{ note.content }}</td>
-                        <td>{{ note.nextFollowUpAtUtc ? (note.nextFollowUpAtUtc | date:'yyyy-MM-dd HH:mm') : 'Sin seguimiento' }}</td>
+                        <td>
+                          {{
+                            note.nextFollowUpAtUtc
+                              ? (note.nextFollowUpAtUtc | date: 'yyyy-MM-dd HH:mm')
+                              : 'Sin seguimiento'
+                          }}
+                        </td>
                       </tr>
                     }
                   </tbody>
@@ -829,15 +1089,20 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
             <p class="helper">Sin eventos relacionados.</p>
           } @else {
             <div class="timeline">
-              @for (entry of currentInvoice.timeline; track entry.sourceType + '-' + entry.sourceId + '-' + entry.kind) {
+              @for (
+                entry of currentInvoice.timeline;
+                track entry.sourceType + '-' + entry.sourceId + '-' + entry.kind
+              ) {
                 <article class="timeline-entry">
                   <div>
                     <strong>{{ entry.title }}</strong>
-                    <div class="subtle">{{ entry.atUtc | date:'yyyy-MM-dd HH:mm' }}</div>
+                    <div class="subtle">{{ entry.atUtc | date: 'yyyy-MM-dd HH:mm' }}</div>
                   </div>
                   <div>
                     @if (entry.status) {
-                      <span class="badge" [attr.data-status]="entry.status">{{ entry.status }}</span>
+                      <span class="badge" [attr.data-status]="entry.status">{{
+                        entry.status
+                      }}</span>
                     }
                     <div class="subtle">{{ entry.description || entry.kind }}</div>
                   </div>
@@ -852,34 +1117,64 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
         <section class="card">
           <div class="section-head compact">
             <h3>Crear pago</h3>
-            <p class="helper">Registra un depósito o pago recibido. Después podrás aplicarlo total o parcialmente a esta cuenta.</p>
+            <p class="helper">
+              Registra un depósito o pago recibido. Después podrás aplicarlo total o parcialmente a
+              esta cuenta.
+            </p>
           </div>
-          <app-payment-create-form [loading]="loading()" (submit)="createPayment($event)" />
+          <app-payment-create-form
+            [loading]="loading()"
+            [maxOperationalAmount]="invoice()?.outstandingBalance ?? null"
+            (submit)="createPayment($event)"
+          />
         </section>
       }
 
       @if (detailMode() && payment(); as currentPayment) {
         <section class="card">
           <h3>Pago #{{ currentPayment.id }}</h3>
-          <p class="helper">Pago recibido {{ currentPayment.amount }} MXN · Remanente disponible {{ currentPayment.remainingAmount }} MXN</p>
+          <p class="helper">
+            Pago recibido {{ currentPayment.amount }} MXN · Remanente disponible
+            {{ currentPayment.remainingAmount }} MXN
+          </p>
           <div class="detail-badges">
-            <span class="badge" [attr.data-status]="currentPayment.operationalStatus">{{ currentPayment.operationalStatus }}</span>
-            <span class="badge" [attr.data-status]="currentPayment.repStatus">{{ currentPayment.repStatus }}</span>
+            <span class="badge" [attr.data-status]="currentPayment.operationalStatus">{{
+              currentPayment.operationalStatus
+            }}</span>
+            <span class="badge" [attr.data-status]="currentPayment.repStatus">{{
+              currentPayment.repStatus
+            }}</span>
           </div>
           @if (showPendingCustomerCreditBalanceAction()) {
             <section class="status-panel status-panel-warning">
               <div class="status-panel-copy">
-                <strong>Remanente no aplicado: {{ currentPayment.remainingAmount | currency:'MXN':'symbol':'1.2-2' }}</strong>
+                <strong
+                  >Remanente no aplicado:
+                  {{
+                    currentPayment.remainingAmount | currency: 'MXN' : 'symbol' : '1.2-2'
+                  }}</strong
+                >
                 <p>Este remanente debe decidirse antes de preparar el complemento de pago.</p>
               </div>
-              <button type="button" class="secondary" (click)="confirmCustomerCreditBalance()" [disabled]="loading()">
+              <button
+                type="button"
+                class="secondary"
+                (click)="confirmCustomerCreditBalance()"
+                [disabled]="loading()"
+              >
                 {{ loading() ? 'Confirmando...' : 'Conservar como saldo a favor del cliente' }}
               </button>
             </section>
           } @else if (showConfirmedCustomerCreditBalance()) {
             <section class="status-panel status-panel-info">
               <div class="status-panel-copy">
-                <strong>Saldo a favor confirmado: {{ currentPayment.customerCreditBalanceAmount | currency:'MXN':'symbol':'1.2-2' }}</strong>
+                <strong
+                  >Saldo a favor confirmado:
+                  {{
+                    currentPayment.customerCreditBalanceAmount
+                      | currency: 'MXN' : 'symbol' : '1.2-2'
+                  }}</strong
+                >
                 <p>El remanente de este pago ya quedó conservado como saldo a favor del cliente.</p>
               </div>
             </section>
@@ -888,7 +1183,10 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
             <section class="status-panel status-panel-warning">
               <div class="status-panel-copy">
                 <strong>Complemento de pago bloqueado temporalmente</strong>
-                <p>Hay un remanente pendiente de decidir. Confírmalo como saldo a favor del cliente para poder preparar el complemento de pago.</p>
+                <p>
+                  Hay un remanente pendiente de decidir. Confírmalo como saldo a favor del cliente
+                  para poder preparar el complemento de pago.
+                </p>
                 @if (currentPayment.repBlockReason) {
                   <div class="subtle">{{ currentPayment.repBlockReason }}</div>
                 }
@@ -897,7 +1195,8 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
           }
           @if (currentPayment.repFiscalizedAmount > 0 || currentPayment.repReservedAmount > 0) {
             <p class="helper">
-              Fiscalizado {{ currentPayment.repFiscalizedAmount }} MXN · Reservado REP {{ currentPayment.repReservedAmount }} MXN
+              Fiscalizado {{ currentPayment.repFiscalizedAmount }} MXN · Reservado REP
+              {{ currentPayment.repReservedAmount }} MXN
             </p>
           }
           @if (currentPayment.applications.length) {
@@ -931,7 +1230,8 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
               [paymentAmount]="currentPayment.amount"
               [appliedAmount]="currentPayment.appliedTotal"
               [remainingAmount]="currentPayment.remainingAmount"
-              (submit)="applyPayment($event)" />
+              (submit)="applyPayment($event)"
+            />
             @if (showRemainderApplicationSection()) {
               <app-payment-remainder-application-form
                 [loading]="loading()"
@@ -939,87 +1239,346 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
                 [paymentAmount]="currentPayment.amount"
                 [appliedAmount]="currentPayment.appliedTotal"
                 [remainingAmount]="currentPayment.remainingAmount"
-                (submit)="applyPayment($event)" />
+                (submit)="applyPayment($event)"
+              />
             }
             <div class="links">
-              <a [routerLink]="['/app/payment-complements']" [queryParams]="{ paymentId: currentPayment.id }">Abrir flujo de complemento de pago</a>
+              <a
+                [routerLink]="['/app/payment-complements']"
+                [queryParams]="{ paymentId: currentPayment.id }"
+                >Abrir flujo de complemento de pago</a
+              >
             </div>
           }
         </section>
       }
     </section>
   `,
-  styles: [`
-    .page { display:grid; gap:1rem; }
-    .card { border:1px solid #d8d1c2; border-radius:1rem; padding:1rem; background:#fff; }
-    .eyebrow { margin:0; text-transform:uppercase; letter-spacing:0.12em; font-size:0.72rem; color:#8a6a32; }
-    h2, h3 { margin:0; }
-    .helper { color:#5f6b76; margin:0.35rem 0 0; }
-    .section-head { display:flex; justify-content:space-between; gap:1rem; align-items:flex-end; margin-bottom:1rem; }
-    .section-head.compact { margin-bottom:0.75rem; }
-    .filter-grid { display:grid; gap:0.9rem; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); }
-    label { display:grid; gap:0.35rem; }
-    label span { font-size:0.82rem; color:#495766; }
-    input, select { border:1px solid #d8d1c2; border-radius:0.75rem; padding:0.7rem 0.85rem; background:#fffdf8; }
-    button, a { border:none; border-radius:0.8rem; padding:0.75rem 1rem; background:#182533; color:#fff; cursor:pointer; text-decoration:none; display:inline-flex; justify-content:center; }
-    button.secondary, a.secondary { background:#eef1f4; color:#182533; }
-    .actions { display:flex; gap:0.75rem; margin-top:1rem; }
-    .table-wrap { overflow:auto; }
-    .portfolio, .applications { width:100%; border-collapse:collapse; }
-    .portfolio th, .portfolio td, .applications th, .applications td { text-align:left; padding:0.7rem; border-top:1px solid #ece3d3; vertical-align:top; }
-    .subtle { color:#71808f; font-size:0.84rem; margin-top:0.2rem; }
-    .badge { display:inline-flex; padding:0.3rem 0.55rem; border-radius:999px; font-size:0.78rem; background:#eef1f4; color:#243444; }
-    .badge[data-status='Open'] { background:#fff2d8; color:#8a5a00; }
-    .badge[data-status='PartiallyPaid'] { background:#dff2ea; color:#116149; }
-    .badge[data-status='Paid'] { background:#dde8ff; color:#24498a; }
-    .badge[data-status='Cancelled'] { background:#fde3e3; color:#8a2d2d; }
-    .badge[data-status='CapturedUnapplied'] { background:#fff2d8; color:#8a5a00; }
-    .badge[data-status='PartiallyApplied'] { background:#dff2ea; color:#116149; }
-    .badge[data-status='FullyApplied'] { background:#dde8ff; color:#24498a; }
-    .badge[data-status='NoApplications'] { background:#f1ece2; color:#745b31; }
-    .badge[data-status='PendingApplications'] { background:#fff2d8; color:#8a5a00; }
-    .badge[data-status='ReadyToPrepare'] { background:#dff2ea; color:#116149; }
-    .badge[data-status='Prepared'] { background:#e5ebff; color:#324d8f; }
-    .badge[data-status='Stamped'] { background:#dde8ff; color:#24498a; }
-    .badge[data-status='Current'] { background:#eef1f4; color:#243444; }
-    .badge[data-status='DueSoon'] { background:#fff2d8; color:#8a5a00; }
-    .badge[data-status='Overdue'] { background:#fde3e3; color:#8a2d2d; }
-    .badge[data-status='PendingCommitment'] { background:#f6ead7; color:#7a5420; }
-    .badge[data-status='FollowUpPending'] { background:#fde3e3; color:#8a2d2d; }
-    .badge[data-status='Pending'] { background:#fff2d8; color:#8a5a00; }
-    .badge[data-status='Fulfilled'] { background:#dff2ea; color:#116149; }
-    .badge[data-status='Broken'] { background:#fde3e3; color:#8a2d2d; }
-    .badge[data-status='Call'] { background:#eef1f4; color:#243444; }
-    .badge[data-status='Reminder'] { background:#fff2d8; color:#8a5a00; }
-    .badge[data-status='Agreement'] { background:#dff2ea; color:#116149; }
-    .badge[data-status='InternalNote'] { background:#e5ebff; color:#324d8f; }
-    .detail-badges { display:flex; gap:0.5rem; margin-top:0.75rem; flex-wrap:wrap; }
-    .status-panel { margin-top:1rem; border-radius:0.9rem; padding:0.9rem 1rem; display:flex; justify-content:space-between; gap:1rem; align-items:center; border:1px solid #ece3d3; }
-    .status-panel-copy { display:grid; gap:0.25rem; }
-    .status-panel-copy p { margin:0; color:#41505e; }
-    .status-panel-warning { background:#fff8ea; border-color:#ecd9aa; }
-    .status-panel-info { background:#f4f8ff; border-color:#d3def5; }
-    .links { margin-top:1rem; }
-    textarea { border:1px solid #d8d1c2; border-radius:0.75rem; padding:0.7rem 0.85rem; background:#fffdf8; font:inherit; }
-    .collection-forms { display:grid; gap:1rem; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); margin-top:1rem; }
-    .nested { background:#fffdf8; }
-    .collection-history { display:grid; gap:1rem; margin-top:1rem; }
-    .timeline { display:grid; gap:0.75rem; }
-    .timeline-entry { border-top:1px solid #ece3d3; padding-top:0.75rem; display:grid; gap:0.35rem; }
-    .wide-field { grid-column:1 / -1; }
-    .lookup-results { display:grid; gap:0.75rem; margin-top:1rem; }
-    .lookup-item { display:flex; justify-content:space-between; gap:1rem; align-items:center; border-top:1px solid #ece3d3; padding-top:0.75rem; }
-    .summary-grid { display:grid; gap:0.75rem; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); }
-    .summary-card { border:1px solid #ece3d3; border-radius:0.85rem; padding:0.85rem; background:#fffdf8; display:grid; gap:0.35rem; }
-    .workspace-split { display:grid; gap:1rem; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); }
-    .link-stack { display:grid; gap:0.5rem; }
-    .secondary-link { background:#eef1f4; color:#182533; }
-    @media (max-width: 720px) {
-      .actions { flex-direction:column; }
-      .lookup-item { align-items:stretch; flex-direction:column; }
-    }
-  `],
-  changeDetection: ChangeDetectionStrategy.OnPush
+  styles: [
+    `
+      .page {
+        display: grid;
+        gap: 1rem;
+      }
+      .card {
+        border: 1px solid #d8d1c2;
+        border-radius: 1rem;
+        padding: 1rem;
+        background: #fff;
+      }
+      .eyebrow {
+        margin: 0;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        font-size: 0.72rem;
+        color: #8a6a32;
+      }
+      h2,
+      h3 {
+        margin: 0;
+      }
+      .helper {
+        color: #5f6b76;
+        margin: 0.35rem 0 0;
+      }
+      .section-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        align-items: flex-end;
+        margin-bottom: 1rem;
+      }
+      .section-head.compact {
+        margin-bottom: 0.75rem;
+      }
+      .filter-grid {
+        display: grid;
+        gap: 0.9rem;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      }
+      label {
+        display: grid;
+        gap: 0.35rem;
+      }
+      label span {
+        font-size: 0.82rem;
+        color: #495766;
+      }
+      input,
+      select {
+        border: 1px solid #d8d1c2;
+        border-radius: 0.75rem;
+        padding: 0.7rem 0.85rem;
+        background: #fffdf8;
+      }
+      button,
+      a {
+        border: none;
+        border-radius: 0.8rem;
+        padding: 0.75rem 1rem;
+        background: #182533;
+        color: #fff;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-flex;
+        justify-content: center;
+      }
+      button.secondary,
+      a.secondary {
+        background: #eef1f4;
+        color: #182533;
+      }
+      .actions {
+        display: flex;
+        gap: 0.75rem;
+        margin-top: 1rem;
+      }
+      .table-wrap {
+        overflow: auto;
+      }
+      .portfolio,
+      .applications {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      .portfolio th,
+      .portfolio td,
+      .applications th,
+      .applications td {
+        text-align: left;
+        padding: 0.7rem;
+        border-top: 1px solid #ece3d3;
+        vertical-align: top;
+      }
+      .subtle {
+        color: #71808f;
+        font-size: 0.84rem;
+        margin-top: 0.2rem;
+      }
+      .badge {
+        display: inline-flex;
+        padding: 0.3rem 0.55rem;
+        border-radius: 999px;
+        font-size: 0.78rem;
+        background: #eef1f4;
+        color: #243444;
+      }
+      .badge[data-status='Open'] {
+        background: #fff2d8;
+        color: #8a5a00;
+      }
+      .badge[data-status='PartiallyPaid'] {
+        background: #dff2ea;
+        color: #116149;
+      }
+      .badge[data-status='Paid'] {
+        background: #dde8ff;
+        color: #24498a;
+      }
+      .badge[data-status='Cancelled'] {
+        background: #fde3e3;
+        color: #8a2d2d;
+      }
+      .badge[data-status='CapturedUnapplied'] {
+        background: #fff2d8;
+        color: #8a5a00;
+      }
+      .badge[data-status='PartiallyApplied'] {
+        background: #dff2ea;
+        color: #116149;
+      }
+      .badge[data-status='FullyApplied'] {
+        background: #dde8ff;
+        color: #24498a;
+      }
+      .badge[data-status='NoApplications'] {
+        background: #f1ece2;
+        color: #745b31;
+      }
+      .badge[data-status='PendingApplications'] {
+        background: #fff2d8;
+        color: #8a5a00;
+      }
+      .badge[data-status='ReadyToPrepare'] {
+        background: #dff2ea;
+        color: #116149;
+      }
+      .badge[data-status='Prepared'] {
+        background: #e5ebff;
+        color: #324d8f;
+      }
+      .badge[data-status='Stamped'] {
+        background: #dde8ff;
+        color: #24498a;
+      }
+      .badge[data-status='Current'] {
+        background: #eef1f4;
+        color: #243444;
+      }
+      .badge[data-status='DueSoon'] {
+        background: #fff2d8;
+        color: #8a5a00;
+      }
+      .badge[data-status='Overdue'] {
+        background: #fde3e3;
+        color: #8a2d2d;
+      }
+      .badge[data-status='PendingCommitment'] {
+        background: #f6ead7;
+        color: #7a5420;
+      }
+      .badge[data-status='FollowUpPending'] {
+        background: #fde3e3;
+        color: #8a2d2d;
+      }
+      .badge[data-status='Pending'] {
+        background: #fff2d8;
+        color: #8a5a00;
+      }
+      .badge[data-status='Fulfilled'] {
+        background: #dff2ea;
+        color: #116149;
+      }
+      .badge[data-status='Broken'] {
+        background: #fde3e3;
+        color: #8a2d2d;
+      }
+      .badge[data-status='Call'] {
+        background: #eef1f4;
+        color: #243444;
+      }
+      .badge[data-status='Reminder'] {
+        background: #fff2d8;
+        color: #8a5a00;
+      }
+      .badge[data-status='Agreement'] {
+        background: #dff2ea;
+        color: #116149;
+      }
+      .badge[data-status='InternalNote'] {
+        background: #e5ebff;
+        color: #324d8f;
+      }
+      .detail-badges {
+        display: flex;
+        gap: 0.5rem;
+        margin-top: 0.75rem;
+        flex-wrap: wrap;
+      }
+      .status-panel {
+        margin-top: 1rem;
+        border-radius: 0.9rem;
+        padding: 0.9rem 1rem;
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        align-items: center;
+        border: 1px solid #ece3d3;
+      }
+      .status-panel-copy {
+        display: grid;
+        gap: 0.25rem;
+      }
+      .status-panel-copy p {
+        margin: 0;
+        color: #41505e;
+      }
+      .status-panel-warning {
+        background: #fff8ea;
+        border-color: #ecd9aa;
+      }
+      .status-panel-info {
+        background: #f4f8ff;
+        border-color: #d3def5;
+      }
+      .links {
+        margin-top: 1rem;
+      }
+      textarea {
+        border: 1px solid #d8d1c2;
+        border-radius: 0.75rem;
+        padding: 0.7rem 0.85rem;
+        background: #fffdf8;
+        font: inherit;
+      }
+      .collection-forms {
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        margin-top: 1rem;
+      }
+      .nested {
+        background: #fffdf8;
+      }
+      .collection-history {
+        display: grid;
+        gap: 1rem;
+        margin-top: 1rem;
+      }
+      .timeline {
+        display: grid;
+        gap: 0.75rem;
+      }
+      .timeline-entry {
+        border-top: 1px solid #ece3d3;
+        padding-top: 0.75rem;
+        display: grid;
+        gap: 0.35rem;
+      }
+      .wide-field {
+        grid-column: 1 / -1;
+      }
+      .lookup-results {
+        display: grid;
+        gap: 0.75rem;
+        margin-top: 1rem;
+      }
+      .lookup-item {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        align-items: center;
+        border-top: 1px solid #ece3d3;
+        padding-top: 0.75rem;
+      }
+      .summary-grid {
+        display: grid;
+        gap: 0.75rem;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      }
+      .summary-card {
+        border: 1px solid #ece3d3;
+        border-radius: 0.85rem;
+        padding: 0.85rem;
+        background: #fffdf8;
+        display: grid;
+        gap: 0.35rem;
+      }
+      .workspace-split {
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      }
+      .link-stack {
+        display: grid;
+        gap: 0.5rem;
+      }
+      .secondary-link {
+        background: #eef1f4;
+        color: #182533;
+      }
+      @media (max-width: 720px) {
+        .actions {
+          flex-direction: column;
+        }
+        .lookup-item {
+          align-items: stretch;
+          flex-direction: column;
+        }
+      }
+    `,
+  ],
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class AccountsReceivablePageComponent {
   private readonly api = inject(AccountsReceivableApiService);
@@ -1028,19 +1587,38 @@ export class AccountsReceivablePageComponent {
   private readonly feedbackService = inject(FeedbackService);
   protected readonly permissionService = inject(PermissionService);
 
-  protected readonly fiscalDocumentId = signal<number | null>(parseNumber(this.route.snapshot.queryParamMap.get('fiscalDocumentId')));
-  protected readonly accountsReceivableInvoiceId = signal<number | null>(parseNumber(this.route.snapshot.queryParamMap.get('invoiceId')));
-  protected readonly paymentId = signal<number | null>(parseNumber(this.route.snapshot.queryParamMap.get('paymentId')));
-  protected readonly receiverWorkspaceId = signal<number | null>(parseNumber(this.route.snapshot.queryParamMap.get('fiscalReceiverId')));
-  protected readonly detailMode = computed(() => this.accountsReceivableInvoiceId() !== null || this.fiscalDocumentId() !== null || this.paymentId() !== null);
-  protected readonly receiverWorkspaceMode = computed(() => !this.detailMode() && this.receiverWorkspaceId() !== null);
+  protected readonly fiscalDocumentId = signal<number | null>(
+    parseNumber(this.route.snapshot.queryParamMap.get('fiscalDocumentId')),
+  );
+  protected readonly accountsReceivableInvoiceId = signal<number | null>(
+    parseNumber(this.route.snapshot.queryParamMap.get('invoiceId')),
+  );
+  protected readonly paymentId = signal<number | null>(
+    parseNumber(this.route.snapshot.queryParamMap.get('paymentId')),
+  );
+  protected readonly receiverWorkspaceId = signal<number | null>(
+    parseNumber(this.route.snapshot.queryParamMap.get('fiscalReceiverId')),
+  );
+  protected readonly detailMode = computed(
+    () =>
+      this.accountsReceivableInvoiceId() !== null ||
+      this.fiscalDocumentId() !== null ||
+      this.paymentId() !== null,
+  );
+  protected readonly receiverWorkspaceMode = computed(
+    () => !this.detailMode() && this.receiverWorkspaceId() !== null,
+  );
   protected readonly invoice = signal<AccountsReceivableInvoiceResponse | null>(null);
   protected readonly payment = signal<AccountsReceivablePaymentResponse | null>(null);
-  protected readonly receiverWorkspace = signal<AccountsReceivableReceiverWorkspaceResponse | null>(null);
+  protected readonly receiverWorkspace = signal<AccountsReceivableReceiverWorkspaceResponse | null>(
+    null,
+  );
   protected readonly receiverLookupResults = signal<FiscalReceiverSearchItem[]>([]);
   protected readonly portfolioItems = signal<AccountsReceivablePortfolioItemResponse[]>([]);
   protected readonly paymentItems = signal<AccountsReceivablePaymentSummaryItemResponse[]>([]);
-  protected readonly eligibleReceiverInvoices = signal<AccountsReceivablePortfolioItemResponse[]>([]);
+  protected readonly eligibleReceiverInvoices = signal<AccountsReceivablePortfolioItemResponse[]>(
+    [],
+  );
   protected readonly loading = signal(false);
   protected receiverLookupQuery = '';
   protected readonly filters = {
@@ -1052,7 +1630,7 @@ export class AccountsReceivablePageComponent {
     pendingBalance: 'true',
     agingFilter: '',
     pendingCommitment: '',
-    followUpPending: ''
+    followUpPending: '',
   };
   protected readonly paymentFilters = {
     fiscalReceiverIdText: '',
@@ -1060,17 +1638,17 @@ export class AccountsReceivablePageComponent {
     receivedFrom: '',
     receivedTo: '',
     hasUnappliedAmount: '',
-    linkedFiscalDocumentIdText: ''
+    linkedFiscalDocumentIdText: '',
   };
   protected readonly collectionCommitmentForm = {
     promisedAmount: '',
     promisedDateUtc: '',
-    notes: ''
+    notes: '',
   };
   protected readonly collectionNoteForm = {
     noteType: 'Call',
     content: '',
-    nextFollowUpAtUtc: ''
+    nextFollowUpAtUtc: '',
   };
   protected readonly invoiceApplicationLabel = computed(() => {
     const currentInvoice = this.invoice();
@@ -1080,84 +1658,117 @@ export class AccountsReceivablePageComponent {
 
     return this.formatInvoiceFiscalLabel(currentInvoice);
   });
-  protected readonly showRemainderApplicationSection = computed(() =>
-    !!this.payment()
-    && !!this.invoice()?.fiscalReceiverId
-    && (this.payment()?.remainingAmount ?? 0) > 0
-    && this.eligibleReceiverInvoices().length > 0);
+  protected readonly showRemainderApplicationSection = computed(
+    () =>
+      !!this.payment() &&
+      !!this.invoice()?.fiscalReceiverId &&
+      (this.payment()?.remainingAmount ?? 0) > 0 &&
+      this.eligibleReceiverInvoices().length > 0,
+  );
   protected readonly showPendingCustomerCreditBalanceAction = computed(() => {
     const currentPayment = this.payment();
-    return !!currentPayment
-      && currentPayment.remainingAmount > 0
-      && currentPayment.unappliedDisposition === 'PendingAllocation'
-      && !currentPayment.repDocumentStatus;
+    return (
+      !!currentPayment &&
+      currentPayment.remainingAmount > 0 &&
+      currentPayment.unappliedDisposition === 'PendingAllocation' &&
+      !currentPayment.repDocumentStatus
+    );
   });
   protected readonly showConfirmedCustomerCreditBalance = computed(() => {
     const currentPayment = this.payment();
-    return !!currentPayment
-      && currentPayment.customerCreditBalanceAmount > 0
-      && currentPayment.unappliedDisposition === 'CustomerCreditBalance';
+    return (
+      !!currentPayment &&
+      currentPayment.customerCreditBalanceAmount > 0 &&
+      currentPayment.unappliedDisposition === 'CustomerCreditBalance'
+    );
   });
   protected readonly showRepPendingRemainderMessage = computed(() => {
     const currentPayment = this.payment();
-    return !!currentPayment
-      && !currentPayment.readyToPrepareRep
-      && currentPayment.remainingAmount > 0
-      && currentPayment.unappliedDisposition === 'PendingAllocation'
-      && this.isPendingRemainderRepBlockReason(currentPayment.repBlockReason);
+    return (
+      !!currentPayment &&
+      !currentPayment.readyToPrepareRep &&
+      currentPayment.remainingAmount > 0 &&
+      currentPayment.unappliedDisposition === 'PendingAllocation' &&
+      this.isPendingRemainderRepBlockReason(currentPayment.repBlockReason)
+    );
   });
 
+  protected accountsReceivableStatusTone(status: string): StatusBadgeTone {
+    switch (status) {
+      case 'PartiallyPaid':
+        return 'success';
+      case 'Paid':
+        return 'info';
+      case 'Cancelled':
+        return 'danger';
+      case 'Open':
+      default:
+        return 'warning';
+    }
+  }
+
+  protected agingBucketTone(bucket: string): StatusBadgeTone {
+    switch (bucket) {
+      case 'Overdue':
+      case 'FollowUpPending':
+        return 'danger';
+      case 'DueSoon':
+      case 'PendingCommitment':
+        return 'warning';
+      default:
+        return 'neutral';
+    }
+  }
+
   constructor() {
-    this.route.queryParamMap
-      .pipe(takeUntilDestroyed())
-      .subscribe((params) => {
-        const accountsReceivableInvoiceId = parseNumber(params.get('invoiceId'));
-        const fiscalDocumentId = parseNumber(params.get('fiscalDocumentId'));
-        const paymentId = parseNumber(params.get('paymentId'));
-        const receiverWorkspaceId = parseNumber(params.get('fiscalReceiverId'));
+    this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => {
+      const accountsReceivableInvoiceId = parseNumber(params.get('invoiceId'));
+      const fiscalDocumentId = parseNumber(params.get('fiscalDocumentId'));
+      const paymentId = parseNumber(params.get('paymentId'));
+      const receiverWorkspaceId = parseNumber(params.get('fiscalReceiverId'));
 
-        this.accountsReceivableInvoiceId.set(accountsReceivableInvoiceId);
-        this.fiscalDocumentId.set(fiscalDocumentId);
-        this.paymentId.set(paymentId);
-        this.receiverWorkspaceId.set(receiverWorkspaceId);
+      this.accountsReceivableInvoiceId.set(accountsReceivableInvoiceId);
+      this.fiscalDocumentId.set(fiscalDocumentId);
+      this.paymentId.set(paymentId);
+      this.receiverWorkspaceId.set(receiverWorkspaceId);
 
-        if (accountsReceivableInvoiceId !== null || fiscalDocumentId !== null || paymentId !== null) {
-          this.receiverWorkspace.set(null);
-          this.receiverLookupResults.set([]);
-
-          if (accountsReceivableInvoiceId !== null) {
-            void this.loadInvoiceById(accountsReceivableInvoiceId);
-          } else if (fiscalDocumentId !== null) {
-            void this.loadInvoiceByFiscalDocumentId(fiscalDocumentId);
-          } else {
-            this.invoice.set(null);
-          }
-
-          if (paymentId !== null) {
-            void this.loadPayment(paymentId);
-          } else {
-            this.payment.set(null);
-          }
-
-          return;
-        }
-
-        if (receiverWorkspaceId !== null) {
-          this.invoice.set(null);
-          this.payment.set(null);
-          this.eligibleReceiverInvoices.set([]);
-          void this.loadReceiverWorkspace(receiverWorkspaceId);
-          return;
-        }
-
-        this.invoice.set(null);
-        this.payment.set(null);
+      if (accountsReceivableInvoiceId !== null || fiscalDocumentId !== null || paymentId !== null) {
         this.receiverWorkspace.set(null);
         this.receiverLookupResults.set([]);
+
+        if (accountsReceivableInvoiceId !== null) {
+          void this.loadInvoiceById(accountsReceivableInvoiceId);
+        } else if (fiscalDocumentId !== null) {
+          void this.loadInvoiceByFiscalDocumentId(fiscalDocumentId);
+        } else {
+          this.invoice.set(null);
+        }
+
+        if (paymentId !== null) {
+          void this.loadPayment(paymentId);
+        } else {
+          this.payment.set(null);
+        }
+
+        return;
+      }
+
+      if (receiverWorkspaceId !== null) {
+        this.invoice.set(null);
+        this.payment.set(null);
         this.eligibleReceiverInvoices.set([]);
-        void this.loadPortfolio();
-        void this.loadPayments();
-      });
+        void this.loadReceiverWorkspace(receiverWorkspaceId);
+        return;
+      }
+
+      this.invoice.set(null);
+      this.payment.set(null);
+      this.receiverWorkspace.set(null);
+      this.receiverLookupResults.set([]);
+      this.eligibleReceiverInvoices.set([]);
+      void this.loadPortfolio();
+      void this.loadPayments();
+    });
   }
 
   protected formatFiscalLabel(item: AccountsReceivablePortfolioItemResponse): string {
@@ -1243,7 +1854,9 @@ export class AccountsReceivablePageComponent {
     }
 
     await this.run(async () => {
-      const response = await firstValueFrom(this.api.createInvoiceFromFiscalDocument(fiscalDocumentId));
+      const response = await firstValueFrom(
+        this.api.createInvoiceFromFiscalDocument(fiscalDocumentId),
+      );
       if (response.accountsReceivableInvoice) {
         this.invoice.set(response.accountsReceivableInvoice);
         this.accountsReceivableInvoiceId.set(response.accountsReceivableInvoice.id);
@@ -1253,11 +1866,25 @@ export class AccountsReceivablePageComponent {
   }
 
   protected async createPayment(request: CreateAccountsReceivablePaymentRequest): Promise<void> {
+    const currentInvoice = this.invoice();
+    const normalizedOutstandingBalance = currentInvoice
+      ? this.normalizeMoney(currentInvoice.outstandingBalance)
+      : null;
+    if (normalizedOutstandingBalance != null && request.amount > normalizedOutstandingBalance) {
+      const excessAmount = this.normalizeMoney(request.amount - normalizedOutstandingBalance);
+      this.feedbackService.show(
+        'error',
+        `El monto capturado excede el saldo pendiente por ${excessAmount.toFixed(2)}. Ajusta el monto o asigna explícitamente el excedente.`,
+      );
+      return;
+    }
+
     await this.run(async () => {
       const payload = {
         ...request,
+        accountsReceivableInvoiceId: currentInvoice?.id ?? null,
         paymentDateUtc: new Date(request.paymentDateUtc).toISOString(),
-        receivedFromFiscalReceiverId: this.invoice()?.fiscalReceiverId ?? null
+        receivedFromFiscalReceiverId: currentInvoice?.fiscalReceiverId ?? null,
       };
       const response = await firstValueFrom(this.api.createPayment(payload));
       if (response.payment) {
@@ -1295,9 +1922,11 @@ export class AccountsReceivablePageComponent {
     }
 
     await this.run(async () => {
-      await firstValueFrom(this.api.setPaymentUnappliedDisposition(currentPayment.id, {
-        unappliedDisposition: 'CustomerCreditBalance'
-      }));
+      await firstValueFrom(
+        this.api.setPaymentUnappliedDisposition(currentPayment.id, {
+          unappliedDisposition: 'CustomerCreditBalance',
+        }),
+      );
       await this.loadPayment(currentPayment.id);
       this.feedbackService.show('success', 'Remanente confirmado como saldo a favor del cliente.');
     });
@@ -1313,7 +1942,7 @@ export class AccountsReceivablePageComponent {
       const payload: CreateCollectionCommitmentRequest = {
         promisedAmount: Number(this.collectionCommitmentForm.promisedAmount),
         promisedDateUtc: new Date(this.collectionCommitmentForm.promisedDateUtc).toISOString(),
-        notes: this.collectionCommitmentForm.notes || null
+        notes: this.collectionCommitmentForm.notes || null,
       };
       await firstValueFrom(this.api.createCollectionCommitment(currentInvoice.id, payload));
       await this.reloadCurrentInvoice();
@@ -1336,7 +1965,7 @@ export class AccountsReceivablePageComponent {
         content: this.collectionNoteForm.content,
         nextFollowUpAtUtc: this.collectionNoteForm.nextFollowUpAtUtc
           ? new Date(this.collectionNoteForm.nextFollowUpAtUtc).toISOString()
-          : null
+          : null,
       };
       await firstValueFrom(this.api.createCollectionNote(currentInvoice.id, payload));
       await this.reloadCurrentInvoice();
@@ -1383,7 +2012,7 @@ export class AccountsReceivablePageComponent {
       overdueOnly: this.filters.agingFilter === 'overdue' ? true : null,
       dueSoonOnly: this.filters.agingFilter === 'dueSoon' ? true : null,
       hasPendingCommitment: parseNullableBoolean(this.filters.pendingCommitment),
-      followUpPending: parseNullableBoolean(this.filters.followUpPending)
+      followUpPending: parseNullableBoolean(this.filters.followUpPending),
     };
   }
 
@@ -1394,13 +2023,15 @@ export class AccountsReceivablePageComponent {
       receivedFrom: this.paymentFilters.receivedFrom || null,
       receivedTo: this.paymentFilters.receivedTo || null,
       hasUnappliedAmount: parseNullableBoolean(this.paymentFilters.hasUnappliedAmount),
-      linkedFiscalDocumentId: parseNumber(this.paymentFilters.linkedFiscalDocumentIdText)
+      linkedFiscalDocumentId: parseNumber(this.paymentFilters.linkedFiscalDocumentIdText),
     };
   }
 
   private async loadInvoiceByFiscalDocumentId(fiscalDocumentId: number): Promise<void> {
     try {
-      this.invoice.set(await firstValueFrom(this.api.getInvoiceByFiscalDocumentId(fiscalDocumentId)));
+      this.invoice.set(
+        await firstValueFrom(this.api.getInvoiceByFiscalDocumentId(fiscalDocumentId)),
+      );
       this.accountsReceivableInvoiceId.set(this.invoice()?.id ?? null);
       await this.loadEligibleReceiverInvoices();
     } catch {
@@ -1458,23 +2089,31 @@ export class AccountsReceivablePageComponent {
       return;
     }
 
-    const response = await firstValueFrom(this.api.searchPortfolio({
-      fiscalReceiverId: currentInvoice.fiscalReceiverId,
-      hasPendingBalance: true
-    }));
+    const response = await firstValueFrom(
+      this.api.searchPortfolio({
+        fiscalReceiverId: currentInvoice.fiscalReceiverId,
+        hasPendingBalance: true,
+      }),
+    );
 
-    const items = response.items.filter((item) =>
-      item.accountsReceivableInvoiceId !== currentInvoice.id
-      && item.fiscalReceiverId === currentInvoice.fiscalReceiverId
-      && item.outstandingBalance > 0
-      && item.status !== 'Cancelled'
-      && item.status !== 'Paid');
+    const items = response.items.filter(
+      (item) =>
+        item.accountsReceivableInvoiceId !== currentInvoice.id &&
+        item.fiscalReceiverId === currentInvoice.fiscalReceiverId &&
+        item.outstandingBalance > 0 &&
+        item.status !== 'Cancelled' &&
+        item.status !== 'Paid',
+    );
 
     this.eligibleReceiverInvoices.set(items);
   }
 
   private isPendingRemainderRepBlockReason(reason: string | null | undefined): boolean {
     return (reason ?? '').toLowerCase().includes('unapplied payment remainder');
+  }
+
+  private normalizeMoney(value: number): number {
+    return Math.round(value * 100) / 100;
   }
 }
 

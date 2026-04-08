@@ -47,6 +47,8 @@ public class BillingDbContext : DbContext, IUnitOfWork
 
     public DbSet<PaymentComplementDocument> PaymentComplementDocuments => Set<PaymentComplementDocument>();
 
+    public DbSet<PaymentComplementPayment> PaymentComplementPayments => Set<PaymentComplementPayment>();
+
     public DbSet<PaymentComplementRelatedDocument> PaymentComplementRelatedDocuments => Set<PaymentComplementRelatedDocument>();
 
     public DbSet<PaymentComplementStamp> PaymentComplementStamps => Set<PaymentComplementStamp>();
@@ -73,7 +75,13 @@ public class BillingDbContext : DbContext, IUnitOfWork
 
     public DbSet<ProductFiscalProfile> ProductFiscalProfiles => Set<ProductFiscalProfile>();
 
+    public DbSet<ProductFiscalAssignment> ProductFiscalAssignments => Set<ProductFiscalAssignment>();
+
     public DbSet<SatProductServiceCatalogEntry> SatProductServiceCatalogEntries => Set<SatProductServiceCatalogEntry>();
+
+    public DbSet<SatClaveUnidad> SatClaveUnidades => Set<SatClaveUnidad>();
+
+    public DbSet<SatCatalogImport> SatCatalogImports => Set<SatCatalogImport>();
 
     public DbSet<FiscalDocumentSpecialFieldValue> FiscalDocumentSpecialFieldValues => Set<FiscalDocumentSpecialFieldValue>();
 

@@ -117,7 +117,7 @@ export class PaymentComplementOperationsPageComponent {
 
   constructor() {
     if (this.paymentId()) {
-      void this.loadComplementByPayment(this.paymentId()!);
+      void this.initializePaymentContext(this.paymentId()!);
     }
   }
 
@@ -230,6 +230,29 @@ export class PaymentComplementOperationsPageComponent {
     this.loadingStampXml.set(false);
     this.stampXmlContent.set(null);
     this.stampXmlError.set(null);
+  }
+
+  private async initializePaymentContext(paymentId: number): Promise<void> {
+    try {
+      const payment = await firstValueFrom(this.arApi.getPaymentById(paymentId));
+      const hasPreparedComplement = !!payment.repDocumentStatus
+        || payment.repReservedAmount > 0
+        || payment.repFiscalizedAmount > 0;
+
+      if (!hasPreparedComplement) {
+        this.complement.set(null);
+        this.stampEvidence.set(null);
+        this.cancellation.set(null);
+        return;
+      }
+    } catch {
+      this.complement.set(null);
+      this.stampEvidence.set(null);
+      this.cancellation.set(null);
+      return;
+    }
+
+    await this.loadComplementByPayment(paymentId);
   }
 
   private async loadComplementByPayment(paymentId: number): Promise<void> {

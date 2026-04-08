@@ -38,6 +38,18 @@ public sealed class SatProductServiceCatalogBootstrapHostedService : IHostedServ
             await using var scope = _serviceProvider.CreateAsyncScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
 
+            var hasSuccessfulImportedCatalog = await dbContext.SatCatalogImports
+                .AnyAsync(
+                    x => x.CatalogType == "sat_product_service" && x.Status == "completed",
+                    cancellationToken);
+
+            if (hasSuccessfulImportedCatalog)
+            {
+                _logger.LogInformation(
+                    "SAT product/service catalog bootstrap skipped because a completed import already exists in sat_catalog_imports.");
+                return;
+            }
+
             var currentCount = await dbContext.SatProductServiceCatalogEntries.CountAsync(cancellationToken);
             var currentVersionMatches = currentCount == seedDocument.Items.Count
                 && await dbContext.SatProductServiceCatalogEntries.AllAsync(x => x.SourceVersion == seedDocument.Version, cancellationToken);

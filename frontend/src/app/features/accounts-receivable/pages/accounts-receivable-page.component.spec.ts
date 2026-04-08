@@ -22,7 +22,7 @@ describe('AccountsReceivablePageComponent', () => {
     searchPayments: vi.fn().mockReturnValue(of({ items: [] }))
   };
 
-  beforeEach(async () => {
+  beforeEach(() => {
     queryParams$.next(convertToParamMap({ invoiceId: '2', paymentId: '6' }));
     api.getReceiverWorkspace.mockReturnValue(of({
       fiscalReceiverId: 77,
@@ -218,7 +218,7 @@ describe('AccountsReceivablePageComponent', () => {
       }
     }));
 
-    await TestBed.configureTestingModule({
+    TestBed.configureTestingModule({
       imports: [AccountsReceivablePageComponent],
       providers: [
         provideRouter([]),
@@ -246,7 +246,7 @@ describe('AccountsReceivablePageComponent', () => {
           useValue: { queryParamMap: queryParams$.asObservable(), snapshot: { queryParamMap: convertToParamMap({}) } }
         }
       ]
-    }).compileComponents();
+    });
   });
 
   it('queries the same receiver portfolio when loading remainder candidates from invoice detail', async () => {
@@ -355,14 +355,37 @@ describe('AccountsReceivablePageComponent', () => {
     await fixture.componentInstance['createPayment']({
       paymentDateUtc: '2026-04-03T10:00',
       paymentFormSat: '03',
-      amount: 5000,
+      amount: 1722,
       reference: 'DEP-1',
       notes: null
     });
 
     expect(api.createPayment).toHaveBeenCalledWith(expect.objectContaining({
+      accountsReceivableInvoiceId: 2,
       receivedFromFiscalReceiverId: 77
     }));
+  });
+
+  it('blocks creating a payment when the captured amount exceeds the current operational outstanding balance', async () => {
+    queryParams$.next(convertToParamMap({ invoiceId: '2' }));
+
+    const feedback = TestBed.inject(FeedbackService) as unknown as { show: ReturnType<typeof vi.fn> };
+    api.createPayment.mockClear();
+    feedback.show.mockClear();
+    const fixture = TestBed.createComponent(AccountsReceivablePageComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    await fixture.componentInstance['createPayment']({
+      paymentDateUtc: '2026-04-03T10:00',
+      paymentFormSat: '03',
+      amount: 1722.01,
+      reference: 'DEP-ERR',
+      notes: null
+    });
+
+    expect(api.createPayment).not.toHaveBeenCalled();
+    expect(feedback.show).toHaveBeenCalledWith('error', 'El monto capturado excede el saldo pendiente por 0.01. Ajusta el monto o asigna explícitamente el excedente.');
   });
 
   it('loads the receiver workspace when fiscalReceiverId is present in query params', async () => {

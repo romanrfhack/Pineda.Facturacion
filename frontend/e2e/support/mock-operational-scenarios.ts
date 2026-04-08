@@ -108,16 +108,15 @@ export async function mockInvoiceStampingJourney(page: Page): Promise<void> {
   });
 
   await page.route('**/api/fiscal-documents/401/stamp', async (route) => {
-    if (route.request().method() === 'GET') {
-      if (!stampEvidence) {
-        await route.fulfill({ status: 404, json: { errorMessage: 'No encontrado.' } });
-        return;
-      }
-
-      await route.fulfill({ json: stampEvidence });
+    if (!stampEvidence) {
+      await route.fulfill({ status: 404, json: { errorMessage: 'No encontrado.' } });
       return;
     }
 
+    await route.fulfill({ json: stampEvidence });
+  });
+
+  await page.route('**/api/fiscal-documents/401/stamp-and-email', async (route) => {
     fiscalDocumentStatus = 'Stamped';
     stampEvidence = buildStampEvidence({
       fiscalDocumentId: 401,
@@ -127,15 +126,18 @@ export async function mockInvoiceStampingJourney(page: Page): Promise<void> {
 
     await route.fulfill({
       json: {
-        outcome: 'Stamped',
-        isSuccess: true,
         fiscalDocumentId: 401,
+        stamped: true,
         fiscalDocumentStatus: 'Stamped',
-        fiscalStampId: 501,
-        uuid: 'UUID-FISCAL-7101',
-        stampedAtUtc: '2026-03-20T13:00:00Z',
-        providerName: 'FacturaloPlus',
-        providerTrackingId: 'TRACK-FISCAL-7101'
+        providerMessage: 'Documento fiscal timbrado correctamente.',
+        email: {
+          attempted: false,
+          sent: false,
+          status: 'not_attempted',
+          recipients: [],
+          invalidRecipients: [],
+          message: null
+        }
       }
     });
   });
@@ -203,13 +205,59 @@ export async function mockAccountsReceivableJourney(page: Page): Promise<void> {
     });
   });
 
+  await page.route('**/api/accounts-receivable/invoices/601', async (route) => {
+    if (!invoiceExists) {
+      await route.fulfill({ status: 404, json: { errorMessage: 'No encontrado.' } });
+      return;
+    }
+
+    await route.fulfill({ json: invoice });
+  });
+
+  await page.route('**/api/accounts-receivable/invoices?**', async (route) => {
+    const currentInvoiceSnapshot = invoice as { paidTotal: number; outstandingBalance: number; status: string } | null;
+    const currentInvoice = invoiceExists
+      ? [{
+          accountsReceivableInvoiceId: 601,
+          fiscalDocumentId: 401,
+          fiscalReceiverId: 9,
+          receiverRfc: 'BBB010101BBB',
+          receiverLegalName: 'Receiver One',
+          fiscalSeries: 'A',
+          fiscalFolio: '401',
+          fiscalUuid: 'UUID-FISCAL-411',
+          total: 100,
+          paidTotal: currentInvoiceSnapshot?.paidTotal ?? 0,
+          outstandingBalance: currentInvoiceSnapshot?.outstandingBalance ?? 100,
+          issuedAtUtc: '2026-03-20T12:00:00Z',
+          dueAtUtc: '2026-03-27T12:00:00Z',
+          status: currentInvoiceSnapshot?.status ?? 'Open',
+          daysPastDue: 0,
+          agingBucket: 'Current',
+          hasPendingCommitment: false,
+          nextCommitmentDateUtc: null,
+          nextFollowUpAtUtc: null,
+          followUpPending: false
+        }]
+      : [];
+
+    await route.fulfill({ json: { items: currentInvoice } });
+  });
+
   await page.route('**/api/accounts-receivable/payments', async (route) => {
+    const payload = route.request().postDataJSON() as Record<string, unknown>;
+    const amount = typeof payload.amount === 'number' ? payload.amount : Number(payload.amount ?? 0);
+    const reference = typeof payload.reference === 'string' ? payload.reference : 'PAY-701';
+    const notes = typeof payload.notes === 'string' ? payload.notes : 'Partial payment';
+
     payment = createPayment({
       id: 701,
-      amount: 40,
+      amount,
       appliedTotal: 0,
-      remainingAmount: 40,
-      applications: []
+      remainingAmount: amount,
+      applications: [],
+      reference,
+      notes
     });
 
     await route.fulfill({
@@ -300,6 +348,37 @@ export async function mockPaymentComplementJourney(page: Page): Promise<void> {
     });
   });
 
+  await page.route('**/api/accounts-receivable/payments/702', async (route) => {
+    await route.fulfill({
+      json: {
+        id: 702,
+        paymentDateUtc: '2026-03-20T14:30:00Z',
+        paymentFormSat: '03',
+        currencyCode: 'MXN',
+        amount: 100,
+        appliedTotal: complementExists ? 100 : 100,
+        remainingAmount: 0,
+        customerCreditBalanceAmount: 0,
+        reference: 'TRX-702',
+        notes: null,
+        receivedFromFiscalReceiverId: 77,
+        operationalStatus: 'FullyApplied',
+        repStatus: complementExists ? 'Prepared' : 'ReadyToPrepare',
+        readyToPrepareRep: !complementExists,
+        repBlockReason: null,
+        unappliedDisposition: 'PendingAllocation',
+        repDocumentStatus: complementExists ? complementStatus : null,
+        repReservedAmount: complementExists ? 100 : 0,
+        repFiscalizedAmount: complementExists && complementStatus === 'Stamped' ? 100 : 0,
+        applicationsCount: 1,
+        linkedFiscalDocumentId: 411,
+        createdAtUtc: '2026-03-20T14:30:00Z',
+        updatedAtUtc: '2026-03-20T14:30:00Z',
+        applications: []
+      }
+    });
+  });
+
   await page.route('**/api/accounts-receivable/payments/702/payment-complements', async (route) => {
     if (route.request().method() === 'GET') {
       if (!complementExists) {
@@ -368,6 +447,37 @@ export async function mockMixedReceiversComplementFailure(page: Page): Promise<v
     username: 'supervisor',
     displayName: 'Supervisor',
     role: 'FiscalSupervisor'
+  });
+
+  await page.route('**/api/accounts-receivable/payments/703', async (route) => {
+    await route.fulfill({
+      json: {
+        id: 703,
+        paymentDateUtc: '2026-03-20T14:35:00Z',
+        paymentFormSat: '03',
+        currencyCode: 'MXN',
+        amount: 100,
+        appliedTotal: 100,
+        remainingAmount: 0,
+        customerCreditBalanceAmount: 0,
+        reference: 'TRX-703',
+        notes: null,
+        receivedFromFiscalReceiverId: 77,
+        operationalStatus: 'FullyApplied',
+        repStatus: 'ReadyToPrepare',
+        readyToPrepareRep: true,
+        repBlockReason: null,
+        unappliedDisposition: 'PendingAllocation',
+        repDocumentStatus: null,
+        repReservedAmount: 0,
+        repFiscalizedAmount: 0,
+        applicationsCount: 2,
+        linkedFiscalDocumentId: null,
+        createdAtUtc: '2026-03-20T14:35:00Z',
+        updatedAtUtc: '2026-03-20T14:35:00Z',
+        applications: []
+      }
+    });
   });
 
   await page.route('**/api/accounts-receivable/payments/703/payment-complement', async (route) => {
@@ -466,19 +576,24 @@ export async function mockStampUnavailableFiscalDocument(page: Page): Promise<vo
     });
   });
   await page.route('**/api/fiscal-documents/406/stamp', async (route) => {
-    if (route.request().method() === 'GET') {
-      await route.fulfill({ status: 404, json: { errorMessage: 'No encontrado.' } });
-      return;
-    }
-
+    await route.fulfill({ status: 404, json: { errorMessage: 'No encontrado.' } });
+  });
+  await page.route('**/api/fiscal-documents/406/stamp-and-email', async (route) => {
     await route.fulfill({
       status: 503,
       json: {
-        outcome: 'ProviderUnavailable',
-        isSuccess: false,
-        errorMessage: 'PAC provider is unavailable. Retry after checking status.',
         fiscalDocumentId: 406,
-        fiscalDocumentStatus: 'ReadyForStamping'
+        stamped: false,
+        fiscalDocumentStatus: 'ReadyForStamping',
+        errorMessage: 'PAC provider is unavailable. Retry after checking status.',
+        email: {
+          attempted: false,
+          sent: false,
+          status: 'not_attempted',
+          recipients: [],
+          invalidRecipients: [],
+          message: null
+        }
       }
     });
   });
@@ -771,6 +886,8 @@ function createPayment(input: {
   appliedTotal: number;
   remainingAmount: number;
   applications: Record<string, unknown>[];
+  reference?: string;
+  notes?: string;
 }): Record<string, unknown> {
   return {
     id: input.id,
@@ -780,8 +897,8 @@ function createPayment(input: {
     amount: input.amount,
     appliedTotal: input.appliedTotal,
     remainingAmount: input.remainingAmount,
-    reference: 'PAY-701',
-    notes: 'Partial payment',
+    reference: input.reference ?? 'PAY-701',
+    notes: input.notes ?? 'Partial payment',
     receivedFromFiscalReceiverId: 9,
     createdAtUtc: '2026-03-20T14:00:00Z',
     updatedAtUtc: '2026-03-20T14:05:00Z',

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Domain.Entities;
+using Pineda.Facturacion.Domain.Enums;
 
 namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Repositories;
 
@@ -35,11 +36,16 @@ public class BillingDocumentRepository : IBillingDocumentRepository
             join legacyImportRecord in _dbContext.LegacyImportRecords.AsNoTracking()
                 on billingDocument.Id equals legacyImportRecord.BillingDocumentId into legacyImportRecords
             from legacyImportRecord in legacyImportRecords.DefaultIfEmpty()
+            join fiscalDocument in _dbContext.FiscalDocuments.AsNoTracking()
+                on billingDocument.Id equals fiscalDocument.BillingDocumentId into fiscalDocuments
+            from fiscalDocument in fiscalDocuments.DefaultIfEmpty()
             where billingDocument.SalesOrderId == salesOrderId
                 || (legacyImportRecord != null
                     && _dbContext.SalesOrders.Any(
                         salesOrder => salesOrder.Id == salesOrderId
                             && salesOrder.LegacyImportRecordId == legacyImportRecord.Id))
+            where fiscalDocument == null || fiscalDocument.Status != FiscalDocumentStatus.Cancelled
+            orderby billingDocument.Id descending
             select billingDocument)
             .FirstOrDefaultAsync(cancellationToken);
     }

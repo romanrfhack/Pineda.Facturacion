@@ -181,15 +181,23 @@ public class FiscalImportPreviewServicesTests
 
     private sealed class FakeExcelWorksheetReader : IExcelWorksheetReader
     {
-        private readonly ExcelWorksheetData _worksheet;
+        private readonly ExcelNamedWorksheetData _worksheet;
 
         public FakeExcelWorksheetReader(ExcelWorksheetData worksheet)
         {
-            _worksheet = worksheet;
+            _worksheet = new ExcelNamedWorksheetData
+            {
+                Name = "Sheet1",
+                Headers = worksheet.Headers,
+                Rows = worksheet.Rows
+            };
         }
 
         public Task<ExcelWorksheetData> ReadFirstWorksheetAsync(Stream stream, CancellationToken cancellationToken = default)
-            => Task.FromResult(_worksheet);
+            => Task.FromResult<ExcelWorksheetData>(_worksheet);
+
+        public Task<IReadOnlyList<ExcelNamedWorksheetData>> ReadWorksheetsAsync(Stream stream, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<ExcelNamedWorksheetData>>([_worksheet]);
     }
 
     private sealed class PreviewFiscalReceiverRepository : IFiscalReceiverRepository

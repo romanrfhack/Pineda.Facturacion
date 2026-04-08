@@ -831,7 +831,8 @@ public static class PaymentComplementsEndpoints
             new PrepareInternalRepBaseDocumentPaymentComplementCommand
             {
                 FiscalDocumentId = fiscalDocumentId,
-                AccountsReceivablePaymentId = request?.AccountsReceivablePaymentId
+                AccountsReceivablePaymentId = request?.AccountsReceivablePaymentId,
+                AdditionalAccountsReceivablePaymentIds = request?.AdditionalPaymentIds?.Where(x => x > 0).Distinct().ToList() ?? []
             },
             cancellationToken);
 
@@ -855,7 +856,7 @@ public static class PaymentComplementsEndpoints
             "FiscalDocument",
             fiscalDocumentId.ToString(),
             result.Outcome.ToString(),
-            new { fiscalDocumentId, request?.AccountsReceivablePaymentId },
+            new { fiscalDocumentId, request?.AccountsReceivablePaymentId, request?.AdditionalPaymentIds },
             new { result.AccountsReceivablePaymentId, result.PaymentComplementDocumentId, result.Status, result.RelatedDocumentCount },
             result.ErrorMessage,
             cancellationToken);
@@ -2983,6 +2984,8 @@ public sealed class RegisterInternalRepBaseDocumentPaymentApplicationResponse
 public sealed class PrepareInternalRepBaseDocumentPaymentComplementRequest
 {
     public long? AccountsReceivablePaymentId { get; set; }
+
+    public List<long>? AdditionalPaymentIds { get; set; }
 }
 
 public sealed class PrepareInternalRepBaseDocumentPaymentComplementResponse

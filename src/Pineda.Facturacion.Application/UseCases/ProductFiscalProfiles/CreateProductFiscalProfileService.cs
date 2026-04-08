@@ -58,6 +58,14 @@ public class CreateProductFiscalProfileService
         };
 
         await _productFiscalProfileRepository.AddAsync(productFiscalProfile, cancellationToken);
+        await _productFiscalProfileRepository.EnsureEffectiveAssignmentAsync(
+            productFiscalProfile,
+            ProductFiscalAssignmentConventions.ManualSource,
+            ProductFiscalAssignmentConventions.ManualConfidence,
+            ProductFiscalAssignmentConventions.BootstrapReviewStatus,
+            null,
+            now,
+            cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return new CreateProductFiscalProfileResult

@@ -54,10 +54,17 @@ public sealed class PrepareInternalRepBaseDocumentPaymentComplementService
             return await AlreadyPreparedFromPaymentAsync(command.FiscalDocumentId, paymentHistoryItem.AccountsReceivablePaymentId, cancellationToken);
         }
 
+        var additionalPaymentIds = ResolveAdditionalPaymentIds(document, paymentHistoryItem.AccountsReceivablePaymentId, command.AdditionalAccountsReceivablePaymentIds);
+        if (additionalPaymentIds.ErrorMessage is not null)
+        {
+            return Conflict(command.FiscalDocumentId, additionalPaymentIds.ErrorMessage);
+        }
+
         var prepareResult = await _preparePaymentComplementService.ExecuteAsync(
             new PreparePaymentComplementCommand
             {
-                AccountsReceivablePaymentId = paymentHistoryItem.AccountsReceivablePaymentId
+                AccountsReceivablePaymentId = paymentHistoryItem.AccountsReceivablePaymentId,
+                AdditionalAccountsReceivablePaymentIds = additionalPaymentIds.PaymentIds
             },
             cancellationToken);
 
@@ -71,10 +78,9 @@ public sealed class PrepareInternalRepBaseDocumentPaymentComplementService
                 prepareResult.Status?.ToString(),
                 prepareResult.PaymentComplementDocument?.RelatedDocuments.Count ?? 0,
                 cancellationToken),
-            PreparePaymentComplementOutcome.Conflict => await AlreadyPreparedFromPaymentAsync(
+            PreparePaymentComplementOutcome.Conflict => Conflict(
                 command.FiscalDocumentId,
-                paymentHistoryItem.AccountsReceivablePaymentId,
-                cancellationToken),
+                prepareResult.ErrorMessage ?? "Ya existe un REP preparado para alguno de los pagos seleccionados."),
             PreparePaymentComplementOutcome.NotFound => NotFound(command.FiscalDocumentId, prepareResult.ErrorMessage ?? "Accounts receivable payment was not found."),
             _ => ValidationFailure(command.FiscalDocumentId, prepareResult.ErrorMessage ?? "No fue posible preparar el REP desde el documento base.")
         };
@@ -133,6 +139,46 @@ public sealed class PrepareInternalRepBaseDocumentPaymentComplementService
         }
 
         return document.PaymentHistory.FirstOrDefault(x => !x.PaymentComplementId.HasValue);
+    }
+
+    private static AdditionalPaymentResolution ResolveAdditionalPaymentIds(
+        InternalRepBaseDocumentDetailReadModel document,
+        long anchorPaymentId,
+        IReadOnlyList<long>? requestedAdditionalPaymentIds)
+    {
+        if (requestedAdditionalPaymentIds is null || requestedAdditionalPaymentIds.Count == 0)
+        {
+            return AdditionalPaymentResolution.Success([]);
+        }
+
+        var resolvedIds = new List<long>();
+        foreach (var paymentId in requestedAdditionalPaymentIds.Where(x => x > 0).Distinct())
+        {
+            if (paymentId == anchorPaymentId)
+            {
+                continue;
+            }
+
+            var payment = document.PaymentHistory.FirstOrDefault(x => x.AccountsReceivablePaymentId == paymentId);
+            if (payment is null)
+            {
+                return AdditionalPaymentResolution.Failure($"El pago {paymentId} no pertenece al historial operativo de este CFDI.");
+            }
+
+            if (payment.PaymentComplementId.HasValue)
+            {
+                return AdditionalPaymentResolution.Failure($"El pago {paymentId} ya está ligado al REP {payment.PaymentComplementId.Value}.");
+            }
+
+            if (payment.AmountAppliedToDocument <= 0)
+            {
+                return AdditionalPaymentResolution.Failure($"El pago {paymentId} no tiene monto aplicado elegible para REP en este CFDI.");
+            }
+
+            resolvedIds.Add(paymentId);
+        }
+
+        return AdditionalPaymentResolution.Success(resolvedIds);
     }
 
     private static string? ValidateRepLifecycleEligibility(InternalRepBaseDocumentSummaryReadModel summary)
@@ -211,5 +257,12 @@ public sealed class PrepareInternalRepBaseDocumentPaymentComplementService
             FiscalDocumentId = fiscalDocumentId,
             ErrorMessage = errorMessage
         };
+    }
+
+    private sealed record AdditionalPaymentResolution(IReadOnlyList<long> PaymentIds, string? ErrorMessage)
+    {
+        public static AdditionalPaymentResolution Success(IReadOnlyList<long> paymentIds) => new(paymentIds, null);
+
+        public static AdditionalPaymentResolution Failure(string errorMessage) => new([], errorMessage);
     }
 }
