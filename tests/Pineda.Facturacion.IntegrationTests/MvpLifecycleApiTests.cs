@@ -3260,6 +3260,7 @@ public class MvpLifecycleApiTests
         await using var factory = new MvpApiFactory();
         var client = await factory.CreateAuthenticatedClientAsync();
         await factory.SeedStandardFiscalMasterDataAsync();
+        var timelineBaseUtc = DateTime.UtcNow.AddMinutes(5);
 
         factory.FiscalStatusQueryGateway.ResponseFactory = _ => new FiscalStatusQueryGatewayResult
         {
@@ -3274,7 +3275,7 @@ public class MvpLifecycleApiTests
             ProviderOperation = "payment-complement-stamp",
             ProviderTrackingId = "TRACK-PC-EXT-5-1001",
             Uuid = "UUID-PC-EXT-5-1001",
-            StampedAtUtc = new DateTime(2026, 04, 08, 14, 0, 0, DateTimeKind.Utc),
+            StampedAtUtc = timelineBaseUtc,
             XmlContent = "<cfdi:Comprobante Version=\"4.0\"><pago20:Pagos /></cfdi:Comprobante>",
             XmlHash = "XML-HASH-PC-EXT-5-1001",
             OriginalString = "||1.1|UUID-PC-EXT-5-1001||"
@@ -3285,7 +3286,7 @@ public class MvpLifecycleApiTests
             ProviderName = "FacturaloPlus",
             ProviderOperation = "payment-complement-status-query",
             ExternalStatus = "VIGENTE",
-            CheckedAtUtc = new DateTime(2026, 04, 08, 14, 30, 0, DateTimeKind.Utc)
+            CheckedAtUtc = timelineBaseUtc.AddMinutes(30)
         };
 
         long externalId;
@@ -3360,7 +3361,7 @@ public class MvpLifecycleApiTests
             ProviderName = "FacturaloPlus",
             ProviderOperation = "payment-complement-status-query",
             ExternalStatus = "CANCELLED",
-            CheckedAtUtc = new DateTime(2026, 04, 08, 15, 0, 0, DateTimeKind.Utc)
+            CheckedAtUtc = timelineBaseUtc.AddMinutes(60)
         };
 
         var postCancelRefreshResponse = await client.PostAsJsonAsync(
