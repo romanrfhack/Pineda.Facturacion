@@ -1016,7 +1016,10 @@ public class MvpLifecycleApiTests
             {
                 RemovalIds = [pendingItem.RemovalId]
             });
-        Assert.Equal(HttpStatusCode.OK, assignResponse.StatusCode);
+        var assignResponseBody = await assignResponse.Content.ReadAsStringAsync();
+        Assert.True(
+            assignResponse.StatusCode == HttpStatusCode.OK,
+            $"Expected OK but got {(int)assignResponse.StatusCode} {assignResponse.StatusCode}. Body: {assignResponseBody}");
 
         var lookupAfterAssign = await (await client.GetAsync($"/api/billing-documents/{billingBody2.BillingDocumentId}"))
             .Content.ReadFromJsonAsync<BillingDocumentsEndpoints.BillingDocumentLookupResponse>();
@@ -1053,7 +1056,10 @@ public class MvpLifecycleApiTests
         var stampAssignedResponse = await client.PostAsJsonAsync(
             $"/api/fiscal-documents/{fiscalBody2.FiscalDocumentId}/stamp",
             new FiscalDocumentsEndpoints.StampFiscalDocumentRequest());
-        Assert.Equal(HttpStatusCode.OK, stampAssignedResponse.StatusCode);
+        var stampAssignedResponseBody = await stampAssignedResponse.Content.ReadAsStringAsync();
+        Assert.True(
+            stampAssignedResponse.StatusCode == HttpStatusCode.OK,
+            $"Expected OK but got {(int)stampAssignedResponse.StatusCode} {stampAssignedResponse.StatusCode}. Body: {stampAssignedResponseBody}");
 
         var originLookupAfterStamp = await (await client.GetAsync($"/api/billing-documents/{billingBody1.BillingDocumentId}"))
             .Content.ReadFromJsonAsync<BillingDocumentsEndpoints.BillingDocumentLookupResponse>();
