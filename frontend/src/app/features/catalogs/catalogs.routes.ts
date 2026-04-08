@@ -24,5 +24,9 @@ export const CATALOG_ROUTES: Routes = [
   {
     path: 'imports/products',
     loadComponent: () => import('./pages/product-imports-page.component').then((m) => m.ProductImportsPageComponent)
+  },
+  {
+    path: 'imports/sat',
+    loadComponent: () => import('./pages/sat-catalog-import-page.component').then((m) => m.SatCatalogImportPageComponent)
   }
 ];

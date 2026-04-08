@@ -1,5 +1,6 @@
 using ClosedXML.Excel;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Pineda.Facturacion.Application.UseCases.ProductFiscalProfiles;
 using Pineda.Facturacion.Application.UseCases.SatCatalogs;
 using Pineda.Facturacion.Application.UseCases.SatClaveUnidad;
@@ -18,29 +19,105 @@ public sealed class SatCatalogImportAndAssignmentTests
         await using var dbContext = CreateDbContext();
         var service = CreateImportService(dbContext);
         var workbookBytes = CreateOfficialWorkbookBytes();
+        var expectedChecksum = ComputeChecksum(workbookBytes);
 
         var firstResult = await service.ExecuteAsync(new ImportOfficialSatCatalogCommand
         {
             FileContent = workbookBytes,
-            SourceVersion = "SAT-2026-04-07",
-            SourceFileName = "catalogos_sat.xlsx",
-            SourceChecksum = "sha256:abc123"
+            SourceFileName = "catalogos_sat.xlsx"
         });
 
         var secondResult = await service.ExecuteAsync(new ImportOfficialSatCatalogCommand
         {
             FileContent = workbookBytes,
-            SourceVersion = "SAT-2026-04-07",
-            SourceFileName = "catalogos_sat.xlsx",
-            SourceChecksum = "sha256:abc123"
+            SourceFileName = "catalogos_sat.xlsx"
         });
 
         Assert.Equal(ImportOfficialSatCatalogOutcome.Completed, firstResult.Outcome);
         Assert.Equal(ImportOfficialSatCatalogOutcome.AlreadyImported, secondResult.Outcome);
+        Assert.Equal("4.0", firstResult.SourceVersion);
+        Assert.Equal(expectedChecksum, firstResult.SourceChecksum);
         Assert.Equal(2, await dbContext.SatProductServiceCatalogEntries.CountAsync());
         Assert.Equal(2, await dbContext.SatClaveUnidades.CountAsync());
         Assert.Equal(2, await dbContext.SatCatalogImports.CountAsync());
         Assert.All(await dbContext.SatCatalogImports.ToListAsync(), item => Assert.Equal("completed", item.Status));
+        Assert.All(await dbContext.SatCatalogImports.ToListAsync(), item => Assert.Equal(expectedChecksum, item.SourceChecksum));
+    }
+
+    [Fact]
+    public async Task ImportOfficialSatCatalog_ComputesChecksumServerSide_AndIgnoresManualVersionRequirement()
+    {
+        await using var dbContext = CreateDbContext();
+        var service = CreateImportService(dbContext);
+        var workbookBytes = CreateOfficialWorkbookBytes();
+        var expectedChecksum = ComputeChecksum(workbookBytes);
+
+        var result = await service.ExecuteAsync(new ImportOfficialSatCatalogCommand
+        {
+            FileContent = workbookBytes,
+            SourceFileName = "catalogos_sat.xlsx",
+            SourceChecksum = expectedChecksum
+        });
+
+        var persistedImports = await dbContext.SatCatalogImports.OrderBy(x => x.Id).ToListAsync();
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("catalogos_sat.xlsx", result.SourceFileName);
+        Assert.Equal("4.0", result.SourceVersion);
+        Assert.Equal(expectedChecksum, result.SourceChecksum);
+        Assert.True(result.ClientChecksumMatchesServer);
+        Assert.Equal(2, persistedImports.Count);
+        Assert.All(persistedImports, item => Assert.Equal(expectedChecksum, item.SourceChecksum));
+        Assert.All(persistedImports, item => Assert.Equal("4.0", item.SourceVersion));
+    }
+
+    [Fact]
+    public async Task ImportOfficialSatCatalog_ReturnsClearError_WhenWorkbookIsMissingRequiredWorksheets()
+    {
+        await using var dbContext = CreateDbContext();
+        var service = CreateImportService(dbContext);
+
+        var result = await service.ExecuteAsync(new ImportOfficialSatCatalogCommand
+        {
+            FileContent = CreateWorkbookBytesWithoutRequiredWorksheets(),
+            SourceFileName = "catalogos_sat.xlsx"
+        });
+
+        Assert.Equal(ImportOfficialSatCatalogOutcome.Failed, result.Outcome);
+        Assert.Contains("c_ClaveProdServ", result.ErrorMessage, StringComparison.Ordinal);
+        Assert.Contains("c_ClaveUnidad", result.ErrorMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ImportOfficialSatCatalog_ReturnsClearError_WhenWorkbookIsCorrupted()
+    {
+        await using var dbContext = CreateDbContext();
+        var service = CreateImportService(dbContext);
+
+        var result = await service.ExecuteAsync(new ImportOfficialSatCatalogCommand
+        {
+            FileContent = "not-an-excel-file"u8.ToArray(),
+            SourceFileName = "catalogos_sat.xlsx"
+        });
+
+        Assert.Equal(ImportOfficialSatCatalogOutcome.Failed, result.Outcome);
+        Assert.Equal("The SAT file is not a valid supported Excel workbook (.xlsx) or it is corrupted.", result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task ImportOfficialSatCatalog_ReturnsClearError_WhenWorkbookExtensionIsNotSupported()
+    {
+        await using var dbContext = CreateDbContext();
+        var service = CreateImportService(dbContext);
+
+        var result = await service.ExecuteAsync(new ImportOfficialSatCatalogCommand
+        {
+            FileContent = CreateOfficialWorkbookBytes(),
+            SourceFileName = "catalogos_sat.xls"
+        });
+
+        Assert.Equal(ImportOfficialSatCatalogOutcome.ValidationFailed, result.Outcome);
+        Assert.Equal("The SAT import only supports .xlsx workbooks.", result.ErrorMessage);
     }
 
     [Fact]
@@ -139,7 +216,8 @@ public sealed class SatCatalogImportAndAssignmentTests
             new SatCatalogImportRepository(dbContext),
             new SatProductServiceCatalogRepository(dbContext),
             new SatClaveUnidadRepository(dbContext),
-            dbContext);
+            dbContext,
+            NullLogger<ImportOfficialSatCatalogService>.Instance);
     }
 
     private static async Task ImportSampleCatalogAsync(BillingDbContext dbContext)
@@ -148,7 +226,6 @@ public sealed class SatCatalogImportAndAssignmentTests
         var result = await service.ExecuteAsync(new ImportOfficialSatCatalogCommand
         {
             FileContent = CreateOfficialWorkbookBytes(),
-            SourceVersion = "SAT-2026-04-07",
             SourceFileName = "catalogos_sat.xlsx",
             SourceChecksum = Guid.NewGuid().ToString("N")
         });
@@ -194,5 +271,25 @@ public sealed class SatCatalogImportAndAssignmentTests
         using var stream = new MemoryStream();
         workbook.SaveAs(stream);
         return stream.ToArray();
+    }
+
+    private static byte[] CreateWorkbookBytesWithoutRequiredWorksheets()
+    {
+        using var workbook = new XLWorkbook();
+        var sheet = workbook.Worksheets.Add("otro_catalogo");
+        sheet.Cell(1, 1).Value = "codigo";
+        sheet.Cell(1, 2).Value = "descripcion";
+        sheet.Cell(2, 1).Value = "1";
+        sheet.Cell(2, 2).Value = "Dato";
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
+
+    private static string ComputeChecksum(byte[] bytes)
+    {
+        var hash = System.Security.Cryptography.SHA256.HashData(bytes);
+        return $"sha256:{Convert.ToHexString(hash).ToLowerInvariant()}";
     }
 }

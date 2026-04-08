@@ -8,6 +8,14 @@ public sealed class ImportOfficialSatCatalogResult
 
     public string? ErrorMessage { get; init; }
 
+    public string SourceFileName { get; init; } = string.Empty;
+
+    public string SourceVersion { get; init; } = string.Empty;
+
+    public string SourceChecksum { get; init; } = string.Empty;
+
+    public bool? ClientChecksumMatchesServer { get; init; }
+
     public SatCatalogImportExecutionResult ProductServices { get; init; } = new()
     {
         CatalogType = SatCatalogImportTypes.ProductService

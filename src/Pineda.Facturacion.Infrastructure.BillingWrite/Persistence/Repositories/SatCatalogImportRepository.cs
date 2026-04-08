@@ -13,10 +13,8 @@ public sealed class SatCatalogImportRepository : ISatCatalogImportRepository
         _dbContext = dbContext;
     }
 
-    public Task<SatCatalogImport?> FindCompletedAsync(
+    public Task<SatCatalogImport?> FindCompletedByChecksumAsync(
         string catalogType,
-        string sourceVersion,
-        string sourceFileName,
         string sourceChecksum,
         CancellationToken cancellationToken = default)
     {
@@ -25,8 +23,6 @@ public sealed class SatCatalogImportRepository : ISatCatalogImportRepository
             .OrderByDescending(x => x.Id)
             .FirstOrDefaultAsync(
                 x => x.CatalogType == catalogType
-                    && x.SourceVersion == sourceVersion
-                    && x.SourceFileName == sourceFileName
                     && x.SourceChecksum == sourceChecksum
                     && x.Status == "completed",
                 cancellationToken);

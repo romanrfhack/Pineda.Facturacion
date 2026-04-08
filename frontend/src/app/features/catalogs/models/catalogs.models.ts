@@ -224,3 +224,28 @@ export interface ApplyImportBatchResponse {
   errorMessage?: string | null;
   rows: ApplyImportBatchRow[];
 }
+
+export interface OfficialSatCatalogImportExecution {
+  catalogType: string;
+  importId?: number | null;
+  status: string;
+  wasAlreadyImported: boolean;
+  totalRows: number;
+  insertedRows: number;
+  updatedRows: number;
+  deactivatedRows: number;
+  errorMessage?: string | null;
+}
+
+export interface OfficialSatCatalogImportResponse {
+  outcome: string;
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  correlationId: string;
+  sourceFileName: string;
+  sourceVersion: string;
+  sourceChecksum: string;
+  clientChecksumMatchesServer?: boolean | null;
+  productServices: OfficialSatCatalogImportExecution;
+  units: OfficialSatCatalogImportExecution;
+}

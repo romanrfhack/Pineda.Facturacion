@@ -13,6 +13,8 @@ namespace Pineda.Facturacion.Api.Endpoints;
 
 public static class FiscalImportEndpoints
 {
+    private const long OfficialSatCatalogUploadLimitBytes = 128L * 1024 * 1024;
+
     public static IEndpointRouteBuilder MapFiscalImportEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -84,9 +86,16 @@ public static class FiscalImportEndpoints
             .DisableAntiforgery()
             .WithName("ImportOfficialSatCatalog")
             .WithSummary("Import official SAT product/service and unit catalogs from Excel")
+            .WithMetadata(
+                new RequestFormLimitsAttribute
+                {
+                    MultipartBodyLengthLimit = OfficialSatCatalogUploadLimitBytes
+                },
+                new RequestSizeLimitAttribute(OfficialSatCatalogUploadLimitBytes))
             .Accepts<ImportOfficialSatCatalogRequest>("multipart/form-data")
             .Produces<ImportOfficialSatCatalogResponse>(StatusCodes.Status200OK)
-            .Produces<ImportOfficialSatCatalogResponse>(StatusCodes.Status400BadRequest);
+            .Produces<ImportOfficialSatCatalogResponse>(StatusCodes.Status400BadRequest)
+            .Produces<ImportOfficialSatCatalogResponse>(StatusCodes.Status413PayloadTooLarge);
 
         return endpoints;
     }
@@ -289,6 +298,7 @@ public static class FiscalImportEndpoints
 
     private static async Task<Results<Ok<ImportOfficialSatCatalogResponse>, BadRequest<ImportOfficialSatCatalogResponse>>> ImportOfficialSatCatalogAsync(
         [FromForm] ImportOfficialSatCatalogRequest request,
+        HttpContext httpContext,
         ImportOfficialSatCatalogService service,
         IAuditService auditService,
         CancellationToken cancellationToken)
@@ -297,9 +307,9 @@ public static class FiscalImportEndpoints
         var result = await service.ExecuteAsync(new ImportOfficialSatCatalogCommand
         {
             FileContent = fileBytes,
-            SourceVersion = request.SourceVersion,
-            SourceFileName = request.SourceFileName ?? request.File.FileName,
-            SourceChecksum = request.SourceChecksum
+            SourceVersion = request.SourceVersion ?? string.Empty,
+            SourceFileName = string.IsNullOrWhiteSpace(request.File.FileName) ? request.SourceFileName ?? string.Empty : request.File.FileName,
+            SourceChecksum = request.SourceChecksum ?? string.Empty
         }, cancellationToken);
 
         var response = new ImportOfficialSatCatalogResponse
@@ -307,6 +317,11 @@ public static class FiscalImportEndpoints
             Outcome = result.Outcome.ToString(),
             IsSuccess = result.IsSuccess,
             ErrorMessage = result.ErrorMessage,
+            CorrelationId = httpContext.TraceIdentifier,
+            SourceFileName = result.SourceFileName,
+            SourceVersion = result.SourceVersion,
+            SourceChecksum = result.SourceChecksum,
+            ClientChecksumMatchesServer = result.ClientChecksumMatchesServer,
             ProductServices = MapCatalogImportExecution(result.ProductServices),
             Units = MapCatalogImportExecution(result.Units)
         };
@@ -323,7 +338,12 @@ public static class FiscalImportEndpoints
                 request.File.Length,
                 request.SourceVersion,
                 request.SourceFileName,
-                request.SourceChecksum
+                request.SourceChecksum,
+                ServerSourceFileName = result.SourceFileName,
+                ServerSourceVersion = result.SourceVersion,
+                ServerSourceChecksum = result.SourceChecksum,
+                result.ClientChecksumMatchesServer,
+                CorrelationId = httpContext.TraceIdentifier
             },
             new
             {
@@ -343,9 +363,31 @@ public static class FiscalImportEndpoints
     private static async Task<byte[]> ReadFileAsync(IFormFile file, CancellationToken cancellationToken)
     {
         await using var stream = file.OpenReadStream();
-        using var memoryStream = new MemoryStream();
-        await stream.CopyToAsync(memoryStream, cancellationToken);
-        return memoryStream.ToArray();
+        if (file.Length <= 0)
+        {
+            return [];
+        }
+
+        if (file.Length > int.MaxValue)
+        {
+            throw new InvalidOperationException("The SAT file exceeds the supported in-memory upload size.");
+        }
+
+        var buffer = GC.AllocateUninitializedArray<byte>((int)file.Length);
+        var offset = 0;
+
+        while (offset < buffer.Length)
+        {
+            var bytesRead = await stream.ReadAsync(buffer.AsMemory(offset), cancellationToken);
+            if (bytesRead == 0)
+            {
+                break;
+            }
+
+            offset += bytesRead;
+        }
+
+        return offset == buffer.Length ? buffer : buffer[..offset];
     }
 
     private static ImportBatchSummaryResponse MapBatchSummary(FiscalReceiverImportBatch? batch, string? errorMessage = null)
@@ -508,11 +550,11 @@ public static class FiscalImportEndpoints
     {
         public IFormFile File { get; init; } = default!;
 
-        public string SourceVersion { get; init; } = string.Empty;
+        public string? SourceVersion { get; init; }
 
         public string? SourceFileName { get; init; }
 
-        public string SourceChecksum { get; init; } = string.Empty;
+        public string? SourceChecksum { get; init; }
     }
 
     public sealed class PreviewProductFiscalProfileImportRequest
@@ -549,6 +591,16 @@ public static class FiscalImportEndpoints
         public bool IsSuccess { get; init; }
 
         public string? ErrorMessage { get; init; }
+
+        public string CorrelationId { get; init; } = string.Empty;
+
+        public string SourceFileName { get; init; } = string.Empty;
+
+        public string SourceVersion { get; init; } = string.Empty;
+
+        public string SourceChecksum { get; init; } = string.Empty;
+
+        public bool? ClientChecksumMatchesServer { get; init; }
 
         public SatCatalogImportExecutionResponse ProductServices { get; init; } = new();
 

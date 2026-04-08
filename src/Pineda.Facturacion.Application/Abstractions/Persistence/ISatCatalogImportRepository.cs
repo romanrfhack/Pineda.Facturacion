@@ -4,10 +4,8 @@ namespace Pineda.Facturacion.Application.Abstractions.Persistence;
 
 public interface ISatCatalogImportRepository
 {
-    Task<SatCatalogImport?> FindCompletedAsync(
+    Task<SatCatalogImport?> FindCompletedByChecksumAsync(
         string catalogType,
-        string sourceVersion,
-        string sourceFileName,
         string sourceChecksum,
         CancellationToken cancellationToken = default);
 

@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Security.Cryptography;
+using Microsoft.Extensions.Logging;
 using Pineda.Facturacion.Application.Abstractions.Importing;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Common;
@@ -15,19 +17,22 @@ public sealed class ImportOfficialSatCatalogService
     private readonly ISatProductServiceCatalogRepository _satProductServiceCatalogRepository;
     private readonly ISatClaveUnidadRepository _satClaveUnidadRepository;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly ILogger<ImportOfficialSatCatalogService> _logger;
 
     public ImportOfficialSatCatalogService(
         IExcelWorksheetReader excelWorksheetReader,
         ISatCatalogImportRepository satCatalogImportRepository,
         ISatProductServiceCatalogRepository satProductServiceCatalogRepository,
         ISatClaveUnidadRepository satClaveUnidadRepository,
-        IUnitOfWork unitOfWork)
+        IUnitOfWork unitOfWork,
+        ILogger<ImportOfficialSatCatalogService> logger)
     {
         _excelWorksheetReader = excelWorksheetReader;
         _satCatalogImportRepository = satCatalogImportRepository;
         _satProductServiceCatalogRepository = satProductServiceCatalogRepository;
         _satClaveUnidadRepository = satClaveUnidadRepository;
         _unitOfWork = unitOfWork;
+        _logger = logger;
     }
 
     public async Task<ImportOfficialSatCatalogResult> ExecuteAsync(
@@ -35,13 +40,18 @@ public sealed class ImportOfficialSatCatalogService
         CancellationToken cancellationToken = default)
     {
         var validationError = Validate(command);
+        var importContext = BuildImportContext(command);
         if (validationError is not null)
         {
             return new ImportOfficialSatCatalogResult
             {
                 Outcome = ImportOfficialSatCatalogOutcome.ValidationFailed,
                 IsSuccess = false,
-                ErrorMessage = validationError
+                ErrorMessage = validationError,
+                SourceFileName = importContext.SourceFileName,
+                SourceVersion = importContext.SourceVersion,
+                SourceChecksum = importContext.SourceChecksum,
+                ClientChecksumMatchesServer = importContext.ClientChecksumMatchesServer
             };
         }
 
@@ -55,14 +65,14 @@ public sealed class ImportOfficialSatCatalogService
 
             var productRows = productWorksheet is null
                 ? null
-                : ParseProductServiceEntries(productWorksheet, command.SourceVersion);
+                : ParseProductServiceEntries(productWorksheet, importContext.SourceVersion);
 
             var unitRows = unitWorksheet is null
                 ? null
-                : ParseUnitEntries(unitWorksheet, command.SourceVersion);
+                : ParseUnitEntries(unitWorksheet, importContext.SourceVersion);
 
-            var productResult = await ImportProductServicesAsync(command, productRows, cancellationToken);
-            var unitResult = await ImportUnitsAsync(command, unitRows, cancellationToken);
+            var productResult = await ImportProductServicesAsync(importContext, productRows, cancellationToken);
+            var unitResult = await ImportUnitsAsync(importContext, unitRows, cancellationToken);
 
             var isSuccess = IsSuccessful(productResult.Status) && IsSuccessful(unitResult.Status);
             var allDuplicates = productResult.WasAlreadyImported && unitResult.WasAlreadyImported;
@@ -72,6 +82,10 @@ public sealed class ImportOfficialSatCatalogService
                 Outcome = ResolveOutcome(productResult, unitResult, isSuccess, allDuplicates),
                 IsSuccess = isSuccess || allDuplicates,
                 ErrorMessage = BuildErrorMessage(productResult, unitResult),
+                SourceFileName = importContext.SourceFileName,
+                SourceVersion = importContext.SourceVersion,
+                SourceChecksum = importContext.SourceChecksum,
+                ClientChecksumMatchesServer = importContext.ClientChecksumMatchesServer,
                 ProductServices = productResult,
                 Units = unitResult
             };
@@ -80,19 +94,48 @@ public sealed class ImportOfficialSatCatalogService
         {
             throw;
         }
-        catch (Exception exception)
+        catch (Exception exception) when (IsWorkbookFormatException(exception))
         {
+            _logger.LogWarning(
+                exception,
+                "Official SAT catalog import rejected because the workbook could not be opened. FileName={SourceFileName} Checksum={SourceChecksum}",
+                importContext.SourceFileName,
+                importContext.SourceChecksum);
+
             return new ImportOfficialSatCatalogResult
             {
                 Outcome = ImportOfficialSatCatalogOutcome.Failed,
                 IsSuccess = false,
-                ErrorMessage = exception.Message
+                ErrorMessage = "The SAT file is not a valid supported Excel workbook (.xlsx) or it is corrupted.",
+                SourceFileName = importContext.SourceFileName,
+                SourceVersion = importContext.SourceVersion,
+                SourceChecksum = importContext.SourceChecksum,
+                ClientChecksumMatchesServer = importContext.ClientChecksumMatchesServer
+            };
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(
+                exception,
+                "Official SAT catalog import failed. FileName={SourceFileName} Checksum={SourceChecksum}",
+                importContext.SourceFileName,
+                importContext.SourceChecksum);
+
+            return new ImportOfficialSatCatalogResult
+            {
+                Outcome = ImportOfficialSatCatalogOutcome.Failed,
+                IsSuccess = false,
+                ErrorMessage = exception.Message,
+                SourceFileName = importContext.SourceFileName,
+                SourceVersion = importContext.SourceVersion,
+                SourceChecksum = importContext.SourceChecksum,
+                ClientChecksumMatchesServer = importContext.ClientChecksumMatchesServer
             };
         }
     }
 
     private async Task<SatCatalogImportExecutionResult> ImportProductServicesAsync(
-        ImportOfficialSatCatalogCommand command,
+        SatCatalogImportContext command,
         IReadOnlyList<SatProductServiceCatalogEntry>? entries,
         CancellationToken cancellationToken)
     {
@@ -105,11 +148,9 @@ public sealed class ImportOfficialSatCatalogService
                 cancellationToken);
         }
 
-        var existing = await _satCatalogImportRepository.FindCompletedAsync(
+        var existing = await _satCatalogImportRepository.FindCompletedByChecksumAsync(
             SatCatalogImportTypes.ProductService,
-            command.SourceVersion,
-            command.SourceFileName.Trim(),
-            command.SourceChecksum.Trim(),
+            command.SourceChecksum,
             cancellationToken);
 
         if (existing is not null)
@@ -125,7 +166,7 @@ public sealed class ImportOfficialSatCatalogService
         {
             var syncResult = await _satProductServiceCatalogRepository.SyncAsync(
                 entries,
-                command.SourceVersion.Trim(),
+                command.SourceVersion,
                 DateTime.UtcNow,
                 cancellationToken);
 
@@ -150,6 +191,12 @@ public sealed class ImportOfficialSatCatalogService
         }
         catch (Exception exception)
         {
+            _logger.LogError(
+                exception,
+                "Official SAT product/service catalog sync failed. FileName={SourceFileName} Checksum={SourceChecksum}",
+                command.SourceFileName,
+                command.SourceChecksum);
+
             satCatalogImport.Status = "failed";
             satCatalogImport.ErrorMessage = exception.Message;
             satCatalogImport.CompletedAtUtc = DateTime.UtcNow;
@@ -166,7 +213,7 @@ public sealed class ImportOfficialSatCatalogService
     }
 
     private async Task<SatCatalogImportExecutionResult> ImportUnitsAsync(
-        ImportOfficialSatCatalogCommand command,
+        SatCatalogImportContext command,
         IReadOnlyList<SatClaveUnidadEntity>? entries,
         CancellationToken cancellationToken)
     {
@@ -179,11 +226,9 @@ public sealed class ImportOfficialSatCatalogService
                 cancellationToken);
         }
 
-        var existing = await _satCatalogImportRepository.FindCompletedAsync(
+        var existing = await _satCatalogImportRepository.FindCompletedByChecksumAsync(
             SatCatalogImportTypes.ClaveUnidad,
-            command.SourceVersion,
-            command.SourceFileName.Trim(),
-            command.SourceChecksum.Trim(),
+            command.SourceChecksum,
             cancellationToken);
 
         if (existing is not null)
@@ -199,7 +244,7 @@ public sealed class ImportOfficialSatCatalogService
         {
             var syncResult = await _satClaveUnidadRepository.SyncAsync(
                 entries,
-                command.SourceVersion.Trim(),
+                command.SourceVersion,
                 DateTime.UtcNow,
                 cancellationToken);
 
@@ -224,6 +269,12 @@ public sealed class ImportOfficialSatCatalogService
         }
         catch (Exception exception)
         {
+            _logger.LogError(
+                exception,
+                "Official SAT unit catalog sync failed. FileName={SourceFileName} Checksum={SourceChecksum}",
+                command.SourceFileName,
+                command.SourceChecksum);
+
             satCatalogImport.Status = "failed";
             satCatalogImport.ErrorMessage = exception.Message;
             satCatalogImport.CompletedAtUtc = DateTime.UtcNow;
@@ -241,7 +292,7 @@ public sealed class ImportOfficialSatCatalogService
 
     private async Task<SatCatalogImportExecutionResult> RecordMissingWorksheetAsync(
         string catalogType,
-        ImportOfficialSatCatalogCommand command,
+        SatCatalogImportContext command,
         string errorMessage,
         CancellationToken cancellationToken)
     {
@@ -262,15 +313,15 @@ public sealed class ImportOfficialSatCatalogService
         };
     }
 
-    private static SatCatalogImport CreateImport(string catalogType, ImportOfficialSatCatalogCommand command)
+    private static SatCatalogImport CreateImport(string catalogType, SatCatalogImportContext command)
     {
         return new SatCatalogImport
         {
             CatalogType = catalogType,
-            SourceFileName = command.SourceFileName.Trim(),
+            SourceFileName = command.SourceFileName,
             SourceFormat = ResolveSourceFormat(command.SourceFileName),
-            SourceVersion = command.SourceVersion.Trim(),
-            SourceChecksum = command.SourceChecksum.Trim(),
+            SourceVersion = command.SourceVersion,
+            SourceChecksum = command.SourceChecksum,
             Status = "processing",
             CreatedAtUtc = DateTime.UtcNow
         };
@@ -304,37 +355,51 @@ public sealed class ImportOfficialSatCatalogService
         ExcelNamedWorksheetData worksheet,
         string sourceVersion)
     {
-        var headers = BuildHeaderLookup(worksheet.Headers);
-        var codeHeader = GetRequiredHeader(headers, "CLAVEPRODSERV", "CCLAVEPRODSERV");
-        var descriptionHeader = GetRequiredHeader(headers, "DESCRIPCION", "NOMBRE");
-        var keywordsHeader = GetOptionalHeader(headers, "PALABRASSIMILARES", "PALABRASCLAVE", "PALABRASSIMILAR");
-        var activeHeader = GetOptionalHeader(headers, "ESTATUS", "ACTIVO", "VIGENTE");
-        var endDateHeader = GetOptionalHeader(headers, "FECHAFINVIGENCIA", "FINVIGENCIA", "FECHAFINDEVIGENCIA");
+        try
+        {
+            var headers = BuildHeaderLookup(worksheet.Headers);
+            var codeHeader = GetRequiredHeader(headers, "CLAVEPRODSERV", "CCLAVEPRODSERV");
+            var descriptionHeader = GetRequiredHeader(headers, "DESCRIPCION", "NOMBRE");
+            var keywordsHeader = GetOptionalHeader(headers, "PALABRASSIMILARES", "PALABRASCLAVE", "PALABRASSIMILAR");
+            var activeHeader = GetOptionalHeader(headers, "ESTATUS", "ACTIVO", "VIGENTE");
+            var endDateHeader = GetOptionalHeader(headers, "FECHAFINVIGENCIA", "FINVIGENCIA", "FECHAFINDEVIGENCIA");
 
-        return worksheet.Rows
-            .Select(row => BuildProductServiceEntry(row, codeHeader, descriptionHeader, keywordsHeader, activeHeader, endDateHeader, sourceVersion))
-            .Where(x => x is not null)
-            .Cast<SatProductServiceCatalogEntry>()
-            .ToList();
+            return worksheet.Rows
+                .Select(row => BuildProductServiceEntry(row, codeHeader, descriptionHeader, keywordsHeader, activeHeader, endDateHeader, sourceVersion))
+                .Where(x => x is not null)
+                .Cast<SatProductServiceCatalogEntry>()
+                .ToList();
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new InvalidOperationException($"The c_ClaveProdServ worksheet is missing required columns. {exception.Message}", exception);
+        }
     }
 
     private static IReadOnlyList<SatClaveUnidadEntity> ParseUnitEntries(
         ExcelNamedWorksheetData worksheet,
         string sourceVersion)
     {
-        var headers = BuildHeaderLookup(worksheet.Headers);
-        var codeHeader = GetRequiredHeader(headers, "CLAVEUNIDAD", "CCLAVEUNIDAD", "CLAVE");
-        var descriptionHeader = GetRequiredHeader(headers, "NOMBRE", "DESCRIPCION");
-        var symbolHeader = GetOptionalHeader(headers, "SIMBOLO", "SIMBOL");
-        var notesHeader = GetOptionalHeader(headers, "NOTAS", "NOTA");
-        var activeHeader = GetOptionalHeader(headers, "ESTATUS", "ACTIVO", "VIGENTE");
-        var endDateHeader = GetOptionalHeader(headers, "FECHAFINVIGENCIA", "FINVIGENCIA", "FECHAFINDEVIGENCIA");
+        try
+        {
+            var headers = BuildHeaderLookup(worksheet.Headers);
+            var codeHeader = GetRequiredHeader(headers, "CLAVEUNIDAD", "CCLAVEUNIDAD", "CLAVE");
+            var descriptionHeader = GetRequiredHeader(headers, "NOMBRE", "DESCRIPCION");
+            var symbolHeader = GetOptionalHeader(headers, "SIMBOLO", "SIMBOL");
+            var notesHeader = GetOptionalHeader(headers, "NOTAS", "NOTA");
+            var activeHeader = GetOptionalHeader(headers, "ESTATUS", "ACTIVO", "VIGENTE");
+            var endDateHeader = GetOptionalHeader(headers, "FECHAFINVIGENCIA", "FINVIGENCIA", "FECHAFINDEVIGENCIA");
 
-        return worksheet.Rows
-            .Select(row => BuildUnitEntry(row, codeHeader, descriptionHeader, symbolHeader, notesHeader, activeHeader, endDateHeader, sourceVersion))
-            .Where(x => x is not null)
-            .Cast<SatClaveUnidadEntity>()
-            .ToList();
+            return worksheet.Rows
+                .Select(row => BuildUnitEntry(row, codeHeader, descriptionHeader, symbolHeader, notesHeader, activeHeader, endDateHeader, sourceVersion))
+                .Where(x => x is not null)
+                .Cast<SatClaveUnidadEntity>()
+                .ToList();
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new InvalidOperationException($"The c_ClaveUnidad worksheet is missing required columns. {exception.Message}", exception);
+        }
     }
 
     private static SatProductServiceCatalogEntry? BuildProductServiceEntry(
@@ -485,22 +550,78 @@ public sealed class ImportOfficialSatCatalogService
             return "The official SAT file is required.";
         }
 
-        if (string.IsNullOrWhiteSpace(command.SourceVersion))
-        {
-            return "Source version is required.";
-        }
-
-        if (string.IsNullOrWhiteSpace(command.SourceFileName))
+        var sourceFileName = ResolveSourceFileName(command.SourceFileName);
+        if (string.IsNullOrWhiteSpace(sourceFileName))
         {
             return "Source file name is required.";
         }
 
-        if (string.IsNullOrWhiteSpace(command.SourceChecksum))
+        if (!string.Equals(Path.GetExtension(sourceFileName), ".xlsx", StringComparison.OrdinalIgnoreCase))
         {
-            return "Source checksum is required.";
+            return "The SAT import only supports .xlsx workbooks.";
         }
 
         return null;
+    }
+
+    private static SatCatalogImportContext BuildImportContext(ImportOfficialSatCatalogCommand command)
+    {
+        var sourceFileName = ResolveSourceFileName(command.SourceFileName);
+        var sourceChecksum = ComputeSourceChecksum(command.FileContent);
+        return new SatCatalogImportContext(
+            sourceFileName,
+            ResolveSourceVersion(sourceFileName),
+            sourceChecksum,
+            CompareClientChecksum(command.SourceChecksum, sourceChecksum));
+    }
+
+    private static string ResolveSourceFileName(string? requestedSourceFileName)
+    {
+        var fileName = Path.GetFileName((requestedSourceFileName ?? string.Empty).Trim());
+        return string.IsNullOrWhiteSpace(fileName) ? "sat-catalog.xlsx" : fileName;
+    }
+
+    private static string ResolveSourceVersion(string sourceFileName)
+    {
+        _ = sourceFileName;
+        return "4.0";
+    }
+
+    private static string ComputeSourceChecksum(byte[] fileContent)
+    {
+        var hash = SHA256.HashData(fileContent);
+        return $"sha256:{Convert.ToHexString(hash).ToLowerInvariant()}";
+    }
+
+    private static bool? CompareClientChecksum(string? clientChecksum, string serverChecksum)
+    {
+        var normalizedClientChecksum = NormalizeChecksum(clientChecksum);
+        return normalizedClientChecksum is null
+            ? null
+            : string.Equals(normalizedClientChecksum, serverChecksum, StringComparison.Ordinal);
+    }
+
+    private static string? NormalizeChecksum(string? checksum)
+    {
+        if (string.IsNullOrWhiteSpace(checksum))
+        {
+            return null;
+        }
+
+        var trimmed = checksum.Trim().ToLowerInvariant();
+        return trimmed.StartsWith("sha256:", StringComparison.Ordinal)
+            ? trimmed
+            : $"sha256:{trimmed}";
+    }
+
+    private static bool IsWorkbookFormatException(Exception exception)
+    {
+        var message = exception.Message;
+        return exception is InvalidDataException
+            || message.Contains("corrupted data", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("central directory", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("cannot find zip", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("file format", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsSuccessful(string status)
@@ -544,4 +665,10 @@ public sealed class ImportOfficialSatCatalogService
 
         return errors.Count == 0 ? null : string.Join(" ", errors);
     }
+
+    private sealed record SatCatalogImportContext(
+        string SourceFileName,
+        string SourceVersion,
+        string SourceChecksum,
+        bool? ClientChecksumMatchesServer);
 }

@@ -5,8 +5,11 @@ using System.Text;
 using System.Text.Json;
 using ClosedXML.Excel;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -177,12 +180,14 @@ public class MvpLifecycleApiTests
         var file = new ByteArrayContent(CreateOfficialSatCatalogWorkbookBytes());
         file.Headers.ContentType = new MediaTypeHeaderValue("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         content.Add(file, "file", "catalogos_sat.xlsx");
-        content.Add(new StringContent("SAT-2026-04-07"), "sourceVersion");
-        content.Add(new StringContent("catalogos_sat.xlsx"), "sourceFileName");
-        content.Add(new StringContent("sha256:it-1"), "sourceChecksum");
 
         var importResponse = await client.PostAsync("/api/fiscal/imports/sat/official", content);
         Assert.Equal(HttpStatusCode.OK, importResponse.StatusCode);
+        var importBody = await importResponse.Content.ReadFromJsonAsync<FiscalImportEndpoints.ImportOfficialSatCatalogResponse>();
+        Assert.NotNull(importBody);
+        Assert.Equal("4.0", importBody!.SourceVersion);
+        Assert.Equal("catalogos_sat.xlsx", importBody.SourceFileName);
+        Assert.StartsWith("sha256:", importBody.SourceChecksum, StringComparison.Ordinal);
 
         var suggestResponse = await client.PostAsJsonAsync("/api/fiscal/product-fiscal-profiles/legacy-suggestions", new ProductFiscalProfilesEndpoints.SuggestLegacyItemSatAssignmentRequest
         {
@@ -213,6 +218,28 @@ public class MvpLifecycleApiTests
         Assert.NotNull(profile);
         Assert.Equal("40161513", profile!.SatProductServiceCode);
         Assert.Equal("H87", profile.SatUnitCode);
+    }
+
+    [Fact]
+    public void ImportOfficialSatCatalog_UsesEndpointSpecificUploadLimits()
+    {
+        using var factory = new MvpApiFactory();
+        using var scope = factory.Services.CreateScope();
+        var dataSource = scope.ServiceProvider.GetRequiredService<EndpointDataSource>();
+
+        var endpoint = dataSource.Endpoints
+            .OfType<RouteEndpoint>()
+            .Single(x =>
+                string.Equals(x.RoutePattern.RawText, "/api/fiscal/imports/sat/official", StringComparison.Ordinal)
+                && x.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods.Contains("POST", StringComparer.OrdinalIgnoreCase) == true);
+
+        var requestFormLimits = endpoint.Metadata.GetMetadata<RequestFormLimitsAttribute>();
+        var requestSizeLimit = endpoint.Metadata.GetMetadata<RequestSizeLimitAttribute>();
+
+        Assert.NotNull(requestFormLimits);
+        Assert.Equal(128L * 1024 * 1024, requestFormLimits!.MultipartBodyLengthLimit);
+        Assert.NotNull(requestSizeLimit);
+        Assert.Equal(128L * 1024 * 1024, ((IRequestSizeLimitMetadata)requestSizeLimit!).MaxRequestBodySize);
     }
 
     [Fact]
