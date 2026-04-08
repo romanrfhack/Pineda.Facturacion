@@ -7,6 +7,8 @@ namespace Pineda.Facturacion.Infrastructure.Excel;
 
 public class ClosedXmlWorksheetReader : IExcelWorksheetReader
 {
+    private const int HeaderDetectionRowScanLimit = 10;
+
     public Task<ExcelWorksheetData> ReadFirstWorksheetAsync(Stream stream, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -101,13 +103,23 @@ public class ClosedXmlWorksheetReader : IExcelWorksheetReader
             return new ExcelWorksheetData();
         }
 
-        var headers = range.FirstRow()
-            .Cells()
-            .Select(cell => cell.GetString().Trim())
+        var rowBuffers = range.RowsUsed()
+            .Select(row => new WorksheetRowBuffer(
+                row.RowNumber(),
+                row.Cells(1, range.ColumnCount())
+                    .Select(cell => cell.GetString().Trim())
+                    .ToList()))
             .ToList();
 
+        var headerRowIndex = SelectHeaderRowIndex(rowBuffers);
+        if (headerRowIndex < 0)
+        {
+            return new ExcelWorksheetData();
+        }
+
+        var headers = rowBuffers[headerRowIndex].Cells;
         var rows = new List<ExcelWorksheetRowData>();
-        foreach (var row in range.RowsUsed().Skip(1))
+        foreach (var rowBuffer in rowBuffers.Skip(headerRowIndex + 1))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -120,13 +132,13 @@ public class ClosedXmlWorksheetReader : IExcelWorksheetReader
                     continue;
                 }
 
-                var cellValue = row.Cell(index + 1).GetString();
+                var cellValue = rowBuffer.Cells[index];
                 values[header] = string.IsNullOrWhiteSpace(cellValue) ? null : cellValue.Trim();
             }
 
             rows.Add(new ExcelWorksheetRowData
             {
-                RowNumber = row.RowNumber(),
+                RowNumber = rowBuffer.RowNumber,
                 Values = values
             });
         }
@@ -140,8 +152,13 @@ public class ClosedXmlWorksheetReader : IExcelWorksheetReader
 
     private static ExcelNamedWorksheetData ReadWorksheet(ISheet worksheet, DataFormatter formatter, CancellationToken cancellationToken)
     {
-        var headerRow = worksheet.GetRow(worksheet.FirstRowNum);
-        if (headerRow is null)
+        var rowBuffers = Enumerable.Range(worksheet.FirstRowNum, worksheet.LastRowNum - worksheet.FirstRowNum + 1)
+            .Select(index => worksheet.GetRow(index))
+            .Where(row => row is not null)
+            .Cast<IRow>()
+            .ToList();
+
+        if (rowBuffers.Count == 0)
         {
             return new ExcelNamedWorksheetData
             {
@@ -149,21 +166,29 @@ public class ClosedXmlWorksheetReader : IExcelWorksheetReader
             };
         }
 
-        var lastCellIndex = Math.Max((int)headerRow.LastCellNum, 0);
-        var headers = Enumerable.Range(0, lastCellIndex)
-            .Select(index => formatter.FormatCellValue(headerRow.GetCell(index)).Trim())
+        var maxCellCount = rowBuffers.Max(row => Math.Max((int)row.LastCellNum, 0));
+        var normalizedRows = rowBuffers
+            .Select(row => new WorksheetRowBuffer(
+                row.RowNum + 1,
+                Enumerable.Range(0, maxCellCount)
+                    .Select(index => formatter.FormatCellValue(row.GetCell(index)).Trim())
+                    .ToList()))
             .ToList();
 
+        var headerRowIndex = SelectHeaderRowIndex(normalizedRows);
+        if (headerRowIndex < 0)
+        {
+            return new ExcelNamedWorksheetData
+            {
+                Name = worksheet.SheetName
+            };
+        }
+
+        var headers = normalizedRows[headerRowIndex].Cells;
         var rows = new List<ExcelWorksheetRowData>();
-        for (var rowIndex = worksheet.FirstRowNum + 1; rowIndex <= worksheet.LastRowNum; rowIndex++)
+        foreach (var rowBuffer in normalizedRows.Skip(headerRowIndex + 1))
         {
             cancellationToken.ThrowIfCancellationRequested();
-
-            var row = worksheet.GetRow(rowIndex);
-            if (row is null)
-            {
-                continue;
-            }
 
             var values = new Dictionary<string, string?>(StringComparer.Ordinal);
             for (var columnIndex = 0; columnIndex < headers.Count; columnIndex++)
@@ -174,13 +199,13 @@ public class ClosedXmlWorksheetReader : IExcelWorksheetReader
                     continue;
                 }
 
-                var value = formatter.FormatCellValue(row.GetCell(columnIndex));
+                var value = rowBuffer.Cells[columnIndex];
                 values[header] = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
             }
 
             rows.Add(new ExcelWorksheetRowData
             {
-                RowNumber = row.RowNum + 1,
+                RowNumber = rowBuffer.RowNumber,
                 Values = values
             });
         }
@@ -237,4 +262,43 @@ public class ClosedXmlWorksheetReader : IExcelWorksheetReader
             && signature[6] == 0x1A
             && signature[7] == 0xE1;
     }
+
+    private static int SelectHeaderRowIndex(IReadOnlyList<WorksheetRowBuffer> rows)
+    {
+        if (rows.Count == 0)
+        {
+            return -1;
+        }
+
+        var candidates = rows
+            .Take(HeaderDetectionRowScanLimit)
+            .Select((row, index) => new
+            {
+                Index = index,
+                NonEmptyCount = row.Cells.Count(cell => !string.IsNullOrWhiteSpace(cell)),
+                TextLikeCount = row.Cells.Count(IsTextLikeCell)
+            })
+            .Where(x => x.NonEmptyCount > 0)
+            .ToList();
+
+        if (candidates.Count == 0)
+        {
+            return -1;
+        }
+
+        var maxNonEmptyCount = candidates.Max(x => x.NonEmptyCount);
+        return candidates
+            .Where(x => x.NonEmptyCount == maxNonEmptyCount)
+            .OrderByDescending(x => x.TextLikeCount)
+            .ThenBy(x => x.Index)
+            .Select(x => x.Index)
+            .First();
+    }
+
+    private static bool IsTextLikeCell(string? value)
+    {
+        return !string.IsNullOrWhiteSpace(value) && value.Any(char.IsLetter);
+    }
+
+    private sealed record WorksheetRowBuffer(int RowNumber, IReadOnlyList<string> Cells);
 }

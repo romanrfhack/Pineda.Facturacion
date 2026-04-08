@@ -145,6 +145,26 @@ public sealed class SatCatalogImportAndAssignmentTests
     }
 
     [Fact]
+    public async Task ImportOfficialSatCatalog_ImportsValidXlsWorkbook_WhenHeaderRowIsNotFirstUsedRow()
+    {
+        await using var dbContext = CreateDbContext();
+        var service = CreateImportService(dbContext);
+        var workbookBytes = CreateOfficialXlsWorkbookBytesWithIntroRows();
+
+        var result = await service.ExecuteAsync(new ImportOfficialSatCatalogCommand
+        {
+            FileContent = workbookBytes,
+            SourceFileName = "catCFDI_V_4_20260324.xls"
+        });
+
+        Assert.Equal(ImportOfficialSatCatalogOutcome.Completed, result.Outcome);
+        Assert.True(result.IsSuccess);
+        Assert.Null(result.ErrorMessage);
+        Assert.Equal(2, await dbContext.SatProductServiceCatalogEntries.CountAsync());
+        Assert.Equal(2, await dbContext.SatClaveUnidades.CountAsync());
+    }
+
+    [Fact]
     public async Task SearchSatCatalogs_ByCodeAndDescription_ReturnsRankedResults()
     {
         await using var dbContext = CreateDbContext();
@@ -325,6 +345,53 @@ public sealed class SatCatalogImportAndAssignmentTests
         unitSheet.GetRow(2).CreateCell(1).SetCellValue("Unidad de servicio");
         unitSheet.GetRow(2).CreateCell(2).SetCellValue("SRV");
         unitSheet.GetRow(2).CreateCell(3).SetCellValue("Servicios");
+
+        using var stream = new MemoryStream();
+        workbook.Write(stream);
+        return stream.ToArray();
+    }
+
+    private static byte[] CreateOfficialXlsWorkbookBytesWithIntroRows()
+    {
+        using var workbook = new HSSFWorkbook();
+
+        var productSheet = workbook.CreateSheet("c_ClaveProdServ");
+        productSheet.CreateRow(0).CreateCell(0).SetCellValue("Catálogo c_ClaveProdServ");
+        productSheet.CreateRow(1).CreateCell(0).SetCellValue("Versión");
+        productSheet.GetRow(1).CreateCell(1).SetCellValue("4.0");
+        productSheet.CreateRow(2).CreateCell(0).SetCellValue("Fecha de publicación");
+        productSheet.GetRow(2).CreateCell(1).SetCellValue("2026-03-24");
+        productSheet.CreateRow(4).CreateCell(0).SetCellValue("c_ClaveProdServ");
+        productSheet.GetRow(4).CreateCell(1).SetCellValue("Descripción");
+        productSheet.GetRow(4).CreateCell(2).SetCellValue("Palabras similares");
+        productSheet.GetRow(4).CreateCell(3).SetCellValue("Fecha fin de vigencia");
+        productSheet.CreateRow(5).CreateCell(0).SetCellValue("40161513");
+        productSheet.GetRow(5).CreateCell(1).SetCellValue("Filtro de aceite");
+        productSheet.GetRow(5).CreateCell(2).SetCellValue("filtro aceite lubricacion motor");
+        productSheet.GetRow(5).CreateCell(3).SetCellValue(string.Empty);
+        productSheet.CreateRow(6).CreateCell(0).SetCellValue("40161505");
+        productSheet.GetRow(6).CreateCell(1).SetCellValue("Filtro de aire");
+        productSheet.GetRow(6).CreateCell(2).SetCellValue("filtro aire motor");
+        productSheet.GetRow(6).CreateCell(3).SetCellValue(string.Empty);
+
+        var unitSheet = workbook.CreateSheet("c_ClaveUnidad");
+        unitSheet.CreateRow(0).CreateCell(0).SetCellValue("Catálogo c_ClaveUnidad");
+        unitSheet.CreateRow(1).CreateCell(0).SetCellValue("Versión");
+        unitSheet.GetRow(1).CreateCell(1).SetCellValue("4.0");
+        unitSheet.CreateRow(2).CreateCell(0).SetCellValue("Fecha de publicación");
+        unitSheet.GetRow(2).CreateCell(1).SetCellValue("2026-03-24");
+        unitSheet.CreateRow(4).CreateCell(0).SetCellValue("ClaveUnidad");
+        unitSheet.GetRow(4).CreateCell(1).SetCellValue("Nombre");
+        unitSheet.GetRow(4).CreateCell(2).SetCellValue("Símbolo");
+        unitSheet.GetRow(4).CreateCell(3).SetCellValue("Notas");
+        unitSheet.CreateRow(5).CreateCell(0).SetCellValue("H87");
+        unitSheet.GetRow(5).CreateCell(1).SetCellValue("Pieza");
+        unitSheet.GetRow(5).CreateCell(2).SetCellValue("PZA");
+        unitSheet.GetRow(5).CreateCell(3).SetCellValue("Unidad de pieza");
+        unitSheet.CreateRow(6).CreateCell(0).SetCellValue("E48");
+        unitSheet.GetRow(6).CreateCell(1).SetCellValue("Unidad de servicio");
+        unitSheet.GetRow(6).CreateCell(2).SetCellValue("SRV");
+        unitSheet.GetRow(6).CreateCell(3).SetCellValue("Servicios");
 
         using var stream = new MemoryStream();
         workbook.Write(stream);
