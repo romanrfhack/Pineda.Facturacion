@@ -9,6 +9,7 @@ using System.Xml.Linq;
 using Microsoft.Extensions.Options;
 using Pineda.Facturacion.Application.Abstractions.Pac;
 using Pineda.Facturacion.Application.Abstractions.Secrets;
+using Pineda.Facturacion.Application.Common;
 using Pineda.Facturacion.Application.Contracts.Pac;
 using Pineda.Facturacion.Infrastructure.FacturaloPlus.Options;
 
@@ -436,8 +437,12 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
         var descuento = item.DiscountAmount > 0
             ? RoundMonetary(item.DiscountAmount, currencyScale)
             : (decimal?)null;
-        var importeNeto = RoundMonetary(importe - (descuento ?? 0m), currencyScale);
-        var traslados = BuildConceptoTraslados(item, importeNeto, currencyScale);
+        var taxEvaluation = CfdiConceptTaxEvaluator.Evaluate(
+            item.TaxObjectCode,
+            item.Subtotal,
+            item.TaxTotal,
+            currencyScale);
+        var traslados = BuildConceptoTraslados(item, taxEvaluation);
 
         return new FacturaloPlusComprobanteConcepto
         {
@@ -450,7 +455,7 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
             ValorUnitario = valorUnitario,
             Importe = importe,
             Descuento = descuento,
-            ObjetoImp = item.TaxObjectCode,
+            ObjetoImp = taxEvaluation.EffectiveTaxObjectCode,
             Impuestos = traslados.Count == 0
                 ? null
                 : new FacturaloPlusComprobanteConceptoImpuestos
@@ -460,25 +465,24 @@ public class FacturaloPlusStampingGateway : IFiscalStampingGateway
         };
     }
 
-    private static List<FacturaloPlusComprobanteTraslado> BuildConceptoTraslados(FiscalStampingRequestItem item, decimal importeNeto, int currencyScale)
+    private static List<FacturaloPlusComprobanteTraslado> BuildConceptoTraslados(
+        FiscalStampingRequestItem item,
+        CfdiConceptTaxEvaluation taxEvaluation)
     {
-        if (!string.Equals(item.TaxObjectCode, "02", StringComparison.Ordinal))
+        if (!taxEvaluation.ShouldIncludeTraslado)
         {
             return [];
         }
-
-        var baseReportable = RoundMonetary(item.Subtotal, currencyScale);
-        var trasladoImporte = RoundMonetary(item.TaxTotal, currencyScale);
 
         return
         [
             new FacturaloPlusComprobanteTraslado
             {
-                Base = baseReportable,
+                Base = taxEvaluation.ReportableBase,
                 Impuesto = "002",
                 TipoFactor = "Tasa",
                 TasaOCuota = FormatTasaOCuota(item.VatRate),
-                Importe = trasladoImporte
+                Importe = taxEvaluation.ReportableTaxAmount
             }
         ];
     }

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
+using Pineda.Facturacion.Domain.Enums;
 
 namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Repositories;
 
@@ -38,11 +39,15 @@ public sealed class BillingDocumentLookupRepository : IBillingDocumentLookupRepo
                 Total = billingDocument.Total,
                 CreatedAtUtc = billingDocument.CreatedAtUtc,
                 FiscalDocumentId = _dbContext.FiscalDocuments
-                    .Where(fiscalDocument => fiscalDocument.BillingDocumentId == billingDocument.Id)
+                    .Where(fiscalDocument =>
+                        fiscalDocument.BillingDocumentId == billingDocument.Id
+                        && fiscalDocument.Status != FiscalDocumentStatus.DiscardedUnstamped)
                     .Select(fiscalDocument => (long?)fiscalDocument.Id)
                     .FirstOrDefault(),
                 FiscalDocumentStatus = _dbContext.FiscalDocuments
-                    .Where(fiscalDocument => fiscalDocument.BillingDocumentId == billingDocument.Id)
+                    .Where(fiscalDocument =>
+                        fiscalDocument.BillingDocumentId == billingDocument.Id
+                        && fiscalDocument.Status != FiscalDocumentStatus.DiscardedUnstamped)
                     .Select(fiscalDocument => fiscalDocument.Status.ToString())
                     .FirstOrDefault(),
                 Items = billingDocument.Items
@@ -145,6 +150,7 @@ public sealed class BillingDocumentLookupRepository : IBillingDocumentLookupRepo
             join legacyImportRecord in _dbContext.LegacyImportRecords.AsNoTracking()
                 on salesOrder.LegacyImportRecordId equals legacyImportRecord.Id
             join fiscalDocument in _dbContext.FiscalDocuments.AsNoTracking()
+                    .Where(x => x.Status != FiscalDocumentStatus.DiscardedUnstamped)
                 on billingDocument.Id equals fiscalDocument.BillingDocumentId into fiscalDocuments
             from fiscalDocument in fiscalDocuments.DefaultIfEmpty()
             select new BillingDocumentLookupModel

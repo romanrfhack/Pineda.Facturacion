@@ -93,13 +93,14 @@ public sealed class UpdateBillingDocumentOrderAssociationService
         }
 
         var currentSalesOrders = await EnsurePrimaryAssociationAndLoadSalesOrdersAsync(billingDocument, primarySalesOrder, cancellationToken);
-        var fiscalDocument = await _fiscalDocumentRepository.GetTrackedByBillingDocumentIdAsync(billingDocumentId, cancellationToken);
+        var persistedFiscalDocument = await _fiscalDocumentRepository.GetTrackedByBillingDocumentIdAsync(billingDocumentId, cancellationToken);
+        var fiscalDocument = FiscalDocumentCompositionEditPolicy.NormalizeOperationalFiscalDocument(persistedFiscalDocument);
 
-        if (!CanEditFiscalComposition(fiscalDocument))
+        if (!FiscalDocumentCompositionEditPolicy.CanEdit(persistedFiscalDocument))
         {
             return Conflict(
                 billingDocument,
-                fiscalDocument,
+                persistedFiscalDocument,
                 salesOrderId,
                 "The billing document composition is locked because the fiscal document is no longer editable before stamping.");
         }
@@ -252,14 +253,6 @@ public sealed class UpdateBillingDocumentOrderAssociationService
             .OrderBy(x => x.Id == billingDocument.SalesOrderId ? 0 : 1)
             .ThenBy(x => x.Id)
             .ToArray();
-    }
-
-    private static bool CanEditFiscalComposition(FiscalDocument? fiscalDocument)
-    {
-        return fiscalDocument is null
-            || fiscalDocument.Status is FiscalDocumentStatus.Draft
-            or FiscalDocumentStatus.ReadyForStamping
-            or FiscalDocumentStatus.StampingRejected;
     }
 
     private async Task<Dictionary<long, string>> BuildLegacyOrderReferenceMapAsync(

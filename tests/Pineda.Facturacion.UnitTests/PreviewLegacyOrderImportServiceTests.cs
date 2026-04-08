@@ -148,6 +148,33 @@ public class PreviewLegacyOrderImportServiceTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_AllowsEligibility_WhenFiscalDocumentWasDiscardedUnstamped()
+    {
+        var legacyOrder = CreateLegacyOrder();
+        legacyOrder.Items[0].Quantity = 2m;
+        var service = CreateService(
+            legacyOrder,
+            CreateExistingSnapshot(),
+            new ImportedLegacyOrderLookupModel
+            {
+                LegacyOrderId = legacyOrder.LegacyOrderId,
+                SalesOrderId = 20,
+                SalesOrderStatus = "SnapshotCreated",
+                BillingDocumentId = 40,
+                BillingDocumentStatus = "Draft",
+                FiscalDocumentId = 80,
+                FiscalDocumentStatus = nameof(FiscalDocumentStatus.DiscardedUnstamped)
+            },
+            existingSourceHash: "old-hash",
+            currentSourceHash: "new-hash");
+
+        var result = await service.ExecuteAsync(legacyOrder.LegacyOrderId);
+
+        Assert.Equal(PreviewLegacyOrderReimportEligibilityStatus.Allowed, result.ReimportEligibility.Status);
+        Assert.Equal(PreviewLegacyOrderReimportReasonCode.None, result.ReimportEligibility.ReasonCode);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_AllowsEligibility_WhenNoProtectedStateExists()
     {
         var legacyOrder = CreateLegacyOrder();

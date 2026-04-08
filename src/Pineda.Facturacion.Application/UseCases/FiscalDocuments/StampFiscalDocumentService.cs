@@ -91,6 +91,14 @@ public class StampFiscalDocumentService
             return Conflict(fiscalDocument, $"Fiscal document status '{fiscalDocument.Status}' is not eligible for stamping.");
         }
 
+        var consistencyError = FiscalDocumentSnapshotConsistencyValidator.Validate(fiscalDocument);
+        if (consistencyError is not null)
+        {
+            return ValidationFailure(
+                fiscalDocument.Id,
+                $"Fiscal snapshot consistency validation failed before stamping. {consistencyError}");
+        }
+
         var existingStamp = await _fiscalStampRepository.GetTrackedByFiscalDocumentIdAsync(command.FiscalDocumentId, cancellationToken);
         if (existingStamp is not null && existingStamp.Status == FiscalStampStatus.Succeeded && !string.IsNullOrWhiteSpace(existingStamp.Uuid))
         {
@@ -297,6 +305,7 @@ public class StampFiscalDocumentService
             return false;
         }
 
+        var currencyScale = ResolveCurrencyScale(currencyCode);
         var items = new List<FiscalStampingRequestItem>();
         foreach (var item in fiscalDocument.Items.OrderBy(x => x.LineNumber))
         {
@@ -307,6 +316,17 @@ public class StampFiscalDocumentService
                 || string.IsNullOrWhiteSpace(item.TaxObjectCode))
             {
                 validationError = $"Fiscal document item line '{item.LineNumber}' is missing required stampable snapshot data.";
+                return false;
+            }
+
+            var taxEvaluation = CfdiConceptTaxEvaluator.Evaluate(
+                item.TaxObjectCode,
+                item.Subtotal,
+                item.TaxTotal,
+                currencyScale);
+            if (!string.IsNullOrWhiteSpace(taxEvaluation.ValidationError))
+            {
+                validationError = $"Fiscal document item line '{item.LineNumber}' {taxEvaluation.ValidationError}";
                 return false;
             }
 
@@ -323,7 +343,7 @@ public class StampFiscalDocumentService
                 Total = item.Total,
                 SatProductServiceCode = item.SatProductServiceCode,
                 SatUnitCode = item.SatUnitCode,
-                TaxObjectCode = item.TaxObjectCode,
+                TaxObjectCode = taxEvaluation.EffectiveTaxObjectCode,
                 VatRate = item.VatRate,
                 UnitText = item.UnitText
             });
@@ -461,6 +481,11 @@ public class StampFiscalDocumentService
         var normalizedDocumentType = FiscalMasterDataNormalization.NormalizeRequiredCode(documentType ?? string.Empty);
         return string.Equals(normalizedDocumentType, "I", StringComparison.Ordinal)
             || string.Equals(normalizedDocumentType, "INVOICE", StringComparison.Ordinal);
+    }
+
+    private static int ResolveCurrencyScale(string currencyCode)
+    {
+        return string.Equals(currencyCode, "MXN", StringComparison.OrdinalIgnoreCase) ? 2 : 2;
     }
 
     private static string NormalizePublicGeneralName(string value)

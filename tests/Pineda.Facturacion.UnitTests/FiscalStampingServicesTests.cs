@@ -193,6 +193,159 @@ public class FiscalStampingServicesTests
     }
 
     [Fact]
+    public async Task StampFiscalDocument_Reclassifies_ZeroBase_Taxable_Line_BeforeCallingProvider()
+    {
+        var fiscalDocument = CreateFiscalDocument();
+        fiscalDocument.Subtotal = 100m;
+        fiscalDocument.DiscountTotal = 100m;
+        fiscalDocument.TaxTotal = 16m;
+        fiscalDocument.Total = 116m;
+        fiscalDocument.Items =
+        [
+            new FiscalDocumentItem
+            {
+                Id = 1,
+                FiscalDocumentId = fiscalDocument.Id,
+                LineNumber = 1,
+                InternalCode = "SKU-ZERO",
+                Description = "Linea bonificada al 100%",
+                Quantity = 1m,
+                UnitPrice = 100m,
+                DiscountAmount = 100m,
+                Subtotal = 0m,
+                TaxTotal = 0m,
+                Total = 0m,
+                SatProductServiceCode = "10101504",
+                SatUnitCode = "H87",
+                TaxObjectCode = "02",
+                VatRate = 0.16m,
+                UnitText = "PIEZA",
+                CreatedAtUtc = DateTime.UtcNow
+            },
+            new FiscalDocumentItem
+            {
+                Id = 2,
+                FiscalDocumentId = fiscalDocument.Id,
+                LineNumber = 2,
+                InternalCode = "SKU-VALID",
+                Description = "Linea gravada valida",
+                Quantity = 1m,
+                UnitPrice = 100m,
+                DiscountAmount = 0m,
+                Subtotal = 100m,
+                TaxTotal = 16m,
+                Total = 116m,
+                SatProductServiceCode = "10101505",
+                SatUnitCode = "H87",
+                TaxObjectCode = "02",
+                VatRate = 0.16m,
+                UnitText = "PIEZA",
+                CreatedAtUtc = DateTime.UtcNow
+            }
+        ];
+
+        var gateway = new FakeFiscalStampingGateway();
+        var service = new StampFiscalDocumentService(
+            new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
+            new FakeFiscalStampRepository(),
+            gateway,
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new StampFiscalDocumentCommand
+        {
+            FiscalDocumentId = fiscalDocument.Id
+        });
+
+        Assert.Equal(StampFiscalDocumentOutcome.Stamped, result.Outcome);
+        Assert.NotNull(gateway.LastRequest);
+        Assert.Equal("04", gateway.LastRequest!.Items.Single(x => x.LineNumber == 1).TaxObjectCode);
+        Assert.Equal("02", gateway.LastRequest.Items.Single(x => x.LineNumber == 2).TaxObjectCode);
+    }
+
+    [Fact]
+    public async Task StampFiscalDocument_FailsBeforeProvider_When_Taxable_Line_Has_Positive_Tax_And_Zero_Base()
+    {
+        var fiscalDocument = CreateFiscalDocument();
+        fiscalDocument.Subtotal = 0m;
+        fiscalDocument.DiscountTotal = 100m;
+        fiscalDocument.TaxTotal = 16m;
+        fiscalDocument.Total = 16m;
+        fiscalDocument.Items[0].UnitPrice = 100m;
+        fiscalDocument.Items[0].DiscountAmount = 100m;
+        fiscalDocument.Items[0].Subtotal = 0m;
+        fiscalDocument.Items[0].TaxTotal = 16m;
+        fiscalDocument.Items[0].Total = 16m;
+        fiscalDocument.Items[0].TaxObjectCode = "02";
+        fiscalDocument.Items[0].VatRate = 0.16m;
+
+        var gateway = new FakeFiscalStampingGateway();
+        var service = new StampFiscalDocumentService(
+            new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
+            new FakeFiscalStampRepository(),
+            gateway,
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new StampFiscalDocumentCommand
+        {
+            FiscalDocumentId = fiscalDocument.Id
+        });
+
+        Assert.Equal(StampFiscalDocumentOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("Review quantity, unit price, discount and stored tax totals", result.ErrorMessage, StringComparison.Ordinal);
+        Assert.Equal(0, gateway.CallCount);
+    }
+
+    [Fact]
+    public async Task StampFiscalDocument_FailsBeforeProvider_When_HeaderTotalsDoNotMatchLineSums()
+    {
+        var fiscalDocument = CreateFiscalDocument();
+        fiscalDocument.Subtotal = 10170m;
+        fiscalDocument.DiscountTotal = 0m;
+        fiscalDocument.TaxTotal = 0m;
+        fiscalDocument.Total = 10170m;
+        fiscalDocument.Items =
+        [
+            new FiscalDocumentItem
+            {
+                Id = 1,
+                FiscalDocumentId = fiscalDocument.Id,
+                LineNumber = 1,
+                InternalCode = "SKU-REAL",
+                Description = "Snapshot inconsistente",
+                Quantity = 15m,
+                UnitPrice = 678m,
+                DiscountAmount = 0m,
+                Subtotal = 0m,
+                TaxTotal = 0m,
+                Total = 0m,
+                SatProductServiceCode = "10101504",
+                SatUnitCode = "H87",
+                TaxObjectCode = "02",
+                VatRate = 0.16m,
+                UnitText = "PIEZA",
+                CreatedAtUtc = DateTime.UtcNow
+            }
+        ];
+
+        var gateway = new FakeFiscalStampingGateway();
+        var service = new StampFiscalDocumentService(
+            new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
+            new FakeFiscalStampRepository(),
+            gateway,
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new StampFiscalDocumentCommand
+        {
+            FiscalDocumentId = fiscalDocument.Id,
+            RetryRejected = true
+        });
+
+        Assert.Equal(StampFiscalDocumentOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("does not match the sum of line subtotals", result.ErrorMessage, StringComparison.Ordinal);
+        Assert.Equal(0, gateway.CallCount);
+    }
+
+    [Fact]
     public async Task StampFiscalDocument_RequestBuilder_UsesFiscalDocumentSnapshotDataOnly()
     {
         var fiscalDocument = CreateFiscalDocument();

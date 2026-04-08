@@ -85,7 +85,10 @@ public sealed class ImportedLegacyOrderLookupRepository : IImportedLegacyOrderLo
                 var billingDocument = SelectOperationalBillingDocument(relatedBillingDocuments, fiscalDocuments);
                 var fiscalDocument = billingDocument is null
                     ? null
-                    : fiscalDocuments.FirstOrDefault(x => x.BillingDocumentId == billingDocument.Id);
+                    : fiscalDocuments
+                        .Where(x => x.BillingDocumentId == billingDocument.Id && x.Status != FiscalDocumentStatus.DiscardedUnstamped)
+                        .OrderByDescending(x => x.Id)
+                        .FirstOrDefault();
                 var fiscalStamp = fiscalDocument is null
                     ? null
                     : fiscalStamps

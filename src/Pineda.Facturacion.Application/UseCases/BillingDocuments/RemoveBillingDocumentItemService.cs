@@ -66,12 +66,13 @@ public sealed class RemoveBillingDocumentItemService
             return NotFound(command.BillingDocumentId, command.BillingDocumentItemId, $"Billing document item '{command.BillingDocumentItemId}' was not found.");
         }
 
-        var fiscalDocument = await _fiscalDocumentRepository.GetTrackedByBillingDocumentIdAsync(command.BillingDocumentId, cancellationToken);
-        if (!CanEditFiscalComposition(fiscalDocument))
+        var persistedFiscalDocument = await _fiscalDocumentRepository.GetTrackedByBillingDocumentIdAsync(command.BillingDocumentId, cancellationToken);
+        var fiscalDocument = FiscalDocumentCompositionEditPolicy.NormalizeOperationalFiscalDocument(persistedFiscalDocument);
+        if (!FiscalDocumentCompositionEditPolicy.CanEdit(persistedFiscalDocument))
         {
             return Conflict(
                 billingDocument,
-                fiscalDocument,
+                persistedFiscalDocument,
                 command.BillingDocumentItemId,
                 "The billing document composition is locked because the fiscal document is no longer editable before stamping.");
         }
@@ -278,14 +279,6 @@ public sealed class RemoveBillingDocumentItemService
             preservedSemanticsByKey,
             DateTime.UtcNow,
             cancellationToken);
-    }
-
-    private static bool CanEditFiscalComposition(FiscalDocument? fiscalDocument)
-    {
-        return fiscalDocument is null
-            || fiscalDocument.Status is FiscalDocumentStatus.Draft
-            or FiscalDocumentStatus.ReadyForStamping
-            or FiscalDocumentStatus.StampingRejected;
     }
 
     private static void ApplyBillingDocumentComposition(

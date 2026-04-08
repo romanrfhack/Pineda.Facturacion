@@ -63,6 +63,39 @@ public class CancelFiscalDocumentService
             return ValidationFailure(command.FiscalDocumentId, "Fiscal document id is required.");
         }
 
+        var fiscalDocument = await _fiscalDocumentRepository.GetTrackedByIdAsync(command.FiscalDocumentId, cancellationToken);
+        if (fiscalDocument is null)
+        {
+            return new CancelFiscalDocumentResult
+            {
+                Outcome = CancelFiscalDocumentOutcome.NotFound,
+                IsSuccess = false,
+                FiscalDocumentId = command.FiscalDocumentId,
+                ErrorMessage = $"Fiscal document '{command.FiscalDocumentId}' was not found."
+            };
+        }
+
+        if (fiscalDocument.Status == FiscalDocumentStatus.DiscardedUnstamped)
+        {
+            return Conflict(fiscalDocument, "Fiscal document was already discarded locally because it never obtained stamped UUID evidence.");
+        }
+
+        if (fiscalDocument.Status == FiscalDocumentStatus.Cancelled)
+        {
+            return Conflict(fiscalDocument, "Fiscal document is already cancelled.");
+        }
+
+        if (FiscalOperationRobustnessPolicy.IsCancellationInProgress(fiscalDocument.Status))
+        {
+            return Conflict(fiscalDocument, "A cancellation request is already in progress for this fiscal document.");
+        }
+
+        var fiscalStamp = await _fiscalStampRepository.GetTrackedByFiscalDocumentIdAsync(command.FiscalDocumentId, cancellationToken);
+        if (fiscalStamp is null || string.IsNullOrWhiteSpace(fiscalStamp.Uuid))
+        {
+            return await DiscardUnstampedAsync(fiscalDocument, cancellationToken);
+        }
+
         if (string.IsNullOrWhiteSpace(command.CancellationReasonCode))
         {
             return ValidationFailure(command.FiscalDocumentId, "Cancellation reason code is required.");
@@ -81,37 +114,9 @@ public class CancelFiscalDocumentService
             replacementUuid = null;
         }
 
-        var fiscalDocument = await _fiscalDocumentRepository.GetTrackedByIdAsync(command.FiscalDocumentId, cancellationToken);
-        if (fiscalDocument is null)
-        {
-            return new CancelFiscalDocumentResult
-            {
-                Outcome = CancelFiscalDocumentOutcome.NotFound,
-                IsSuccess = false,
-                FiscalDocumentId = command.FiscalDocumentId,
-                ErrorMessage = $"Fiscal document '{command.FiscalDocumentId}' was not found."
-            };
-        }
-
-        if (fiscalDocument.Status == FiscalDocumentStatus.Cancelled)
-        {
-            return Conflict(fiscalDocument, "Fiscal document is already cancelled.");
-        }
-
-        if (FiscalOperationRobustnessPolicy.IsCancellationInProgress(fiscalDocument.Status))
-        {
-            return Conflict(fiscalDocument, "A cancellation request is already in progress for this fiscal document.");
-        }
-
         if (!FiscalOperationRobustnessPolicy.CanCancel(fiscalDocument.Status))
         {
             return Conflict(fiscalDocument, $"Fiscal document status '{fiscalDocument.Status}' is not eligible for cancellation.");
-        }
-
-        var fiscalStamp = await _fiscalStampRepository.GetTrackedByFiscalDocumentIdAsync(command.FiscalDocumentId, cancellationToken);
-        if (fiscalStamp is null || string.IsNullOrWhiteSpace(fiscalStamp.Uuid))
-        {
-            return ValidationFailure(command.FiscalDocumentId, "A stamped fiscal document with UUID evidence is required for cancellation.");
         }
 
         var existingCancellation = await _fiscalCancellationRepository.GetTrackedByFiscalDocumentIdAsync(command.FiscalDocumentId, cancellationToken);
@@ -224,6 +229,27 @@ public class CancelFiscalDocumentService
         result.IsRetryable = FiscalOperationRobustnessPolicy.IsRetryable(result.Outcome);
         result.RetryAdvice = FiscalOperationRobustnessPolicy.BuildRetryAdvice(result.Outcome);
         return result;
+    }
+
+    private async Task<CancelFiscalDocumentResult> DiscardUnstampedAsync(
+        FiscalDocument fiscalDocument,
+        CancellationToken cancellationToken)
+    {
+        var now = DateTime.UtcNow;
+        fiscalDocument.Status = FiscalDocumentStatus.DiscardedUnstamped;
+        fiscalDocument.UpdatedAtUtc = now;
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return new CancelFiscalDocumentResult
+        {
+            Outcome = CancelFiscalDocumentOutcome.Cancelled,
+            IsSuccess = true,
+            FiscalDocumentId = fiscalDocument.Id,
+            FiscalDocumentStatus = fiscalDocument.Status,
+            CancelledAtUtc = now,
+            SupportMessage = "Unstamped fiscal snapshot was discarded locally. No PAC cancellation was performed.",
+            IsRetryable = false
+        };
     }
 
     private async Task CancelAccountsReceivableInvoiceIfPresentAsync(long fiscalDocumentId, DateTime now, CancellationToken cancellationToken)

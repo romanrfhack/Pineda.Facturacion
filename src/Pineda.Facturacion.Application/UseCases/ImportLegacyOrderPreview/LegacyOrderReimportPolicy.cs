@@ -91,6 +91,7 @@ internal static class LegacyOrderReimportPolicy
         return fiscalDocumentStatus is null
             or nameof(FiscalDocumentStatus.Draft)
             or nameof(FiscalDocumentStatus.ReadyForStamping)
-            or nameof(FiscalDocumentStatus.StampingRejected);
+            or nameof(FiscalDocumentStatus.StampingRejected)
+            or nameof(FiscalDocumentStatus.DiscardedUnstamped);
     }
 }

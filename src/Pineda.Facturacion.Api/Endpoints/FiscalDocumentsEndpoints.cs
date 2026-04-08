@@ -45,6 +45,15 @@ public static class FiscalDocumentsEndpoints
             .Produces<StampFiscalDocumentResponse>(StatusCodes.Status409Conflict)
             .Produces<StampFiscalDocumentResponse>(StatusCodes.Status503ServiceUnavailable);
 
+        group.MapPost("/{fiscalDocumentId:long}/reprepare", ReprepareFiscalDocumentAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
+            .WithName("ReprepareFiscalDocument")
+            .WithSummary("Regenerate an unstamped fiscal snapshot from the current billing document")
+            .Produces<ReprepareFiscalDocumentResponse>(StatusCodes.Status200OK)
+            .Produces<ReprepareFiscalDocumentResponse>(StatusCodes.Status400BadRequest)
+            .Produces<ReprepareFiscalDocumentResponse>(StatusCodes.Status404NotFound)
+            .Produces<ReprepareFiscalDocumentResponse>(StatusCodes.Status409Conflict);
+
         group.MapPost("/{fiscalDocumentId:long}/stamp-and-email", StampAndEmailFiscalDocumentAsync)
             .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
             .WithName("StampAndEmailFiscalDocument")
@@ -111,7 +120,7 @@ public static class FiscalDocumentsEndpoints
         group.MapPost("/{fiscalDocumentId:long}/cancel", CancelFiscalDocumentAsync)
             .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
             .WithName("CancelFiscalDocument")
-            .WithSummary("Cancel a stamped fiscal document")
+            .WithSummary("Cancel a stamped fiscal document or discard an unstamped fiscal snapshot")
             .Produces<CancelFiscalDocumentResponse>(StatusCodes.Status200OK)
             .Produces<CancelFiscalDocumentResponse>(StatusCodes.Status400BadRequest)
             .Produces<CancelFiscalDocumentResponse>(StatusCodes.Status404NotFound)
@@ -301,6 +310,50 @@ public static class FiscalDocumentsEndpoints
             StampFiscalDocumentOutcome.ProviderRejected => TypedResults.Conflict(response),
             StampFiscalDocumentOutcome.ProviderUnavailable => TypedResults.Json(response, statusCode: StatusCodes.Status503ServiceUnavailable),
             StampFiscalDocumentOutcome.ValidationFailed => TypedResults.BadRequest(response),
+            _ => TypedResults.BadRequest(response)
+        };
+    }
+
+    private static async Task<Results<Ok<ReprepareFiscalDocumentResponse>, BadRequest<ReprepareFiscalDocumentResponse>, NotFound<ReprepareFiscalDocumentResponse>, Conflict<ReprepareFiscalDocumentResponse>>> ReprepareFiscalDocumentAsync(
+        long fiscalDocumentId,
+        ReprepareFiscalDocumentService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(
+            new ReprepareFiscalDocumentCommand
+            {
+                FiscalDocumentId = fiscalDocumentId
+            },
+            cancellationToken);
+
+        var response = new ReprepareFiscalDocumentResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            FiscalDocumentId = result.FiscalDocumentId,
+            BillingDocumentId = result.BillingDocumentId,
+            FiscalDocumentStatus = result.FiscalDocumentStatus?.ToString()
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "FiscalDocument.Reprepare",
+            "FiscalDocument",
+            fiscalDocumentId.ToString(),
+            result.Outcome.ToString(),
+            new { fiscalDocumentId },
+            new { result.BillingDocumentId, result.FiscalDocumentStatus },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            ReprepareFiscalDocumentOutcome.Reprepared => TypedResults.Ok(response),
+            ReprepareFiscalDocumentOutcome.NotFound => TypedResults.NotFound(response),
+            ReprepareFiscalDocumentOutcome.Conflict => TypedResults.Conflict(response),
+            ReprepareFiscalDocumentOutcome.ValidationFailed => TypedResults.BadRequest(response),
             _ => TypedResults.BadRequest(response)
         };
     }
@@ -1351,6 +1404,16 @@ public static class FiscalDocumentsEndpoints
     public sealed class StampFiscalDocumentRequest
     {
         public bool RetryRejected { get; init; }
+    }
+
+    public sealed class ReprepareFiscalDocumentResponse
+    {
+        public string Outcome { get; init; } = string.Empty;
+        public bool IsSuccess { get; init; }
+        public string? ErrorMessage { get; init; }
+        public long FiscalDocumentId { get; init; }
+        public long BillingDocumentId { get; init; }
+        public string? FiscalDocumentStatus { get; init; }
     }
 
     public sealed class SyncFiscalDocumentSpecialFieldsRequest

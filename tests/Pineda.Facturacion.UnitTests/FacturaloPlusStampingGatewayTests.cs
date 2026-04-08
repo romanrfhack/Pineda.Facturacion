@@ -538,6 +538,202 @@ public class FacturaloPlusStampingGatewayTests
     }
 
     [Fact]
+    public async Task StampAsync_Skips_Taxable_ZeroBase_Concept_And_Excludes_It_From_Global_Traslados()
+    {
+        using var rsa = RSA.Create(2048);
+        var request = new CertificateRequest(
+            "CN=FacturaloPlus Test",
+            rsa,
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
+        var serialBytes = Encoding.ASCII.GetBytes("30001000000500003416");
+        var certificate = request.Create(
+            new X500DistinguishedName("CN=FacturaloPlus Test"),
+            X509SignatureGenerator.CreateForRSA(rsa, RSASignaturePadding.Pkcs1),
+            DateTimeOffset.UtcNow.AddDays(-1),
+            DateTimeOffset.UtcNow.AddYears(1),
+            serialBytes);
+        var certificatePem = new string(PemEncoding.Write("CERTIFICATE", certificate.Export(X509ContentType.Cert)));
+
+        var handler = new RecordingHandler(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""
+                {
+                  "success": true,
+                  "trackingId": "TRACK-1",
+                  "uuid": "UUID-1",
+                  "stampedAtUtc": "2026-03-21T12:00:00Z",
+                  "xmlContent": "<cfdi:Comprobante Version=\"4.0\" />"
+                }
+                """, Encoding.UTF8, "application/json")
+        });
+
+        var client = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://dev.facturaloplus.com/api/rest/servicio/")
+        };
+        var secretResolver = new RecordingSecretResolver(new Dictionary<string, string?>
+        {
+            ["FACTURALOPLUS_API_KEY_REFERENCE"] = "APIKEY-TEST",
+            ["CERT_REF"] = certificatePem,
+            ["KEY_REF"] = "PRIVATE-KEY-PEM"
+        });
+
+        var gateway = new FacturaloPlusStampingGateway(
+            client,
+            Options.Create(new FacturaloPlusOptions
+            {
+                BaseUrl = "https://dev.facturaloplus.com/api/rest/servicio/",
+                StampPath = "timbrarJSON3",
+                ApiKeyReference = "FACTURALOPLUS_API_KEY_REFERENCE",
+                ApiKeyHeaderName = "X-Api-Key"
+            }),
+            secretResolver);
+
+        var requestPayload = CreateRequest();
+        requestPayload.Subtotal = 100m;
+        requestPayload.DiscountTotal = 100m;
+        requestPayload.TaxTotal = 16m;
+        requestPayload.Total = 116m;
+        requestPayload.Items =
+        [
+            new FiscalStampingRequestItem
+            {
+                LineNumber = 1,
+                InternalCode = "SKU-ZERO",
+                Description = "Linea bonificada al 100%",
+                Quantity = 1m,
+                UnitPrice = 100m,
+                DiscountAmount = 100m,
+                Subtotal = 0m,
+                TaxTotal = 0m,
+                Total = 0m,
+                SatProductServiceCode = "01010101",
+                SatUnitCode = "H87",
+                TaxObjectCode = "02",
+                VatRate = 0.16m,
+                UnitText = "Pieza"
+            },
+            new FiscalStampingRequestItem
+            {
+                LineNumber = 2,
+                InternalCode = "SKU-VALID",
+                Description = "Linea gravada valida",
+                Quantity = 1m,
+                UnitPrice = 100m,
+                DiscountAmount = 0m,
+                Subtotal = 100m,
+                TaxTotal = 16m,
+                Total = 116m,
+                SatProductServiceCode = "01010102",
+                SatUnitCode = "H87",
+                TaxObjectCode = "02",
+                VatRate = 0.16m,
+                UnitText = "Pieza"
+            }
+        ];
+
+        await gateway.StampAsync(requestPayload);
+
+        var form = ParseFormBody(handler.LastBody!);
+        var decodedJson = Encoding.UTF8.GetString(Convert.FromBase64String(form["jsonB64"]));
+        using var json = JsonDocument.Parse(decodedJson);
+        var comprobante = json.RootElement.GetProperty("Comprobante");
+        var conceptos = comprobante.GetProperty("Conceptos");
+        var zeroBaseConcept = conceptos[0];
+        var validConcept = conceptos[1];
+
+        Assert.Equal("04", zeroBaseConcept.GetProperty("ObjetoImp").GetString());
+        Assert.False(zeroBaseConcept.TryGetProperty("Impuestos", out _));
+        Assert.Equal("02", validConcept.GetProperty("ObjetoImp").GetString());
+        Assert.True(validConcept.TryGetProperty("Impuestos", out var validConceptTaxes));
+        Assert.Equal(100m, validConceptTaxes.GetProperty("Traslados")[0].GetProperty("Base").GetDecimal());
+        Assert.True(comprobante.TryGetProperty("Impuestos", out var comprobanteTaxes));
+        Assert.Equal(16m, comprobanteTaxes.GetProperty("TotalImpuestosTrasladados").GetDecimal());
+        Assert.Equal(100m, comprobanteTaxes.GetProperty("Traslados")[0].GetProperty("Base").GetDecimal());
+    }
+
+    [Fact]
+    public async Task StampAsync_Skips_Taxable_Concept_When_Base_Rounds_To_Zero()
+    {
+        using var rsa = RSA.Create(2048);
+        var request = new CertificateRequest(
+            "CN=FacturaloPlus Test",
+            rsa,
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
+        var serialBytes = Encoding.ASCII.GetBytes("30001000000500003416");
+        var certificate = request.Create(
+            new X500DistinguishedName("CN=FacturaloPlus Test"),
+            X509SignatureGenerator.CreateForRSA(rsa, RSASignaturePadding.Pkcs1),
+            DateTimeOffset.UtcNow.AddDays(-1),
+            DateTimeOffset.UtcNow.AddYears(1),
+            serialBytes);
+        var certificatePem = new string(PemEncoding.Write("CERTIFICATE", certificate.Export(X509ContentType.Cert)));
+
+        var handler = new RecordingHandler(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""
+                {
+                  "success": true,
+                  "trackingId": "TRACK-1",
+                  "uuid": "UUID-1",
+                  "stampedAtUtc": "2026-03-21T12:00:00Z",
+                  "xmlContent": "<cfdi:Comprobante Version=\"4.0\" />"
+                }
+                """, Encoding.UTF8, "application/json")
+        });
+
+        var client = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://dev.facturaloplus.com/api/rest/servicio/")
+        };
+        var secretResolver = new RecordingSecretResolver(new Dictionary<string, string?>
+        {
+            ["FACTURALOPLUS_API_KEY_REFERENCE"] = "APIKEY-TEST",
+            ["CERT_REF"] = certificatePem,
+            ["KEY_REF"] = "PRIVATE-KEY-PEM"
+        });
+
+        var gateway = new FacturaloPlusStampingGateway(
+            client,
+            Options.Create(new FacturaloPlusOptions
+            {
+                BaseUrl = "https://dev.facturaloplus.com/api/rest/servicio/",
+                StampPath = "timbrarJSON3",
+                ApiKeyReference = "FACTURALOPLUS_API_KEY_REFERENCE",
+                ApiKeyHeaderName = "X-Api-Key"
+            }),
+            secretResolver);
+
+        var requestPayload = CreateRequest();
+        requestPayload.Subtotal = 0.004m;
+        requestPayload.DiscountTotal = 0m;
+        requestPayload.TaxTotal = 0.00064m;
+        requestPayload.Total = 0.00464m;
+        requestPayload.Items[0].Quantity = 1m;
+        requestPayload.Items[0].UnitPrice = 0.004m;
+        requestPayload.Items[0].DiscountAmount = 0m;
+        requestPayload.Items[0].Subtotal = 0.004m;
+        requestPayload.Items[0].TaxTotal = 0.00064m;
+        requestPayload.Items[0].Total = 0.00464m;
+        requestPayload.Items[0].TaxObjectCode = "02";
+        requestPayload.Items[0].VatRate = 0.16m;
+
+        await gateway.StampAsync(requestPayload);
+
+        var form = ParseFormBody(handler.LastBody!);
+        var decodedJson = Encoding.UTF8.GetString(Convert.FromBase64String(form["jsonB64"]));
+        using var json = JsonDocument.Parse(decodedJson);
+        var comprobante = json.RootElement.GetProperty("Comprobante");
+        var concepto = comprobante.GetProperty("Conceptos")[0];
+
+        Assert.Equal("04", concepto.GetProperty("ObjetoImp").GetString());
+        Assert.False(concepto.TryGetProperty("Impuestos", out _));
+        Assert.False(comprobante.TryGetProperty("Impuestos", out _));
+    }
+
+    [Fact]
     public async Task StampAsync_Treats_Code200_With_NestedDataString_And_StampedXml_As_Success()
     {
         using var rsa = RSA.Create(2048);
