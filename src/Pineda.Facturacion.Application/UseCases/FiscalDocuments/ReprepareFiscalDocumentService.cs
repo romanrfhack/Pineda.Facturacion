@@ -54,9 +54,14 @@ public sealed class ReprepareFiscalDocumentService
             return Conflict(fiscalDocument, "Stamped fiscal documents with UUID evidence cannot be reprepared.");
         }
 
-        if (fiscalDocument.Status == FiscalDocumentStatus.Cancelled)
+        if (FiscalOperationRobustnessPolicy.IsStampInProgress(fiscalDocument.Status))
         {
-            return Conflict(fiscalDocument, "Cancelled fiscal documents cannot be reprepared.");
+            return Conflict(fiscalDocument, "A stamp request is already in progress for this fiscal document.");
+        }
+
+        if (!FiscalDocumentCompositionEditPolicy.CanEdit(fiscalDocument))
+        {
+            return Conflict(fiscalDocument, $"Fiscal document status '{fiscalDocument.Status}' is not eligible for repreparing the snapshot.");
         }
 
         if (FiscalOperationRobustnessPolicy.IsCancellationInProgress(fiscalDocument.Status))

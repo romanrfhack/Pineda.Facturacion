@@ -14,6 +14,8 @@ public class CancelFiscalDocumentResult
 
     public FiscalDocumentStatus? FiscalDocumentStatus { get; set; }
 
+    public CancelFiscalDocumentOperationType? OperationType { get; set; }
+
     public long? FiscalCancellationId { get; set; }
 
     public FiscalCancellationStatus? CancellationStatus { get; set; }

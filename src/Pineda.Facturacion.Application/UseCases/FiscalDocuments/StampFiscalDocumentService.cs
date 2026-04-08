@@ -305,7 +305,7 @@ public class StampFiscalDocumentService
             return false;
         }
 
-        var currencyScale = ResolveCurrencyScale(currencyCode);
+        var currencyScale = CfdiMonetaryRules.ResolveCurrencyScale(currencyCode);
         var items = new List<FiscalStampingRequestItem>();
         foreach (var item in fiscalDocument.Items.OrderBy(x => x.LineNumber))
         {
@@ -481,11 +481,6 @@ public class StampFiscalDocumentService
         var normalizedDocumentType = FiscalMasterDataNormalization.NormalizeRequiredCode(documentType ?? string.Empty);
         return string.Equals(normalizedDocumentType, "I", StringComparison.Ordinal)
             || string.Equals(normalizedDocumentType, "INVOICE", StringComparison.Ordinal);
-    }
-
-    private static int ResolveCurrencyScale(string currencyCode)
-    {
-        return string.Equals(currencyCode, "MXN", StringComparison.OrdinalIgnoreCase) ? 2 : 2;
     }
 
     private static string NormalizePublicGeneralName(string value)

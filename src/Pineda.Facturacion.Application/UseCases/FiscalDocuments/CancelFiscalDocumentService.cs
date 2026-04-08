@@ -77,28 +77,48 @@ public class CancelFiscalDocumentService
 
         if (fiscalDocument.Status == FiscalDocumentStatus.DiscardedUnstamped)
         {
-            return Conflict(fiscalDocument, "Fiscal document was already discarded locally because it never obtained stamped UUID evidence.");
+            return Conflict(
+                fiscalDocument,
+                "Fiscal document was already discarded locally because it never obtained stamped UUID evidence.",
+                CancelFiscalDocumentOperationType.LocalDiscard);
         }
 
         if (fiscalDocument.Status == FiscalDocumentStatus.Cancelled)
         {
-            return Conflict(fiscalDocument, "Fiscal document is already cancelled.");
+            return Conflict(
+                fiscalDocument,
+                "Fiscal document is already cancelled.",
+                CancelFiscalDocumentOperationType.ProviderCancellation);
         }
 
         if (FiscalOperationRobustnessPolicy.IsCancellationInProgress(fiscalDocument.Status))
         {
-            return Conflict(fiscalDocument, "A cancellation request is already in progress for this fiscal document.");
+            return Conflict(
+                fiscalDocument,
+                "A cancellation request is already in progress for this fiscal document.",
+                CancelFiscalDocumentOperationType.ProviderCancellation);
         }
 
         var fiscalStamp = await _fiscalStampRepository.GetTrackedByFiscalDocumentIdAsync(command.FiscalDocumentId, cancellationToken);
         if (fiscalStamp is null || string.IsNullOrWhiteSpace(fiscalStamp.Uuid))
         {
+            if (!FiscalDocumentCompositionEditPolicy.CanEdit(fiscalDocument))
+            {
+                return Conflict(
+                    fiscalDocument,
+                    $"Fiscal document status '{fiscalDocument.Status}' cannot be discarded locally because it is no longer an editable unstamped snapshot.",
+                    CancelFiscalDocumentOperationType.LocalDiscard);
+            }
+
             return await DiscardUnstampedAsync(fiscalDocument, cancellationToken);
         }
 
         if (string.IsNullOrWhiteSpace(command.CancellationReasonCode))
         {
-            return ValidationFailure(command.FiscalDocumentId, "Cancellation reason code is required.");
+            return ValidationFailure(
+                command.FiscalDocumentId,
+                "Cancellation reason code is required.",
+                CancelFiscalDocumentOperationType.ProviderCancellation);
         }
 
         var reasonCode = FiscalMasterDataNormalization.NormalizeRequiredCode(command.CancellationReasonCode);
@@ -106,7 +126,10 @@ public class CancelFiscalDocumentService
 
         if (reasonCode == "01" && string.IsNullOrWhiteSpace(replacementUuid))
         {
-            return ValidationFailure(command.FiscalDocumentId, "Cancellation reason code '01' requires a replacement UUID.");
+            return ValidationFailure(
+                command.FiscalDocumentId,
+                "Cancellation reason code '01' requires a replacement UUID.",
+                CancelFiscalDocumentOperationType.ProviderCancellation);
         }
 
         if (reasonCode != "01")
@@ -116,7 +139,10 @@ public class CancelFiscalDocumentService
 
         if (!FiscalOperationRobustnessPolicy.CanCancel(fiscalDocument.Status))
         {
-            return Conflict(fiscalDocument, $"Fiscal document status '{fiscalDocument.Status}' is not eligible for cancellation.");
+            return Conflict(
+                fiscalDocument,
+                $"Fiscal document status '{fiscalDocument.Status}' is not eligible for cancellation.",
+                CancelFiscalDocumentOperationType.ProviderCancellation);
         }
 
         var existingCancellation = await _fiscalCancellationRepository.GetTrackedByFiscalDocumentIdAsync(command.FiscalDocumentId, cancellationToken);
@@ -128,6 +154,7 @@ public class CancelFiscalDocumentService
                 IsSuccess = false,
                 FiscalDocumentId = fiscalDocument.Id,
                 FiscalDocumentStatus = fiscalDocument.Status,
+                OperationType = CancelFiscalDocumentOperationType.ProviderCancellation,
                 FiscalCancellationId = existingCancellation.Id,
                 CancellationStatus = existingCancellation.Status,
                 ProviderName = existingCancellation.ProviderName,
@@ -145,7 +172,10 @@ public class CancelFiscalDocumentService
 
         if (!TryBuildCancellationRequest(fiscalDocument, fiscalStamp, reasonCode, replacementUuid, out var request, out var validationError))
         {
-            return ValidationFailure(command.FiscalDocumentId, validationError!);
+            return ValidationFailure(
+                command.FiscalDocumentId,
+                validationError!,
+                CancelFiscalDocumentOperationType.ProviderCancellation);
         }
 
         var requestedAtUtc = DateTime.UtcNow;
@@ -246,6 +276,7 @@ public class CancelFiscalDocumentService
             IsSuccess = true,
             FiscalDocumentId = fiscalDocument.Id,
             FiscalDocumentStatus = fiscalDocument.Status,
+            OperationType = CancelFiscalDocumentOperationType.LocalDiscard,
             CancelledAtUtc = now,
             SupportMessage = "Unstamped fiscal snapshot was discarded locally. No PAC cancellation was performed.",
             IsRetryable = false
@@ -351,6 +382,7 @@ public class CancelFiscalDocumentService
             IsSuccess = true,
             FiscalDocumentId = fiscalDocument.Id,
             FiscalDocumentStatus = FiscalDocumentStatus.Cancelled,
+            OperationType = CancelFiscalDocumentOperationType.ProviderCancellation,
             FiscalCancellationId = fiscalCancellation.Id,
             CancellationStatus = fiscalCancellation.Status,
             ProviderName = fiscalCancellation.ProviderName,
@@ -377,6 +409,7 @@ public class CancelFiscalDocumentService
             ErrorMessage = errorMessage,
             FiscalDocumentId = fiscalDocument.Id,
             FiscalDocumentStatus = fiscalDocument.Status,
+            OperationType = CancelFiscalDocumentOperationType.ProviderCancellation,
             FiscalCancellationId = fiscalCancellation.Id,
             CancellationStatus = fiscalCancellation.Status,
             ProviderName = fiscalCancellation.ProviderName,
@@ -391,7 +424,10 @@ public class CancelFiscalDocumentService
         };
     }
 
-    private static CancelFiscalDocumentResult Conflict(FiscalDocument fiscalDocument, string errorMessage)
+    private static CancelFiscalDocumentResult Conflict(
+        FiscalDocument fiscalDocument,
+        string errorMessage,
+        CancelFiscalDocumentOperationType? operationType = null)
     {
         return new CancelFiscalDocumentResult
         {
@@ -400,12 +436,16 @@ public class CancelFiscalDocumentService
             ErrorMessage = errorMessage,
             FiscalDocumentId = fiscalDocument.Id,
             FiscalDocumentStatus = fiscalDocument.Status,
+            OperationType = operationType,
             IsRetryable = false,
             RetryAdvice = FiscalOperationRobustnessPolicy.BuildRetryAdvice(CancelFiscalDocumentOutcome.Conflict)
         };
     }
 
-    private static CancelFiscalDocumentResult ValidationFailure(long fiscalDocumentId, string errorMessage)
+    private static CancelFiscalDocumentResult ValidationFailure(
+        long fiscalDocumentId,
+        string errorMessage,
+        CancelFiscalDocumentOperationType? operationType = null)
     {
         return new CancelFiscalDocumentResult
         {
@@ -413,6 +453,7 @@ public class CancelFiscalDocumentService
             IsSuccess = false,
             FiscalDocumentId = fiscalDocumentId,
             ErrorMessage = errorMessage,
+            OperationType = operationType,
             IsRetryable = false,
             RetryAdvice = FiscalOperationRobustnessPolicy.BuildRetryAdvice(CancelFiscalDocumentOutcome.ValidationFailed)
         };

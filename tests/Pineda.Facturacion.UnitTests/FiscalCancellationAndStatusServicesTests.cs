@@ -61,6 +61,7 @@ public class FiscalCancellationAndStatusServicesTests
         Assert.True(result.IsSuccess);
         Assert.Equal(CancelFiscalDocumentOutcome.Cancelled, result.Outcome);
         Assert.Equal(FiscalDocumentStatus.Cancelled, fiscalDocument.Status);
+        Assert.Equal(CancelFiscalDocumentOperationType.ProviderCancellation, result.OperationType);
         Assert.Equal(AccountsReceivableInvoiceStatus.Cancelled, accountsReceivableInvoice.Status);
         Assert.Equal(FiscalCancellationStatus.Cancelled, cancellationRepository.Added!.Status);
         Assert.Equal("200", result.ProviderCode);
@@ -156,13 +157,40 @@ public class FiscalCancellationAndStatusServicesTests
 
         var result = await service.ExecuteAsync(new CancelFiscalDocumentCommand
         {
-            FiscalDocumentId = 50,
-            CancellationReasonCode = "02"
+            FiscalDocumentId = 50
         });
 
         Assert.Equal(CancelFiscalDocumentOutcome.Cancelled, result.Outcome);
         Assert.Equal(FiscalDocumentStatus.DiscardedUnstamped, fiscalDocument.Status);
+        Assert.Equal(CancelFiscalDocumentOperationType.LocalDiscard, result.OperationType);
         Assert.Null(cancellationRepository.Added);
+        Assert.Equal(0, gateway.CallCount);
+    }
+
+    [Fact]
+    public async Task CancelFiscalDocument_DoesNotDiscardLocally_WhenLifecycleAlreadyImpliesStamped()
+    {
+        var fiscalDocument = CreateStampedFiscalDocument();
+        var fiscalStamp = CreateFiscalStamp();
+        fiscalStamp.Uuid = null;
+        var gateway = new FakeFiscalCancellationGateway();
+
+        var service = new CancelFiscalDocumentService(
+            new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
+            new FakeFiscalStampRepository { ExistingTracked = fiscalStamp },
+            new FakeFiscalCancellationRepository(),
+            new FakeAccountsReceivableInvoiceRepository(),
+            gateway,
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new CancelFiscalDocumentCommand
+        {
+            FiscalDocumentId = fiscalDocument.Id
+        });
+
+        Assert.Equal(CancelFiscalDocumentOutcome.Conflict, result.Outcome);
+        Assert.Equal(FiscalDocumentStatus.Stamped, fiscalDocument.Status);
+        Assert.Equal(CancelFiscalDocumentOperationType.LocalDiscard, result.OperationType);
         Assert.Equal(0, gateway.CallCount);
     }
 

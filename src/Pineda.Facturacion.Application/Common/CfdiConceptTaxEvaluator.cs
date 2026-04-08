@@ -52,8 +52,8 @@ public static class CfdiConceptTaxEvaluator
                 ValidationError: $"is taxable with tax object code '02' but has subtotal '{subtotal}' and tax total '{taxTotal}'. Review quantity, unit price, discount and stored tax totals before stamping.");
         }
 
-        var reportableBase = RoundMonetary(subtotal, currencyScale);
-        var reportableTaxAmount = RoundMonetary(taxTotal, currencyScale);
+        var reportableBase = CfdiMonetaryRules.RoundMonetary(subtotal, currencyScale);
+        var reportableTaxAmount = CfdiMonetaryRules.RoundMonetary(taxTotal, currencyScale);
 
         if (reportableBase <= 0m)
         {
@@ -71,11 +71,6 @@ public static class CfdiConceptTaxEvaluator
             ReportableBase: reportableBase,
             ReportableTaxAmount: reportableTaxAmount,
             ValidationError: null);
-    }
-
-    private static decimal RoundMonetary(decimal value, int currencyScale)
-    {
-        return Math.Round(value, currencyScale, MidpointRounding.AwayFromZero);
     }
 }
 

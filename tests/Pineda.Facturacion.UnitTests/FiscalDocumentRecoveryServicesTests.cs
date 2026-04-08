@@ -67,6 +67,28 @@ public sealed class FiscalDocumentRecoveryServicesTests
     }
 
     [Fact]
+    public async Task ReprepareFiscalDocument_Blocks_WhenFiscalDocumentStatusIsStampedEvenWithoutUuidEvidence()
+    {
+        var fiscalDocument = CreateInconsistentFiscalDocument();
+        fiscalDocument.Status = FiscalDocumentStatus.Stamped;
+
+        var service = new ReprepareFiscalDocumentService(
+            new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
+            new FakeBillingDocumentRepository { Existing = CreateBillingDocument() },
+            new FakeFiscalStampRepository(),
+            new FakeProductFiscalProfileRepository { Existing = CreateProductFiscalProfile() },
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new ReprepareFiscalDocumentCommand
+        {
+            FiscalDocumentId = fiscalDocument.Id
+        });
+
+        Assert.Equal(ReprepareFiscalDocumentOutcome.Conflict, result.Outcome);
+        Assert.Contains("not eligible", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void FiscalDocumentCompositionEditPolicy_TreatsDiscardedSnapshotAsNonOperational()
     {
         var discarded = new FiscalDocument

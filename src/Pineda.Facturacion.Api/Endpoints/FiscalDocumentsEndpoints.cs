@@ -713,6 +713,7 @@ public static class FiscalDocumentsEndpoints
             ErrorMessage = result.ErrorMessage,
             FiscalDocumentId = result.FiscalDocumentId,
             FiscalDocumentStatus = result.FiscalDocumentStatus?.ToString(),
+            OperationType = result.OperationType?.ToString(),
             FiscalCancellationId = result.FiscalCancellationId,
             CancellationStatus = result.CancellationStatus?.ToString(),
             ProviderName = result.ProviderName,
@@ -739,6 +740,7 @@ public static class FiscalDocumentsEndpoints
                 result.FiscalCancellationId,
                 result.CancellationStatus,
                 result.FiscalDocumentStatus,
+                result.OperationType,
                 result.ProviderName,
                 result.ProviderTrackingId,
                 result.ProviderCode,
@@ -1601,7 +1603,7 @@ public static class FiscalDocumentsEndpoints
 
     public sealed class CancelFiscalDocumentRequest
     {
-        public string CancellationReasonCode { get; init; } = string.Empty;
+        public string? CancellationReasonCode { get; init; }
         public string? ReplacementUuid { get; init; }
     }
 
@@ -1612,6 +1614,7 @@ public static class FiscalDocumentsEndpoints
         public string? ErrorMessage { get; init; }
         public long FiscalDocumentId { get; init; }
         public string? FiscalDocumentStatus { get; init; }
+        public string? OperationType { get; init; }
         public long? FiscalCancellationId { get; init; }
         public string? CancellationStatus { get; init; }
         public string? ProviderName { get; init; }

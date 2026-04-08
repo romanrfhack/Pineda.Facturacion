@@ -130,7 +130,10 @@ public sealed class ImportedLegacyOrderLookupRepository : IImportedLegacyOrderLo
             .Select(billingDocument => new
             {
                 BillingDocument = billingDocument,
-                FiscalDocument = fiscalDocuments.FirstOrDefault(x => x.BillingDocumentId == billingDocument.Id)
+                FiscalDocument = fiscalDocuments
+                    .Where(x => x.BillingDocumentId == billingDocument.Id && x.Status != FiscalDocumentStatus.DiscardedUnstamped)
+                    .OrderByDescending(x => x.Id)
+                    .FirstOrDefault()
             })
             .Where(x => x.FiscalDocument is null || x.FiscalDocument.Status != FiscalDocumentStatus.Cancelled)
             .OrderByDescending(x => x.BillingDocument.Id)

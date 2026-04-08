@@ -281,7 +281,9 @@ public sealed class BillingDocumentLookupRepository : IBillingDocumentLookupRepo
                 : currentBillingDocument;
             var currentDestinationFiscal = activeAssignment is null || !destinationFiscalDocumentMap.TryGetValue(activeAssignment.DestinationBillingDocumentId, out var currentFiscalDocument)
                 ? null
-                : currentFiscalDocument;
+                : string.Equals(currentFiscalDocument.Status, nameof(FiscalDocumentStatus.DiscardedUnstamped), StringComparison.Ordinal)
+                    ? null
+                    : currentFiscalDocument;
             var currentDestinationStamp = currentDestinationFiscal is null || !destinationStampMap.TryGetValue(currentDestinationFiscal.Id, out var currentStamp)
                 ? null
                 : currentStamp;

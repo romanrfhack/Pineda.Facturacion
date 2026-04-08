@@ -76,6 +76,26 @@ public class FiscalStampingServicesTests
     }
 
     [Fact]
+    public async Task StampFiscalDocument_ReturnsConflict_WhenDiscardedUnstamped()
+    {
+        var fiscalDocument = CreateFiscalDocument();
+        fiscalDocument.Status = FiscalDocumentStatus.DiscardedUnstamped;
+
+        var service = new StampFiscalDocumentService(
+            new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
+            new FakeFiscalStampRepository(),
+            new FakeFiscalStampingGateway(),
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new StampFiscalDocumentCommand
+        {
+            FiscalDocumentId = fiscalDocument.Id
+        });
+
+        Assert.Equal(StampFiscalDocumentOutcome.Conflict, result.Outcome);
+    }
+
+    [Fact]
     public async Task StampFiscalDocument_ReturnsConflict_WhenStampAlreadyInProgress()
     {
         var fiscalDocument = CreateFiscalDocument();
@@ -260,6 +280,33 @@ public class FiscalStampingServicesTests
         Assert.NotNull(gateway.LastRequest);
         Assert.Equal("04", gateway.LastRequest!.Items.Single(x => x.LineNumber == 1).TaxObjectCode);
         Assert.Equal("02", gateway.LastRequest.Items.Single(x => x.LineNumber == 2).TaxObjectCode);
+    }
+
+    [Fact]
+    public async Task StampFiscalDocument_AllowsMinorCurrencyScaleDifferences_WhenRoundedCfdiAmountsStillMatch()
+    {
+        var fiscalDocument = CreateFiscalDocument();
+        fiscalDocument.Subtotal = 100m;
+        fiscalDocument.TaxTotal = 16m;
+        fiscalDocument.Total = 116m;
+        fiscalDocument.Items[0].Subtotal = 100.004m;
+        fiscalDocument.Items[0].TaxTotal = 16.00064m;
+        fiscalDocument.Items[0].Total = 116.00464m;
+
+        var gateway = new FakeFiscalStampingGateway();
+        var service = new StampFiscalDocumentService(
+            new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
+            new FakeFiscalStampRepository(),
+            gateway,
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new StampFiscalDocumentCommand
+        {
+            FiscalDocumentId = fiscalDocument.Id
+        });
+
+        Assert.Equal(StampFiscalDocumentOutcome.Stamped, result.Outcome);
+        Assert.Equal(1, gateway.CallCount);
     }
 
     [Fact]

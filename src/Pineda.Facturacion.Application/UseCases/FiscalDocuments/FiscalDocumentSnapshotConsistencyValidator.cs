@@ -1,11 +1,10 @@
+using Pineda.Facturacion.Application.Common;
 using Pineda.Facturacion.Domain.Entities;
 
 namespace Pineda.Facturacion.Application.UseCases.FiscalDocuments;
 
 internal static class FiscalDocumentSnapshotConsistencyValidator
 {
-    private const decimal Tolerance = 0.000001m;
-
     public static string? Validate(FiscalDocument fiscalDocument)
     {
         if (fiscalDocument.Items.Count == 0)
@@ -13,27 +12,28 @@ internal static class FiscalDocumentSnapshotConsistencyValidator
             return "Fiscal document snapshot does not contain any persisted line items.";
         }
 
+        var currencyCode = fiscalDocument.CurrencyCode;
         var subtotal = fiscalDocument.Items.Sum(x => x.Subtotal);
         var discountTotal = fiscalDocument.Items.Sum(x => x.DiscountAmount);
         var taxTotal = fiscalDocument.Items.Sum(x => x.TaxTotal);
         var total = fiscalDocument.Items.Sum(x => x.Total);
 
-        if (!Matches(fiscalDocument.Subtotal, subtotal))
+        if (!Matches(fiscalDocument.Subtotal, subtotal, currencyCode))
         {
             return $"Fiscal document subtotal '{fiscalDocument.Subtotal:0.######}' does not match the sum of line subtotals '{subtotal:0.######}'.";
         }
 
-        if (!Matches(fiscalDocument.DiscountTotal, discountTotal))
+        if (!Matches(fiscalDocument.DiscountTotal, discountTotal, currencyCode))
         {
             return $"Fiscal document discount total '{fiscalDocument.DiscountTotal:0.######}' does not match the sum of line discounts '{discountTotal:0.######}'.";
         }
 
-        if (!Matches(fiscalDocument.TaxTotal, taxTotal))
+        if (!Matches(fiscalDocument.TaxTotal, taxTotal, currencyCode))
         {
             return $"Fiscal document tax total '{fiscalDocument.TaxTotal:0.######}' does not match the sum of line taxes '{taxTotal:0.######}'.";
         }
 
-        if (!Matches(fiscalDocument.Total, total))
+        if (!Matches(fiscalDocument.Total, total, currencyCode))
         {
             return $"Fiscal document total '{fiscalDocument.Total:0.######}' does not match the sum of line totals '{total:0.######}'.";
         }
@@ -50,13 +50,13 @@ internal static class FiscalDocumentSnapshotConsistencyValidator
                 return $"Fiscal document item line '{item.LineNumber}' contains negative monetary values.";
             }
 
-            if (!Matches(item.Total, item.Subtotal + item.TaxTotal))
+            if (!Matches(item.Total, item.Subtotal + item.TaxTotal, currencyCode))
             {
                 return $"Fiscal document item line '{item.LineNumber}' total '{item.Total:0.######}' does not match subtotal '{item.Subtotal:0.######}' plus tax '{item.TaxTotal:0.######}'.";
             }
 
             var grossAmount = item.Quantity * item.UnitPrice;
-            var discountConsumesWholeGross = grossAmount > 0m && Matches(item.DiscountAmount, grossAmount);
+            var discountConsumesWholeGross = grossAmount > 0m && Matches(item.DiscountAmount, grossAmount, currencyCode);
             if (item.Quantity > 0m
                 && grossAmount > 0m
                 && item.Subtotal <= 0m
@@ -69,8 +69,8 @@ internal static class FiscalDocumentSnapshotConsistencyValidator
         return null;
     }
 
-    private static bool Matches(decimal left, decimal right)
+    private static bool Matches(decimal left, decimal right, string? currencyCode)
     {
-        return Math.Abs(left - right) <= Tolerance;
+        return CfdiMonetaryRules.AreEquivalentAtCurrencyScale(left, right, currencyCode);
     }
 }
