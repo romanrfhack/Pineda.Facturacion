@@ -73,11 +73,14 @@ Lectura confirmada en código actual:
 - Implementación: [`ClosedXmlWorksheetReader.cs`](/home/romanrfhack/code/Pineda.Facturacion/src/Pineda.Facturacion.Infrastructure/Excel/ClosedXmlWorksheetReader.cs)
 - Servicio: [`ImportOfficialSatCatalogService.cs`](/home/romanrfhack/code/Pineda.Facturacion/src/Pineda.Facturacion.Application/UseCases/SatCatalogs/ImportOfficialSatCatalogService.cs)
 
-### Formato soportado
+### Formatos soportados
 
-- Soportado por esta app: `.xlsx`
-- No hay ruta ni pruebas para `.xls`
-- La UI también restringe la selección a `.xlsx`
+- Soportado por esta app: `.xls` y `.xlsx`
+- La UI permite seleccionar ambos formatos.
+- El backend valida por contenido del workbook cuando es posible:
+  - `.xlsx`: contenedor OpenXML (`ZIP`)
+  - `.xls`: workbook binario BIFF/OLE2
+- El backend no depende únicamente de la extensión.
 
 ### Hojas requeridas
 
@@ -146,17 +149,17 @@ La detección normaliza mayúsculas, acentos y caracteres no alfanuméricos. Tam
 - Columnas obligatorias faltantes:
   - mensaje claro indicando la hoja y los aliases esperados
 - Workbook corrupto o formato no soportado:
-  - mensaje usuario: `The SAT file is not a valid supported Excel workbook (.xlsx) or it is corrupted.`
+  - formato no soportado:
+    - `The SAT file format is not supported. Upload a valid .xls or .xlsx workbook.`
+  - workbook corrupto:
+    - `The SAT workbook is corrupted or could not be read as a valid .xls or .xlsx file.`
 
-## Qué dispara `File contains corrupted data`
+## Lectura del workbook
 
-Por el código actual, el workbook se abre con `ClosedXML` (`new XLWorkbook(stream)`).
-
-En esta app ese error aparece cuando el archivo subido no puede abrirse como workbook OpenXML válido, por ejemplo:
-
-- el archivo no es realmente un `.xlsx`
-- el archivo está truncado o dañado
-- el contenido fue recortado o alterado
+- La lectura conserva la ruta actual de `.xlsx`.
+- Se agrega lectura nativa para `.xls`.
+- Si el archivo no coincide con una firma Excel soportada, responde formato no soportado.
+- Si la firma corresponde a Excel pero el workbook no puede abrirse, responde workbook corrupto.
 
 ## Alcance preservado
 

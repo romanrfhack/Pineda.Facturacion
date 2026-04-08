@@ -24,8 +24,8 @@ const MAX_UPLOAD_SIZE_BYTES = 128 * 1024 * 1024;
         @if (permissionService.canWriteMasterData()) {
           <div class="upload-grid">
             <label>
-              <span>Archivo oficial SAT (.xlsx)</span>
-              <input type="file" accept=".xlsx" (change)="onFileSelected($event)" />
+              <span>Archivo oficial SAT (.xls, .xlsx)</span>
+              <input type="file" accept=".xls,.xlsx" (change)="onFileSelected($event)" />
             </label>
             <div class="status-box">
               <span class="status-label">Estado</span>
@@ -177,10 +177,10 @@ export class SatCatalogImportPageComponent {
       return;
     }
 
-    if (!file.name.toLowerCase().endsWith('.xlsx')) {
+    if (!isSupportedSatCatalogWorkbook(file.name)) {
       this.selectedFile.set(null);
       this.importState.set('error');
-      this.errorMessage.set('Selecciona un archivo .xlsx del catálogo SAT.');
+      this.errorMessage.set('Selecciona un archivo .xls o .xlsx del catálogo SAT.');
       return;
     }
 
@@ -322,4 +322,9 @@ async function computeSha256(file: File): Promise<string> {
     .join('');
 
   return `sha256:${hash}`;
+}
+
+function isSupportedSatCatalogWorkbook(fileName: string): boolean {
+  const normalized = fileName.trim().toLowerCase();
+  return normalized.endsWith('.xls') || normalized.endsWith('.xlsx');
 }

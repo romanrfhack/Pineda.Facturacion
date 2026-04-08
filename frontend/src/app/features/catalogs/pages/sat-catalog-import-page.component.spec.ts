@@ -65,6 +65,48 @@ describe('SatCatalogImportPageComponent', () => {
     expect(text).not.toContain('sourceFileName');
   });
 
+  it('accepts .xls files in the UI and exposes both supported extensions in the input', async () => {
+    await TestBed.configureTestingModule({
+      imports: [SatCatalogImportPageComponent],
+      providers: [
+        {
+          provide: FiscalImportsApiService,
+          useValue: {
+            importOfficialSatCatalog: vi.fn().mockReturnValue(of())
+          }
+        },
+        {
+          provide: PermissionService,
+          useValue: {
+            canWriteMasterData: vi.fn().mockReturnValue(true)
+          }
+        },
+        {
+          provide: FeedbackService,
+          useValue: { show: vi.fn() }
+        }
+      ]
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(SatCatalogImportPageComponent);
+    fixture.detectChanges();
+
+    const input = fixture.nativeElement.querySelector('input[type="file"]') as HTMLInputElement;
+    expect(input.accept).toBe('.xls,.xlsx');
+
+    const file = new File(['sat workbook'], 'catalogos_sat.xls', {
+      type: 'application/vnd.ms-excel'
+    });
+
+    await fixture.componentInstance['onFileSelected']({
+      target: { files: [file] }
+    } as unknown as Event);
+
+    expect(fixture.componentInstance['selectedFile']()?.name).toBe('catalogos_sat.xls');
+    expect(fixture.componentInstance['localChecksum']()).toBe('sha256:aabbcc');
+    expect(fixture.componentInstance['importState']()).toBe('readyToImport');
+  });
+
   it('shows the backend result and marks the file as already imported', async () => {
     const importOfficialSatCatalog = vi.fn().mockReturnValue(of({
       outcome: 'AlreadyImported',

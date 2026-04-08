@@ -94,7 +94,26 @@ public sealed class ImportOfficialSatCatalogService
         {
             throw;
         }
-        catch (Exception exception) when (IsWorkbookFormatException(exception))
+        catch (ExcelWorkbookFormatException exception)
+        {
+            _logger.LogWarning(
+                exception,
+                "Official SAT catalog import rejected because the file format is not supported. FileName={SourceFileName} Checksum={SourceChecksum}",
+                importContext.SourceFileName,
+                importContext.SourceChecksum);
+
+            return new ImportOfficialSatCatalogResult
+            {
+                Outcome = ImportOfficialSatCatalogOutcome.Failed,
+                IsSuccess = false,
+                ErrorMessage = "The SAT file format is not supported. Upload a valid .xls or .xlsx workbook.",
+                SourceFileName = importContext.SourceFileName,
+                SourceVersion = importContext.SourceVersion,
+                SourceChecksum = importContext.SourceChecksum,
+                ClientChecksumMatchesServer = importContext.ClientChecksumMatchesServer
+            };
+        }
+        catch (ExcelWorkbookCorruptedException exception)
         {
             _logger.LogWarning(
                 exception,
@@ -106,7 +125,7 @@ public sealed class ImportOfficialSatCatalogService
             {
                 Outcome = ImportOfficialSatCatalogOutcome.Failed,
                 IsSuccess = false,
-                ErrorMessage = "The SAT file is not a valid supported Excel workbook (.xlsx) or it is corrupted.",
+                ErrorMessage = "The SAT workbook is corrupted or could not be read as a valid .xls or .xlsx file.",
                 SourceFileName = importContext.SourceFileName,
                 SourceVersion = importContext.SourceVersion,
                 SourceChecksum = importContext.SourceChecksum,
@@ -556,11 +575,6 @@ public sealed class ImportOfficialSatCatalogService
             return "Source file name is required.";
         }
 
-        if (!string.Equals(Path.GetExtension(sourceFileName), ".xlsx", StringComparison.OrdinalIgnoreCase))
-        {
-            return "The SAT import only supports .xlsx workbooks.";
-        }
-
         return null;
     }
 
@@ -612,16 +626,6 @@ public sealed class ImportOfficialSatCatalogService
         return trimmed.StartsWith("sha256:", StringComparison.Ordinal)
             ? trimmed
             : $"sha256:{trimmed}";
-    }
-
-    private static bool IsWorkbookFormatException(Exception exception)
-    {
-        var message = exception.Message;
-        return exception is InvalidDataException
-            || message.Contains("corrupted data", StringComparison.OrdinalIgnoreCase)
-            || message.Contains("central directory", StringComparison.OrdinalIgnoreCase)
-            || message.Contains("cannot find zip", StringComparison.OrdinalIgnoreCase)
-            || message.Contains("file format", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsSuccessful(string status)

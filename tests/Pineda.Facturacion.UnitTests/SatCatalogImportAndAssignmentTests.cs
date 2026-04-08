@@ -1,6 +1,7 @@
 using ClosedXML.Excel;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using NPOI.HSSF.UserModel;
 using Pineda.Facturacion.Application.UseCases.ProductFiscalProfiles;
 using Pineda.Facturacion.Application.UseCases.SatCatalogs;
 using Pineda.Facturacion.Application.UseCases.SatClaveUnidad;
@@ -96,28 +97,51 @@ public sealed class SatCatalogImportAndAssignmentTests
 
         var result = await service.ExecuteAsync(new ImportOfficialSatCatalogCommand
         {
-            FileContent = "not-an-excel-file"u8.ToArray(),
+            FileContent = CreateOfficialWorkbookBytes()[..32],
             SourceFileName = "catalogos_sat.xlsx"
         });
 
         Assert.Equal(ImportOfficialSatCatalogOutcome.Failed, result.Outcome);
-        Assert.Equal("The SAT file is not a valid supported Excel workbook (.xlsx) or it is corrupted.", result.ErrorMessage);
+        Assert.Equal("The SAT workbook is corrupted or could not be read as a valid .xls or .xlsx file.", result.ErrorMessage);
     }
 
     [Fact]
-    public async Task ImportOfficialSatCatalog_ReturnsClearError_WhenWorkbookExtensionIsNotSupported()
+    public async Task ImportOfficialSatCatalog_ReturnsClearError_WhenWorkbookFormatIsNotSupported()
     {
         await using var dbContext = CreateDbContext();
         var service = CreateImportService(dbContext);
 
         var result = await service.ExecuteAsync(new ImportOfficialSatCatalogCommand
         {
-            FileContent = CreateOfficialWorkbookBytes(),
+            FileContent = "not-an-excel-file"u8.ToArray(),
+            SourceFileName = "catalogos_sat.txt"
+        });
+
+        Assert.Equal(ImportOfficialSatCatalogOutcome.Failed, result.Outcome);
+        Assert.Equal("The SAT file format is not supported. Upload a valid .xls or .xlsx workbook.", result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task ImportOfficialSatCatalog_ImportsValidXlsWorkbook()
+    {
+        await using var dbContext = CreateDbContext();
+        var service = CreateImportService(dbContext);
+        var workbookBytes = CreateOfficialXlsWorkbookBytes();
+        var expectedChecksum = ComputeChecksum(workbookBytes);
+
+        var result = await service.ExecuteAsync(new ImportOfficialSatCatalogCommand
+        {
+            FileContent = workbookBytes,
             SourceFileName = "catalogos_sat.xls"
         });
 
-        Assert.Equal(ImportOfficialSatCatalogOutcome.ValidationFailed, result.Outcome);
-        Assert.Equal("The SAT import only supports .xlsx workbooks.", result.ErrorMessage);
+        Assert.Equal(ImportOfficialSatCatalogOutcome.Completed, result.Outcome);
+        Assert.True(result.IsSuccess);
+        Assert.Equal("catalogos_sat.xls", result.SourceFileName);
+        Assert.Equal("4.0", result.SourceVersion);
+        Assert.Equal(expectedChecksum, result.SourceChecksum);
+        Assert.Equal(2, await dbContext.SatProductServiceCatalogEntries.CountAsync());
+        Assert.Equal(2, await dbContext.SatClaveUnidades.CountAsync());
     }
 
     [Fact]
@@ -270,6 +294,40 @@ public sealed class SatCatalogImportAndAssignmentTests
 
         using var stream = new MemoryStream();
         workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
+
+    private static byte[] CreateOfficialXlsWorkbookBytes()
+    {
+        using var workbook = new HSSFWorkbook();
+
+        var productSheet = workbook.CreateSheet("c_ClaveProdServ");
+        productSheet.CreateRow(0).CreateCell(0).SetCellValue("c_ClaveProdServ");
+        productSheet.GetRow(0).CreateCell(1).SetCellValue("Descripción");
+        productSheet.GetRow(0).CreateCell(2).SetCellValue("Palabras similares");
+        productSheet.CreateRow(1).CreateCell(0).SetCellValue("40161513");
+        productSheet.GetRow(1).CreateCell(1).SetCellValue("Filtro de aceite");
+        productSheet.GetRow(1).CreateCell(2).SetCellValue("filtro aceite lubricacion motor");
+        productSheet.CreateRow(2).CreateCell(0).SetCellValue("40161505");
+        productSheet.GetRow(2).CreateCell(1).SetCellValue("Filtro de aire");
+        productSheet.GetRow(2).CreateCell(2).SetCellValue("filtro aire motor");
+
+        var unitSheet = workbook.CreateSheet("c_ClaveUnidad");
+        unitSheet.CreateRow(0).CreateCell(0).SetCellValue("c_ClaveUnidad");
+        unitSheet.GetRow(0).CreateCell(1).SetCellValue("Nombre");
+        unitSheet.GetRow(0).CreateCell(2).SetCellValue("Símbolo");
+        unitSheet.GetRow(0).CreateCell(3).SetCellValue("Notas");
+        unitSheet.CreateRow(1).CreateCell(0).SetCellValue("H87");
+        unitSheet.GetRow(1).CreateCell(1).SetCellValue("Pieza");
+        unitSheet.GetRow(1).CreateCell(2).SetCellValue("PZA");
+        unitSheet.GetRow(1).CreateCell(3).SetCellValue("Unidad de pieza");
+        unitSheet.CreateRow(2).CreateCell(0).SetCellValue("E48");
+        unitSheet.GetRow(2).CreateCell(1).SetCellValue("Unidad de servicio");
+        unitSheet.GetRow(2).CreateCell(2).SetCellValue("SRV");
+        unitSheet.GetRow(2).CreateCell(3).SetCellValue("Servicios");
+
+        using var stream = new MemoryStream();
+        workbook.Write(stream);
         return stream.ToArray();
     }
 

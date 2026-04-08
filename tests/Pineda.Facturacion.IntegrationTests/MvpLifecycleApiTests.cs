@@ -14,6 +14,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using NPOI.HSSF.UserModel;
 using Pineda.Facturacion.Api.Endpoints;
 using Pineda.Facturacion.Application.Abstractions.Legacy;
 using Pineda.Facturacion.Application.Abstractions.Pac;
@@ -218,6 +219,28 @@ public class MvpLifecycleApiTests
         Assert.NotNull(profile);
         Assert.Equal("40161513", profile!.SatProductServiceCode);
         Assert.Equal("H87", profile.SatUnitCode);
+    }
+
+    [Fact]
+    public async Task ImportOfficialSatCatalog_AcceptsOfficialXlsWorkbook()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        using var content = new MultipartFormDataContent();
+        var file = new ByteArrayContent(CreateOfficialSatCatalogWorkbookBytesAsXls());
+        file.Headers.ContentType = new MediaTypeHeaderValue("application/vnd.ms-excel");
+        content.Add(file, "file", "catalogos_sat.xls");
+
+        var response = await client.PostAsync("/api/fiscal/imports/sat/official", content);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<FiscalImportEndpoints.ImportOfficialSatCatalogResponse>();
+        Assert.NotNull(body);
+        Assert.Equal("catalogos_sat.xls", body!.SourceFileName);
+        Assert.Equal("4.0", body.SourceVersion);
+        Assert.True(body.IsSuccess);
+        Assert.StartsWith("sha256:", body.SourceChecksum, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -3569,6 +3592,31 @@ public class MvpLifecycleApiTests
 
         using var stream = new MemoryStream();
         workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
+
+    private static byte[] CreateOfficialSatCatalogWorkbookBytesAsXls()
+    {
+        using var workbook = new HSSFWorkbook();
+
+        var productSheet = workbook.CreateSheet("c_ClaveProdServ");
+        productSheet.CreateRow(0).CreateCell(0).SetCellValue("c_ClaveProdServ");
+        productSheet.GetRow(0).CreateCell(1).SetCellValue("Descripción");
+        productSheet.GetRow(0).CreateCell(2).SetCellValue("Palabras similares");
+        productSheet.CreateRow(1).CreateCell(0).SetCellValue("40161513");
+        productSheet.GetRow(1).CreateCell(1).SetCellValue("Filtro de aceite");
+        productSheet.GetRow(1).CreateCell(2).SetCellValue("filtro aceite lubricacion motor");
+
+        var unitSheet = workbook.CreateSheet("c_ClaveUnidad");
+        unitSheet.CreateRow(0).CreateCell(0).SetCellValue("c_ClaveUnidad");
+        unitSheet.GetRow(0).CreateCell(1).SetCellValue("Nombre");
+        unitSheet.GetRow(0).CreateCell(2).SetCellValue("Símbolo");
+        unitSheet.CreateRow(1).CreateCell(0).SetCellValue("H87");
+        unitSheet.GetRow(1).CreateCell(1).SetCellValue("Pieza");
+        unitSheet.GetRow(1).CreateCell(2).SetCellValue("PZA");
+
+        using var stream = new MemoryStream();
+        workbook.Write(stream);
         return stream.ToArray();
     }
 
