@@ -22,6 +22,7 @@ import {
   PrepareFiscalDocumentResponse,
   PendingBillingItemResponse,
   PendingCancellationAuthorizationsResponse,
+  ReprepareFiscalDocumentResponse,
   RemoveBillingDocumentItemRequest,
   RemoveBillingDocumentItemResponse,
   RespondCancellationAuthorizationRequest,
@@ -118,6 +119,10 @@ export class FiscalDocumentsApiService {
 
   stampFiscalDocument(fiscalDocumentId: number, request: StampFiscalDocumentRequest): Observable<StampFiscalDocumentResponse> {
     return this.http.post<StampFiscalDocumentResponse>(buildApiUrl(`/fiscal-documents/${fiscalDocumentId}/stamp`), request);
+  }
+
+  reprepareFiscalDocument(fiscalDocumentId: number): Observable<ReprepareFiscalDocumentResponse> {
+    return this.http.post<ReprepareFiscalDocumentResponse>(buildApiUrl(`/fiscal-documents/${fiscalDocumentId}/reprepare`), {});
   }
 
   stampAndEmailFiscalDocument(fiscalDocumentId: number, request: StampFiscalDocumentRequest): Observable<StampAndEmailFiscalDocumentResponse> {

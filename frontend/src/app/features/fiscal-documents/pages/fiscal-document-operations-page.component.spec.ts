@@ -162,6 +162,15 @@ describe('FiscalDocumentOperationsPageComponent', () => {
           items: [],
         }),
       ),
+      reprepareFiscalDocument: vi.fn().mockReturnValue(
+        of({
+          outcome: 'Reprepared',
+          isSuccess: true,
+          fiscalDocumentId: 40,
+          billingDocumentId: 30,
+          fiscalDocumentStatus: 'ReadyForStamping',
+        }),
+      ),
       getStamp: vi.fn().mockReturnValue(
         of({
           id: 11,
@@ -425,6 +434,80 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain(
       'Aún no hay evidencia de timbrado disponible',
     );
+  });
+
+  it('keeps the current fiscal status as the source of truth even when stamp evidence is a rejected historical attempt', async () => {
+    const readyDocument = {
+      id: 40,
+      billingDocumentId: 30,
+      issuerProfileId: 1,
+      fiscalReceiverId: 9,
+      status: 'ReadyForStamping',
+      cfdiVersion: '4.0',
+      documentType: 'I',
+      series: 'A',
+      folio: '31787',
+      issuedAtUtc: '2026-03-20T12:00:00Z',
+      currencyCode: 'MXN',
+      exchangeRate: 1,
+      paymentMethodSat: 'PPD',
+      paymentFormSat: '99',
+      paymentCondition: 'CREDITO',
+      isCreditSale: true,
+      creditDays: 7,
+      issuerRfc: 'AAA010101AAA',
+      issuerLegalName: 'Issuer SA',
+      issuerFiscalRegimeCode: '601',
+      issuerPostalCode: '01000',
+      pacEnvironment: 'Sandbox',
+      hasCertificateReference: true,
+      hasPrivateKeyReference: true,
+      hasPrivateKeyPasswordReference: true,
+      receiverRfc: 'BBB010101BBB',
+      receiverLegalName: 'Receiver One',
+      receiverFiscalRegimeCode: '601',
+      receiverCfdiUseCode: 'G03',
+      receiverPostalCode: '02000',
+      receiverCountryCode: 'MX',
+      receiverForeignTaxRegistration: null,
+      subtotal: 100,
+      discountTotal: 0,
+      taxTotal: 0,
+      total: 100,
+      items: [],
+    };
+    const fixture = await configure({
+      getFiscalDocumentById: vi.fn().mockReturnValue(of(readyDocument)),
+      getStamp: vi.fn().mockReturnValue(
+        of({
+          id: 11,
+          fiscalDocumentId: 40,
+          providerName: 'FacturaloPlus',
+          providerOperation: 'stamp',
+          providerTrackingId: 'TRACK-1',
+          status: 'Rejected',
+          uuid: null,
+          stampedAtUtc: null,
+          providerCode: 'CFDI40174',
+          providerMessage: 'Base inválida.',
+          errorCode: 'CFDI40174',
+          errorMessage: 'Base inválida.',
+          xmlHash: null,
+          qrCodeTextOrUrl: null,
+          originalString: null,
+          createdAtUtc: '2026-03-20T12:00:00Z',
+          updatedAtUtc: '2026-03-20T12:00:00Z',
+        }),
+      ),
+    });
+    await fixture.componentInstance['loadFiscalDocument'](40);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['fiscalDocument']()?.status).toBe('ReadyForStamping');
+    expect(fixture.componentInstance['stampEvidence']()?.status).toBe('Rejected');
+    expect(fixture.componentInstance['canStampCurrentFiscalDocument']()).toBe(true);
+    expect(fixture.nativeElement.textContent).toContain('Estado actual vs evidencia histórica');
+    expect(fixture.nativeElement.textContent).toContain('Listo para timbrar');
   });
 
   it('shows PDF actions for stamped documents without the persistent email action', async () => {
@@ -1157,7 +1240,153 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(fixture.componentInstance['showCancelConfirmationDialog']()).toBe(false);
   });
 
-  it('reconciles the local cancellation card immediately after a successful cancellation', async () => {
+  it('uses local discard semantics for recoverable unstamped snapshots and enables reprepare afterwards', async () => {
+    const recoverableDocument = {
+      id: 40,
+      billingDocumentId: 30,
+      issuerProfileId: 1,
+      fiscalReceiverId: 9,
+      status: 'StampingRejected',
+      cfdiVersion: '4.0',
+      documentType: 'I',
+      series: 'A',
+      folio: '31787',
+      issuedAtUtc: '2026-03-20T12:00:00Z',
+      currencyCode: 'MXN',
+      exchangeRate: 1,
+      paymentMethodSat: 'PPD',
+      paymentFormSat: '99',
+      paymentCondition: 'CREDITO',
+      isCreditSale: true,
+      creditDays: 7,
+      issuerRfc: 'AAA010101AAA',
+      issuerLegalName: 'Issuer SA',
+      issuerFiscalRegimeCode: '601',
+      issuerPostalCode: '01000',
+      pacEnvironment: 'Sandbox',
+      hasCertificateReference: true,
+      hasPrivateKeyReference: true,
+      hasPrivateKeyPasswordReference: true,
+      receiverRfc: 'BBB010101BBB',
+      receiverLegalName: 'Receiver One',
+      receiverFiscalRegimeCode: '601',
+      receiverCfdiUseCode: 'G03',
+      receiverPostalCode: '02000',
+      receiverCountryCode: 'MX',
+      receiverForeignTaxRegistration: null,
+      subtotal: 100,
+      discountTotal: 0,
+      taxTotal: 16,
+      total: 116,
+      items: [],
+    };
+    const discardedDocument = {
+      ...recoverableDocument,
+      status: 'DiscardedUnstamped',
+    };
+    const cancelFiscalDocument = vi.fn().mockReturnValue(
+      of({
+        outcome: 'Cancelled',
+        isSuccess: true,
+        fiscalDocumentId: 40,
+        fiscalDocumentStatus: 'DiscardedUnstamped',
+        operationType: 'LocalDiscard',
+        supportMessage:
+          'Unstamped fiscal snapshot was discarded locally. No PAC cancellation was performed.',
+      }),
+    );
+    const getFiscalDocumentById = vi
+      .fn()
+      .mockReturnValue(of(discardedDocument))
+      .mockReturnValueOnce(of(recoverableDocument));
+    const getStamp = vi.fn().mockReturnValue(
+      of({
+        id: 11,
+        fiscalDocumentId: 40,
+        providerName: 'FacturaloPlus',
+        providerOperation: 'stamp',
+        providerTrackingId: 'TRACK-1',
+        status: 'Rejected',
+        uuid: null,
+        stampedAtUtc: null,
+        providerCode: 'CFDI40174',
+        providerMessage: 'Base inválida.',
+        errorCode: 'CFDI40174',
+        errorMessage: 'Base inválida.',
+        xmlHash: null,
+        qrCodeTextOrUrl: null,
+        originalString: null,
+        createdAtUtc: '2026-03-20T12:00:00Z',
+        updatedAtUtc: '2026-03-20T12:00:00Z',
+      }),
+    );
+    const fixture = await configure({ cancelFiscalDocument, getFiscalDocumentById, getStamp });
+    const feedback = TestBed.inject(FeedbackService) as unknown as {
+      show: ReturnType<typeof vi.fn>;
+    };
+
+    fixture.componentInstance['openCancelDialog']();
+
+    expect(fixture.componentInstance['showCancelDialog']()).toBe(false);
+    expect(fixture.componentInstance['showCancelConfirmationDialog']()).toBe(true);
+
+    await fixture.componentInstance['confirmCancellation']();
+
+    expect(cancelFiscalDocument).toHaveBeenCalledWith(40, {});
+    expect(fixture.componentInstance['fiscalDocument']()?.status).toBe('DiscardedUnstamped');
+    expect(fixture.componentInstance['canStampCurrentFiscalDocument']()).toBe(false);
+    expect(fixture.componentInstance['canReprepareCurrentFiscalDocument']()).toBe(true);
+    expect(fixture.componentInstance['canEditCurrentBillingComposition']()).toBe(true);
+    expect(feedback.show).toHaveBeenCalledWith(
+      'success',
+      'Unstamped fiscal snapshot was discarded locally. No PAC cancellation was performed.',
+    );
+  });
+
+  it('reloads the provider cancellation state from the backend after a successful cancellation', async () => {
+    const stampedDocument = {
+      id: 40,
+      billingDocumentId: 30,
+      issuerProfileId: 1,
+      fiscalReceiverId: 9,
+      status: 'Stamped',
+      cfdiVersion: '4.0',
+      documentType: 'I',
+      series: 'A',
+      folio: '31787',
+      issuedAtUtc: '2026-03-20T12:00:00Z',
+      currencyCode: 'MXN',
+      exchangeRate: 1,
+      paymentMethodSat: 'PPD',
+      paymentFormSat: '99',
+      paymentCondition: 'CREDITO',
+      isCreditSale: true,
+      creditDays: 7,
+      issuerRfc: 'AAA010101AAA',
+      issuerLegalName: 'Issuer SA',
+      issuerFiscalRegimeCode: '601',
+      issuerPostalCode: '01000',
+      pacEnvironment: 'Sandbox',
+      hasCertificateReference: true,
+      hasPrivateKeyReference: true,
+      hasPrivateKeyPasswordReference: true,
+      receiverRfc: 'BBB010101BBB',
+      receiverLegalName: 'Receiver One',
+      receiverFiscalRegimeCode: '601',
+      receiverCfdiUseCode: 'G03',
+      receiverPostalCode: '02000',
+      receiverCountryCode: 'MX',
+      receiverForeignTaxRegistration: null,
+      subtotal: 100,
+      discountTotal: 0,
+      taxTotal: 0,
+      total: 100,
+      items: [],
+    };
+    const cancelledDocument = {
+      ...stampedDocument,
+      status: 'Cancelled',
+    };
     const cancelFiscalDocument = vi.fn().mockReturnValue(
       of({
         outcome: 'Cancelled',
@@ -1177,7 +1406,32 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         cancelledAtUtc: '2026-03-29T18:40:00Z',
       }),
     );
-    const getCancellation = vi.fn().mockReturnValue(
+    const getFiscalDocumentById = vi
+      .fn()
+      .mockReturnValue(of(cancelledDocument))
+      .mockReturnValueOnce(of(stampedDocument));
+    const getCancellation = vi
+      .fn()
+      .mockReturnValue(
+        of({
+          fiscalDocumentId: 40,
+          status: 'Cancelled',
+          cancellationReasonCode: '03',
+          replacementUuid: null,
+          providerName: 'FacturaloPlus',
+          providerTrackingId: 'TRACK-CANCEL-201',
+          providerCode: '201',
+          providerMessage: 'Solicitud de cancelación de UUID exitosa. - ',
+          errorCode: null,
+          errorMessage: null,
+          supportMessage:
+            'ProviderCode=201 | ProviderMessage=Solicitud de cancelación de UUID exitosa. - ',
+          rawResponseSummaryJson: '{"httpStatusCode":200}',
+          requestedAtUtc: '2026-03-29T12:00:00Z',
+          cancelledAtUtc: '2026-03-29T18:40:00Z',
+        }),
+      )
+      .mockReturnValueOnce(
       of({
         fiscalDocumentId: 40,
         status: 'Rejected',
@@ -1195,7 +1449,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         cancelledAtUtc: null,
       }),
     );
-    const fixture = await configure({ cancelFiscalDocument, getCancellation });
+    const fixture = await configure({ cancelFiscalDocument, getCancellation, getFiscalDocumentById });
     const feedback = TestBed.inject(FeedbackService) as unknown as {
       show: ReturnType<typeof vi.fn>;
     };
@@ -1213,7 +1467,107 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(fixture.componentInstance['canCancelCurrentFiscalDocument']()).toBe(false);
     expect(feedback.show).toHaveBeenCalledWith(
       'success',
-      'CFDI cancelado correctamente ante SAT/PAC.',
+      'Solicitud de cancelación de UUID exitosa. - ',
+    );
+  });
+
+  it('reprepares a discarded snapshot and keeps stamp evidence only as historical context', async () => {
+    const discardedDocument = {
+      id: 40,
+      billingDocumentId: 30,
+      issuerProfileId: 1,
+      fiscalReceiverId: 9,
+      status: 'DiscardedUnstamped',
+      cfdiVersion: '4.0',
+      documentType: 'I',
+      series: 'A',
+      folio: '31787',
+      issuedAtUtc: '2026-03-20T12:00:00Z',
+      currencyCode: 'MXN',
+      exchangeRate: 1,
+      paymentMethodSat: 'PPD',
+      paymentFormSat: '99',
+      paymentCondition: 'CREDITO',
+      isCreditSale: true,
+      creditDays: 7,
+      issuerRfc: 'AAA010101AAA',
+      issuerLegalName: 'Issuer SA',
+      issuerFiscalRegimeCode: '601',
+      issuerPostalCode: '01000',
+      pacEnvironment: 'Sandbox',
+      hasCertificateReference: true,
+      hasPrivateKeyReference: true,
+      hasPrivateKeyPasswordReference: true,
+      receiverRfc: 'BBB010101BBB',
+      receiverLegalName: 'Receiver One',
+      receiverFiscalRegimeCode: '601',
+      receiverCfdiUseCode: 'G03',
+      receiverPostalCode: '02000',
+      receiverCountryCode: 'MX',
+      receiverForeignTaxRegistration: null,
+      subtotal: 100,
+      discountTotal: 0,
+      taxTotal: 16,
+      total: 116,
+      items: [],
+    };
+    const repreparedDocument = {
+      ...discardedDocument,
+      status: 'ReadyForStamping',
+    };
+    const reprepareFiscalDocument = vi.fn().mockReturnValue(
+      of({
+        outcome: 'Reprepared',
+        isSuccess: true,
+        fiscalDocumentId: 40,
+        billingDocumentId: 30,
+        fiscalDocumentStatus: 'ReadyForStamping',
+      }),
+    );
+    const getFiscalDocumentById = vi
+      .fn()
+      .mockReturnValue(of(repreparedDocument))
+      .mockReturnValueOnce(of(discardedDocument));
+    const getStamp = vi.fn().mockReturnValue(
+      of({
+        id: 11,
+        fiscalDocumentId: 40,
+        providerName: 'FacturaloPlus',
+        providerOperation: 'stamp',
+        providerTrackingId: 'TRACK-1',
+        status: 'Rejected',
+        uuid: null,
+        stampedAtUtc: null,
+        providerCode: 'CFDI40174',
+        providerMessage: 'Base inválida.',
+        errorCode: 'CFDI40174',
+        errorMessage: 'Base inválida.',
+        xmlHash: null,
+        qrCodeTextOrUrl: null,
+        originalString: null,
+        createdAtUtc: '2026-03-20T12:00:00Z',
+        updatedAtUtc: '2026-03-20T12:00:00Z',
+      }),
+    );
+    const fixture = await configure({ reprepareFiscalDocument, getFiscalDocumentById, getStamp });
+    const feedback = TestBed.inject(FeedbackService) as unknown as {
+      show: ReturnType<typeof vi.fn>;
+    };
+
+    expect(fixture.nativeElement.textContent).toContain('Regenerar snapshot');
+
+    await fixture.componentInstance['reprepare']();
+    fixture.detectChanges();
+
+    expect(reprepareFiscalDocument).toHaveBeenCalledWith(40);
+    expect(fixture.componentInstance['fiscalDocument']()?.status).toBe('ReadyForStamping');
+    expect(fixture.componentInstance['canStampCurrentFiscalDocument']()).toBe(true);
+    expect(fixture.componentInstance['lastOperationMessage']()).toContain(
+      'Snapshot fiscal regenerado',
+    );
+    expect(feedback.show).toHaveBeenCalledWith(
+      'success',
+      'Snapshot fiscal regenerado correctamente.',
     );
   });
 
@@ -1751,6 +2105,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     );
     const fixture = await configure({
       syncFiscalDocumentSpecialFields,
+      getStamp: vi.fn().mockReturnValue(throwError(() => ({ status: 404 }))),
       getFiscalDocumentById: vi.fn().mockReturnValue(
         of({
           id: 40,
@@ -2609,6 +2964,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     const fixture = await configure(
       {
         addSalesOrderToBillingDocument,
+        getStamp: vi.fn().mockReturnValue(throwError(() => ({ status: 404 }))),
         getFiscalDocumentById: vi.fn().mockReturnValue(
           of({
             id: 40,
@@ -2714,6 +3070,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const fixture = await configure({
       removeSalesOrderFromBillingDocument,
+      getStamp: vi.fn().mockReturnValue(throwError(() => ({ status: 404 }))),
       getBillingDocumentById,
       getFiscalDocumentById: vi.fn().mockReturnValue(
         of({
@@ -2783,6 +3140,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     );
     const fixture = await configure({
       removeBillingDocumentItem,
+      getStamp: vi.fn().mockReturnValue(throwError(() => ({ status: 404 }))),
       getFiscalDocumentById: vi.fn().mockReturnValue(
         of({
           id: 40,

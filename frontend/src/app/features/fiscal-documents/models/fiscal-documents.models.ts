@@ -358,6 +358,15 @@ export interface StampFiscalDocumentResponse {
   retryAdvice?: string | null;
 }
 
+export interface ReprepareFiscalDocumentResponse {
+  outcome: string;
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  fiscalDocumentId: number;
+  billingDocumentId?: number | null;
+  fiscalDocumentStatus?: string | null;
+}
+
 export interface SyncFiscalDocumentSpecialFieldsResponse {
   outcome: string;
   isSuccess: boolean;
@@ -461,7 +470,7 @@ export interface SendFiscalDocumentEmailResponse {
 }
 
 export interface CancelFiscalDocumentRequest {
-  cancellationReasonCode: string;
+  cancellationReasonCode?: string | null;
   replacementUuid?: string | null;
 }
 
@@ -471,6 +480,7 @@ export interface CancelFiscalDocumentResponse {
   errorMessage?: string | null;
   fiscalDocumentId: number;
   fiscalDocumentStatus?: string | null;
+  operationType?: string | null;
   fiscalCancellationId?: number | null;
   cancellationStatus?: string | null;
   providerName?: string | null;

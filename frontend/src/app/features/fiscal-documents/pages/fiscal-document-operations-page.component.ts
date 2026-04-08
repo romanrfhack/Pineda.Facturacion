@@ -57,11 +57,9 @@ import { buildFiscalDocumentFileName } from '../application/fiscal-document-file
 import {
   buildCancellationConfirmationMessage,
   buildCancellationRequest,
-  canCancelFiscalDocumentStatus,
   cancellationReasonOptions,
   getCancellationValidationError,
   normalizeSatCode,
-  reconcileCancellationAfterOperation,
   shouldKeepCurrentCancelledCancellation,
 } from '../application/fiscal-cancellation-ui';
 import { ConfirmationModalComponent } from '../../../shared/components/confirmation-modal.component';
@@ -852,6 +850,16 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
                 {{ stampActionLabel() }}
               </button>
             }
+            @if (permissionService.canStampFiscal() && canReprepareCurrentFiscalDocument()) {
+              <button
+                type="button"
+                class="secondary"
+                (click)="reprepare()"
+                [disabled]="loadingOperation() || !canReprepareCurrentFiscalDocument()"
+              >
+                Regenerar snapshot
+              </button>
+            }
             @if (permissionService.canCancelFiscal()) {
               <button
                 type="button"
@@ -859,7 +867,7 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
                 (click)="openCancelDialog()"
                 [disabled]="loadingOperation() || !canCancelCurrentFiscalDocument()"
               >
-                Cancelar
+                {{ cancelActionLabel() }}
               </button>
             }
             @if (permissionService.canCancelFiscal()) {
@@ -934,8 +942,12 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
           }
           @if (!canStampCurrentFiscalDocument()) {
             <p class="helper">
-              Timbrar solo está disponible para documentos listos para timbrar o reintentos
-              explícitos de rechazo.
+              @if (fiscalDocument()?.status === 'DiscardedUnstamped') {
+                El snapshot fue descartado localmente. Regénéralo antes de volver a timbrar.
+              } @else {
+                Timbrar solo está disponible para documentos listos para timbrar o reintentos
+                explícitos de rechazo.
+              }
             </p>
           }
         </section>
@@ -1022,6 +1034,17 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
       }
 
       @if (stampEvidence(); as currentStamp) {
+        @if (shouldExplainStampEvidenceAsHistory()) {
+          <section class="card">
+            <h3>Estado actual vs evidencia histórica</h3>
+            <p class="helper">
+              El estado vigente del documento es
+              <strong>{{ getDisplayLabel(fiscalDocument()?.status || 'Unknown') }}</strong
+              >. La tarjeta siguiente muestra sólo la última evidencia o intento persistido en
+              <code>/stamp</code>.
+            </p>
+          </section>
+        }
         <app-fiscal-stamp-evidence-card
           [stamp]="currentStamp"
           (detailsRequested)="toggleStampDetail()"
@@ -1190,13 +1213,13 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
 
       <app-confirmation-modal
         [open]="showCancelConfirmationDialog()"
-        eyebrow="Cancelación SAT"
-        title="Confirmar cancelación"
+        [eyebrow]="canLocalDiscardCurrentFiscalDocument() ? 'Descarte local' : 'Cancelación SAT'"
+        [title]="canLocalDiscardCurrentFiscalDocument() ? 'Descartar snapshot fiscal' : 'Confirmar cancelación'"
         [message]="cancellationConfirmationMessage()"
-        confirmLabel="Sí, cancelar CFDI"
+        [confirmLabel]="canLocalDiscardCurrentFiscalDocument() ? 'Sí, descartar borrador' : 'Sí, cancelar CFDI'"
         cancelLabel="No, volver"
-        busyConfirmLabel="Cancelando..."
-        tone="danger"
+        [busyConfirmLabel]="canLocalDiscardCurrentFiscalDocument() ? 'Descartando...' : 'Cancelando...'"
+        [tone]="canLocalDiscardCurrentFiscalDocument() ? 'default' : 'danger'"
         [busy]="loadingOperation()"
         (confirmed)="confirmCancellation()"
         (cancelled)="closeCancelConfirmationDialog()"
@@ -1801,6 +1824,13 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     null,
   );
   protected readonly cancellationConfirmationMessage = computed(() => {
+    if (this.canLocalDiscardCurrentFiscalDocument()) {
+      const fiscalDocument = this.fiscalDocument();
+      return fiscalDocument
+        ? `¿Confirmas descartar localmente el snapshot fiscal #${fiscalDocument.id}? No se enviará ninguna cancelación al SAT/PAC y el documento quedará listo para regenerarse.`
+        : '';
+    }
+
     const request = this.buildCancellationRequest();
     return request ? buildCancellationConfirmationMessage(request) : '';
   });
@@ -2013,6 +2043,12 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       return;
     }
 
+    if (this.canLocalDiscardCurrentFiscalDocument()) {
+      this.showCancelDialog.set(false);
+      this.showCancelConfirmationDialog.set(true);
+      return;
+    }
+
     this.showCancelDialog.set(true);
     this.showCancelConfirmationDialog.set(false);
     this.cancellationReasonCode = this.cancellation()?.cancellationReasonCode ?? '';
@@ -2213,11 +2249,38 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       return true;
     }
 
+    if (this.hasPersistedStampedUuid() || fiscalDocument.status === 'Stamped') {
+      return false;
+    }
+
     return (
       fiscalDocument.status === 'Draft' ||
       fiscalDocument.status === 'ReadyForStamping' ||
-      fiscalDocument.status === 'StampingRejected'
+      fiscalDocument.status === 'StampingRejected' ||
+      fiscalDocument.status === 'DiscardedUnstamped'
     );
+  }
+
+  protected canReprepareCurrentFiscalDocument(): boolean {
+    const fiscalDocument = this.fiscalDocument();
+    if (!fiscalDocument || this.hasPersistedStampedUuid()) {
+      return false;
+    }
+
+    return (
+      fiscalDocument.status === 'Draft' ||
+      fiscalDocument.status === 'ReadyForStamping' ||
+      fiscalDocument.status === 'StampingRejected' ||
+      fiscalDocument.status === 'DiscardedUnstamped'
+    );
+  }
+
+  protected cancelActionLabel(): string {
+    return this.canLocalDiscardCurrentFiscalDocument() ? 'Descartar borrador' : 'Cancelar';
+  }
+
+  protected shouldExplainStampEvidenceAsHistory(): boolean {
+    return !!this.stampEvidence() && !this.hasPersistedStampedUuid();
   }
 
   protected async addLegacyOrderToBillingDocument(): Promise<void> {
@@ -2762,13 +2825,36 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     });
   }
 
+  protected async reprepare(): Promise<void> {
+    const fiscalDocumentId = this.fiscalDocumentId();
+    if (!fiscalDocumentId || !this.canReprepareCurrentFiscalDocument()) {
+      return;
+    }
+
+    await this.runOperation(async () => {
+      await firstValueFrom(this.api.reprepareFiscalDocument(fiscalDocumentId));
+      await this.loadFiscalDocument(fiscalDocumentId);
+      this.lastOperationMessage.set(
+        'Snapshot fiscal regenerado desde el documento de facturación actual. El estado vigente vuelve a estar listo para timbrar.',
+      );
+      this.feedbackService.show('success', 'Snapshot fiscal regenerado correctamente.');
+    });
+  }
+
   protected async cancel(): Promise<void> {
     const fiscalDocumentId = this.fiscalDocumentId();
-    const cancellationValidationError = this.getCancellationValidationError();
     if (!fiscalDocumentId) {
       return;
     }
 
+    if (this.canLocalDiscardCurrentFiscalDocument()) {
+      if (!this.loadingOperation()) {
+        this.showCancelConfirmationDialog.set(true);
+      }
+      return;
+    }
+
+    const cancellationValidationError = this.getCancellationValidationError();
     if (cancellationValidationError) {
       this.feedbackService.show('error', cancellationValidationError);
       return;
@@ -2784,7 +2870,9 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
 
   protected async confirmCancellation(): Promise<void> {
     const fiscalDocumentId = this.fiscalDocumentId();
-    const cancellationRequest = this.buildCancellationRequest();
+    const cancellationRequest = this.canLocalDiscardCurrentFiscalDocument()
+      ? {}
+      : this.buildCancellationRequest();
     if (!fiscalDocumentId || !cancellationRequest || !this.showCancelConfirmationDialog()) {
       return;
     }
@@ -2793,23 +2881,20 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       const response = await firstValueFrom(
         this.api.cancelFiscalDocument(fiscalDocumentId, cancellationRequest),
       );
-      const feedbackMessage =
-        response.providerMessage ||
-        response.supportMessage ||
-        response.retryAdvice ||
-        response.errorMessage ||
-        `Resultado de la cancelación: ${getDisplayLabel(response.outcome)}`;
       this.lastOperationMessage.set(null);
       this.showCancelConfirmationDialog.set(false);
       this.showCancelDialog.set(false);
-      if (!response.isSuccess) {
-        await this.loadFiscalDocument(fiscalDocumentId);
-        await this.loadCancellation(fiscalDocumentId);
+      await this.loadFiscalDocument(fiscalDocumentId);
+      if (response.operationType === 'LocalDiscard' && response.isSuccess) {
+        this.cancellation.set(null);
+      } else {
+        await this.loadCancellation(fiscalDocumentId, false);
       }
-      this.reconcileCancellationAfterOperation(response, cancellationRequest);
+      await this.loadPendingCancellationAuthorizations(false);
+      const feedbackMessage = this.buildCancellationFeedbackMessage(response);
       this.feedbackService.show(
         response.isSuccess ? 'success' : 'error',
-        response.isSuccess ? 'CFDI cancelado correctamente ante SAT/PAC.' : feedbackMessage,
+        feedbackMessage,
       );
     });
   }
@@ -3312,32 +3397,18 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     }
   }
 
-  private reconcileCancellationAfterOperation(
-    response: import('../models/fiscal-documents.models').CancelFiscalDocumentResponse,
-    request: CancelFiscalDocumentRequest,
-  ): void {
-    const reconciliation = reconcileCancellationAfterOperation(
-      this.fiscalDocument(),
-      this.cancellation(),
-      response,
-      request,
-    );
-    this.fiscalDocument.set(reconciliation.nextDocument);
-    this.cancellation.set(reconciliation.nextCancellation);
-  }
-
   protected canCancelCurrentFiscalDocument(): boolean {
-    return canCancelFiscalDocumentStatus(this.fiscalDocument()?.status);
+    return this.canLocalDiscardCurrentFiscalDocument() || this.canProviderCancelCurrentFiscalDocument();
   }
 
   protected canStampCurrentFiscalDocument(): boolean {
     const status = this.fiscalDocument()?.status;
-    return status === 'ReadyForStamping' || status === 'StampingRejected';
+    return !this.hasPersistedStampedUuid() && (status === 'ReadyForStamping' || status === 'StampingRejected');
   }
 
   protected canSyncCurrentFiscalDocument(): boolean {
     const status = this.fiscalDocument()?.status;
-    return status === 'ReadyForStamping' || status === 'StampingRejected';
+    return !this.hasPersistedStampedUuid() && (status === 'ReadyForStamping' || status === 'StampingRejected');
   }
 
   protected stampActionLabel(): string {
@@ -3391,6 +3462,46 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     return getCancellationValidationError(
       this.cancellationReasonCode,
       this.cancellationReplacementUuid,
+    );
+  }
+
+  protected canLocalDiscardCurrentFiscalDocument(): boolean {
+    const status = this.fiscalDocument()?.status;
+    return (
+      !this.hasPersistedStampedUuid() &&
+      (status === 'Draft' || status === 'ReadyForStamping' || status === 'StampingRejected')
+    );
+  }
+
+  private canProviderCancelCurrentFiscalDocument(): boolean {
+    const status = this.fiscalDocument()?.status;
+    return status === 'Stamped' || status === 'CancellationRejected';
+  }
+
+  private hasPersistedStampedUuid(): boolean {
+    return !!this.stampEvidence()?.uuid;
+  }
+
+  private buildCancellationFeedbackMessage(
+    response: import('../models/fiscal-documents.models').CancelFiscalDocumentResponse,
+  ): string {
+    if (response.isSuccess && response.operationType === 'LocalDiscard') {
+      return (
+        response.supportMessage ||
+        'Snapshot fiscal descartado localmente. No se envió cancelación al SAT/PAC.'
+      );
+    }
+
+    if (response.isSuccess) {
+      return response.providerMessage || response.supportMessage || 'CFDI cancelado correctamente ante SAT/PAC.';
+    }
+
+    return (
+      response.providerMessage ||
+      response.supportMessage ||
+      response.retryAdvice ||
+      response.errorMessage ||
+      `Resultado de la cancelación: ${getDisplayLabel(response.outcome)}`
     );
   }
 
