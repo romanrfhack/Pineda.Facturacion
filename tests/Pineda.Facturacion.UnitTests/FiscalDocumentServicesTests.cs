@@ -189,6 +189,73 @@ public class FiscalDocumentServicesTests
     }
 
     [Fact]
+    public async Task PrepareFiscalDocument_KeepsExistingPreparedDocumentsStable_AndUsesLatestAssignmentForNewOnes()
+    {
+        var fiscalDocumentRepository = new FakeFiscalDocumentRepository();
+        var productRepository = new FakeProductFiscalProfileRepository
+        {
+            ExistingByCode = CreateProductFiscalProfile(),
+            EffectiveByCode = CreateProductFiscalProfile()
+        };
+
+        var firstService = new PrepareFiscalDocumentService(
+            new FakeBillingDocumentRepository { BillingDocumentById = CreateBillingDocument(id: 5) },
+            fiscalDocumentRepository,
+            new FakeIssuerProfileRepository { Active = CreateIssuerProfile() },
+            new FakeFiscalReceiverRepository { ExistingById = CreateReceiver() },
+            productRepository,
+            new FakeSatCatalogDescriptionProvider(),
+            new FakeUnitOfWork());
+
+        var firstResult = await firstService.ExecuteAsync(new PrepareFiscalDocumentCommand
+        {
+            BillingDocumentId = 5,
+            FiscalReceiverId = 11,
+            PaymentMethodSat = "PUE",
+            PaymentFormSat = "03",
+            PaymentCondition = "Contado"
+        });
+
+        var firstPreparedDocument = fiscalDocumentRepository.Added!;
+        fiscalDocumentRepository.Added = null;
+        productRepository.EffectiveByCode = new ProductFiscalProfile
+        {
+            InternalCode = "SKU-1",
+            SatProductServiceCode = "20101500",
+            SatUnitCode = "E48",
+            TaxObjectCode = "02",
+            VatRate = 0.16m,
+            DefaultUnitText = "SERVICIO",
+            IsActive = true
+        };
+
+        var secondService = new PrepareFiscalDocumentService(
+            new FakeBillingDocumentRepository { BillingDocumentById = CreateBillingDocument(id: 6) },
+            fiscalDocumentRepository,
+            new FakeIssuerProfileRepository { Active = CreateIssuerProfile() },
+            new FakeFiscalReceiverRepository { ExistingById = CreateReceiver() },
+            productRepository,
+            new FakeSatCatalogDescriptionProvider(),
+            new FakeUnitOfWork());
+
+        var secondResult = await secondService.ExecuteAsync(new PrepareFiscalDocumentCommand
+        {
+            BillingDocumentId = 6,
+            FiscalReceiverId = 11,
+            PaymentMethodSat = "PUE",
+            PaymentFormSat = "03",
+            PaymentCondition = "Contado"
+        });
+
+        Assert.Equal(PrepareFiscalDocumentOutcome.Created, firstResult.Outcome);
+        Assert.Equal(PrepareFiscalDocumentOutcome.Created, secondResult.Outcome);
+        Assert.Equal("10101504", firstPreparedDocument.Items[0].SatProductServiceCode);
+        Assert.Equal("H87", firstPreparedDocument.Items[0].SatUnitCode);
+        Assert.Equal("20101500", fiscalDocumentRepository.Added!.Items[0].SatProductServiceCode);
+        Assert.Equal("E48", fiscalDocumentRepository.Added.Items[0].SatUnitCode);
+    }
+
+    [Fact]
     public async Task PrepareFiscalDocument_UsesReceiverCfdiUseOverride_ElseFallsBackToDefault()
     {
         var repository = new FakeFiscalDocumentRepository();
@@ -1189,8 +1256,8 @@ public class FiscalDocumentServicesTests
 
     private sealed class FakeProductFiscalProfileRepository : IProductFiscalProfileRepository
     {
-        public ProductFiscalProfile? ExistingByCode { get; init; }
-        public ProductFiscalProfile? EffectiveByCode { get; init; }
+        public ProductFiscalProfile? ExistingByCode { get; set; }
+        public ProductFiscalProfile? EffectiveByCode { get; set; }
 
         public Task<IReadOnlyList<ProductFiscalProfile>> SearchAsync(string query, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<ProductFiscalProfile>>([]);

@@ -1,6 +1,6 @@
-namespace Pineda.Facturacion.Application.UseCases.SatProductServices;
+namespace Pineda.Facturacion.Application.UseCases.SatClaveUnidad;
 
-public sealed class SearchSatProductServicesResult
+public sealed class SearchSatClaveUnidadResult
 {
     public int Page { get; init; }
 
@@ -8,10 +8,10 @@ public sealed class SearchSatProductServicesResult
 
     public bool HasMore { get; init; }
 
-    public IReadOnlyList<SatProductServiceSearchItem> Items { get; init; } = [];
+    public IReadOnlyList<SatClaveUnidadSearchItem> Items { get; init; } = [];
 }
 
-public sealed class SatProductServiceSearchItem
+public sealed class SatClaveUnidadSearchItem
 {
     public string Code { get; init; } = string.Empty;
 
@@ -22,4 +22,6 @@ public sealed class SatProductServiceSearchItem
     public string MatchKind { get; init; } = string.Empty;
 
     public decimal Score { get; init; }
+
+    public string? Symbol { get; init; }
 }

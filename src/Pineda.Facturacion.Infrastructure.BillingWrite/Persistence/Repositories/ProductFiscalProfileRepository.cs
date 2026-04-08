@@ -72,6 +72,20 @@ public class ProductFiscalProfileRepository : IProductFiscalProfileRepository
         return currentProfile;
     }
 
+    public Task<ProductFiscalAssignment?> GetEffectiveAssignmentAsync(
+        string normalizedInternalCode,
+        DateTime asOfUtc,
+        CancellationToken cancellationToken = default)
+    {
+        return _dbContext.ProductFiscalAssignments
+            .AsNoTracking()
+            .Where(x => x.InternalCode == normalizedInternalCode
+                && x.ValidFromUtc <= asOfUtc
+                && (!x.ValidToUtc.HasValue || x.ValidToUtc > asOfUtc))
+            .OrderByDescending(x => x.ValidFromUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
     public Task<ProductFiscalProfile?> GetByIdAsync(long productFiscalProfileId, CancellationToken cancellationToken = default)
     {
         return _dbContext.ProductFiscalProfiles

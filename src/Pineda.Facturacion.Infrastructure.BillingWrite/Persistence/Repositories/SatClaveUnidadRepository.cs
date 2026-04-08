@@ -4,21 +4,16 @@ using Pineda.Facturacion.Domain.Entities;
 
 namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Repositories;
 
-public sealed class SatProductServiceCatalogRepository : ISatProductServiceCatalogRepository
+public sealed class SatClaveUnidadRepository : ISatClaveUnidadRepository
 {
     private readonly BillingDbContext _dbContext;
 
-    public SatProductServiceCatalogRepository(BillingDbContext dbContext)
+    public SatClaveUnidadRepository(BillingDbContext dbContext)
     {
         _dbContext = dbContext;
     }
 
-    public async Task<IReadOnlyList<SatProductServiceCatalogEntry>> SearchAsync(string normalizedQuery, CancellationToken cancellationToken = default)
-    {
-        return await SearchAsync(normalizedQuery, 100, cancellationToken);
-    }
-
-    public async Task<IReadOnlyList<SatProductServiceCatalogEntry>> SearchAsync(
+    public async Task<IReadOnlyList<SatClaveUnidad>> SearchAsync(
         string normalizedQuery,
         int maxCandidates,
         CancellationToken cancellationToken = default)
@@ -27,31 +22,30 @@ public sealed class SatProductServiceCatalogRepository : ISatProductServiceCatal
         var codePrefix = $"{normalizedQuery}%";
         var textLike = $"%{normalizedQuery}%";
 
-        return await _dbContext.SatProductServiceCatalogEntries
+        return await _dbContext.SatClaveUnidades
             .AsNoTracking()
             .Where(x => x.IsActive
                 && (x.Code == normalizedQuery
                     || EF.Functions.Like(x.Code, codePrefix)
-                    || EF.Functions.Like(x.NormalizedDescription, textLike)
-                    || EF.Functions.Like(x.KeywordsNormalized, textLike)))
+                    || EF.Functions.Like(x.NormalizedDescription, textLike)))
             .Take(boundedMaxCandidates)
             .ToListAsync(cancellationToken);
     }
 
-    public Task<SatProductServiceCatalogEntry?> GetByCodeAsync(string normalizedCode, CancellationToken cancellationToken = default)
+    public Task<SatClaveUnidad?> GetByCodeAsync(string normalizedCode, CancellationToken cancellationToken = default)
     {
-        return _dbContext.SatProductServiceCatalogEntries
+        return _dbContext.SatClaveUnidades
             .AsNoTracking()
             .FirstOrDefaultAsync(x => x.Code == normalizedCode, cancellationToken);
     }
 
     public async Task<SatCatalogSyncResult> SyncAsync(
-        IReadOnlyList<SatProductServiceCatalogEntry> entries,
+        IReadOnlyList<SatClaveUnidad> entries,
         string sourceVersion,
         DateTime syncedAtUtc,
         CancellationToken cancellationToken = default)
     {
-        var existingByCode = await _dbContext.SatProductServiceCatalogEntries
+        var existingByCode = await _dbContext.SatClaveUnidades
             .ToDictionaryAsync(x => x.Code, StringComparer.Ordinal, cancellationToken);
 
         var seenCodes = new HashSet<string>(StringComparer.Ordinal);
@@ -65,12 +59,13 @@ public sealed class SatProductServiceCatalogRepository : ISatProductServiceCatal
 
             if (!existingByCode.TryGetValue(entry.Code, out var current))
             {
-                await _dbContext.SatProductServiceCatalogEntries.AddAsync(new SatProductServiceCatalogEntry
+                await _dbContext.SatClaveUnidades.AddAsync(new SatClaveUnidad
                 {
                     Code = entry.Code,
                     Description = entry.Description,
                     NormalizedDescription = entry.NormalizedDescription,
-                    KeywordsNormalized = entry.KeywordsNormalized,
+                    Symbol = entry.Symbol,
+                    Notes = entry.Notes,
                     IsActive = entry.IsActive,
                     SourceVersion = sourceVersion,
                     CreatedAtUtc = syncedAtUtc,
@@ -84,7 +79,8 @@ public sealed class SatProductServiceCatalogRepository : ISatProductServiceCatal
             {
                 current.Description = entry.Description;
                 current.NormalizedDescription = entry.NormalizedDescription;
-                current.KeywordsNormalized = entry.KeywordsNormalized;
+                current.Symbol = entry.Symbol;
+                current.Notes = entry.Notes;
                 current.IsActive = entry.IsActive;
                 current.SourceVersion = sourceVersion;
                 current.UpdatedAtUtc = syncedAtUtc;
@@ -114,11 +110,12 @@ public sealed class SatProductServiceCatalogRepository : ISatProductServiceCatal
         };
     }
 
-    private static bool HasChanges(SatProductServiceCatalogEntry current, SatProductServiceCatalogEntry next, string sourceVersion)
+    private static bool HasChanges(SatClaveUnidad current, SatClaveUnidad next, string sourceVersion)
     {
         return !string.Equals(current.Description, next.Description, StringComparison.Ordinal)
             || !string.Equals(current.NormalizedDescription, next.NormalizedDescription, StringComparison.Ordinal)
-            || !string.Equals(current.KeywordsNormalized, next.KeywordsNormalized, StringComparison.Ordinal)
+            || !string.Equals(current.Symbol ?? string.Empty, next.Symbol ?? string.Empty, StringComparison.Ordinal)
+            || !string.Equals(current.Notes ?? string.Empty, next.Notes ?? string.Empty, StringComparison.Ordinal)
             || current.IsActive != next.IsActive
             || !string.Equals(current.SourceVersion, sourceVersion, StringComparison.Ordinal);
     }

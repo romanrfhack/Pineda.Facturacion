@@ -45,6 +45,20 @@ public static class ProductFiscalProfilesEndpoints
             .Produces<MutationResponse>(StatusCodes.Status404NotFound)
             .Produces<MutationResponse>(StatusCodes.Status409Conflict);
 
+        group.MapPost("/legacy-suggestions", SuggestLegacyItemSatAssignmentAsync)
+            .WithName("SuggestLegacyItemSatAssignment")
+            .WithSummary("Suggest SAT product/service and unit assignments for a legacy article")
+            .Produces<LegacySatAssignmentSuggestionResponse>(StatusCodes.Status200OK)
+            .Produces<LegacySatAssignmentSuggestionResponse>(StatusCodes.Status400BadRequest);
+
+        group.MapPost("/legacy-suggestions/approve", ApproveLegacyItemSatAssignmentAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
+            .WithName("ApproveLegacyItemSatAssignment")
+            .WithSummary("Approve a SAT assignment for a legacy article and persist it into product fiscal profile")
+            .Produces<MutationResponse>(StatusCodes.Status200OK)
+            .Produces<MutationResponse>(StatusCodes.Status400BadRequest)
+            .Produces<MutationResponse>(StatusCodes.Status409Conflict);
+
         return endpoints;
     }
 
@@ -186,6 +200,87 @@ public static class ProductFiscalProfilesEndpoints
         };
     }
 
+    private static async Task<Results<Ok<LegacySatAssignmentSuggestionResponse>, BadRequest<LegacySatAssignmentSuggestionResponse>>> SuggestLegacyItemSatAssignmentAsync(
+        SuggestLegacyItemSatAssignmentRequest request,
+        SuggestSatAssignmentForLegacyItemService service,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(new SuggestSatAssignmentForLegacyItemCommand
+        {
+            InternalCode = request.InternalCode,
+            Description = request.Description,
+            UnitName = request.UnitName,
+            ImportedSatProductServiceCode = request.ImportedSatProductServiceCode,
+            ImportedSatUnitCode = request.ImportedSatUnitCode
+        }, cancellationToken);
+
+        var response = new LegacySatAssignmentSuggestionResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            ExistingProductFiscalProfileId = result.ExistingProductFiscalProfileId,
+            SuggestedProductService = MapSuggestionItem(result.SuggestedProductService),
+            SuggestedUnit = MapSuggestionItem(result.SuggestedUnit),
+            ProductServiceCandidates = result.ProductServiceCandidates.Select(item => MapSuggestionItem(item)!).ToList(),
+            UnitCandidates = result.UnitCandidates.Select(item => MapSuggestionItem(item)!).ToList()
+        };
+
+        return result.Outcome == SuggestSatAssignmentForLegacyItemOutcome.ValidationFailed
+            ? TypedResults.BadRequest(response)
+            : TypedResults.Ok(response);
+    }
+
+    private static async Task<Results<Ok<MutationResponse>, BadRequest<MutationResponse>, Conflict<MutationResponse>>> ApproveLegacyItemSatAssignmentAsync(
+        ApproveLegacyItemSatAssignmentRequest request,
+        ApproveLegacySatAssignmentService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(new ApproveLegacySatAssignmentCommand
+        {
+            InternalCode = request.InternalCode,
+            Description = request.Description,
+            SatProductServiceCode = request.SatProductServiceCode,
+            SatUnitCode = request.SatUnitCode,
+            DefaultUnitText = request.DefaultUnitText
+        }, cancellationToken);
+
+        var response = new MutationResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            Id = result.ProductFiscalProfileId
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "ProductFiscalProfile.LegacyAssignmentApprove",
+            "ProductFiscalProfile",
+            result.ProductFiscalProfileId?.ToString(),
+            result.Outcome.ToString(),
+            new
+            {
+                request.InternalCode,
+                request.Description,
+                request.SatProductServiceCode,
+                request.SatUnitCode,
+                request.DefaultUnitText
+            },
+            new { result.ProductFiscalProfileId },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            ApproveLegacySatAssignmentOutcome.Created => TypedResults.Ok(response),
+            ApproveLegacySatAssignmentOutcome.Updated => TypedResults.Ok(response),
+            ApproveLegacySatAssignmentOutcome.Conflict => TypedResults.Conflict(response),
+            _ => TypedResults.BadRequest(response)
+        };
+    }
+
     private static ProductFiscalProfileSearchResponse MapSearchItem(ProductFiscalProfile profile)
     {
         return new ProductFiscalProfileSearchResponse
@@ -219,6 +314,26 @@ public static class ProductFiscalProfilesEndpoints
         };
     }
 
+    private static LegacySatAssignmentSuggestionItemResponse? MapSuggestionItem(SatAssignmentSuggestionItem? item)
+    {
+        if (item is null)
+        {
+            return null;
+        }
+
+        return new LegacySatAssignmentSuggestionItemResponse
+        {
+            Code = item.Code,
+            Description = item.Description,
+            DisplayText = item.DisplayText,
+            MatchKind = item.MatchKind,
+            Source = item.Source,
+            Confidence = item.Confidence,
+            Score = item.Score,
+            IsActive = item.IsActive
+        };
+    }
+
     public sealed class UpsertProductFiscalProfileRequest
     {
         public string InternalCode { get; init; } = string.Empty;
@@ -229,6 +344,32 @@ public static class ProductFiscalProfilesEndpoints
         public decimal VatRate { get; init; }
         public string? DefaultUnitText { get; init; }
         public bool IsActive { get; init; } = true;
+    }
+
+    public sealed class SuggestLegacyItemSatAssignmentRequest
+    {
+        public string InternalCode { get; init; } = string.Empty;
+
+        public string? Description { get; init; }
+
+        public string? UnitName { get; init; }
+
+        public string? ImportedSatProductServiceCode { get; init; }
+
+        public string? ImportedSatUnitCode { get; init; }
+    }
+
+    public sealed class ApproveLegacyItemSatAssignmentRequest
+    {
+        public string InternalCode { get; init; } = string.Empty;
+
+        public string Description { get; init; } = string.Empty;
+
+        public string SatProductServiceCode { get; init; } = string.Empty;
+
+        public string SatUnitCode { get; init; } = string.Empty;
+
+        public string? DefaultUnitText { get; init; }
     }
 
     public class ProductFiscalProfileSearchResponse
@@ -256,5 +397,43 @@ public static class ProductFiscalProfilesEndpoints
         public bool IsSuccess { get; init; }
         public string? ErrorMessage { get; init; }
         public long? Id { get; init; }
+    }
+
+    public sealed class LegacySatAssignmentSuggestionResponse
+    {
+        public string Outcome { get; init; } = string.Empty;
+
+        public bool IsSuccess { get; init; }
+
+        public string? ErrorMessage { get; init; }
+
+        public long? ExistingProductFiscalProfileId { get; init; }
+
+        public LegacySatAssignmentSuggestionItemResponse? SuggestedProductService { get; init; }
+
+        public LegacySatAssignmentSuggestionItemResponse? SuggestedUnit { get; init; }
+
+        public IReadOnlyList<LegacySatAssignmentSuggestionItemResponse> ProductServiceCandidates { get; init; } = [];
+
+        public IReadOnlyList<LegacySatAssignmentSuggestionItemResponse> UnitCandidates { get; init; } = [];
+    }
+
+    public sealed class LegacySatAssignmentSuggestionItemResponse
+    {
+        public string Code { get; init; } = string.Empty;
+
+        public string Description { get; init; } = string.Empty;
+
+        public string DisplayText { get; init; } = string.Empty;
+
+        public string MatchKind { get; init; } = string.Empty;
+
+        public string Source { get; init; } = string.Empty;
+
+        public decimal Confidence { get; init; }
+
+        public decimal Score { get; init; }
+
+        public bool IsActive { get; init; }
     }
 }

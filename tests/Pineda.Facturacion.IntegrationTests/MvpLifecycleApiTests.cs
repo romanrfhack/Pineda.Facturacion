@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using ClosedXML.Excel;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -164,6 +165,54 @@ public class MvpLifecycleApiTests
         Assert.False(fiscalJson.RootElement.TryGetProperty("certificateReference", out _));
         Assert.False(fiscalJson.RootElement.TryGetProperty("privateKeyReference", out _));
         Assert.False(fiscalJson.RootElement.TryGetProperty("privateKeyPasswordReference", out _));
+    }
+
+    [Fact]
+    public async Task ImportSuggestAndApproveLegacySatAssignment_HappyPath()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        using var content = new MultipartFormDataContent();
+        var file = new ByteArrayContent(CreateOfficialSatCatalogWorkbookBytes());
+        file.Headers.ContentType = new MediaTypeHeaderValue("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        content.Add(file, "file", "catalogos_sat.xlsx");
+        content.Add(new StringContent("SAT-2026-04-07"), "sourceVersion");
+        content.Add(new StringContent("catalogos_sat.xlsx"), "sourceFileName");
+        content.Add(new StringContent("sha256:it-1"), "sourceChecksum");
+
+        var importResponse = await client.PostAsync("/api/fiscal/imports/sat/official", content);
+        Assert.Equal(HttpStatusCode.OK, importResponse.StatusCode);
+
+        var suggestResponse = await client.PostAsJsonAsync("/api/fiscal/product-fiscal-profiles/legacy-suggestions", new ProductFiscalProfilesEndpoints.SuggestLegacyItemSatAssignmentRequest
+        {
+            InternalCode = "SKU-LEGACY-IT-1",
+            Description = "Filtro de aceite premium",
+            UnitName = "Pieza"
+        });
+        Assert.Equal(HttpStatusCode.OK, suggestResponse.StatusCode);
+
+        var suggestBody = await suggestResponse.Content.ReadFromJsonAsync<ProductFiscalProfilesEndpoints.LegacySatAssignmentSuggestionResponse>();
+        Assert.NotNull(suggestBody);
+        Assert.Equal("40161513", suggestBody!.SuggestedProductService!.Code);
+        Assert.Equal("H87", suggestBody.SuggestedUnit!.Code);
+
+        var approveResponse = await client.PostAsJsonAsync("/api/fiscal/product-fiscal-profiles/legacy-suggestions/approve", new ProductFiscalProfilesEndpoints.ApproveLegacyItemSatAssignmentRequest
+        {
+            InternalCode = "SKU-LEGACY-IT-1",
+            Description = "Filtro de aceite premium",
+            SatProductServiceCode = suggestBody.SuggestedProductService.Code,
+            SatUnitCode = suggestBody.SuggestedUnit.Code
+        });
+        Assert.Equal(HttpStatusCode.OK, approveResponse.StatusCode);
+
+        var profileResponse = await client.GetAsync("/api/fiscal/product-fiscal-profiles/by-code/SKU-LEGACY-IT-1");
+        Assert.Equal(HttpStatusCode.OK, profileResponse.StatusCode);
+
+        var profile = await profileResponse.Content.ReadFromJsonAsync<ProductFiscalProfilesEndpoints.ProductFiscalProfileResponse>();
+        Assert.NotNull(profile);
+        Assert.Equal("40161513", profile!.SatProductServiceCode);
+        Assert.Equal("H87", profile.SatUnitCode);
     }
 
     [Fact]
@@ -3469,6 +3518,31 @@ public class MvpLifecycleApiTests
                 }
             ]
         };
+    }
+
+    private static byte[] CreateOfficialSatCatalogWorkbookBytes()
+    {
+        using var workbook = new XLWorkbook();
+
+        var productSheet = workbook.Worksheets.Add("c_ClaveProdServ");
+        productSheet.Cell(1, 1).Value = "c_ClaveProdServ";
+        productSheet.Cell(1, 2).Value = "Descripción";
+        productSheet.Cell(1, 3).Value = "Palabras similares";
+        productSheet.Cell(2, 1).Value = "40161513";
+        productSheet.Cell(2, 2).Value = "Filtro de aceite";
+        productSheet.Cell(2, 3).Value = "filtro aceite lubricacion motor";
+
+        var unitSheet = workbook.Worksheets.Add("c_ClaveUnidad");
+        unitSheet.Cell(1, 1).Value = "c_ClaveUnidad";
+        unitSheet.Cell(1, 2).Value = "Nombre";
+        unitSheet.Cell(1, 3).Value = "Símbolo";
+        unitSheet.Cell(2, 1).Value = "H87";
+        unitSheet.Cell(2, 2).Value = "Pieza";
+        unitSheet.Cell(2, 3).Value = "PZA";
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
     }
 
     private static string CreateExternalRepXmlContent(

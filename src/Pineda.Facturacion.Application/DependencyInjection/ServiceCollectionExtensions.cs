@@ -12,6 +12,8 @@ using Pineda.Facturacion.Application.UseCases.IssuerProfiles;
 using Pineda.Facturacion.Application.UseCases.Orders;
 using Pineda.Facturacion.Application.UseCases.PaymentComplements;
 using Pineda.Facturacion.Application.UseCases.ProductFiscalProfiles;
+using Pineda.Facturacion.Application.UseCases.SatCatalogs;
+using Pineda.Facturacion.Application.UseCases.SatClaveUnidad;
 using Pineda.Facturacion.Application.UseCases.SatProductServices;
 
 namespace Pineda.Facturacion.Application.DependencyInjection;
@@ -114,9 +116,13 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ApplyFiscalReceiverImportBatchService>();
         services.AddScoped<SearchProductFiscalProfilesService>();
         services.AddScoped<SearchSatProductServicesService>();
+        services.AddScoped<SearchSatClaveUnidadService>();
+        services.AddScoped<ImportOfficialSatCatalogService>();
         services.AddScoped<GetProductFiscalProfileByInternalCodeService>();
         services.AddScoped<CreateProductFiscalProfileService>();
         services.AddScoped<UpdateProductFiscalProfileService>();
+        services.AddScoped<SuggestSatAssignmentForLegacyItemService>();
+        services.AddScoped<ApproveLegacySatAssignmentService>();
         services.AddScoped<PreviewProductFiscalProfileImportFromExcelService>();
         services.AddScoped<GetProductFiscalProfileImportBatchService>();
         services.AddScoped<ListProductFiscalProfileImportRowsService>();

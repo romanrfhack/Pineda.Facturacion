@@ -14,6 +14,12 @@ public interface IProductFiscalProfileRepository
         CancellationToken cancellationToken = default)
         => GetByInternalCodeAsync(normalizedInternalCode, cancellationToken);
 
+    Task<ProductFiscalAssignment?> GetEffectiveAssignmentAsync(
+        string normalizedInternalCode,
+        DateTime asOfUtc,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult<ProductFiscalAssignment?>(null);
+
     Task<ProductFiscalProfile?> GetByIdAsync(long productFiscalProfileId, CancellationToken cancellationToken = default);
 
     Task AddAsync(ProductFiscalProfile productFiscalProfile, CancellationToken cancellationToken = default);

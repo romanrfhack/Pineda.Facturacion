@@ -13,10 +13,36 @@ public class ClosedXmlWorksheetReader : IExcelWorksheetReader
         var worksheet = workbook.Worksheets.FirstOrDefault()
             ?? throw new InvalidOperationException("The Excel file does not contain any worksheets.");
 
+        return Task.FromResult(ReadWorksheet(worksheet, cancellationToken));
+    }
+
+    public Task<IReadOnlyList<ExcelNamedWorksheetData>> ReadWorksheetsAsync(Stream stream, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        using var workbook = new XLWorkbook(stream);
+        IReadOnlyList<ExcelNamedWorksheetData> worksheets = workbook.Worksheets
+            .Select(worksheet =>
+            {
+                var data = ReadWorksheet(worksheet, cancellationToken);
+                return new ExcelNamedWorksheetData
+                {
+                    Name = worksheet.Name,
+                    Headers = data.Headers,
+                    Rows = data.Rows
+                };
+            })
+            .ToList();
+
+        return Task.FromResult(worksheets);
+    }
+
+    private static ExcelWorksheetData ReadWorksheet(IXLWorksheet worksheet, CancellationToken cancellationToken)
+    {
         var range = worksheet.RangeUsed();
         if (range is null)
         {
-            return Task.FromResult(new ExcelWorksheetData());
+            return new ExcelWorksheetData();
         }
 
         var headers = range.FirstRow()
@@ -49,10 +75,10 @@ public class ClosedXmlWorksheetReader : IExcelWorksheetReader
             });
         }
 
-        return Task.FromResult(new ExcelWorksheetData
+        return new ExcelWorksheetData
         {
             Headers = headers,
             Rows = rows
-        });
+        };
     }
 }

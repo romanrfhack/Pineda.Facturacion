@@ -61,6 +61,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IFiscalReceiverRepository, FiscalReceiverRepository>();
         services.AddScoped<IProductFiscalProfileRepository, ProductFiscalProfileRepository>();
         services.AddScoped<ISatProductServiceCatalogRepository, SatProductServiceCatalogRepository>();
+        services.AddScoped<ISatClaveUnidadRepository, SatClaveUnidadRepository>();
+        services.AddScoped<ISatCatalogImportRepository, SatCatalogImportRepository>();
         services.AddScoped<IFiscalReceiverImportRepository, FiscalReceiverImportRepository>();
         services.AddScoped<IProductFiscalProfileImportRepository, ProductFiscalProfileImportRepository>();
         services.AddScoped<IUnitOfWork>(serviceProvider => serviceProvider.GetRequiredService<BillingDbContext>());
