@@ -235,15 +235,20 @@ describe('IssuedCfdisPageComponent', () => {
     await fixture.componentInstance['openDetailModal'](fixture.componentInstance['items']()[0]);
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.textContent).toContain('Detalle de CFDI emitido');
-    expect(fixture.nativeElement.textContent).toContain('Snapshot fiscal');
-    expect(fixture.nativeElement.textContent).toContain('Evidencia de timbrado');
-    expect(fixture.nativeElement.textContent).toContain('Campos especiales de facturación');
-    expect(fixture.nativeElement.textContent).toContain('Agente');
-    expect(fixture.nativeElement.textContent).toContain('Juan Pérez');
-    expect(fixture.nativeElement.textContent).toContain('Orden de trabajo');
-    expect(fixture.nativeElement.textContent).toContain('OT-45678');
-    expect(fixture.nativeElement.textContent).toContain(
+    const detailModal = fixture.nativeElement.querySelector('.detail-modal') as HTMLElement | null;
+    const stampEvidenceEyebrow = fixture.nativeElement.querySelector(
+      'app-fiscal-stamp-evidence-card .eyebrow',
+    ) as HTMLElement | null;
+
+    expect(detailModal?.textContent).toContain('Detalle de CFDI emitido');
+    expect(detailModal?.textContent).toContain('Snapshot fiscal');
+    expect(stampEvidenceEyebrow?.textContent).toContain('Última evidencia / intento de timbrado');
+    expect(detailModal?.textContent).toContain('Campos especiales de facturación');
+    expect(detailModal?.textContent).toContain('Agente');
+    expect(detailModal?.textContent).toContain('Juan Pérez');
+    expect(detailModal?.textContent).toContain('Orden de trabajo');
+    expect(detailModal?.textContent).toContain('OT-45678');
+    expect(detailModal?.textContent).toContain(
       'TRACK-1-ABCDEF1234567890-ABCDEFGHIJKLMNOPQRSTUVWXYZ-1234567890',
     );
     expect(api.getFiscalDocumentById).toHaveBeenCalledTimes(1);
