@@ -10,7 +10,7 @@ import { StatusBadgeComponent } from '../../../shared/components/status-badge.co
     <section class="panel">
       <div class="header">
         <div>
-          <p class="eyebrow">Evidencia de timbrado</p>
+          <p class="eyebrow">Última evidencia / intento de timbrado</p>
           <h3>Documento fiscal #{{ stamp().fiscalDocumentId }}</h3>
         </div>
         <app-status-badge [label]="stamp().status" [tone]="stamp().status === 'Succeeded' || stamp().status === 'Stamped' ? 'success' : 'warning'" />

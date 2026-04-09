@@ -97,6 +97,18 @@ describe('FiscalDocumentsApiService', () => {
     httpTesting.verify();
   });
 
+  it('posts the reprepare request for an existing fiscal snapshot', () => {
+    const service = TestBed.inject(FiscalDocumentsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.reprepareFiscalDocument(40).subscribe();
+
+    const req = httpTesting.expectOne('/api/fiscal-documents/40/reprepare');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({});
+    httpTesting.verify();
+  });
+
   it('gets billing document context by id', () => {
     const service = TestBed.inject(FiscalDocumentsApiService);
     const httpTesting = TestBed.inject(HttpTestingController);

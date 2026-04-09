@@ -15,6 +15,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Pineda.Facturacion.Application\Pineda.Facturacion.Application.csproj" />
+    <ProjectReference Include="..\..\src\Pineda.Facturacion.Domain\Pineda.Facturacion.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
 

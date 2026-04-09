@@ -61,6 +61,7 @@ public class FiscalCancellationAndStatusServicesTests
         Assert.True(result.IsSuccess);
         Assert.Equal(CancelFiscalDocumentOutcome.Cancelled, result.Outcome);
         Assert.Equal(FiscalDocumentStatus.Cancelled, fiscalDocument.Status);
+        Assert.Equal(CancelFiscalDocumentOperationType.ProviderCancellation, result.OperationType);
         Assert.Equal(AccountsReceivableInvoiceStatus.Cancelled, accountsReceivableInvoice.Status);
         Assert.Equal(FiscalCancellationStatus.Cancelled, cancellationRepository.Added!.Status);
         Assert.Equal("200", result.ProviderCode);
@@ -71,8 +72,8 @@ public class FiscalCancellationAndStatusServicesTests
     public async Task CancelFiscalDocument_Reason01_RequiresReplacementUuid()
     {
         var service = new CancelFiscalDocumentService(
-            new FakeFiscalDocumentRepository(),
-            new FakeFiscalStampRepository(),
+            new FakeFiscalDocumentRepository { ExistingTracked = CreateStampedFiscalDocument() },
+            new FakeFiscalStampRepository { ExistingTracked = CreateFiscalStamp() },
             new FakeFiscalCancellationRepository(),
             new FakeAccountsReceivableInvoiceRepository(),
             new FakeFiscalCancellationGateway(),
@@ -137,26 +138,60 @@ public class FiscalCancellationAndStatusServicesTests
     }
 
     [Fact]
-    public async Task CancelFiscalDocument_MissingStampUuid_FailsValidation()
+    public async Task CancelFiscalDocument_DiscardsUnstampedSnapshot_WhenUuidEvidenceIsMissing()
     {
+        var fiscalDocument = CreateStampedFiscalDocument();
+        fiscalDocument.Status = FiscalDocumentStatus.StampingRejected;
         var fiscalStamp = CreateFiscalStamp();
         fiscalStamp.Uuid = null;
+        var cancellationRepository = new FakeFiscalCancellationRepository();
+        var gateway = new FakeFiscalCancellationGateway();
 
         var service = new CancelFiscalDocumentService(
-            new FakeFiscalDocumentRepository { ExistingTracked = CreateStampedFiscalDocument() },
+            new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
             new FakeFiscalStampRepository { ExistingTracked = fiscalStamp },
-            new FakeFiscalCancellationRepository(),
+            cancellationRepository,
             new FakeAccountsReceivableInvoiceRepository(),
-            new FakeFiscalCancellationGateway(),
+            gateway,
             new FakeUnitOfWork());
 
         var result = await service.ExecuteAsync(new CancelFiscalDocumentCommand
         {
-            FiscalDocumentId = 50,
-            CancellationReasonCode = "02"
+            FiscalDocumentId = 50
         });
 
-        Assert.Equal(CancelFiscalDocumentOutcome.ValidationFailed, result.Outcome);
+        Assert.Equal(CancelFiscalDocumentOutcome.Cancelled, result.Outcome);
+        Assert.Equal(FiscalDocumentStatus.DiscardedUnstamped, fiscalDocument.Status);
+        Assert.Equal(CancelFiscalDocumentOperationType.LocalDiscard, result.OperationType);
+        Assert.Null(cancellationRepository.Added);
+        Assert.Equal(0, gateway.CallCount);
+    }
+
+    [Fact]
+    public async Task CancelFiscalDocument_DoesNotDiscardLocally_WhenLifecycleAlreadyImpliesStamped()
+    {
+        var fiscalDocument = CreateStampedFiscalDocument();
+        var fiscalStamp = CreateFiscalStamp();
+        fiscalStamp.Uuid = null;
+        var gateway = new FakeFiscalCancellationGateway();
+
+        var service = new CancelFiscalDocumentService(
+            new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
+            new FakeFiscalStampRepository { ExistingTracked = fiscalStamp },
+            new FakeFiscalCancellationRepository(),
+            new FakeAccountsReceivableInvoiceRepository(),
+            gateway,
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new CancelFiscalDocumentCommand
+        {
+            FiscalDocumentId = fiscalDocument.Id
+        });
+
+        Assert.Equal(CancelFiscalDocumentOutcome.Conflict, result.Outcome);
+        Assert.Equal(FiscalDocumentStatus.Stamped, fiscalDocument.Status);
+        Assert.Equal(CancelFiscalDocumentOperationType.LocalDiscard, result.OperationType);
+        Assert.Equal(0, gateway.CallCount);
     }
 
     [Fact]
@@ -1017,6 +1052,7 @@ public class FiscalCancellationAndStatusServicesTests
 
     private sealed class FakeFiscalCancellationGateway : IFiscalCancellationGateway
     {
+        public int CallCount { get; private set; }
         public int AuthorizationDecisionCallCount { get; private set; }
         public FiscalCancellationRequest? LastRequest { get; private set; }
         public FiscalCancellationAuthorizationPendingQueryRequest? LastPendingRequest { get; private set; }
@@ -1046,6 +1082,7 @@ public class FiscalCancellationAndStatusServicesTests
 
         public Task<FiscalCancellationGatewayResult> CancelAsync(FiscalCancellationRequest request, CancellationToken cancellationToken = default)
         {
+            CallCount++;
             LastRequest = request;
             return Task.FromResult(NextResult);
         }

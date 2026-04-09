@@ -9,5 +9,6 @@ public enum FiscalDocumentStatus
     StampingRejected = 4,
     CancellationRequested = 5,
     Cancelled = 6,
-    CancellationRejected = 7
+    CancellationRejected = 7,
+    DiscardedUnstamped = 8
 }

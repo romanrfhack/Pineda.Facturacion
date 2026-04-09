@@ -106,7 +106,7 @@ export function reconcileCancellationAfterOperation(
     nextCancellation: {
       fiscalDocumentId: response.fiscalDocumentId,
       status: nextStatus,
-      cancellationReasonCode: request.cancellationReasonCode,
+      cancellationReasonCode: request.cancellationReasonCode ?? '',
       replacementUuid: request.replacementUuid ?? null,
       providerName: response.providerName ?? currentCancellation?.providerName ?? 'FacturaloPlus',
       providerTrackingId: response.providerTrackingId ?? currentCancellation?.providerTrackingId ?? null,

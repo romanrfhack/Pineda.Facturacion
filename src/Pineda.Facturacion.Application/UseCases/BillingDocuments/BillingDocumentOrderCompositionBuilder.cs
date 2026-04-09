@@ -23,6 +23,11 @@ internal static class BillingDocumentOrderCompositionBuilder
                     continue;
                 }
 
+                var amounts = StandardVat16Calculator.CalculateLine(
+                    salesOrderItem.Quantity,
+                    salesOrderItem.UnitPrice,
+                    salesOrderItem.DiscountAmount);
+
                 items.Add(new BillingDocumentItem
                 {
                     SalesOrderId = salesOrder.Id,
@@ -40,10 +45,10 @@ internal static class BillingDocumentOrderCompositionBuilder
                     Description = salesOrderItem.Description,
                     Quantity = salesOrderItem.Quantity,
                     UnitPrice = salesOrderItem.UnitPrice,
-                    DiscountAmount = salesOrderItem.DiscountAmount,
-                    TaxRate = StandardVat16Calculator.StandardVatRate,
-                    TaxAmount = 0m,
-                    LineTotal = 0m,
+                    DiscountAmount = amounts.DiscountAmount,
+                    TaxRate = amounts.TaxRate,
+                    TaxAmount = amounts.TaxAmount,
+                    LineTotal = amounts.Subtotal,
                     SatProductServiceCode = salesOrderItem.SatProductServiceCode,
                     SatUnitCode = salesOrderItem.SatUnitCode,
                     TaxObjectCode = "02"
