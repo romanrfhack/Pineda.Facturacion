@@ -8,6 +8,19 @@ public interface IFiscalReceiverRepository
 
     Task<FiscalReceiver?> GetByRfcAsync(string normalizedRfc, CancellationToken cancellationToken = default);
 
+    async Task<IReadOnlyList<FiscalReceiver>> GetByRfcsAsync(
+        IReadOnlyCollection<string> normalizedRfcs,
+        CancellationToken cancellationToken = default)
+    {
+        if (normalizedRfcs.Count == 0)
+        {
+            return [];
+        }
+
+        var receivers = await Task.WhenAll(normalizedRfcs.Select(rfc => GetByRfcAsync(rfc, cancellationToken)));
+        return receivers.Where(receiver => receiver is not null).Cast<FiscalReceiver>().ToList();
+    }
+
     Task<FiscalReceiver?> GetByIdAsync(long fiscalReceiverId, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<FiscalReceiverSpecialFieldDefinition>> GetActiveSpecialFieldDefinitionsAsync(CancellationToken cancellationToken = default);

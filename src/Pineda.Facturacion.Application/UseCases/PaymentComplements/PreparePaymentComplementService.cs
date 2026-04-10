@@ -102,7 +102,43 @@ public class PreparePaymentComplementService
         }
 
         var orderedPayments = requestedPaymentIds.Select(x => paymentsById[x]).ToList();
-        var linkedInvoices = new List<AccountsReceivableInvoice>();
+        var invoiceIds = orderedPayments
+            .SelectMany(payment => payment.Applications)
+            .Select(application => application.AccountsReceivableInvoiceId)
+            .Distinct()
+            .ToArray();
+        var invoices = await _accountsReceivableInvoiceRepository.GetByIdsAsync(invoiceIds, cancellationToken);
+        var invoicesById = invoices.ToDictionary(x => x.Id);
+
+        var externalDocumentIds = invoices
+            .Where(invoice => invoice.ExternalRepBaseDocumentId.HasValue)
+            .Select(invoice => invoice.ExternalRepBaseDocumentId!.Value)
+            .Distinct()
+            .ToArray();
+        var externalDocuments = await _externalRepBaseDocumentRepository.GetByIdsAsync(externalDocumentIds, cancellationToken);
+        var externalDocumentsById = externalDocuments.ToDictionary(x => x.Id);
+
+        var fiscalDocumentIds = invoices
+            .Where(invoice => invoice.FiscalDocumentId.HasValue)
+            .Select(invoice => invoice.FiscalDocumentId!.Value)
+            .Distinct()
+            .ToArray();
+        var fiscalDocuments = await _fiscalDocumentRepository.GetByIdsAsync(fiscalDocumentIds, cancellationToken);
+        var fiscalDocumentsById = fiscalDocuments.ToDictionary(x => x.Id);
+        var fiscalStamps = await _fiscalStampRepository.GetByFiscalDocumentIdsAsync(fiscalDocumentIds, cancellationToken);
+        var fiscalStampsByFiscalDocumentId = fiscalStamps.ToDictionary(x => x.FiscalDocumentId);
+
+        var issuerProfile = externalDocumentIds.Length > 0
+            ? await _issuerProfileRepository.GetActiveAsync(cancellationToken)
+            : null;
+
+        var externalReceiverRfcs = externalDocuments
+            .Select(document => FiscalMasterDataNormalization.NormalizeRfc(document.ReceiverRfc))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var fiscalReceivers = await _fiscalReceiverRepository.GetByRfcsAsync(externalReceiverRfcs, cancellationToken);
+        var fiscalReceiversByRfc = fiscalReceivers.ToDictionary(x => FiscalMasterDataNormalization.NormalizeRfc(x.Rfc), StringComparer.Ordinal);
+
         AnchorSnapshot? anchor = null;
         var complementPayments = new List<PaymentComplementPayment>();
         var relatedDocuments = new List<PaymentComplementRelatedDocument>();
@@ -133,13 +169,11 @@ public class PreparePaymentComplementService
 
             foreach (var application in payment.Applications.OrderBy(x => x.ApplicationSequence).ThenBy(x => x.Id))
             {
-                var invoice = await _accountsReceivableInvoiceRepository.GetTrackedByIdAsync(application.AccountsReceivableInvoiceId, cancellationToken);
-                if (invoice is null)
+                if (!invoicesById.TryGetValue(application.AccountsReceivableInvoiceId, out var invoice))
                 {
                     return ValidationFailure(command.AccountsReceivablePaymentId, $"Accounts receivable invoice '{application.AccountsReceivableInvoiceId}' was not found.");
                 }
 
-                linkedInvoices.Add(invoice);
                 currentPaymentInvoices.Add(invoice);
 
                 if (!string.Equals(FiscalMasterDataNormalization.NormalizeRequiredCode(invoice.CurrencyCode), "MXN", StringComparison.Ordinal))
@@ -151,8 +185,7 @@ public class PreparePaymentComplementService
                 AnchorSnapshot currentAnchor;
                 if (invoice.ExternalRepBaseDocumentId.HasValue)
                 {
-                    var externalDocument = await _externalRepBaseDocumentRepository.GetByIdAsync(invoice.ExternalRepBaseDocumentId.Value, cancellationToken);
-                    if (externalDocument is null)
+                    if (!externalDocumentsById.TryGetValue(invoice.ExternalRepBaseDocumentId.Value, out var externalDocument))
                     {
                         return ValidationFailure(command.AccountsReceivablePaymentId, $"External REP base document '{invoice.ExternalRepBaseDocumentId.Value}' was not found.");
                     }
@@ -173,7 +206,6 @@ public class PreparePaymentComplementService
                         return ValidationFailure(command.AccountsReceivablePaymentId, $"External REP base document '{externalDocument.Id}' does not use FormaPago 99.");
                     }
 
-                    var issuerProfile = await _issuerProfileRepository.GetActiveAsync(cancellationToken);
                     if (issuerProfile is null)
                     {
                         return ValidationFailure(command.AccountsReceivablePaymentId, "No active issuer profile is configured to stamp REP for external documents.");
@@ -184,8 +216,8 @@ public class PreparePaymentComplementService
                         return ValidationFailure(command.AccountsReceivablePaymentId, $"External REP base document '{externalDocument.Id}' does not match the active issuer profile RFC.");
                     }
 
-                    var fiscalReceiver = await _fiscalReceiverRepository.GetByRfcAsync(externalDocument.ReceiverRfc, cancellationToken);
-                    if (fiscalReceiver is null || !fiscalReceiver.IsActive)
+                    var normalizedReceiverRfc = FiscalMasterDataNormalization.NormalizeRfc(externalDocument.ReceiverRfc);
+                    if (!fiscalReceiversByRfc.TryGetValue(normalizedReceiverRfc, out var fiscalReceiver) || !fiscalReceiver.IsActive)
                     {
                         return ValidationFailure(command.AccountsReceivablePaymentId, $"External REP base document '{externalDocument.Id}' does not match an active fiscal receiver in the catalog.");
                     }
@@ -231,8 +263,8 @@ public class PreparePaymentComplementService
                         return ValidationFailure(command.AccountsReceivablePaymentId, $"Accounts receivable invoice '{invoice.Id}' is missing its internal fiscal document reference.");
                     }
 
-                    var fiscalDocument = await _fiscalDocumentRepository.GetByIdAsync(invoice.FiscalDocumentId.Value, cancellationToken);
-                    var fiscalStamp = await _fiscalStampRepository.GetByFiscalDocumentIdAsync(invoice.FiscalDocumentId.Value, cancellationToken);
+                    fiscalDocumentsById.TryGetValue(invoice.FiscalDocumentId.Value, out var fiscalDocument);
+                    fiscalStampsByFiscalDocumentId.TryGetValue(invoice.FiscalDocumentId.Value, out var fiscalStamp);
                     if (fiscalDocument is null || fiscalStamp is null || string.IsNullOrWhiteSpace(fiscalStamp.Uuid))
                     {
                         return ValidationFailure(command.AccountsReceivablePaymentId, $"Accounts receivable invoice '{invoice.Id}' does not have the persisted stamped fiscal evidence required for a payment complement.");

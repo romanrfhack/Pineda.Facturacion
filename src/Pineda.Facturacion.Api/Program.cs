@@ -1,7 +1,11 @@
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.OpenApi.Models;
+using Pineda.Facturacion.Api.OperationalHardening;
 using Pineda.Facturacion.Application.Security;
 using Pineda.Facturacion.Application.DependencyInjection;
 using Pineda.Facturacion.Api.Endpoints;
@@ -18,6 +22,25 @@ if (builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Sa
 {
     builder.Configuration.AddUserSecrets<Program>(optional: true);
 }
+
+builder.Services.AddProblemDetails(options =>
+{
+    options.CustomizeProblemDetails = context =>
+    {
+        context.ProblemDetails.Instance ??= context.HttpContext.Request.Path;
+        context.ProblemDetails.Extensions["traceId"] = context.HttpContext.TraceIdentifier;
+
+        var correlationId = context.HttpContext.Request.Headers["X-Correlation-Id"].FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(correlationId))
+        {
+            context.ProblemDetails.Extensions["correlationId"] = correlationId;
+        }
+    };
+});
+builder.Services.AddExceptionHandler<ApiExceptionHandler>();
+builder.Services.AddHealthChecks()
+    .AddCheck("self", () => HealthCheckResult.Healthy(), tags: ["live"])
+    .AddCheck<BillingWriteDatabaseHealthCheck>("billing_write_db", tags: ["ready"]);
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
@@ -83,6 +106,7 @@ builder.Services.AddAuthorization(options =>
 });
 
 var app = builder.Build();
+RuntimeSafetyValidator.ValidateOrThrow(app.Configuration, app.Environment);
 
 if (args.Contains("seed-initial-production-users", StringComparer.OrdinalIgnoreCase))
 {
@@ -99,6 +123,8 @@ if (args.Contains("seed-initial-production-users", StringComparer.OrdinalIgnoreC
 }
 
 var enableSwagger = app.Configuration.GetValue<bool?>("OpenApi:EnableSwagger") ?? IsSwaggerEnabledByEnvironment(app.Environment);
+
+app.UseExceptionHandler();
 
 if (enableSwagger)
 {
@@ -130,6 +156,23 @@ app.Use(async (context, next) =>
 });
 app.UseAuthentication();
 app.UseAuthorization();
+app.MapHealthChecks("/health/live", HealthCheckJsonResponseWriter.CreateOptions("live"));
+app.MapHealthChecks("/health/ready", HealthCheckJsonResponseWriter.CreateOptions("ready"));
+
+if (app.Environment.IsEnvironment("Testing"))
+{
+    app.MapGet("/_testing/throw/unhandled", static () =>
+    {
+        throw new InvalidOperationException("Simulated unhandled exception for integration testing.");
+    }).AllowAnonymous().ExcludeFromDescription();
+
+    app.MapGet("/_testing/throw/issuer-active-conflict", static () =>
+    {
+        throw new DbUpdateException(
+            $"Duplicate entry '1' for key '{Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Configurations.IssuerProfileConfiguration.ActiveSingletonIndexName}'.");
+    }).AllowAnonymous().ExcludeFromDescription();
+}
+
 app.MapAuthEndpoints();
 app.MapAuditEventsEndpoints();
 app.MapOrdersEndpoints();

@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Abstractions.Security;
 using Pineda.Facturacion.Application.Abstractions.Documents;
@@ -5,6 +6,8 @@ using Pineda.Facturacion.Application.Security;
 using Pineda.Facturacion.Application.UseCases.AccountsReceivable;
 using Pineda.Facturacion.Domain.Entities;
 using Pineda.Facturacion.Domain.Enums;
+using Pineda.Facturacion.Infrastructure.BillingWrite.Persistence;
+using Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Repositories;
 
 namespace Pineda.Facturacion.UnitTests;
 
@@ -553,6 +556,120 @@ public class AccountsReceivableServicesTests
         Assert.Equal(AccountsReceivableInvoiceStatus.PartiallyPaid, invoice2.Status);
         Assert.Equal(0m, result.RemainingPaymentAmount);
         Assert.Equal(77, payment.ReceivedFromFiscalReceiverId);
+    }
+
+    [Fact]
+    public async Task ApplyAccountsReceivablePayment_UsesSingleTrackedBatchFetch_WithoutPerItemInvoiceLookups()
+    {
+        var payment = CreatePayment(amount: 150m);
+        var invoice1 = CreateInvoice(id: 201, total: 100m);
+        var invoice2 = CreateInvoice(id: 202, total: 100m);
+        invoice1.FiscalReceiverId = 77;
+        invoice2.FiscalReceiverId = 77;
+
+        var invoiceRepository = new ArFakeAccountsReceivableInvoiceRepository
+        {
+            TrackedById = new Dictionary<long, AccountsReceivableInvoice>
+            {
+                [invoice1.Id] = invoice1,
+                [invoice2.Id] = invoice2
+            }
+        };
+
+        var service = new ApplyAccountsReceivablePaymentService(
+            new ArFakeAccountsReceivablePaymentRepository { ExistingTracked = payment },
+            invoiceRepository,
+            new ArFakeAccountsReceivablePaymentApplicationRepository(),
+            new ArFakePaymentComplementDocumentRepository(),
+            new ArFakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new ApplyAccountsReceivablePaymentCommand
+        {
+            AccountsReceivablePaymentId = payment.Id,
+            Applications =
+            [
+                new ApplyAccountsReceivablePaymentApplicationInput
+                {
+                    AccountsReceivableInvoiceId = invoice1.Id,
+                    AppliedAmount = 100m
+                },
+                new ApplyAccountsReceivablePaymentApplicationInput
+                {
+                    AccountsReceivableInvoiceId = invoice2.Id,
+                    AppliedAmount = 50m
+                }
+            ]
+        });
+
+        Assert.Equal(ApplyAccountsReceivablePaymentOutcome.Applied, result.Outcome);
+        Assert.Equal(0, invoiceRepository.GetTrackedByIdAsyncCallCount);
+        Assert.Equal(1, invoiceRepository.GetTrackedByIdsAsyncCallCount);
+        Assert.Equal([invoice1.Id, invoice2.Id], invoiceRepository.LastTrackedBatchIds.OrderBy(x => x).ToArray());
+    }
+
+    [Fact]
+    public async Task ApplyAccountsReceivablePayment_BatchTrackedFetch_PersistsMutations_WithRealRepositories()
+    {
+        await using var dbContext = CreateDbContext();
+
+        var payment = CreatePayment(id: 401, amount: 150m);
+        var invoice1 = CreateInvoice(id: 201, total: 100m);
+        var invoice2 = CreateInvoice(id: 202, total: 100m);
+        invoice1.FiscalReceiverId = 77;
+        invoice2.FiscalReceiverId = 77;
+
+        dbContext.AccountsReceivablePayments.Add(payment);
+        dbContext.AccountsReceivableInvoices.AddRange(invoice1, invoice2);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        var service = new ApplyAccountsReceivablePaymentService(
+            new AccountsReceivablePaymentRepository(dbContext),
+            new AccountsReceivableInvoiceRepository(dbContext),
+            new AccountsReceivablePaymentApplicationRepository(dbContext),
+            new ArFakePaymentComplementDocumentRepository(),
+            dbContext);
+
+        var result = await service.ExecuteAsync(new ApplyAccountsReceivablePaymentCommand
+        {
+            AccountsReceivablePaymentId = payment.Id,
+            Applications =
+            [
+                new ApplyAccountsReceivablePaymentApplicationInput
+                {
+                    AccountsReceivableInvoiceId = invoice1.Id,
+                    AppliedAmount = 100m
+                },
+                new ApplyAccountsReceivablePaymentApplicationInput
+                {
+                    AccountsReceivableInvoiceId = invoice2.Id,
+                    AppliedAmount = 50m
+                }
+            ]
+        });
+
+        Assert.Equal(ApplyAccountsReceivablePaymentOutcome.Applied, result.Outcome);
+
+        dbContext.ChangeTracker.Clear();
+
+        var persistedInvoice1 = await dbContext.AccountsReceivableInvoices.SingleAsync(x => x.Id == invoice1.Id);
+        var persistedInvoice2 = await dbContext.AccountsReceivableInvoices.SingleAsync(x => x.Id == invoice2.Id);
+        var persistedPayment = await dbContext.AccountsReceivablePayments.SingleAsync(x => x.Id == payment.Id);
+        var persistedApplications = await dbContext.AccountsReceivablePaymentApplications
+            .Where(x => x.AccountsReceivablePaymentId == payment.Id)
+            .OrderBy(x => x.ApplicationSequence)
+            .ToListAsync();
+
+        Assert.Equal(AccountsReceivableInvoiceStatus.Paid, persistedInvoice1.Status);
+        Assert.Equal(100m, persistedInvoice1.PaidTotal);
+        Assert.Equal(0m, persistedInvoice1.OutstandingBalance);
+        Assert.Equal(AccountsReceivableInvoiceStatus.PartiallyPaid, persistedInvoice2.Status);
+        Assert.Equal(50m, persistedInvoice2.PaidTotal);
+        Assert.Equal(50m, persistedInvoice2.OutstandingBalance);
+        Assert.Equal(77, persistedPayment.ReceivedFromFiscalReceiverId);
+        Assert.Equal(AccountsReceivablePaymentUnappliedDisposition.PendingAllocation, persistedPayment.UnappliedDisposition);
+        Assert.Equal(2, persistedApplications.Count);
+        Assert.Equal([invoice1.Id, invoice2.Id], persistedApplications.Select(x => x.AccountsReceivableInvoiceId).ToArray());
     }
 
     [Fact]
@@ -1276,6 +1393,15 @@ public class AccountsReceivableServicesTests
             new ArFakeUnitOfWork());
     }
 
+    private static BillingDbContext CreateDbContext()
+    {
+        var options = new DbContextOptionsBuilder<BillingDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+
+        return new BillingDbContext(options);
+    }
+
     private static FiscalDocument CreateStampedFiscalDocument()
     {
         return new FiscalDocument
@@ -1412,6 +1538,12 @@ public class AccountsReceivableServicesTests
 
         public IReadOnlyList<AccountsReceivablePortfolioItem> PortfolioItems { get; set; } = [];
 
+        public int GetTrackedByIdAsyncCallCount { get; private set; }
+
+        public int GetTrackedByIdsAsyncCallCount { get; private set; }
+
+        public IReadOnlyList<long> LastTrackedBatchIds { get; private set; } = [];
+
         public AccountsReceivableInvoice? Added { get; private set; }
 
         public Task<AccountsReceivableInvoice?> GetByFiscalDocumentIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default)
@@ -1421,6 +1553,7 @@ public class AccountsReceivableServicesTests
 
         public Task<AccountsReceivableInvoice?> GetTrackedByIdAsync(long accountsReceivableInvoiceId, CancellationToken cancellationToken = default)
         {
+            GetTrackedByIdAsyncCallCount++;
             TrackedById.TryGetValue(accountsReceivableInvoiceId, out var invoice);
             return Task.FromResult(invoice);
         }
@@ -1442,6 +1575,18 @@ public class AccountsReceivableServicesTests
 
         public Task<IReadOnlyList<AccountsReceivableInvoice>> GetByIdsAsync(IReadOnlyCollection<long> accountsReceivableInvoiceIds, CancellationToken cancellationToken = default)
         {
+            IReadOnlyList<AccountsReceivableInvoice> invoices = TrackedById
+                .Where(x => accountsReceivableInvoiceIds.Contains(x.Key))
+                .Select(x => x.Value)
+                .ToList();
+            return Task.FromResult(invoices);
+        }
+
+        public Task<IReadOnlyList<AccountsReceivableInvoice>> GetTrackedByIdsAsync(IReadOnlyCollection<long> accountsReceivableInvoiceIds, CancellationToken cancellationToken = default)
+        {
+            GetTrackedByIdsAsyncCallCount++;
+            LastTrackedBatchIds = accountsReceivableInvoiceIds.ToArray();
+
             IReadOnlyList<AccountsReceivableInvoice> invoices = TrackedById
                 .Where(x => accountsReceivableInvoiceIds.Contains(x.Key))
                 .Select(x => x.Value)

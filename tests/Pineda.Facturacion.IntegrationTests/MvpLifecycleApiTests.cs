@@ -16,6 +16,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NPOI.HSSF.UserModel;
 using Pineda.Facturacion.Api.Endpoints;
+using Pineda.Facturacion.Application.Abstractions.Communication;
+using Pineda.Facturacion.Application.Abstractions.Documents;
 using Pineda.Facturacion.Application.Abstractions.Legacy;
 using Pineda.Facturacion.Application.Abstractions.Pac;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
@@ -1940,6 +1942,90 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
+    public async Task RepBaseDocuments_UnifiedList_RepeatedGet_DoesNotMutatePersistedOperationalState()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-REP-NO-WRITE-UNI-1001", uuid: "UUID-REP-NO-WRITE-UNI-1001");
+        await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId);
+
+        var seededState = new InternalRepBaseDocumentState
+        {
+            FiscalDocumentId = fiscalDocumentId,
+            LastEligibilityEvaluatedAtUtc = new DateTime(2026, 4, 1, 8, 0, 0, DateTimeKind.Utc),
+            LastEligibilityStatus = "Stale",
+            LastPrimaryReasonCode = "STALE_CODE",
+            LastPrimaryReasonMessage = "stale message",
+            RepPendingFlag = false,
+            LastRepIssuedAtUtc = new DateTime(2026, 4, 1, 9, 0, 0, DateTimeKind.Utc),
+            RepCount = 7,
+            TotalPaidApplied = 12m,
+            CreatedAtUtc = new DateTime(2026, 4, 1, 7, 0, 0, DateTimeKind.Utc),
+            UpdatedAtUtc = new DateTime(2026, 4, 1, 10, 0, 0, DateTimeKind.Utc)
+        };
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+            dbContext.InternalRepBaseDocumentStates.Add(seededState);
+            await dbContext.SaveChangesAsync();
+        }
+
+        var firstResponse = await client.GetAsync("/api/payment-complements/base-documents?page=1&pageSize=25&sourceType=Internal&query=UUID-REP-NO-WRITE-UNI-1001");
+        Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
+        using var firstJson = await JsonDocument.ParseAsync(await firstResponse.Content.ReadAsStreamAsync());
+        var firstItem = firstJson.RootElement.GetProperty("items").EnumerateArray().Single(x => x.GetProperty("fiscalDocumentId").GetInt64() == fiscalDocumentId);
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+            var persistedAfterFirst = await dbContext.InternalRepBaseDocumentStates.SingleAsync(x => x.FiscalDocumentId == fiscalDocumentId);
+            Assert.Equal(1, await dbContext.InternalRepBaseDocumentStates.CountAsync());
+            Assert.Equal(seededState.LastEligibilityEvaluatedAtUtc, persistedAfterFirst.LastEligibilityEvaluatedAtUtc);
+            Assert.Equal(seededState.LastEligibilityStatus, persistedAfterFirst.LastEligibilityStatus);
+            Assert.Equal(seededState.LastPrimaryReasonCode, persistedAfterFirst.LastPrimaryReasonCode);
+            Assert.Equal(seededState.LastPrimaryReasonMessage, persistedAfterFirst.LastPrimaryReasonMessage);
+            Assert.Equal(seededState.RepPendingFlag, persistedAfterFirst.RepPendingFlag);
+            Assert.Equal(seededState.LastRepIssuedAtUtc, persistedAfterFirst.LastRepIssuedAtUtc);
+            Assert.Equal(seededState.RepCount, persistedAfterFirst.RepCount);
+            Assert.Equal(seededState.TotalPaidApplied, persistedAfterFirst.TotalPaidApplied);
+            Assert.Equal(seededState.CreatedAtUtc, persistedAfterFirst.CreatedAtUtc);
+            Assert.Equal(seededState.UpdatedAtUtc, persistedAfterFirst.UpdatedAtUtc);
+        }
+
+        var secondResponse = await client.GetAsync("/api/payment-complements/base-documents?page=1&pageSize=25&sourceType=Internal&query=UUID-REP-NO-WRITE-UNI-1001");
+        Assert.Equal(HttpStatusCode.OK, secondResponse.StatusCode);
+        using var secondJson = await JsonDocument.ParseAsync(await secondResponse.Content.ReadAsStreamAsync());
+        var secondItem = secondJson.RootElement.GetProperty("items").EnumerateArray().Single(x => x.GetProperty("fiscalDocumentId").GetInt64() == fiscalDocumentId);
+
+        Assert.Equal(firstItem.GetProperty("sourceType").GetString(), secondItem.GetProperty("sourceType").GetString());
+        Assert.Equal(firstItem.GetProperty("operationalStatus").GetString(), secondItem.GetProperty("operationalStatus").GetString());
+        Assert.Equal(firstItem.GetProperty("nextRecommendedAction").GetString(), secondItem.GetProperty("nextRecommendedAction").GetString());
+        Assert.Equal(firstItem.GetProperty("primaryReasonCode").GetString(), secondItem.GetProperty("primaryReasonCode").GetString());
+        Assert.Equal(firstItem.GetProperty("primaryReasonMessage").GetString(), secondItem.GetProperty("primaryReasonMessage").GetString());
+        Assert.Equal(firstItem.GetProperty("isEligible").GetBoolean(), secondItem.GetProperty("isEligible").GetBoolean());
+        Assert.Equal(firstItem.GetProperty("isBlocked").GetBoolean(), secondItem.GetProperty("isBlocked").GetBoolean());
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+            var persistedAfterSecond = await dbContext.InternalRepBaseDocumentStates.SingleAsync(x => x.FiscalDocumentId == fiscalDocumentId);
+            Assert.Equal(1, await dbContext.InternalRepBaseDocumentStates.CountAsync());
+            Assert.Equal(seededState.LastEligibilityEvaluatedAtUtc, persistedAfterSecond.LastEligibilityEvaluatedAtUtc);
+            Assert.Equal(seededState.LastEligibilityStatus, persistedAfterSecond.LastEligibilityStatus);
+            Assert.Equal(seededState.LastPrimaryReasonCode, persistedAfterSecond.LastPrimaryReasonCode);
+            Assert.Equal(seededState.LastPrimaryReasonMessage, persistedAfterSecond.LastPrimaryReasonMessage);
+            Assert.Equal(seededState.RepPendingFlag, persistedAfterSecond.RepPendingFlag);
+            Assert.Equal(seededState.LastRepIssuedAtUtc, persistedAfterSecond.LastRepIssuedAtUtc);
+            Assert.Equal(seededState.RepCount, persistedAfterSecond.RepCount);
+            Assert.Equal(seededState.TotalPaidApplied, persistedAfterSecond.TotalPaidApplied);
+            Assert.Equal(seededState.CreatedAtUtc, persistedAfterSecond.CreatedAtUtc);
+            Assert.Equal(seededState.UpdatedAtUtc, persistedAfterSecond.UpdatedAtUtc);
+        }
+    }
+
+    [Fact]
     public async Task InternalRepBaseDocuments_List_FiltersByOperationalAlertSeverityAndAction_AndReturnsSummaryCounts()
     {
         await using var factory = new MvpApiFactory();
@@ -2120,6 +2206,97 @@ public class MvpLifecycleApiTests
         Assert.Equal("Stamped", issuedRep.GetProperty("status").GetString());
         Assert.Equal("UUID-PC-DETAIL-1", issuedRep.GetProperty("uuid").GetString());
         Assert.Equal("FacturaloPlus", issuedRep.GetProperty("providerName").GetString());
+    }
+
+    [Fact]
+    public async Task InternalRepBaseDocuments_Detail_RepeatedGet_DoesNotMutatePersistedOperationalState()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-REP-NO-WRITE-DETAIL-1001", uuid: "UUID-REP-NO-WRITE-DETAIL-1001");
+        await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId);
+
+        var seededState = new InternalRepBaseDocumentState
+        {
+            FiscalDocumentId = fiscalDocumentId,
+            LastEligibilityEvaluatedAtUtc = new DateTime(2026, 4, 2, 8, 0, 0, DateTimeKind.Utc),
+            LastEligibilityStatus = "Stale",
+            LastPrimaryReasonCode = "STALE_CODE",
+            LastPrimaryReasonMessage = "stale message",
+            RepPendingFlag = false,
+            LastRepIssuedAtUtc = new DateTime(2026, 4, 2, 9, 0, 0, DateTimeKind.Utc),
+            RepCount = 3,
+            TotalPaidApplied = 99m,
+            CreatedAtUtc = new DateTime(2026, 4, 2, 7, 0, 0, DateTimeKind.Utc),
+            UpdatedAtUtc = new DateTime(2026, 4, 2, 10, 0, 0, DateTimeKind.Utc)
+        };
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+            dbContext.InternalRepBaseDocumentStates.Add(seededState);
+            await dbContext.SaveChangesAsync();
+        }
+
+        var firstResponse = await client.GetAsync($"/api/payment-complements/base-documents/internal/{fiscalDocumentId}");
+        Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
+        using var firstJson = await JsonDocument.ParseAsync(await firstResponse.Content.ReadAsStreamAsync());
+        var firstSummary = firstJson.RootElement.GetProperty("summary");
+        var firstEligibility = firstSummary.GetProperty("eligibility");
+        var firstOperationalState = firstJson.RootElement.GetProperty("operationalState");
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+            var persistedAfterFirst = await dbContext.InternalRepBaseDocumentStates.SingleAsync(x => x.FiscalDocumentId == fiscalDocumentId);
+            Assert.Equal(1, await dbContext.InternalRepBaseDocumentStates.CountAsync());
+            Assert.Equal(seededState.LastEligibilityEvaluatedAtUtc, persistedAfterFirst.LastEligibilityEvaluatedAtUtc);
+            Assert.Equal(seededState.LastEligibilityStatus, persistedAfterFirst.LastEligibilityStatus);
+            Assert.Equal(seededState.LastPrimaryReasonCode, persistedAfterFirst.LastPrimaryReasonCode);
+            Assert.Equal(seededState.LastPrimaryReasonMessage, persistedAfterFirst.LastPrimaryReasonMessage);
+            Assert.Equal(seededState.RepPendingFlag, persistedAfterFirst.RepPendingFlag);
+            Assert.Equal(seededState.LastRepIssuedAtUtc, persistedAfterFirst.LastRepIssuedAtUtc);
+            Assert.Equal(seededState.RepCount, persistedAfterFirst.RepCount);
+            Assert.Equal(seededState.TotalPaidApplied, persistedAfterFirst.TotalPaidApplied);
+            Assert.Equal(seededState.CreatedAtUtc, persistedAfterFirst.CreatedAtUtc);
+            Assert.Equal(seededState.UpdatedAtUtc, persistedAfterFirst.UpdatedAtUtc);
+        }
+
+        var secondResponse = await client.GetAsync($"/api/payment-complements/base-documents/internal/{fiscalDocumentId}");
+        Assert.Equal(HttpStatusCode.OK, secondResponse.StatusCode);
+        using var secondJson = await JsonDocument.ParseAsync(await secondResponse.Content.ReadAsStreamAsync());
+        var secondSummary = secondJson.RootElement.GetProperty("summary");
+        var secondEligibility = secondSummary.GetProperty("eligibility");
+        var secondOperationalState = secondJson.RootElement.GetProperty("operationalState");
+
+        Assert.Equal(firstSummary.GetProperty("repOperationalStatus").GetString(), secondSummary.GetProperty("repOperationalStatus").GetString());
+        Assert.Equal(firstSummary.GetProperty("isEligible").GetBoolean(), secondSummary.GetProperty("isEligible").GetBoolean());
+        Assert.Equal(firstSummary.GetProperty("isBlocked").GetBoolean(), secondSummary.GetProperty("isBlocked").GetBoolean());
+        Assert.Equal(firstEligibility.GetProperty("primaryReasonCode").GetString(), secondEligibility.GetProperty("primaryReasonCode").GetString());
+        Assert.Equal(firstEligibility.GetProperty("primaryReasonMessage").GetString(), secondEligibility.GetProperty("primaryReasonMessage").GetString());
+        Assert.Equal(firstOperationalState.GetProperty("lastEligibilityStatus").GetString(), secondOperationalState.GetProperty("lastEligibilityStatus").GetString());
+        Assert.Equal(firstOperationalState.GetProperty("lastPrimaryReasonCode").GetString(), secondOperationalState.GetProperty("lastPrimaryReasonCode").GetString());
+        Assert.Equal(firstOperationalState.GetProperty("repPendingFlag").GetBoolean(), secondOperationalState.GetProperty("repPendingFlag").GetBoolean());
+        Assert.Equal(firstOperationalState.GetProperty("repCount").GetInt32(), secondOperationalState.GetProperty("repCount").GetInt32());
+        Assert.Equal(firstOperationalState.GetProperty("totalPaidApplied").GetDecimal(), secondOperationalState.GetProperty("totalPaidApplied").GetDecimal());
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+            var persistedAfterSecond = await dbContext.InternalRepBaseDocumentStates.SingleAsync(x => x.FiscalDocumentId == fiscalDocumentId);
+            Assert.Equal(1, await dbContext.InternalRepBaseDocumentStates.CountAsync());
+            Assert.Equal(seededState.LastEligibilityEvaluatedAtUtc, persistedAfterSecond.LastEligibilityEvaluatedAtUtc);
+            Assert.Equal(seededState.LastEligibilityStatus, persistedAfterSecond.LastEligibilityStatus);
+            Assert.Equal(seededState.LastPrimaryReasonCode, persistedAfterSecond.LastPrimaryReasonCode);
+            Assert.Equal(seededState.LastPrimaryReasonMessage, persistedAfterSecond.LastPrimaryReasonMessage);
+            Assert.Equal(seededState.RepPendingFlag, persistedAfterSecond.RepPendingFlag);
+            Assert.Equal(seededState.LastRepIssuedAtUtc, persistedAfterSecond.LastRepIssuedAtUtc);
+            Assert.Equal(seededState.RepCount, persistedAfterSecond.RepCount);
+            Assert.Equal(seededState.TotalPaidApplied, persistedAfterSecond.TotalPaidApplied);
+            Assert.Equal(seededState.CreatedAtUtc, persistedAfterSecond.CreatedAtUtc);
+            Assert.Equal(seededState.UpdatedAtUtc, persistedAfterSecond.UpdatedAtUtc);
+        }
     }
 
     [Fact]
@@ -3713,6 +3890,8 @@ internal sealed class MvpApiFactory : WebApplicationFactory<Program>, IAsyncDisp
     public FakePaymentComplementStampingGateway PaymentComplementStampingGateway { get; } = new();
     public FakePaymentComplementCancellationGateway PaymentComplementCancellationGateway { get; } = new();
     public FakePaymentComplementStatusQueryGateway PaymentComplementStatusQueryGateway { get; } = new();
+    public FakeEmailSender EmailSender { get; } = new();
+    public FakeFiscalDocumentPdfRenderer FiscalDocumentPdfRenderer { get; } = new();
 
     protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
     {
@@ -3762,6 +3941,8 @@ internal sealed class MvpApiFactory : WebApplicationFactory<Program>, IAsyncDisp
             services.RemoveAll<IPaymentComplementStampingGateway>();
             services.RemoveAll<IPaymentComplementCancellationGateway>();
             services.RemoveAll<IPaymentComplementStatusQueryGateway>();
+            services.RemoveAll<IEmailSender>();
+            services.RemoveAll<IFiscalDocumentPdfRenderer>();
 
             services.AddSingleton<ILegacyOrderReader>(LegacyOrderReader);
             services.AddSingleton<IFiscalStampingGateway>(FiscalStampingGateway);
@@ -3770,6 +3951,8 @@ internal sealed class MvpApiFactory : WebApplicationFactory<Program>, IAsyncDisp
             services.AddSingleton<IPaymentComplementStampingGateway>(PaymentComplementStampingGateway);
             services.AddSingleton<IPaymentComplementCancellationGateway>(PaymentComplementCancellationGateway);
             services.AddSingleton<IPaymentComplementStatusQueryGateway>(PaymentComplementStatusQueryGateway);
+            services.AddSingleton<IEmailSender>(EmailSender);
+            services.AddSingleton<IFiscalDocumentPdfRenderer>(FiscalDocumentPdfRenderer);
         });
     }
 
@@ -4199,4 +4382,23 @@ internal sealed class FakePaymentComplementStatusQueryGateway : IPaymentCompleme
 
     public Task<PaymentComplementStatusQueryGatewayResult> QueryStatusAsync(PaymentComplementStatusQueryRequest request, CancellationToken cancellationToken = default)
         => Task.FromResult(ResponseFactory(request));
+}
+
+internal sealed class FakeEmailSender : IEmailSender
+{
+    public List<EmailMessage> SentMessages { get; } = [];
+
+    public Task SendAsync(EmailMessage message, CancellationToken cancellationToken = default)
+    {
+        SentMessages.Add(message);
+        return Task.CompletedTask;
+    }
+}
+
+internal sealed class FakeFiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
+{
+    public Task<byte[]> RenderAsync(FiscalDocument fiscalDocument, FiscalStamp fiscalStamp, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult("PDF-CONTENT"u8.ToArray());
+    }
 }

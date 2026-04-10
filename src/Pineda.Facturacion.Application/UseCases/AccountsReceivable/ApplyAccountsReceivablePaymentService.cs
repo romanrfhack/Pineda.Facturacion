@@ -123,10 +123,20 @@ public class ApplyAccountsReceivablePaymentService
         var createdApplications = new List<AccountsReceivablePaymentApplication>();
         var validationPlans = new List<(AccountsReceivableInvoice Invoice, decimal AppliedAmount, decimal PreviousBalance, decimal NewBalance)>();
         long? targetFiscalReceiverId = null;
+        var requestedInvoiceIds = command.Applications
+            .Select(x => x.AccountsReceivableInvoiceId)
+            .Distinct()
+            .ToArray();
+        var invoices = await _accountsReceivableInvoiceRepository.GetTrackedByIdsAsync(requestedInvoiceIds, cancellationToken);
+        var invoicesById = invoices.ToDictionary(x => x.Id);
 
         foreach (var requestedApplication in command.Applications)
         {
-            var invoice = await _accountsReceivableInvoiceRepository.GetTrackedByIdAsync(requestedApplication.AccountsReceivableInvoiceId, cancellationToken);
+            if (!invoicesById.TryGetValue(requestedApplication.AccountsReceivableInvoiceId, out var invoice))
+            {
+                invoice = null;
+            }
+
             if (invoice is null)
             {
                 return new ApplyAccountsReceivablePaymentResult

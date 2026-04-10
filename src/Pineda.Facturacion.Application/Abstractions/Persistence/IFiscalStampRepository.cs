@@ -12,5 +12,18 @@ public interface IFiscalStampRepository
 
     Task<FiscalStamp?> GetTrackedByUuidAsync(string uuid, CancellationToken cancellationToken = default);
 
+    async Task<IReadOnlyList<FiscalStamp>> GetByFiscalDocumentIdsAsync(
+        IReadOnlyCollection<long> fiscalDocumentIds,
+        CancellationToken cancellationToken = default)
+    {
+        if (fiscalDocumentIds.Count == 0)
+        {
+            return [];
+        }
+
+        var stamps = await Task.WhenAll(fiscalDocumentIds.Select(id => GetByFiscalDocumentIdAsync(id, cancellationToken)));
+        return stamps.Where(stamp => stamp is not null).Cast<FiscalStamp>().ToList();
+    }
+
     Task AddAsync(FiscalStamp fiscalStamp, CancellationToken cancellationToken = default);
 }

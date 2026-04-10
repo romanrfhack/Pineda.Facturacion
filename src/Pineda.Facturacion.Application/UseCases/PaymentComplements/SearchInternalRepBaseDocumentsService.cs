@@ -6,17 +6,10 @@ namespace Pineda.Facturacion.Application.UseCases.PaymentComplements;
 public sealed class SearchInternalRepBaseDocumentsService
 {
     private readonly IRepBaseDocumentRepository _repository;
-    private readonly IInternalRepBaseDocumentStateRepository _stateRepository;
-    private readonly IUnitOfWork _unitOfWork;
 
-    public SearchInternalRepBaseDocumentsService(
-        IRepBaseDocumentRepository repository,
-        IInternalRepBaseDocumentStateRepository stateRepository,
-        IUnitOfWork unitOfWork)
+    public SearchInternalRepBaseDocumentsService(IRepBaseDocumentRepository repository)
     {
         _repository = repository;
-        _stateRepository = stateRepository;
-        _unitOfWork = unitOfWork;
     }
 
     public async Task<SearchInternalRepBaseDocumentsResult> ExecuteAsync(
@@ -75,8 +68,6 @@ public sealed class SearchInternalRepBaseDocumentsService
             .Skip((normalizedPage - 1) * normalizedPageSize)
             .Take(normalizedPageSize)
             .ToList();
-
-        await PersistOperationalStatesAsync(pageItems, cancellationToken);
 
         return new SearchInternalRepBaseDocumentsResult
         {
@@ -153,31 +144,6 @@ public sealed class SearchInternalRepBaseDocumentsService
                 EvaluatedAtUtc = evaluatedAtUtc
             }
         };
-    }
-
-    private async Task PersistOperationalStatesAsync(
-        IReadOnlyList<InternalRepBaseDocumentListItem> items,
-        CancellationToken cancellationToken)
-    {
-        if (items.Count == 0)
-        {
-            return;
-        }
-
-        var existingStates = await _stateRepository.GetByFiscalDocumentIdsAsync(items.Select(x => x.FiscalDocumentId).ToArray(), cancellationToken);
-
-        foreach (var item in items)
-        {
-            var existingState = existingStates.TryGetValue(item.FiscalDocumentId, out var state) ? state : null;
-            await _stateRepository.UpsertAsync(
-                InternalRepBaseDocumentOperationalStateProjector.BuildEntity(
-                    item,
-                    item.Eligibility.EvaluatedAtUtc,
-                    existingState?.CreatedAtUtc),
-                cancellationToken);
-        }
-
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 
     private static bool MatchesBaseFilter(InternalRepBaseDocumentListItem item, SearchInternalRepBaseDocumentsFilter filter)

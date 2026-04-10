@@ -29,49 +29,57 @@ public sealed class ImportedLegacyOrderLookupRepository : IImportedLegacyOrderLo
         var normalizedIds = legacyOrderIds
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+            .ToList();
 
         var importRecords = await _dbContext.LegacyImportRecords
             .AsNoTracking()
-            .Where(x => x.SourceSystem == LegacySourceSystem && x.SourceTable == LegacyOrdersSourceTable)
+            .Where(x =>
+                x.SourceSystem == LegacySourceSystem
+                && x.SourceTable == LegacyOrdersSourceTable
+                && normalizedIds.Contains(x.SourceDocumentId))
             .ToListAsync(cancellationToken);
-
-        var matchedImportRecords = importRecords
-            .Where(x => normalizedIds.Contains(x.SourceDocumentId, StringComparer.OrdinalIgnoreCase))
-            .ToArray();
+        var matchedImportRecords = importRecords.ToArray();
 
         if (matchedImportRecords.Length == 0)
         {
             return new Dictionary<string, ImportedLegacyOrderLookupModel>(StringComparer.OrdinalIgnoreCase);
         }
 
-        var importRecordIds = matchedImportRecords.Select(x => x.Id).ToArray();
+        var importRecordIds = matchedImportRecords
+            .Select(x => x.Id)
+            .Distinct()
+            .ToList();
+        var directBillingDocumentIds = matchedImportRecords
+            .Where(x => x.BillingDocumentId.HasValue)
+            .Select(x => x.BillingDocumentId!.Value)
+            .Distinct()
+            .ToList();
         var salesOrders = (await _dbContext.SalesOrders
             .AsNoTracking()
-            .ToListAsync(cancellationToken))
             .Where(x => importRecordIds.Contains(x.LegacyImportRecordId))
+            .ToListAsync(cancellationToken))
             .ToArray();
 
-        var salesOrderIds = salesOrders.Select(x => x.Id).ToArray();
+        var salesOrderIds = salesOrders.Select(x => x.Id).ToList();
         var billingDocuments = (await _dbContext.BillingDocuments
             .AsNoTracking()
+            .Where(x => salesOrderIds.Contains(x.SalesOrderId) || directBillingDocumentIds.Contains(x.Id))
             .ToListAsync(cancellationToken))
-            .Where(x => salesOrderIds.Contains(x.SalesOrderId) || matchedImportRecords.Any(importRecord => importRecord.BillingDocumentId == x.Id))
             .ToArray();
 
-        var billingDocumentIds = billingDocuments.Select(x => x.Id).ToArray();
+        var billingDocumentIds = billingDocuments.Select(x => x.Id).ToList();
         var fiscalDocuments = (await _dbContext.FiscalDocuments
             .AsNoTracking()
-            .ToListAsync(cancellationToken))
             .Where(x => billingDocumentIds.Contains(x.BillingDocumentId))
+            .ToListAsync(cancellationToken))
             .ToArray();
-        var fiscalDocumentIds = fiscalDocuments.Select(x => x.Id).ToArray();
-        var fiscalStamps = fiscalDocumentIds.Length == 0
+        var fiscalDocumentIds = fiscalDocuments.Select(x => x.Id).ToList();
+        var fiscalStamps = fiscalDocumentIds.Count == 0
             ? []
             : (await _dbContext.FiscalStamps
                 .AsNoTracking()
-                .ToListAsync(cancellationToken))
                 .Where(x => fiscalDocumentIds.Contains(x.FiscalDocumentId) && !string.IsNullOrWhiteSpace(x.Uuid))
+                .ToListAsync(cancellationToken))
                 .ToArray();
 
         return matchedImportRecords

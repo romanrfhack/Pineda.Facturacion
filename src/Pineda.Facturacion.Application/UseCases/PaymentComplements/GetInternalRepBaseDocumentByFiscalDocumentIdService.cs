@@ -5,17 +5,10 @@ namespace Pineda.Facturacion.Application.UseCases.PaymentComplements;
 public sealed class GetInternalRepBaseDocumentByFiscalDocumentIdService
 {
     private readonly IRepBaseDocumentRepository _repository;
-    private readonly IInternalRepBaseDocumentStateRepository _stateRepository;
-    private readonly IUnitOfWork _unitOfWork;
 
-    public GetInternalRepBaseDocumentByFiscalDocumentIdService(
-        IRepBaseDocumentRepository repository,
-        IInternalRepBaseDocumentStateRepository stateRepository,
-        IUnitOfWork unitOfWork)
+    public GetInternalRepBaseDocumentByFiscalDocumentIdService(IRepBaseDocumentRepository repository)
     {
         _repository = repository;
-        _stateRepository = stateRepository;
-        _unitOfWork = unitOfWork;
     }
 
     public async Task<GetInternalRepBaseDocumentByFiscalDocumentIdResult> ExecuteAsync(
@@ -40,13 +33,7 @@ public sealed class GetInternalRepBaseDocumentByFiscalDocumentIdService
         }
 
         var summary = SearchInternalRepBaseDocumentsService.BuildListItem(document.Summary);
-        var existingState = await _stateRepository.GetByFiscalDocumentIdAsync(fiscalDocumentId, cancellationToken);
-        var stateEntity = InternalRepBaseDocumentOperationalStateProjector.BuildEntity(
-            summary,
-            summary.Eligibility.EvaluatedAtUtc,
-            existingState?.CreatedAtUtc);
-        await _stateRepository.UpsertAsync(stateEntity, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        var operationalState = InternalRepBaseDocumentOperationalStateProjector.BuildSnapshot(summary);
 
         return new GetInternalRepBaseDocumentByFiscalDocumentIdResult
         {
@@ -54,7 +41,7 @@ public sealed class GetInternalRepBaseDocumentByFiscalDocumentIdService
             Document = new InternalRepBaseDocumentDetail
             {
                 Summary = summary,
-                OperationalState = InternalRepBaseDocumentOperationalStateProjector.BuildSnapshot(stateEntity),
+                OperationalState = operationalState,
                 Timeline = RepBaseDocumentTimelineBuilder.BuildInternal(
                     summary,
                     document.PaymentHistory,

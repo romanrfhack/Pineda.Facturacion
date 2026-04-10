@@ -24,6 +24,7 @@ jobs:
       SSH_PORT: ${{ secrets.FACTURAS_SSH_PORT }}
       SSH_USER: ${{ secrets.FACTURAS_SSH_USER }}
       SSH_KEY: ${{ secrets.FACTURAS_SSH_KEY }}
+      # Sandbox runtime now requires RuntimeSafety__AllowSandboxEnvironment=true to be provided externally on the VPS service.
       ASPNETCORE_ENVIRONMENT: Sandbox
       DEPLOY_PATH: /var/www/facturas-dev-backend/publish
       SERVICE_NAME: facturas-dev-api

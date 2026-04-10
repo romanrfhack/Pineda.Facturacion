@@ -168,10 +168,7 @@ public class RepBaseDocumentSearchServicesTests
             ]
         };
 
-        var service = new SearchInternalRepBaseDocumentsService(
-            repository,
-            new FakeInternalStateRepository(),
-            new FakeUnitOfWork());
+        var service = new SearchInternalRepBaseDocumentsService(repository);
 
         var result = await service.ExecuteAsync(new SearchInternalRepBaseDocumentsFilter
         {
@@ -244,10 +241,7 @@ public class RepBaseDocumentSearchServicesTests
             ]
         };
 
-        var service = new SearchInternalRepBaseDocumentsService(
-            repository,
-            new FakeInternalStateRepository(),
-            new FakeUnitOfWork());
+        var service = new SearchInternalRepBaseDocumentsService(repository);
 
         var result = await service.ExecuteAsync(new SearchInternalRepBaseDocumentsFilter
         {
@@ -321,10 +315,7 @@ public class RepBaseDocumentSearchServicesTests
             ]
         };
 
-        var service = new SearchInternalRepBaseDocumentsService(
-            repository,
-            new FakeInternalStateRepository(),
-            new FakeUnitOfWork());
+        var service = new SearchInternalRepBaseDocumentsService(repository);
 
         var result = await service.ExecuteAsync(new SearchInternalRepBaseDocumentsFilter
         {
@@ -406,9 +397,7 @@ public class RepBaseDocumentSearchServicesTests
         var service = new SearchRepBaseDocumentsService(
             internalRepository,
             externalRepository,
-            new FakeIssuerProfileRepository(),
-            new FakeInternalStateRepository(),
-            new FakeUnitOfWork());
+            new FakeIssuerProfileRepository());
 
         var result = await service.ExecuteAsync(new SearchRepBaseDocumentsFilter
         {
@@ -461,9 +450,7 @@ public class RepBaseDocumentSearchServicesTests
         var service = new SearchRepBaseDocumentsService(
             internalRepository,
             externalRepository,
-            new FakeIssuerProfileRepository(),
-            new FakeInternalStateRepository(),
-            new FakeUnitOfWork());
+            new FakeIssuerProfileRepository());
 
         var result = await service.ExecuteAsync(new SearchRepBaseDocumentsFilter
         {
@@ -545,9 +532,7 @@ public class RepBaseDocumentSearchServicesTests
         var service = new SearchRepBaseDocumentsService(
             internalRepository,
             externalRepository,
-            new FakeIssuerProfileRepository(),
-            new FakeInternalStateRepository(),
-            new FakeUnitOfWork());
+            new FakeIssuerProfileRepository());
 
         var result = await service.ExecuteAsync(new SearchRepBaseDocumentsFilter
         {
@@ -770,25 +755,6 @@ public class RepBaseDocumentSearchServicesTests
 
         public Task AddAsync(ExternalRepBaseDocument document, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
-    }
-
-    private sealed class FakeInternalStateRepository : IInternalRepBaseDocumentStateRepository
-    {
-        public Task<IReadOnlyDictionary<long, InternalRepBaseDocumentState>> GetByFiscalDocumentIdsAsync(
-            IReadOnlyCollection<long> fiscalDocumentIds,
-            CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyDictionary<long, InternalRepBaseDocumentState>>(new Dictionary<long, InternalRepBaseDocumentState>());
-
-        public Task<InternalRepBaseDocumentState?> GetByFiscalDocumentIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default)
-            => Task.FromResult<InternalRepBaseDocumentState?>(null);
-
-        public Task UpsertAsync(InternalRepBaseDocumentState state, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
-    }
-
-    private sealed class FakeUnitOfWork : IUnitOfWork
-    {
-        public Task SaveChangesAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     private sealed class FakeIssuerProfileRepository : IIssuerProfileRepository

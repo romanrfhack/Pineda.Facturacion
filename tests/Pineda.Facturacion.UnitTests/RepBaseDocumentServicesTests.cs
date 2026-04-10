@@ -68,7 +68,7 @@ public class RepBaseDocumentServicesTests
                 CreateSummary(fiscalDocumentId: 103, uuid: "UUID-103", fiscalStatus: "Cancelled", receiverRfc: "DDD010101DDD", receiverLegalName: "Cliente Cancelado")
             ]
         };
-        var service = new SearchInternalRepBaseDocumentsService(repository, new FakeInternalRepBaseDocumentStateRepository(), new FakeUnitOfWork());
+        var service = new SearchInternalRepBaseDocumentsService(repository);
 
         var result = await service.ExecuteAsync(new SearchInternalRepBaseDocumentsFilter
         {
@@ -84,7 +84,7 @@ public class RepBaseDocumentServicesTests
     }
 
     [Fact]
-    public async Task SearchService_PersistsOperationalSnapshot_ForEvaluatedItems()
+    public async Task SearchService_RepeatedCalls_ReturnSameOperationalEvaluation_WithoutPersistedSnapshot()
     {
         var repository = new FakeRepBaseDocumentRepository
         {
@@ -93,22 +93,27 @@ public class RepBaseDocumentServicesTests
                 CreateSummary(fiscalDocumentId: 401, uuid: "UUID-401")
             ]
         };
-        var stateRepository = new FakeInternalRepBaseDocumentStateRepository();
-        var service = new SearchInternalRepBaseDocumentsService(repository, stateRepository, new FakeUnitOfWork());
+        var service = new SearchInternalRepBaseDocumentsService(repository);
 
-        var result = await service.ExecuteAsync(new SearchInternalRepBaseDocumentsFilter
+        var firstResult = await service.ExecuteAsync(new SearchInternalRepBaseDocumentsFilter
+        {
+            Page = 1,
+            PageSize = 25
+        });
+        var secondResult = await service.ExecuteAsync(new SearchInternalRepBaseDocumentsFilter
         {
             Page = 1,
             PageSize = 25
         });
 
-        var item = Assert.Single(result.Items);
-        var persistedState = await stateRepository.GetByFiscalDocumentIdAsync(item.FiscalDocumentId);
-        Assert.NotNull(persistedState);
-        Assert.Equal(item.Eligibility.Status, persistedState!.LastEligibilityStatus);
-        Assert.Equal(item.Eligibility.PrimaryReasonCode, persistedState.LastPrimaryReasonCode);
-        Assert.Equal(item.StampedPaymentComplementCount, persistedState.RepCount);
-        Assert.Equal(item.PaidTotal, persistedState.TotalPaidApplied);
+        var firstItem = Assert.Single(firstResult.Items);
+        var secondItem = Assert.Single(secondResult.Items);
+        Assert.Equal(firstItem.FiscalDocumentId, secondItem.FiscalDocumentId);
+        Assert.Equal(firstItem.IsEligible, secondItem.IsEligible);
+        Assert.Equal(firstItem.IsBlocked, secondItem.IsBlocked);
+        Assert.Equal(firstItem.RepOperationalStatus, secondItem.RepOperationalStatus);
+        Assert.Equal(firstItem.Eligibility.PrimaryReasonCode, secondItem.Eligibility.PrimaryReasonCode);
+        Assert.Equal(firstItem.Eligibility.PrimaryReasonMessage, secondItem.Eligibility.PrimaryReasonMessage);
     }
 
     [Fact]
@@ -184,7 +189,7 @@ public class RepBaseDocumentServicesTests
                 ]
             }
         };
-        var service = new GetInternalRepBaseDocumentByFiscalDocumentIdService(repository, new FakeInternalRepBaseDocumentStateRepository(), new FakeUnitOfWork());
+        var service = new GetInternalRepBaseDocumentByFiscalDocumentIdService(repository);
 
         var result = await service.ExecuteAsync(301);
 
@@ -314,36 +319,4 @@ public class RepBaseDocumentServicesTests
         }
     }
 
-    private sealed class FakeInternalRepBaseDocumentStateRepository : IInternalRepBaseDocumentStateRepository
-    {
-        private readonly Dictionary<long, InternalRepBaseDocumentState> _items = [];
-
-        public Task<IReadOnlyDictionary<long, InternalRepBaseDocumentState>> GetByFiscalDocumentIdsAsync(IReadOnlyCollection<long> fiscalDocumentIds, CancellationToken cancellationToken = default)
-        {
-            IReadOnlyDictionary<long, InternalRepBaseDocumentState> result = _items
-                .Where(x => fiscalDocumentIds.Contains(x.Key))
-                .ToDictionary(x => x.Key, x => x.Value);
-            return Task.FromResult(result);
-        }
-
-        public Task<InternalRepBaseDocumentState?> GetByFiscalDocumentIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default)
-        {
-            _items.TryGetValue(fiscalDocumentId, out var state);
-            return Task.FromResult(state);
-        }
-
-        public Task UpsertAsync(InternalRepBaseDocumentState state, CancellationToken cancellationToken = default)
-        {
-            _items[state.FiscalDocumentId] = state;
-            return Task.CompletedTask;
-        }
-    }
-
-    private sealed class FakeUnitOfWork : IUnitOfWork
-    {
-        public Task SaveChangesAsync(CancellationToken cancellationToken)
-        {
-            return Task.CompletedTask;
-        }
-    }
 }

@@ -25,7 +25,7 @@ jobs:
       SSH_USER: ${{ secrets.FACTURAS_SSH_USER }}
       SSH_KEY: ${{ secrets.FACTURAS_SSH_KEY }}
       # Expected runtime environment on the VPS. The systemd service must enforce this server-side.
-      ASPNETCORE_ENVIRONMENT: Sandbox
+      ASPNETCORE_ENVIRONMENT: Production
       DEPLOY_PATH: /var/www/facturas-backend/publish
 
     steps:

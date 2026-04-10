@@ -109,6 +109,7 @@ public static class FiscalDocumentsEndpoints
             .Produces<FiscalDocumentEmailDraftResponse>(StatusCodes.Status409Conflict);
 
         group.MapPost("/{fiscalDocumentId:long}/email", SendFiscalDocumentEmailAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
             .WithName("SendFiscalDocumentEmail")
             .WithSummary("Send a stamped fiscal document by email with XML and PDF attachments")
             .Produces<SendFiscalDocumentEmailResponse>(StatusCodes.Status200OK)

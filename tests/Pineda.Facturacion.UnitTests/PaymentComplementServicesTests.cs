@@ -470,6 +470,301 @@ public class PaymentComplementServicesTests
     }
 
     [Fact]
+    public async Task PreparePaymentComplement_PreservesOrder_InstallmentNumbers_And_InternalExternalSnapshots()
+    {
+        var payment = CreatePayment(amount: 80m);
+        var externalApplication = CreateApplication(id: 11, paymentId: payment.Id, invoiceId: 202, appliedAmount: 30m, previousBalance: 30m, newBalance: 0m, applicationSequence: 1, createdAtUtc: new DateTime(2026, 3, 22, 8, 0, 0, DateTimeKind.Utc));
+        var internalApplication = CreateApplication(id: 12, paymentId: payment.Id, invoiceId: 201, appliedAmount: 50m, previousBalance: 80m, newBalance: 30m, applicationSequence: 2, createdAtUtc: new DateTime(2026, 3, 22, 9, 0, 0, DateTimeKind.Utc));
+        payment.Applications = [internalApplication, externalApplication];
+
+        var internalInvoice = CreateInvoice(id: 201);
+        internalInvoice.Total = 80m;
+        internalInvoice.PaidTotal = 50m;
+        internalInvoice.OutstandingBalance = 30m;
+        internalInvoice.Applications =
+        [
+            CreateApplication(id: 5, paymentId: 9, invoiceId: 201, appliedAmount: 30m, previousBalance: 110m, newBalance: 80m, applicationSequence: 1, createdAtUtc: new DateTime(2026, 3, 20, 0, 0, 0, DateTimeKind.Utc)),
+            internalApplication
+        ];
+
+        var externalInvoice = CreateInvoice(id: 202);
+        externalInvoice.FiscalDocumentId = null;
+        externalInvoice.FiscalStampId = null;
+        externalInvoice.ExternalRepBaseDocumentId = 501;
+        externalInvoice.Total = 30m;
+        externalInvoice.PaidTotal = 30m;
+        externalInvoice.OutstandingBalance = 0m;
+        externalInvoice.Applications =
+        [
+            externalApplication
+        ];
+
+        var internalFiscalDocument = CreateFiscalDocument(id: 301, receiverRfc: "BBB010101BBB");
+        internalFiscalDocument.Items.Add(new FiscalDocumentItem
+        {
+            Id = 1,
+            FiscalDocumentId = internalFiscalDocument.Id,
+            LineNumber = 1,
+            InternalCode = "SKU-1",
+            Description = "Concept",
+            Quantity = 1m,
+            UnitPrice = 80m,
+            DiscountAmount = 0m,
+            Subtotal = 80m,
+            TaxTotal = 0m,
+            Total = 80m,
+            SatProductServiceCode = "01010101",
+            SatUnitCode = "ACT",
+            TaxObjectCode = "02",
+            VatRate = 0m,
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
+        var externalDocument = CreateExternalRepBaseDocument(id: 501, receiverRfc: "BBB010101BBB");
+        var fiscalReceiver = CreateFiscalReceiver(id: 11, rfc: "BBB010101BBB");
+        var repository = new PcFakePaymentComplementDocumentRepository();
+
+        var service = new PreparePaymentComplementService(
+            new PcFakeAccountsReceivablePaymentRepository { ExistingById = payment },
+            new PcFakeAccountsReceivableInvoiceRepository
+            {
+                TrackedById =
+                {
+                    [internalInvoice.Id] = internalInvoice,
+                    [externalInvoice.Id] = externalInvoice
+                }
+            },
+            new PcFakeExternalRepBaseDocumentRepository
+            {
+                ById =
+                {
+                    [externalDocument.Id] = externalDocument
+                }
+            },
+            new PcFakeFiscalDocumentRepository
+            {
+                ById =
+                {
+                    [internalFiscalDocument.Id] = internalFiscalDocument
+                }
+            },
+            new PcFakeFiscalStampRepository
+            {
+                ByFiscalDocumentId =
+                {
+                    [internalFiscalDocument.Id] = CreateFiscalStamp(id: 401, fiscalDocumentId: internalFiscalDocument.Id, uuid: "UUID-INT")
+                }
+            },
+            new PcFakeIssuerProfileRepository(),
+            new PcFakeFiscalReceiverRepository
+            {
+                ByRfc =
+                {
+                    [fiscalReceiver.Rfc] = fiscalReceiver
+                }
+            },
+            repository,
+            new PcFakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new PreparePaymentComplementCommand
+        {
+            AccountsReceivablePaymentId = payment.Id
+        });
+
+        Assert.Equal(PreparePaymentComplementOutcome.Created, result.Outcome);
+        Assert.NotNull(repository.Added);
+        Assert.Equal(2, repository.Added!.RelatedDocuments.Count);
+
+        var firstDocument = repository.Added.RelatedDocuments[0];
+        var secondDocument = repository.Added.RelatedDocuments[1];
+
+        Assert.Equal(202, firstDocument.AccountsReceivableInvoiceId);
+        Assert.Equal(501, firstDocument.ExternalRepBaseDocumentId);
+        Assert.Null(firstDocument.FiscalDocumentId);
+        Assert.Equal("UUID-EXT-501", firstDocument.RelatedDocumentUuid);
+        Assert.Equal(1, firstDocument.InstallmentNumber);
+        Assert.Equal(30m, firstDocument.PaidAmount);
+        Assert.Equal(0m, firstDocument.RemainingBalance);
+
+        Assert.Equal(201, secondDocument.AccountsReceivableInvoiceId);
+        Assert.Null(secondDocument.ExternalRepBaseDocumentId);
+        Assert.Equal(301, secondDocument.FiscalDocumentId);
+        Assert.Equal("UUID-INT", secondDocument.RelatedDocumentUuid);
+        Assert.Equal(2, secondDocument.InstallmentNumber);
+        Assert.Equal("02", secondDocument.TaxObjectCode);
+
+        Assert.Equal([202L, 201L], repository.Added.Payments.Single().RelatedDocuments.Select(x => x.AccountsReceivableInvoiceId).ToArray());
+    }
+
+    [Fact]
+    public async Task PreparePaymentComplement_DifferentIssuers_FailValidation()
+    {
+        var payment = CreatePayment(amount: 80m);
+        payment.Applications =
+        [
+            CreateApplication(id: 11, paymentId: 10, invoiceId: 201, appliedAmount: 50m),
+            CreateApplication(id: 12, paymentId: 10, invoiceId: 202, appliedAmount: 30m)
+        ];
+
+        var invoice1 = CreateInvoice(id: 201);
+        invoice1.Applications.Clear();
+        invoice1.Applications.Add(payment.Applications[0]);
+
+        var invoice2 = CreateInvoice(id: 202);
+        invoice2.FiscalDocumentId = 302;
+        invoice2.FiscalStampId = 402;
+        invoice2.Applications.Clear();
+        invoice2.Applications.Add(payment.Applications[1]);
+
+        var fiscalDocument1 = CreateFiscalDocument(id: 301, receiverRfc: "BBB010101BBB");
+        var fiscalDocument2 = CreateFiscalDocument(id: 302, receiverRfc: "BBB010101BBB");
+        fiscalDocument2.IssuerProfileId = 2;
+        fiscalDocument2.IssuerRfc = "ZZZ010101ZZZ";
+        fiscalDocument2.IssuerLegalName = "Other issuer";
+
+        var service = new PreparePaymentComplementService(
+            new PcFakeAccountsReceivablePaymentRepository { ExistingById = payment },
+            new PcFakeAccountsReceivableInvoiceRepository
+            {
+                TrackedById =
+                {
+                    [invoice1.Id] = invoice1,
+                    [invoice2.Id] = invoice2
+                }
+            },
+            new PcFakeExternalRepBaseDocumentRepository(),
+            new PcFakeFiscalDocumentRepository
+            {
+                ById =
+                {
+                    [fiscalDocument1.Id] = fiscalDocument1,
+                    [fiscalDocument2.Id] = fiscalDocument2
+                }
+            },
+            new PcFakeFiscalStampRepository
+            {
+                ByFiscalDocumentId =
+                {
+                    [fiscalDocument1.Id] = CreateFiscalStamp(id: 401, fiscalDocumentId: fiscalDocument1.Id, uuid: "UUID-1"),
+                    [fiscalDocument2.Id] = CreateFiscalStamp(id: 402, fiscalDocumentId: fiscalDocument2.Id, uuid: "UUID-2")
+                }
+            },
+            new PcFakeIssuerProfileRepository(),
+            new PcFakeFiscalReceiverRepository(),
+            new PcFakePaymentComplementDocumentRepository(),
+            new PcFakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new PreparePaymentComplementCommand
+        {
+            AccountsReceivablePaymentId = payment.Id
+        });
+
+        Assert.Equal(PreparePaymentComplementOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("same issuer snapshot", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task PreparePaymentComplement_UsesPrefetches_WithoutPerItemRoundTrips()
+    {
+        var payment = CreatePayment(amount: 90m);
+        payment.Applications =
+        [
+            CreateApplication(id: 11, paymentId: payment.Id, invoiceId: 201, appliedAmount: 30m, applicationSequence: 1),
+            CreateApplication(id: 12, paymentId: payment.Id, invoiceId: 202, appliedAmount: 20m, applicationSequence: 2),
+            CreateApplication(id: 13, paymentId: payment.Id, invoiceId: 203, appliedAmount: 40m, applicationSequence: 3)
+        ];
+
+        var internalInvoice = CreateInvoice(id: 201);
+        internalInvoice.Applications = [payment.Applications[0]];
+
+        var externalInvoice1 = CreateInvoice(id: 202);
+        externalInvoice1.FiscalDocumentId = null;
+        externalInvoice1.FiscalStampId = null;
+        externalInvoice1.ExternalRepBaseDocumentId = 501;
+        externalInvoice1.Applications = [payment.Applications[1]];
+
+        var externalInvoice2 = CreateInvoice(id: 203);
+        externalInvoice2.FiscalDocumentId = null;
+        externalInvoice2.FiscalStampId = null;
+        externalInvoice2.ExternalRepBaseDocumentId = 502;
+        externalInvoice2.Applications = [payment.Applications[2]];
+
+        var invoiceRepository = new PcFakeAccountsReceivableInvoiceRepository
+        {
+            TrackedById =
+            {
+                [internalInvoice.Id] = internalInvoice,
+                [externalInvoice1.Id] = externalInvoice1,
+                [externalInvoice2.Id] = externalInvoice2
+            }
+        };
+
+        var externalRepository = new PcFakeExternalRepBaseDocumentRepository
+        {
+            ById =
+            {
+                [501] = CreateExternalRepBaseDocument(id: 501, receiverRfc: "BBB010101BBB"),
+                [502] = CreateExternalRepBaseDocument(id: 502, receiverRfc: "BBB010101BBB", uuid: "UUID-EXT-502")
+            }
+        };
+
+        var fiscalDocumentRepository = new PcFakeFiscalDocumentRepository
+        {
+            ById =
+            {
+                [301] = CreateFiscalDocument(id: 301, receiverRfc: "BBB010101BBB")
+            }
+        };
+
+        var fiscalStampRepository = new PcFakeFiscalStampRepository
+        {
+            ByFiscalDocumentId =
+            {
+                [301] = CreateFiscalStamp(id: 401, fiscalDocumentId: 301, uuid: "UUID-INT")
+            }
+        };
+
+        var receiverRepository = new PcFakeFiscalReceiverRepository
+        {
+            ByRfc =
+            {
+                ["BBB010101BBB"] = CreateFiscalReceiver(id: 11, rfc: "BBB010101BBB")
+            }
+        };
+
+        var issuerRepository = new PcFakeIssuerProfileRepository();
+        var service = new PreparePaymentComplementService(
+            new PcFakeAccountsReceivablePaymentRepository { ExistingById = payment },
+            invoiceRepository,
+            externalRepository,
+            fiscalDocumentRepository,
+            fiscalStampRepository,
+            issuerRepository,
+            receiverRepository,
+            new PcFakePaymentComplementDocumentRepository(),
+            new PcFakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new PreparePaymentComplementCommand
+        {
+            AccountsReceivablePaymentId = payment.Id
+        });
+
+        Assert.Equal(PreparePaymentComplementOutcome.Created, result.Outcome);
+        Assert.Equal(1, invoiceRepository.GetByIdsAsyncCallCount);
+        Assert.Equal(0, invoiceRepository.GetTrackedByIdAsyncCallCount);
+        Assert.Equal(1, externalRepository.GetByIdsAsyncCallCount);
+        Assert.Equal(0, externalRepository.GetByIdAsyncCallCount);
+        Assert.Equal(1, fiscalDocumentRepository.GetByIdsAsyncCallCount);
+        Assert.Equal(0, fiscalDocumentRepository.GetByIdAsyncCallCount);
+        Assert.Equal(1, fiscalStampRepository.GetByFiscalDocumentIdsAsyncCallCount);
+        Assert.Equal(0, fiscalStampRepository.GetByFiscalDocumentIdAsyncCallCount);
+        Assert.Equal(1, receiverRepository.GetByRfcsAsyncCallCount);
+        Assert.Equal(0, receiverRepository.GetByRfcAsyncCallCount);
+        Assert.Equal(1, issuerRepository.GetActiveAsyncCallCount);
+        Assert.Equal(["BBB010101BBB"], receiverRepository.LastBatchRfcs.OrderBy(x => x).ToArray());
+    }
+
+    [Fact]
     public async Task RegisterInternalRepBaseDocumentPayment_Succeeds_ForEligibleDocument()
     {
         var fiscalDocument = CreateFiscalDocument();
@@ -535,6 +830,35 @@ public class PaymentComplementServicesTests
         Assert.Equal(30m, invoice.OutstandingBalance);
         Assert.NotNull(result.OperationalState);
         Assert.True(result.OperationalState!.RepPendingFlag);
+    }
+
+    [Fact]
+    public async Task RegisterInternalRepBaseDocumentPayment_ReturnsUpdatedSummaryAndOperationalState_WithoutPersistedRepSnapshotDependency()
+    {
+        var fiscalDocument = CreateFiscalDocument();
+        var invoice = CreateInvoice();
+        invoice.PaidTotal = 10m;
+        invoice.OutstandingBalance = 90m;
+        invoice.Status = AccountsReceivableInvoiceStatus.PartiallyPaid;
+
+        var service = CreateRegisterPaymentService(fiscalDocument, invoice, CreateFiscalStamp());
+
+        var result = await service.ExecuteAsync(new RegisterInternalRepBaseDocumentPaymentCommand
+        {
+            FiscalDocumentId = fiscalDocument.Id,
+            PaymentDateUtc = new DateTime(2026, 4, 6, 0, 0, 0, DateTimeKind.Utc),
+            PaymentFormSat = "03",
+            Amount = 20m,
+            Reference = "TRANS-20"
+        });
+
+        Assert.Equal(RegisterInternalRepBaseDocumentPaymentOutcome.RegisteredAndApplied, result.Outcome);
+        Assert.NotNull(result.UpdatedSummary);
+        Assert.Equal("Eligible", result.UpdatedSummary!.RepOperationalStatus);
+        Assert.Equal("EligibleInternalRep", result.UpdatedSummary.Eligibility.PrimaryReasonCode);
+        Assert.NotNull(result.OperationalState);
+        Assert.Equal("Eligible", result.OperationalState!.LastEligibilityStatus);
+        Assert.True(result.OperationalState.RepPendingFlag);
     }
 
     [Fact]
@@ -665,7 +989,7 @@ public class PaymentComplementServicesTests
                 paymentComplementRepository,
                 new PcFakeUnitOfWork()),
             new GetPaymentComplementByPaymentIdService(paymentComplementRepository),
-            new GetInternalRepBaseDocumentByFiscalDocumentIdService(detailRepository, new PcFakeInternalRepBaseDocumentStateRepository(), new PcFakeUnitOfWork()));
+            new GetInternalRepBaseDocumentByFiscalDocumentIdService(detailRepository));
 
         var result = await service.ExecuteAsync(new PrepareInternalRepBaseDocumentPaymentComplementCommand
         {
@@ -709,7 +1033,7 @@ public class PaymentComplementServicesTests
             detailRepository,
             CreatePrepareService(CreatePayment(), new PcFakePaymentComplementDocumentRepository(), invoice, fiscalDocument, fiscalStamp),
             new GetPaymentComplementByPaymentIdService(new PcFakePaymentComplementDocumentRepository()),
-            new GetInternalRepBaseDocumentByFiscalDocumentIdService(detailRepository, new PcFakeInternalRepBaseDocumentStateRepository(), new PcFakeUnitOfWork()));
+            new GetInternalRepBaseDocumentByFiscalDocumentIdService(detailRepository));
 
         var result = await service.ExecuteAsync(new PrepareInternalRepBaseDocumentPaymentComplementCommand
         {
@@ -775,7 +1099,7 @@ public class PaymentComplementServicesTests
                 paymentComplementRepository,
                 new PcFakeUnitOfWork()),
             new GetPaymentComplementByPaymentIdService(paymentComplementRepository),
-            new GetInternalRepBaseDocumentByFiscalDocumentIdService(detailRepository, new PcFakeInternalRepBaseDocumentStateRepository(), new PcFakeUnitOfWork()));
+            new GetInternalRepBaseDocumentByFiscalDocumentIdService(detailRepository));
 
         var result = await service.ExecuteAsync(new PrepareInternalRepBaseDocumentPaymentComplementCommand
         {
@@ -828,7 +1152,7 @@ public class PaymentComplementServicesTests
             detailRepository,
             CreatePrepareService(payment, new PcFakePaymentComplementDocumentRepository(), invoice, fiscalDocument, fiscalStamp),
             new GetPaymentComplementByPaymentIdService(new PcFakePaymentComplementDocumentRepository()),
-            new GetInternalRepBaseDocumentByFiscalDocumentIdService(detailRepository, new PcFakeInternalRepBaseDocumentStateRepository(), new PcFakeUnitOfWork()));
+            new GetInternalRepBaseDocumentByFiscalDocumentIdService(detailRepository));
 
         var result = await service.ExecuteAsync(new PrepareInternalRepBaseDocumentPaymentComplementCommand
         {
@@ -913,7 +1237,7 @@ public class PaymentComplementServicesTests
         var service = new StampInternalRepBaseDocumentPaymentComplementService(
             detailRepository,
             new GetPaymentComplementStampByPaymentComplementIdService(stampRepository),
-            new GetInternalRepBaseDocumentByFiscalDocumentIdService(detailRepository, new PcFakeInternalRepBaseDocumentStateRepository(), new PcFakeUnitOfWork()),
+            new GetInternalRepBaseDocumentByFiscalDocumentIdService(detailRepository),
             new StampPaymentComplementService(
                 paymentComplementRepository,
                 stampRepository,
@@ -950,7 +1274,7 @@ public class PaymentComplementServicesTests
         var service = new StampInternalRepBaseDocumentPaymentComplementService(
             detailRepository,
             new GetPaymentComplementStampByPaymentComplementIdService(new PcFakePaymentComplementStampRepository()),
-            new GetInternalRepBaseDocumentByFiscalDocumentIdService(detailRepository, new PcFakeInternalRepBaseDocumentStateRepository(), new PcFakeUnitOfWork()),
+            new GetInternalRepBaseDocumentByFiscalDocumentIdService(detailRepository),
             new StampPaymentComplementService(
                 new PcFakePaymentComplementDocumentRepository(),
                 new PcFakePaymentComplementStampRepository(),
@@ -1403,10 +1727,7 @@ public class PaymentComplementServicesTests
             DetailFactory = _ => CreateInternalRepDetailReadModel(invoice, fiscalDocument, fiscalStamp)
         };
 
-        return new GetInternalRepBaseDocumentByFiscalDocumentIdService(
-            repository,
-            new PcFakeInternalRepBaseDocumentStateRepository(),
-            new PcFakeUnitOfWork());
+        return new GetInternalRepBaseDocumentByFiscalDocumentIdService(repository);
     }
 
     private static InternalRepBaseDocumentDetailReadModel CreateInternalRepDetailReadModel(
@@ -1565,6 +1886,57 @@ public class PaymentComplementServicesTests
         };
     }
 
+    private static ExternalRepBaseDocument CreateExternalRepBaseDocument(long id = 501, string receiverRfc = "BBB010101BBB", string uuid = "UUID-EXT-501")
+    {
+        return new ExternalRepBaseDocument
+        {
+            Id = id,
+            Uuid = uuid,
+            CfdiVersion = "4.0",
+            DocumentType = "I",
+            Series = "E",
+            Folio = id.ToString(),
+            IssuedAtUtc = new DateTime(2026, 3, 20, 0, 0, 0, DateTimeKind.Utc),
+            IssuerRfc = "AAA010101AAA",
+            IssuerLegalName = "Issuer",
+            ReceiverRfc = receiverRfc,
+            ReceiverLegalName = "Receiver",
+            CurrencyCode = "MXN",
+            ExchangeRate = 1m,
+            Subtotal = 30m,
+            Total = 30m,
+            PaymentMethodSat = "PPD",
+            PaymentFormSat = "99",
+            ValidationStatus = ExternalRepBaseDocumentValidationStatus.Accepted,
+            ValidationReasonCode = "Accepted",
+            ValidationReasonMessage = "Accepted",
+            SatStatus = ExternalRepBaseDocumentSatStatus.Active,
+            SourceFileName = "external.xml",
+            XmlContent = "<xml />",
+            XmlHash = $"HASH-{id}",
+            ImportedAtUtc = new DateTime(2026, 3, 21, 0, 0, 0, DateTimeKind.Utc),
+            CreatedAtUtc = DateTime.UtcNow,
+            UpdatedAtUtc = DateTime.UtcNow
+        };
+    }
+
+    private static FiscalReceiver CreateFiscalReceiver(long id = 11, string rfc = "BBB010101BBB")
+    {
+        return new FiscalReceiver
+        {
+            Id = id,
+            Rfc = rfc,
+            LegalName = "Receiver",
+            NormalizedLegalName = "RECEIVER",
+            FiscalRegimeCode = "601",
+            CfdiUseCodeDefault = "CP01",
+            PostalCode = "64000",
+            IsActive = true,
+            CreatedAtUtc = DateTime.UtcNow,
+            UpdatedAtUtc = DateTime.UtcNow
+        };
+    }
+
     private static FiscalStamp CreateFiscalStamp(long id = 401, long fiscalDocumentId = 301, string? uuid = "UUID-1")
     {
         return new FiscalStamp
@@ -1699,6 +2071,10 @@ public class PaymentComplementServicesTests
     {
         public Dictionary<long, AccountsReceivableInvoice> TrackedById { get; set; } = [];
 
+        public int GetTrackedByIdAsyncCallCount { get; private set; }
+
+        public int GetByIdsAsyncCallCount { get; private set; }
+
         public Task<AccountsReceivableInvoice?> GetByFiscalDocumentIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default)
             => Task.FromResult(TrackedById.Values.FirstOrDefault(x => x.FiscalDocumentId == fiscalDocumentId));
 
@@ -1707,6 +2083,7 @@ public class PaymentComplementServicesTests
 
         public Task<AccountsReceivableInvoice?> GetTrackedByIdAsync(long accountsReceivableInvoiceId, CancellationToken cancellationToken = default)
         {
+            GetTrackedByIdAsyncCallCount++;
             TrackedById.TryGetValue(accountsReceivableInvoiceId, out var invoice);
             return Task.FromResult(invoice);
         }
@@ -1718,7 +2095,10 @@ public class PaymentComplementServicesTests
             => Task.FromResult(TrackedById.Values.FirstOrDefault(x => x.ExternalRepBaseDocumentId == externalRepBaseDocumentId));
 
         public Task<IReadOnlyList<AccountsReceivableInvoice>> GetByIdsAsync(IReadOnlyCollection<long> accountsReceivableInvoiceIds, CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyList<AccountsReceivableInvoice>>(TrackedById.Where(x => accountsReceivableInvoiceIds.Contains(x.Key)).Select(x => x.Value).ToList());
+        {
+            GetByIdsAsyncCallCount++;
+            return Task.FromResult<IReadOnlyList<AccountsReceivableInvoice>>(TrackedById.Where(x => accountsReceivableInvoiceIds.Contains(x.Key)).Select(x => x.Value).ToList());
+        }
 
         public Task<IReadOnlyList<AccountsReceivablePortfolioItem>> SearchPortfolioAsync(SearchAccountsReceivablePortfolioFilter filter, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<AccountsReceivablePortfolioItem>>([]);
@@ -1730,10 +2110,21 @@ public class PaymentComplementServicesTests
     {
         public Dictionary<long, FiscalDocument> ById { get; set; } = [];
 
+        public int GetByIdAsyncCallCount { get; private set; }
+
+        public int GetByIdsAsyncCallCount { get; private set; }
+
         public Task<FiscalDocument?> GetByIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default)
         {
+            GetByIdAsyncCallCount++;
             ById.TryGetValue(fiscalDocumentId, out var document);
             return Task.FromResult(document);
+        }
+
+        public Task<IReadOnlyList<FiscalDocument>> GetByIdsAsync(IReadOnlyCollection<long> fiscalDocumentIds, CancellationToken cancellationToken = default)
+        {
+            GetByIdsAsyncCallCount++;
+            return Task.FromResult<IReadOnlyList<FiscalDocument>>(ById.Where(x => fiscalDocumentIds.Contains(x.Key)).Select(x => x.Value).ToList());
         }
 
         public Task<FiscalDocument?> GetTrackedByIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default)
@@ -1755,10 +2146,21 @@ public class PaymentComplementServicesTests
     {
         public Dictionary<long, FiscalStamp> ByFiscalDocumentId { get; set; } = [];
 
+        public int GetByFiscalDocumentIdAsyncCallCount { get; private set; }
+
+        public int GetByFiscalDocumentIdsAsyncCallCount { get; private set; }
+
         public Task<FiscalStamp?> GetByFiscalDocumentIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default)
         {
+            GetByFiscalDocumentIdAsyncCallCount++;
             ByFiscalDocumentId.TryGetValue(fiscalDocumentId, out var stamp);
             return Task.FromResult(stamp);
+        }
+
+        public Task<IReadOnlyList<FiscalStamp>> GetByFiscalDocumentIdsAsync(IReadOnlyCollection<long> fiscalDocumentIds, CancellationToken cancellationToken = default)
+        {
+            GetByFiscalDocumentIdsAsyncCallCount++;
+            return Task.FromResult<IReadOnlyList<FiscalStamp>>(ByFiscalDocumentId.Where(x => fiscalDocumentIds.Contains(x.Key)).Select(x => x.Value).ToList());
         }
 
         public Task<FiscalStamp?> GetTrackedByFiscalDocumentIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default)
@@ -1777,10 +2179,21 @@ public class PaymentComplementServicesTests
     {
         public Dictionary<long, ExternalRepBaseDocument> ById { get; set; } = [];
 
+        public int GetByIdAsyncCallCount { get; private set; }
+
+        public int GetByIdsAsyncCallCount { get; private set; }
+
         public Task<ExternalRepBaseDocument?> GetByIdAsync(long id, CancellationToken cancellationToken = default)
         {
+            GetByIdAsyncCallCount++;
             ById.TryGetValue(id, out var document);
             return Task.FromResult(document);
+        }
+
+        public Task<IReadOnlyList<ExternalRepBaseDocument>> GetByIdsAsync(IReadOnlyCollection<long> ids, CancellationToken cancellationToken = default)
+        {
+            GetByIdsAsyncCallCount++;
+            return Task.FromResult<IReadOnlyList<ExternalRepBaseDocument>>(ById.Where(x => ids.Contains(x.Key)).Select(x => x.Value).ToList());
         }
 
         public Task<ExternalRepBaseDocument?> GetTrackedByIdAsync(long id, CancellationToken cancellationToken = default)
@@ -1818,7 +2231,13 @@ public class PaymentComplementServicesTests
             IsActive = true
         };
 
-        public Task<IssuerProfile?> GetActiveAsync(CancellationToken cancellationToken = default) => Task.FromResult(Active);
+        public int GetActiveAsyncCallCount { get; private set; }
+
+        public Task<IssuerProfile?> GetActiveAsync(CancellationToken cancellationToken = default)
+        {
+            GetActiveAsyncCallCount++;
+            return Task.FromResult(Active);
+        }
 
         public Task<IssuerProfile?> GetTrackedActiveAsync(CancellationToken cancellationToken = default) => Task.FromResult(Active);
 
@@ -1836,13 +2255,27 @@ public class PaymentComplementServicesTests
     {
         public Dictionary<string, FiscalReceiver> ByRfc { get; set; } = [];
 
+        public int GetByRfcAsyncCallCount { get; private set; }
+
+        public int GetByRfcsAsyncCallCount { get; private set; }
+
+        public IReadOnlyList<string> LastBatchRfcs { get; private set; } = [];
+
         public Task<IReadOnlyList<FiscalReceiver>> SearchAsync(string query, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<FiscalReceiver>>(ByRfc.Values.ToList());
 
         public Task<FiscalReceiver?> GetByRfcAsync(string normalizedRfc, CancellationToken cancellationToken = default)
         {
+            GetByRfcAsyncCallCount++;
             ByRfc.TryGetValue(normalizedRfc, out var receiver);
             return Task.FromResult(receiver);
+        }
+
+        public Task<IReadOnlyList<FiscalReceiver>> GetByRfcsAsync(IReadOnlyCollection<string> normalizedRfcs, CancellationToken cancellationToken = default)
+        {
+            GetByRfcsAsyncCallCount++;
+            LastBatchRfcs = normalizedRfcs.ToArray();
+            return Task.FromResult<IReadOnlyList<FiscalReceiver>>(ByRfc.Where(x => normalizedRfcs.Contains(x.Key)).Select(x => x.Value).ToList());
         }
 
         public Task<FiscalReceiver?> GetByIdAsync(long fiscalReceiverId, CancellationToken cancellationToken = default)
