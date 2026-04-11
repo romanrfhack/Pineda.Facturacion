@@ -14,6 +14,12 @@ public class AppUser
 
     public bool IsActive { get; set; }
 
+    public int FailedLoginAttemptCount { get; set; }
+
+    public DateTime? LastFailedLoginAtUtc { get; set; }
+
+    public DateTime? LockoutEndAtUtc { get; set; }
+
     public DateTime? LastLoginAtUtc { get; set; }
 
     public DateTime CreatedAtUtc { get; set; }

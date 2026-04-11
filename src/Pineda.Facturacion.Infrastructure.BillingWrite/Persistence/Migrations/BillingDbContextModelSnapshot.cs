@@ -309,13 +309,27 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
                         .HasColumnType("varchar(200)")
                         .HasColumnName("display_name");
 
+                    b.Property<int>("FailedLoginAttemptCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("failed_login_attempt_count")
+                        .HasDefaultValue(0);
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("tinyint(1)")
                         .HasColumnName("is_active");
 
+                    b.Property<DateTime?>("LastFailedLoginAtUtc")
+                        .HasColumnType("datetime(6)")
+                        .HasColumnName("last_failed_login_at_utc");
+
                     b.Property<DateTime?>("LastLoginAtUtc")
                         .HasColumnType("datetime(6)")
                         .HasColumnName("last_login_at_utc");
+
+                    b.Property<DateTime?>("LockoutEndAtUtc")
+                        .HasColumnType("datetime(6)")
+                        .HasColumnName("lockout_end_at_utc");
 
                     b.Property<string>("NormalizedUsername")
                         .IsRequired()

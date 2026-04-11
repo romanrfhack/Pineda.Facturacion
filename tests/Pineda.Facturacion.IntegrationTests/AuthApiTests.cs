@@ -1,11 +1,15 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Pineda.Facturacion.Api.Endpoints;
 using Pineda.Facturacion.Application.Contracts.Pac;
 using Pineda.Facturacion.Application.Models.Legacy;
 using Pineda.Facturacion.Application.Security;
+using Pineda.Facturacion.Application.UseCases.Auth;
 using Pineda.Facturacion.Domain.Entities;
+using Pineda.Facturacion.Infrastructure.BillingWrite.Persistence;
 
 namespace Pineda.Facturacion.IntegrationTests;
 
@@ -68,6 +72,130 @@ public class AuthApiTests
         });
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Login_LocksUser_AfterRepeatedInvalidAttempts_And_BlocksWhileActive()
+    {
+        await using var factory = new MvpApiFactory();
+        await factory.SeedUserAsync("operator-lockout", "Secret123!", true, AppRoleNames.FiscalOperator);
+        var client = factory.CreateClient();
+
+        for (var attempt = 1; attempt <= 5; attempt++)
+        {
+            var response = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest
+            {
+                Username = "operator-lockout",
+                Password = $"Wrong-{attempt}"
+            });
+
+            Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        }
+
+        var lockedResponse = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest
+        {
+            Username = "operator-lockout",
+            Password = "Secret123!"
+        });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, lockedResponse.StatusCode);
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+        var user = await db.Set<AppUser>().SingleAsync(x => x.NormalizedUsername == "OPERATOR-LOCKOUT");
+        Assert.Equal(5, user.FailedLoginAttemptCount);
+        Assert.NotNull(user.LockoutEndAtUtc);
+        Assert.True(user.LockoutEndAtUtc > DateTime.UtcNow);
+
+        var auditEvents = await factory.GetAuditEventsAsync();
+        Assert.Contains(auditEvents, x => x.ActionType == "Auth.Login" && x.Outcome == "InvalidCredentials");
+        Assert.Contains(auditEvents, x => x.ActionType == "Auth.Login" && x.Outcome == "LockedOut");
+        Assert.Contains(auditEvents, x => x.ActionType == "Auth.Login" && x.Outcome == "ThrottledByUsernameIp");
+    }
+
+    [Fact]
+    public async Task Login_Succeeds_AfterExpiredLockout_And_Resets_UserState()
+    {
+        await using var factory = new MvpApiFactory();
+        await factory.SeedUserAsync("operator-expired", "Secret123!", true, AppRoleNames.FiscalOperator);
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+            var user = await db.Set<AppUser>().SingleAsync(x => x.NormalizedUsername == "OPERATOR-EXPIRED");
+            user.FailedLoginAttemptCount = 5;
+            user.LastFailedLoginAtUtc = DateTime.UtcNow.AddMinutes(-20);
+            user.LockoutEndAtUtc = DateTime.UtcNow.AddMinutes(-1);
+            user.UpdatedAtUtc = DateTime.UtcNow.AddMinutes(-20);
+            await db.SaveChangesAsync();
+        }
+
+        var client = factory.CreateClient();
+        var response = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest
+        {
+            Username = "operator-expired",
+            Password = "Secret123!"
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+            var user = await db.Set<AppUser>().SingleAsync(x => x.NormalizedUsername == "OPERATOR-EXPIRED");
+            Assert.Equal(0, user.FailedLoginAttemptCount);
+            Assert.Null(user.LastFailedLoginAtUtc);
+            Assert.Null(user.LockoutEndAtUtc);
+            Assert.NotNull(user.LastLoginAtUtc);
+        }
+
+        var auditEvents = await factory.GetAuditEventsAsync();
+        Assert.Contains(auditEvents, x => x.ActionType == "Auth.Login" && x.Outcome == "LockoutExpired");
+        Assert.Contains(auditEvents, x => x.ActionType == "Auth.Login" && x.Outcome == "Authenticated");
+    }
+
+    [Fact]
+    public async Task Login_ThrottlesUnknownUsername_AfterRepeatedAttempts_FromSameClient()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = factory.CreateClient();
+
+        for (var attempt = 1; attempt <= LoginHardeningPolicy.UsernameIpThrottleMaxFailedAttempts + 1; attempt++)
+        {
+            var response = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest
+            {
+                Username = "ghost-throttle",
+                Password = $"Wrong-{attempt}"
+            });
+
+            Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        }
+
+        var auditEvents = await factory.GetAuditEventsAsync();
+        Assert.Contains(auditEvents, x => x.ActionType == "Auth.Login" && x.Outcome == "ThrottledByUsernameIp");
+        Assert.DoesNotContain(auditEvents, x => x.ActionType == "Auth.Login" && x.Outcome == "Authenticated");
+    }
+
+    [Fact]
+    public async Task Login_ThrottlesSameClient_AcrossMultipleUnknownUsernames_ByIp()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = factory.CreateClient();
+
+        for (var attempt = 1; attempt <= LoginHardeningPolicy.IpThrottleMaxFailedAttempts + 1; attempt++)
+        {
+            var response = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest
+            {
+                Username = $"ghost-ip-{attempt}",
+                Password = $"Wrong-{attempt}"
+            });
+
+            Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        }
+
+        var auditEvents = await factory.GetAuditEventsAsync();
+        Assert.Contains(auditEvents, x => x.ActionType == "Auth.Login" && x.Outcome == "ThrottledByIp");
+        Assert.DoesNotContain(auditEvents, x => x.ActionType == "Auth.Login" && x.Outcome == "Authenticated");
     }
 
     [Fact]
