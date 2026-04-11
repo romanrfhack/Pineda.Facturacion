@@ -738,6 +738,7 @@ internal static class MySqlIntegrationTestSupport
         builder["Default Command Timeout"] = "180";
         builder["Pooling"] = "false";
         builder["SslMode"] = "None";
+        builder["AllowPublicKeyRetrieval"] = "true";
         return builder.ConnectionString;
     }
 }

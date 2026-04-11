@@ -90,8 +90,8 @@ jobs:
           DOTNET_ENVIRONMENT: Development
           ASPNETCORE_ENVIRONMENT: Development
           PINEDA_FACTURACION_RUN_MYSQL_TESTS: "true"
-          PINEDA_FACTURACION_MYSQL_TEST_CONNECTION: Server=127.0.0.1;Port=3306;User ID=root;Password=Strong_Passw0rd_2026!;
-        run: dotnet test -c Release Pineda.Facturacion.slnx --filter "Category=MySqlIntegration"
+          PINEDA_FACTURACION_MYSQL_TEST_CONNECTION: Server=127.0.0.1;Port=3306;User ID=root;Password=Strong_Passw0rd_2026!;AllowPublicKeyRetrieval=True;SslMode=None;
+        run: dotnet test -c Release tests/Pineda.Facturacion.IntegrationTests/Pineda.Facturacion.IntegrationTests.csproj --filter "Category=MySqlIntegration" --no-build
 
   frontend_tests:
     needs: changes
