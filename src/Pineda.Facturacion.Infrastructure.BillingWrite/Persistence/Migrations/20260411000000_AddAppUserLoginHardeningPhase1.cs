@@ -1,11 +1,15 @@
 ﻿using System;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Pineda.Facturacion.Infrastructure.BillingWrite.Persistence;
 
 #nullable disable
 
 namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
 {
     /// <inheritdoc />
+    [DbContext(typeof(BillingDbContext))]
+    [Migration("20260411000000_AddAppUserLoginHardeningPhase1")]
     public partial class AddAppUserLoginHardeningPhase1 : Migration
     {
         /// <inheritdoc />

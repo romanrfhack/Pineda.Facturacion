@@ -174,6 +174,27 @@ public sealed class MySqlBackedIntegrationTests
     }
 
     [MySqlFact]
+    public async Task MySqlApiFactory_Upgrades_PreviousSchema_Before_Seeding_AppUsers()
+    {
+        await _fixture.ResetDatabaseAsync(MySqlIntegrationTestSupport.PreviousMigrationId);
+        await using var factory = _fixture.CreateApiFactory();
+
+        await factory.SeedUserAsync("admin-mysql-migration", "Admin123!", isActive: true, AppRoleNames.Admin);
+
+        await using var db = _fixture.CreateDbContext();
+        var appliedMigrations = await db.Database.GetAppliedMigrationsAsync();
+        Assert.Contains("20260411000000_AddAppUserLoginHardeningPhase1", appliedMigrations);
+
+        var user = await db.Set<AppUser>()
+            .AsNoTracking()
+            .SingleAsync(x => x.NormalizedUsername == "ADMIN-MYSQL-MIGRATION");
+
+        Assert.Equal(0, user.FailedLoginAttemptCount);
+        Assert.Null(user.LastFailedLoginAtUtc);
+        Assert.Null(user.LockoutEndAtUtc);
+    }
+
+    [MySqlFact]
     public async Task AccountsReceivable_CreatePayment_AndApplyPayment_HappyPath_UsesRealMySqlPersistence()
     {
         await _fixture.ResetDatabaseAsync();
@@ -928,6 +949,8 @@ internal sealed class MySqlApiFactory : WebApplicationFactory<Program>, IAsyncDi
 
     public async Task<HttpClient> CreateAuthenticatedClientAsync(string username = "admin", string password = "Admin123!")
     {
+        await EnsureLatestSchemaAsync();
+
         var client = CreateClient();
         var loginResponse = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest
         {
@@ -943,6 +966,8 @@ internal sealed class MySqlApiFactory : WebApplicationFactory<Program>, IAsyncDi
 
     public async Task<long> SeedUserAsync(string username, string password, bool isActive, params string[] roles)
     {
+        await EnsureLatestSchemaAsync();
+
         await using var db = CreateDbContext();
         var passwordHasher = new PasswordHasher<AppUser>();
         var normalizedUsername = username.Trim().ToUpperInvariant();
@@ -1017,6 +1042,8 @@ internal sealed class MySqlApiFactory : WebApplicationFactory<Program>, IAsyncDi
 
     public async Task<(long IssuerId, long ReceiverId, long ProductId)> SeedStandardFiscalMasterDataAsync()
     {
+        await EnsureLatestSchemaAsync();
+
         await using var db = CreateDbContext();
 
         var issuer = await db.Set<IssuerProfile>().FirstOrDefaultAsync(x => x.Rfc == "AAA010101AAA");
@@ -1091,6 +1118,13 @@ internal sealed class MySqlApiFactory : WebApplicationFactory<Program>, IAsyncDi
 
         await db.SaveChangesAsync();
         return (issuer.Id, receiver.Id, product.Id);
+    }
+
+    private async Task EnsureLatestSchemaAsync()
+    {
+        await using var db = CreateDbContext();
+        var migrator = db.Database.GetService<IMigrator>();
+        await migrator.MigrateAsync();
     }
 
     private BillingDbContext CreateDbContext()
