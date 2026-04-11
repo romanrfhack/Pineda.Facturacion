@@ -58,6 +58,22 @@ public class FiscalReceiverRepository : IFiscalReceiverRepository
             .FirstOrDefaultAsync(x => x.Id == fiscalReceiverId, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<FiscalReceiver>> GetByIdsAsync(
+        IReadOnlyCollection<long> fiscalReceiverIds,
+        CancellationToken cancellationToken = default)
+    {
+        if (fiscalReceiverIds.Count == 0)
+        {
+            return [];
+        }
+
+        return await _dbContext.FiscalReceivers
+            .AsNoTracking()
+            .Include(x => x.SpecialFieldDefinitions.OrderBy(field => field.DisplayOrder))
+            .Where(x => fiscalReceiverIds.Contains(x.Id))
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<FiscalReceiverSpecialFieldDefinition>> GetActiveSpecialFieldDefinitionsAsync(CancellationToken cancellationToken = default)
     {
         return await _dbContext.FiscalReceiverSpecialFieldDefinitions

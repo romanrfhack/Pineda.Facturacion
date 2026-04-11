@@ -764,6 +764,263 @@ public class FiscalCancellationAndStatusServicesTests
     }
 
     [Fact]
+    public async Task ListPendingFiscalCancellationAuthorizations_BatchPrefetches_RelatedEntities_And_Avoids_PerItemLookups()
+    {
+        var firstDocument = CreateStampedFiscalDocument();
+        var secondDocument = CreateStampedFiscalDocument();
+        secondDocument.Id = 51;
+        secondDocument.Status = FiscalDocumentStatus.CancellationRequested;
+
+        var firstStamp = CreateFiscalStamp();
+        var secondStamp = CreateFiscalStamp();
+        secondStamp.Id = 71;
+        secondStamp.FiscalDocumentId = secondDocument.Id;
+        secondStamp.Uuid = "UUID-2";
+
+        var fiscalDocumentRepository = new FakeFiscalDocumentRepository
+        {
+            Existing = [firstDocument, secondDocument]
+        };
+        var fiscalStampRepository = new FakeFiscalStampRepository
+        {
+            Existing = [firstStamp, secondStamp]
+        };
+        var fiscalCancellationRepository = new FakeFiscalCancellationRepository
+        {
+            Existing =
+            [
+                new FiscalCancellation
+                {
+                    Id = 90,
+                    FiscalDocumentId = firstDocument.Id,
+                    FiscalStampId = firstStamp.Id,
+                    Status = FiscalCancellationStatus.Requested,
+                    ProviderName = "FacturaloPlus",
+                    ProviderOperation = "cancelar2",
+                    CancellationReasonCode = "03"
+                },
+                new FiscalCancellation
+                {
+                    Id = 91,
+                    FiscalDocumentId = secondDocument.Id,
+                    FiscalStampId = secondStamp.Id,
+                    Status = FiscalCancellationStatus.Requested,
+                    ProviderName = "FacturaloPlus",
+                    ProviderOperation = "cancelar2",
+                    CancellationReasonCode = "03"
+                }
+            ]
+        };
+        var service = new ListPendingFiscalCancellationAuthorizationsService(
+            new FakeIssuerProfileRepository { Existing = CreateActiveIssuerProfile() },
+            fiscalStampRepository,
+            fiscalDocumentRepository,
+            fiscalCancellationRepository,
+            new FakeFiscalCancellationGateway
+            {
+                NextPendingResult = new FiscalCancellationAuthorizationPendingQueryGatewayResult
+                {
+                    Outcome = FiscalCancellationAuthorizationPendingQueryGatewayOutcome.Retrieved,
+                    ProviderName = "FacturaloPlus",
+                    ProviderOperation = "consultarAutorizacionesPendientes",
+                    Items =
+                    [
+                        new FiscalCancellationAuthorizationPendingItem
+                        {
+                            Uuid = firstStamp.Uuid!,
+                            IssuerRfc = "AAA010101AAA",
+                            ReceiverRfc = "BBB010101BBB"
+                        },
+                        new FiscalCancellationAuthorizationPendingItem
+                        {
+                            Uuid = secondStamp.Uuid!,
+                            IssuerRfc = "AAA010101AAA",
+                            ReceiverRfc = "CCC010101CCC"
+                        }
+                    ]
+                }
+            });
+
+        var result = await service.ExecuteAsync();
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(2, result.Items.Count);
+        Assert.Equal(firstDocument.Id, result.Items[0].FiscalDocumentId);
+        Assert.Equal(secondDocument.Id, result.Items[1].FiscalDocumentId);
+        Assert.Equal("Pending", result.Items[0].AuthorizationStatus);
+        Assert.Equal("CancellationPending", result.Items[1].LocalOperationalStatus);
+        Assert.Equal(1, fiscalStampRepository.GetByUuidsAsyncCallCount);
+        Assert.Equal(1, fiscalDocumentRepository.GetByIdsAsyncCallCount);
+        Assert.Equal(1, fiscalCancellationRepository.GetByFiscalDocumentIdsAsyncCallCount);
+        Assert.Equal(0, fiscalStampRepository.GetByUuidAsyncCallCount);
+        Assert.Equal(0, fiscalDocumentRepository.GetByIdAsyncCallCount);
+        Assert.Equal(0, fiscalCancellationRepository.GetByFiscalDocumentIdAsyncCallCount);
+    }
+
+    [Fact]
+    public async Task ListPendingFiscalCancellationAuthorizations_Deduplicates_RepeatedUuids_BeforeBatchFetch()
+    {
+        var firstDocument = CreateStampedFiscalDocument();
+        var secondDocument = CreateStampedFiscalDocument();
+        secondDocument.Id = 51;
+
+        var firstStamp = CreateFiscalStamp();
+        var secondStamp = CreateFiscalStamp();
+        secondStamp.Id = 71;
+        secondStamp.FiscalDocumentId = secondDocument.Id;
+        secondStamp.Uuid = "UUID-2";
+
+        var fiscalDocumentRepository = new FakeFiscalDocumentRepository
+        {
+            Existing = [firstDocument, secondDocument]
+        };
+        var fiscalStampRepository = new FakeFiscalStampRepository
+        {
+            Existing = [firstStamp, secondStamp]
+        };
+        var fiscalCancellationRepository = new FakeFiscalCancellationRepository
+        {
+            Existing =
+            [
+                new FiscalCancellation
+                {
+                    Id = 90,
+                    FiscalDocumentId = firstDocument.Id,
+                    FiscalStampId = firstStamp.Id,
+                    Status = FiscalCancellationStatus.Requested,
+                    ProviderName = "FacturaloPlus",
+                    ProviderOperation = "cancelar2",
+                    CancellationReasonCode = "03"
+                },
+                new FiscalCancellation
+                {
+                    Id = 91,
+                    FiscalDocumentId = secondDocument.Id,
+                    FiscalStampId = secondStamp.Id,
+                    Status = FiscalCancellationStatus.Requested,
+                    ProviderName = "FacturaloPlus",
+                    ProviderOperation = "cancelar2",
+                    CancellationReasonCode = "03"
+                }
+            ]
+        };
+        var service = new ListPendingFiscalCancellationAuthorizationsService(
+            new FakeIssuerProfileRepository { Existing = CreateActiveIssuerProfile() },
+            fiscalStampRepository,
+            fiscalDocumentRepository,
+            fiscalCancellationRepository,
+            new FakeFiscalCancellationGateway
+            {
+                NextPendingResult = new FiscalCancellationAuthorizationPendingQueryGatewayResult
+                {
+                    Outcome = FiscalCancellationAuthorizationPendingQueryGatewayOutcome.Retrieved,
+                    ProviderName = "FacturaloPlus",
+                    ProviderOperation = "consultarAutorizacionesPendientes",
+                    Items =
+                    [
+                        new FiscalCancellationAuthorizationPendingItem { Uuid = firstStamp.Uuid! },
+                        new FiscalCancellationAuthorizationPendingItem { Uuid = firstStamp.Uuid! },
+                        new FiscalCancellationAuthorizationPendingItem { Uuid = secondStamp.Uuid! },
+                        new FiscalCancellationAuthorizationPendingItem { Uuid = secondStamp.Uuid! }
+                    ]
+                }
+            });
+
+        var result = await service.ExecuteAsync();
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(4, result.Items.Count);
+        Assert.Equal(2, fiscalStampRepository.LastGetByUuidsAsyncUuids.Count);
+        Assert.Equal(2, fiscalDocumentRepository.LastGetByIdsAsyncFiscalDocumentIds.Count);
+        Assert.Equal(2, fiscalCancellationRepository.LastGetByFiscalDocumentIdsAsyncFiscalDocumentIds.Count);
+        Assert.Contains("UUID-1", fiscalStampRepository.LastGetByUuidsAsyncUuids);
+        Assert.Contains("UUID-2", fiscalStampRepository.LastGetByUuidsAsyncUuids);
+        Assert.Contains(firstDocument.Id, fiscalDocumentRepository.LastGetByIdsAsyncFiscalDocumentIds);
+        Assert.Contains(secondDocument.Id, fiscalDocumentRepository.LastGetByIdsAsyncFiscalDocumentIds);
+        Assert.Contains(firstDocument.Id, fiscalCancellationRepository.LastGetByFiscalDocumentIdsAsyncFiscalDocumentIds);
+        Assert.Contains(secondDocument.Id, fiscalCancellationRepository.LastGetByFiscalDocumentIdsAsyncFiscalDocumentIds);
+        Assert.Equal(0, fiscalStampRepository.GetByUuidAsyncCallCount);
+        Assert.Equal(0, fiscalDocumentRepository.GetByIdAsyncCallCount);
+        Assert.Equal(0, fiscalCancellationRepository.GetByFiscalDocumentIdAsyncCallCount);
+    }
+
+    [Fact]
+    public async Task ListPendingFiscalCancellationAuthorizations_Preserves_Semantics_For_Missing_And_Inconsistent_LocalData()
+    {
+        var firstDocument = CreateStampedFiscalDocument();
+        var firstStamp = CreateFiscalStamp();
+        var secondStamp = CreateFiscalStamp();
+        secondStamp.Id = 71;
+        secondStamp.FiscalDocumentId = 51;
+        secondStamp.Uuid = "UUID-2";
+
+        var service = new ListPendingFiscalCancellationAuthorizationsService(
+            new FakeIssuerProfileRepository { Existing = CreateActiveIssuerProfile() },
+            new FakeFiscalStampRepository
+            {
+                Existing = [firstStamp, secondStamp]
+            },
+            new FakeFiscalDocumentRepository
+            {
+                Existing = [firstDocument]
+            },
+            new FakeFiscalCancellationRepository
+            {
+                Existing =
+                [
+                    new FiscalCancellation
+                    {
+                        Id = 91,
+                        FiscalDocumentId = secondStamp.FiscalDocumentId,
+                        FiscalStampId = secondStamp.Id,
+                        Status = FiscalCancellationStatus.Requested,
+                        ProviderName = "FacturaloPlus",
+                        ProviderOperation = "cancelar2",
+                        CancellationReasonCode = "03"
+                    }
+                ]
+            },
+            new FakeFiscalCancellationGateway
+            {
+                NextPendingResult = new FiscalCancellationAuthorizationPendingQueryGatewayResult
+                {
+                    Outcome = FiscalCancellationAuthorizationPendingQueryGatewayOutcome.Retrieved,
+                    ProviderName = "FacturaloPlus",
+                    ProviderOperation = "consultarAutorizacionesPendientes",
+                    Items =
+                    [
+                        new FiscalCancellationAuthorizationPendingItem { Uuid = firstStamp.Uuid! },
+                        new FiscalCancellationAuthorizationPendingItem { Uuid = secondStamp.Uuid! },
+                        new FiscalCancellationAuthorizationPendingItem { Uuid = "UUID-MISSING" },
+                        new FiscalCancellationAuthorizationPendingItem { Uuid = string.Empty }
+                    ]
+                }
+            });
+
+        var result = await service.ExecuteAsync();
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(4, result.Items.Count);
+
+        Assert.Equal(firstDocument.Id, result.Items[0].FiscalDocumentId);
+        Assert.Equal("Stamped", result.Items[0].FiscalDocumentStatus);
+        Assert.Null(result.Items[0].FiscalCancellationId);
+        Assert.Null(result.Items[0].AuthorizationStatus);
+
+        Assert.Equal(secondStamp.FiscalDocumentId, result.Items[1].FiscalDocumentId);
+        Assert.Null(result.Items[1].FiscalDocumentStatus);
+        Assert.Equal(91, result.Items[1].FiscalCancellationId);
+        Assert.Equal("Requested", result.Items[1].CancellationStatus);
+        Assert.Equal("Pending", result.Items[1].AuthorizationStatus);
+
+        Assert.Null(result.Items[2].FiscalDocumentId);
+        Assert.Null(result.Items[2].FiscalCancellationId);
+        Assert.Equal(string.Empty, result.Items[3].Uuid);
+        Assert.Null(result.Items[3].FiscalDocumentId);
+        Assert.Null(result.Items[3].FiscalCancellationId);
+    }
+
+    [Fact]
     public async Task RespondFiscalCancellationAuthorization_Accept_Keeps_CancellationRequested_And_Persists_Authorization()
     {
         var fiscalDocument = CreateStampedFiscalDocument();
@@ -956,15 +1213,34 @@ public class FiscalCancellationAndStatusServicesTests
     private sealed class FakeFiscalDocumentRepository : IFiscalDocumentRepository
     {
         public FiscalDocument? ExistingTracked { get; init; }
+        public IReadOnlyList<FiscalDocument> Existing { get; init; } = [];
+        public int GetByIdAsyncCallCount { get; private set; }
+        public int GetByIdsAsyncCallCount { get; private set; }
+        public IReadOnlyList<long> LastGetByIdsAsyncFiscalDocumentIds { get; private set; } = [];
 
         public Task<FiscalDocument?> GetByIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default)
-            => Task.FromResult(ExistingTracked?.Id == fiscalDocumentId ? ExistingTracked : null);
+        {
+            GetByIdAsyncCallCount++;
+            return Task.FromResult(EnumerateExistingDocuments().FirstOrDefault(document => document.Id == fiscalDocumentId));
+        }
 
         public Task<FiscalDocument?> GetTrackedByIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default)
-            => Task.FromResult(ExistingTracked?.Id == fiscalDocumentId ? ExistingTracked : null);
+            => Task.FromResult(EnumerateExistingDocuments().FirstOrDefault(document => document.Id == fiscalDocumentId));
 
         public Task<FiscalDocument?> GetByBillingDocumentIdAsync(long billingDocumentId, CancellationToken cancellationToken = default)
-            => Task.FromResult<FiscalDocument?>(null);
+            => Task.FromResult(EnumerateExistingDocuments().FirstOrDefault(document => document.BillingDocumentId == billingDocumentId));
+
+        public Task<IReadOnlyList<FiscalDocument>> GetByIdsAsync(IReadOnlyCollection<long> fiscalDocumentIds, CancellationToken cancellationToken = default)
+        {
+            GetByIdsAsyncCallCount++;
+            LastGetByIdsAsyncFiscalDocumentIds = fiscalDocumentIds.ToArray();
+
+            var requestedIds = fiscalDocumentIds.Distinct().ToHashSet();
+            return Task.FromResult<IReadOnlyList<FiscalDocument>>(
+                EnumerateExistingDocuments()
+                    .Where(document => requestedIds.Contains(document.Id))
+                    .ToList());
+        }
 
         public Task<bool> ExistsByIssuerSeriesAndFolioAsync(string issuerRfc, string series, string folio, long? excludeFiscalDocumentId = null, CancellationToken cancellationToken = default)
             => Task.FromResult(false);
@@ -973,49 +1249,143 @@ public class FiscalCancellationAndStatusServicesTests
             => Task.FromResult<int?>(null);
 
         public Task AddAsync(FiscalDocument fiscalDocument, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        private IEnumerable<FiscalDocument> EnumerateExistingDocuments()
+        {
+            if (ExistingTracked is not null)
+            {
+                yield return ExistingTracked;
+            }
+
+            foreach (var document in Existing)
+            {
+                if (ExistingTracked?.Id != document.Id)
+                {
+                    yield return document;
+                }
+            }
+        }
     }
 
     private sealed class FakeFiscalStampRepository : IFiscalStampRepository
     {
         public FiscalStamp? ExistingTracked { get; init; }
+        public IReadOnlyList<FiscalStamp> Existing { get; init; } = [];
+        public int GetByUuidAsyncCallCount { get; private set; }
+        public int GetByUuidsAsyncCallCount { get; private set; }
+        public IReadOnlyList<string> LastGetByUuidsAsyncUuids { get; private set; } = [];
 
         public Task<FiscalStamp?> GetByFiscalDocumentIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default)
-            => Task.FromResult(ExistingTracked?.FiscalDocumentId == fiscalDocumentId ? ExistingTracked : null);
+            => Task.FromResult(EnumerateExistingStamps().FirstOrDefault(stamp => stamp.FiscalDocumentId == fiscalDocumentId));
 
         public Task<FiscalStamp?> GetTrackedByFiscalDocumentIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default)
-            => Task.FromResult(ExistingTracked?.FiscalDocumentId == fiscalDocumentId ? ExistingTracked : null);
+            => Task.FromResult(EnumerateExistingStamps().FirstOrDefault(stamp => stamp.FiscalDocumentId == fiscalDocumentId));
 
         public Task<FiscalStamp?> GetByUuidAsync(string uuid, CancellationToken cancellationToken = default)
-            => Task.FromResult(string.Equals(ExistingTracked?.Uuid, uuid, StringComparison.OrdinalIgnoreCase) ? ExistingTracked : null);
+        {
+            GetByUuidAsyncCallCount++;
+            return Task.FromResult(EnumerateExistingStamps().FirstOrDefault(stamp => string.Equals(stamp.Uuid, uuid, StringComparison.OrdinalIgnoreCase)));
+        }
 
         public Task<FiscalStamp?> GetTrackedByUuidAsync(string uuid, CancellationToken cancellationToken = default)
-            => Task.FromResult(string.Equals(ExistingTracked?.Uuid, uuid, StringComparison.OrdinalIgnoreCase) ? ExistingTracked : null);
+            => Task.FromResult(EnumerateExistingStamps().FirstOrDefault(stamp => string.Equals(stamp.Uuid, uuid, StringComparison.OrdinalIgnoreCase)));
+
+        public Task<IReadOnlyList<FiscalStamp>> GetByUuidsAsync(IReadOnlyCollection<string> uuids, CancellationToken cancellationToken = default)
+        {
+            GetByUuidsAsyncCallCount++;
+            LastGetByUuidsAsyncUuids = uuids.ToArray();
+
+            var requestedUuids = uuids
+                .Where(uuid => !string.IsNullOrWhiteSpace(uuid))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            return Task.FromResult<IReadOnlyList<FiscalStamp>>(
+                EnumerateExistingStamps()
+                    .Where(stamp => stamp.Uuid is not null && requestedUuids.Contains(stamp.Uuid))
+                    .ToList());
+        }
 
         public Task AddAsync(FiscalStamp fiscalStamp, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        private IEnumerable<FiscalStamp> EnumerateExistingStamps()
+        {
+            if (ExistingTracked is not null)
+            {
+                yield return ExistingTracked;
+            }
+
+            foreach (var stamp in Existing)
+            {
+                if (ExistingTracked?.Id != stamp.Id)
+                {
+                    yield return stamp;
+                }
+            }
+        }
     }
 
     private sealed class FakeFiscalCancellationRepository : IFiscalCancellationRepository
     {
         public FiscalCancellation? ExistingTracked { get; set; }
+        public IReadOnlyList<FiscalCancellation> Existing { get; init; } = [];
         public FiscalCancellation? Added { get; private set; }
+        public int GetByFiscalDocumentIdAsyncCallCount { get; private set; }
+        public int GetByFiscalDocumentIdsAsyncCallCount { get; private set; }
+        public IReadOnlyList<long> LastGetByFiscalDocumentIdsAsyncFiscalDocumentIds { get; private set; } = [];
 
         public Task<FiscalCancellation?> GetByFiscalDocumentIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default)
-            => Task.FromResult(ExistingTracked?.FiscalDocumentId == fiscalDocumentId ? ExistingTracked : Added);
+        {
+            GetByFiscalDocumentIdAsyncCallCount++;
+            return Task.FromResult(EnumerateExistingCancellations().FirstOrDefault(cancellation => cancellation.FiscalDocumentId == fiscalDocumentId));
+        }
 
         public Task<FiscalCancellation?> GetTrackedByFiscalDocumentIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default)
-            => Task.FromResult(ExistingTracked?.FiscalDocumentId == fiscalDocumentId ? ExistingTracked : null);
+            => Task.FromResult(EnumerateExistingCancellations().FirstOrDefault(cancellation => cancellation.FiscalDocumentId == fiscalDocumentId));
 
         public Task<FiscalCancellation?> GetByFiscalStampIdAsync(long fiscalStampId, CancellationToken cancellationToken = default)
-            => Task.FromResult(ExistingTracked?.FiscalStampId == fiscalStampId ? ExistingTracked : Added);
+            => Task.FromResult(EnumerateExistingCancellations().FirstOrDefault(cancellation => cancellation.FiscalStampId == fiscalStampId));
 
         public Task<FiscalCancellation?> GetTrackedByFiscalStampIdAsync(long fiscalStampId, CancellationToken cancellationToken = default)
-            => Task.FromResult(ExistingTracked?.FiscalStampId == fiscalStampId ? ExistingTracked : null);
+            => Task.FromResult(EnumerateExistingCancellations().FirstOrDefault(cancellation => cancellation.FiscalStampId == fiscalStampId));
+
+        public Task<IReadOnlyList<FiscalCancellation>> GetByFiscalDocumentIdsAsync(IReadOnlyCollection<long> fiscalDocumentIds, CancellationToken cancellationToken = default)
+        {
+            GetByFiscalDocumentIdsAsyncCallCount++;
+            LastGetByFiscalDocumentIdsAsyncFiscalDocumentIds = fiscalDocumentIds.ToArray();
+
+            var requestedIds = fiscalDocumentIds.Distinct().ToHashSet();
+            return Task.FromResult<IReadOnlyList<FiscalCancellation>>(
+                EnumerateExistingCancellations()
+                    .Where(cancellation => requestedIds.Contains(cancellation.FiscalDocumentId))
+                    .ToList());
+        }
 
         public Task AddAsync(FiscalCancellation fiscalCancellation, CancellationToken cancellationToken = default)
         {
             fiscalCancellation.Id = 90;
             Added = fiscalCancellation;
             return Task.CompletedTask;
+        }
+
+        private IEnumerable<FiscalCancellation> EnumerateExistingCancellations()
+        {
+            if (ExistingTracked is not null)
+            {
+                yield return ExistingTracked;
+            }
+
+            foreach (var cancellation in Existing)
+            {
+                if (ExistingTracked?.Id != cancellation.Id)
+                {
+                    yield return cancellation;
+                }
+            }
+
+            if (Added is not null && Added.Id != ExistingTracked?.Id && Existing.All(existing => existing.Id != Added.Id))
+            {
+                yield return Added;
+            }
         }
     }
 

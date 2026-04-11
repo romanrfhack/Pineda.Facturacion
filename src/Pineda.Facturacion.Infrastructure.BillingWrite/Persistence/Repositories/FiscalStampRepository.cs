@@ -39,6 +39,31 @@ public class FiscalStampRepository : IFiscalStampRepository
             .FirstOrDefaultAsync(x => x.Uuid == uuid, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<FiscalStamp>> GetByUuidsAsync(
+        IReadOnlyCollection<string> uuids,
+        CancellationToken cancellationToken = default)
+    {
+        if (uuids.Count == 0)
+        {
+            return [];
+        }
+
+        var distinctUuids = uuids
+            .Where(static uuid => !string.IsNullOrWhiteSpace(uuid))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (distinctUuids.Length == 0)
+        {
+            return [];
+        }
+
+        return await _dbContext.FiscalStamps
+            .AsNoTracking()
+            .Where(x => x.Uuid != null && distinctUuids.Contains(x.Uuid))
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<FiscalStamp>> GetByFiscalDocumentIdsAsync(
         IReadOnlyCollection<long> fiscalDocumentIds,
         CancellationToken cancellationToken = default)

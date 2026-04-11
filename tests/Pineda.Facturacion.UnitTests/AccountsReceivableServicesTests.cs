@@ -1018,6 +1018,131 @@ public class AccountsReceivableServicesTests
     }
 
     [Fact]
+    public async Task SearchAccountsReceivablePayments_UsesSingleBatchReceiverLookup_ForRepeatedIds()
+    {
+        var receiver = CreateReceiver(id: 77, legalName: "Receiver One");
+        var payments = new[]
+        {
+            CreatePayment(id: 1, amount: 50m, receiverId: receiver.Id),
+            CreatePayment(id: 2, amount: 60m, receiverId: receiver.Id),
+            CreatePayment(id: 3, amount: 70m, receiverId: receiver.Id)
+        };
+
+        var receiverRepository = new ArFakeFiscalReceiverRepository { ExistingById = receiver };
+        var service = CreateSearchPaymentsService(payments, receiverRepository);
+
+        var result = await service.ExecuteAsync(new SearchAccountsReceivablePaymentsFilter());
+
+        Assert.Equal(3, result.Items.Count);
+        Assert.All(result.Items, item => Assert.Equal("Receiver One", item.PayerName));
+        Assert.Equal(0, receiverRepository.GetByIdAsyncCallCount);
+        Assert.Equal(1, receiverRepository.GetByIdsAsyncCallCount);
+        Assert.Equal([receiver.Id], receiverRepository.LastBatchIds);
+    }
+
+    [Fact]
+    public async Task SearchAccountsReceivablePayments_UsesSingleBatchReceiverLookup_ForTwentyPaymentsAcrossThreeReceivers()
+    {
+        var receivers = new[]
+        {
+            CreateReceiver(id: 77, legalName: "Receiver One"),
+            CreateReceiver(id: 88, legalName: "Receiver Two"),
+            CreateReceiver(id: 99, legalName: "Receiver Three")
+        };
+
+        var payments = Enumerable.Range(1, 20)
+            .Select(index =>
+            {
+                var receiverId = receivers[(index - 1) % receivers.Length].Id;
+                return CreatePayment(id: index, amount: 10m + index, receiverId: receiverId);
+            })
+            .ToArray();
+
+        var receiverRepository = new ArFakeFiscalReceiverRepository
+        {
+            ById = receivers.ToDictionary(x => x.Id, x => x)
+        };
+        var service = CreateSearchPaymentsService(payments, receiverRepository);
+
+        var result = await service.ExecuteAsync(new SearchAccountsReceivablePaymentsFilter());
+
+        Assert.Equal(20, result.Items.Count);
+        Assert.Equal(0, receiverRepository.GetByIdAsyncCallCount);
+        Assert.Equal(1, receiverRepository.GetByIdsAsyncCallCount);
+        Assert.Equal(receivers.Select(x => x.Id).OrderBy(x => x).ToArray(), receiverRepository.LastBatchIds.OrderBy(x => x).ToArray());
+        Assert.Equal(7, result.Items.Count(x => x.PayerName == "Receiver One"));
+        Assert.Equal(7, result.Items.Count(x => x.PayerName == "Receiver Two"));
+        Assert.Equal(6, result.Items.Count(x => x.PayerName == "Receiver Three"));
+    }
+
+    [Fact]
+    public async Task SearchAccountsReceivablePayments_ResolvesMultipleDistinctReceiverNames()
+    {
+        var receiver1 = CreateReceiver(id: 77, legalName: "Receiver One");
+        var receiver2 = CreateReceiver(id: 88, legalName: "Receiver Two");
+        var receiver3 = CreateReceiver(id: 99, legalName: "Receiver Three");
+        var payments = new[]
+        {
+            CreatePayment(id: 1, amount: 10m, receiverId: receiver1.Id),
+            CreatePayment(id: 2, amount: 20m, receiverId: receiver2.Id),
+            CreatePayment(id: 3, amount: 30m, receiverId: receiver3.Id)
+        };
+
+        var receiverRepository = new ArFakeFiscalReceiverRepository
+        {
+            ById = new Dictionary<long, FiscalReceiver>
+            {
+                [receiver1.Id] = receiver1,
+                [receiver2.Id] = receiver2,
+                [receiver3.Id] = receiver3
+            }
+        };
+        var service = CreateSearchPaymentsService(payments, receiverRepository);
+
+        var result = await service.ExecuteAsync(new SearchAccountsReceivablePaymentsFilter());
+
+        Assert.Equal(3, result.Items.Count);
+        Assert.Equal("Receiver One", result.Items.Single(x => x.PaymentId == 1).PayerName);
+        Assert.Equal("Receiver Two", result.Items.Single(x => x.PaymentId == 2).PayerName);
+        Assert.Equal("Receiver Three", result.Items.Single(x => x.PaymentId == 3).PayerName);
+        Assert.Equal(0, receiverRepository.GetByIdAsyncCallCount);
+        Assert.Equal(1, receiverRepository.GetByIdsAsyncCallCount);
+    }
+
+    [Fact]
+    public async Task SearchAccountsReceivablePayments_PreservesNullPayerName_WhenReceiverIsMissing()
+    {
+        var payment = CreatePayment(id: 1, amount: 50m, receiverId: 77);
+        var receiverRepository = new ArFakeFiscalReceiverRepository();
+        var service = CreateSearchPaymentsService([payment], receiverRepository);
+
+        var result = await service.ExecuteAsync(new SearchAccountsReceivablePaymentsFilter());
+
+        var item = Assert.Single(result.Items);
+        Assert.Null(item.PayerName);
+        Assert.Equal(0, receiverRepository.GetByIdAsyncCallCount);
+        Assert.Equal(1, receiverRepository.GetByIdsAsyncCallCount);
+        Assert.Equal([77L], receiverRepository.LastBatchIds);
+    }
+
+    [Fact]
+    public async Task SearchAccountsReceivablePayments_DoesNotLookupReceivers_WhenAllReceiverIdsAreNull()
+    {
+        var payment1 = CreatePayment(id: 1, amount: 50m, receiverId: null);
+        var payment2 = CreatePayment(id: 2, amount: 60m, receiverId: null);
+        var receiverRepository = new ArFakeFiscalReceiverRepository();
+        var service = CreateSearchPaymentsService([payment1, payment2], receiverRepository);
+
+        var result = await service.ExecuteAsync(new SearchAccountsReceivablePaymentsFilter());
+
+        Assert.Equal(2, result.Items.Count);
+        Assert.All(result.Items, item => Assert.Null(item.PayerName));
+        Assert.Equal(0, receiverRepository.GetByIdAsyncCallCount);
+        Assert.Equal(0, receiverRepository.GetByIdsAsyncCallCount);
+        Assert.Empty(receiverRepository.LastBatchIds);
+    }
+
+    [Fact]
     public async Task CreateCollectionCommitment_CreatesPendingCommitment_ForOpenInvoice()
     {
         var invoice = CreateInvoice(total: 150m);
@@ -1393,6 +1518,35 @@ public class AccountsReceivableServicesTests
             new ArFakeUnitOfWork());
     }
 
+    private static SearchAccountsReceivablePaymentsService CreateSearchPaymentsService(
+        IReadOnlyCollection<AccountsReceivablePayment> payments,
+        ArFakeFiscalReceiverRepository receiverRepository)
+    {
+        var linkedInvoiceIds = payments
+            .SelectMany(x => x.Applications)
+            .Select(x => x.AccountsReceivableInvoiceId)
+            .Distinct()
+            .ToArray();
+
+        var invoices = linkedInvoiceIds.ToDictionary(
+            id => id,
+            id => new AccountsReceivableInvoice
+            {
+                Id = id,
+                FiscalReceiverId = payments.FirstOrDefault(payment => payment.Applications.Any(application => application.AccountsReceivableInvoiceId == id))?.ReceivedFromFiscalReceiverId,
+                FiscalDocumentId = id + 1000
+            });
+
+        return new SearchAccountsReceivablePaymentsService(
+            new ArFakeAccountsReceivablePaymentRepository { SearchResults = payments.ToArray() },
+            new ArFakeAccountsReceivableInvoiceRepository
+            {
+                TrackedById = invoices
+            },
+            receiverRepository,
+            new ArFakePaymentComplementDocumentRepository());
+    }
+
     private static BillingDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<BillingDbContext>()
@@ -1472,6 +1626,17 @@ public class AccountsReceivableServicesTests
             UnappliedDisposition = unappliedDisposition,
             CreatedAtUtc = DateTime.UtcNow,
             UpdatedAtUtc = DateTime.UtcNow
+        };
+    }
+
+    private static FiscalReceiver CreateReceiver(long id, string legalName)
+    {
+        return new FiscalReceiver
+        {
+            Id = id,
+            LegalName = legalName,
+            Rfc = $"RFC{id}",
+            NormalizedLegalName = legalName.ToUpperInvariant()
         };
     }
 
@@ -1723,14 +1888,38 @@ public class AccountsReceivableServicesTests
     {
         public FiscalReceiver? ExistingById { get; set; }
 
+        public Dictionary<long, FiscalReceiver> ById { get; set; } = [];
+
+        public int GetByIdAsyncCallCount { get; private set; }
+
+        public int GetByIdsAsyncCallCount { get; private set; }
+
+        public IReadOnlyList<long> LastBatchIds { get; private set; } = [];
+
         public Task<IReadOnlyList<FiscalReceiver>> SearchAsync(string query, CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyList<FiscalReceiver>>(ExistingById is null ? [] : [ExistingById]);
+            => Task.FromResult<IReadOnlyList<FiscalReceiver>>(ResolveReceivers().ToList());
 
         public Task<FiscalReceiver?> GetByRfcAsync(string normalizedRfc, CancellationToken cancellationToken = default)
-            => Task.FromResult(ExistingById);
+            => Task.FromResult(ResolveReceivers().FirstOrDefault(x => x.Rfc == normalizedRfc));
 
         public Task<FiscalReceiver?> GetByIdAsync(long fiscalReceiverId, CancellationToken cancellationToken = default)
-            => Task.FromResult(ExistingById?.Id == fiscalReceiverId ? ExistingById : null);
+        {
+            GetByIdAsyncCallCount++;
+            ById.TryGetValue(fiscalReceiverId, out var receiver);
+            receiver ??= ExistingById?.Id == fiscalReceiverId ? ExistingById : null;
+            return Task.FromResult(receiver);
+        }
+
+        public Task<IReadOnlyList<FiscalReceiver>> GetByIdsAsync(IReadOnlyCollection<long> fiscalReceiverIds, CancellationToken cancellationToken = default)
+        {
+            GetByIdsAsyncCallCount++;
+            LastBatchIds = fiscalReceiverIds.ToArray();
+
+            IReadOnlyList<FiscalReceiver> receivers = ResolveReceivers()
+                .Where(x => fiscalReceiverIds.Contains(x.Id))
+                .ToList();
+            return Task.FromResult(receivers);
+        }
 
         public Task<IReadOnlyList<FiscalReceiverSpecialFieldDefinition>> GetActiveSpecialFieldDefinitionsAsync(CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<FiscalReceiverSpecialFieldDefinition>>([]);
@@ -1738,6 +1927,16 @@ public class AccountsReceivableServicesTests
         public Task AddAsync(FiscalReceiver fiscalReceiver, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
         public Task UpdateAsync(FiscalReceiver fiscalReceiver, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        private IEnumerable<FiscalReceiver> ResolveReceivers()
+        {
+            if (ById.Count > 0)
+            {
+                return ById.Values;
+            }
+
+            return ExistingById is null ? [] : [ExistingById];
+        }
     }
 
     private sealed class ArFakeAccountsReceivableCollectionRepository : IAccountsReceivableCollectionRepository
