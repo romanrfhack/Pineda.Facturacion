@@ -3882,6 +3882,8 @@ public class MvpLifecycleApiTests
 internal sealed class MvpApiFactory : WebApplicationFactory<Program>, IAsyncDisposable
 {
     private readonly string _databaseName = $"mvp-api-tests-{Guid.NewGuid():N}";
+    private readonly IReadOnlyDictionary<string, string?> _configurationOverrides;
+    private readonly string _environmentName;
 
     public FakeLegacyOrderReader LegacyOrderReader { get; } = new();
     public FakeFiscalStampingGateway FiscalStampingGateway { get; } = new();
@@ -3893,12 +3895,18 @@ internal sealed class MvpApiFactory : WebApplicationFactory<Program>, IAsyncDisp
     public FakeEmailSender EmailSender { get; } = new();
     public FakeFiscalDocumentPdfRenderer FiscalDocumentPdfRenderer { get; } = new();
 
+    public MvpApiFactory(IReadOnlyDictionary<string, string?>? configurationOverrides = null, bool useTestingEnvironment = false)
+    {
+        _configurationOverrides = configurationOverrides ?? new Dictionary<string, string?>();
+        _environmentName = useTestingEnvironment ? "Testing" : "Development";
+    }
+
     protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
     {
-        builder.UseEnvironment("Development");
+        builder.UseEnvironment(_environmentName);
         builder.ConfigureAppConfiguration((_, config) =>
         {
-            config.AddInMemoryCollection(new Dictionary<string, string?>
+            var settings = new Dictionary<string, string?>
             {
                 ["LegacyRead:ConnectionString"] = "Server=localhost;Database=test;User ID=test;Password=test;",
                 ["BillingWrite:ConnectionString"] = "Server=localhost;Database=test;User ID=test;Password=test;",
@@ -3923,7 +3931,14 @@ internal sealed class MvpApiFactory : WebApplicationFactory<Program>, IAsyncDisp
                 ["Auth:BootstrapAdmin:Username"] = "admin",
                 ["Auth:BootstrapAdmin:DisplayName"] = "Bootstrap Admin",
                 ["Auth:BootstrapAdmin:Password"] = "Admin123!"
-            });
+            };
+
+            foreach (var pair in _configurationOverrides)
+            {
+                settings[pair.Key] = pair.Value;
+            }
+
+            config.AddInMemoryCollection(settings);
         });
 
         builder.ConfigureServices(services =>

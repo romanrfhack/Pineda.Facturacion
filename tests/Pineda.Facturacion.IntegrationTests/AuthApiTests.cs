@@ -59,6 +59,75 @@ public class AuthApiTests
     }
 
     [Fact]
+    public async Task Login_UsesSocketRemoteIp_ForDirectRequest()
+    {
+        await using var factory = new MvpApiFactory(useTestingEnvironment: true);
+        await factory.SeedUserAsync("operator-direct-ip", "Secret123!", true, AppRoleNames.FiscalOperator);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Correlation-Id", "auth-direct-ip");
+        client.DefaultRequestHeaders.Add("X-Testing-Remote-Ip", "198.51.100.5");
+
+        var response = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest
+        {
+            Username = "operator-direct-ip",
+            Password = "Wrong123!"
+        });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+
+        var auditEvents = await factory.GetAuditEventsAsync();
+        var loginAudit = Assert.Single(auditEvents, x => x.CorrelationId == "auth-direct-ip");
+        Assert.Equal("198.51.100.5", loginAudit.IpAddress);
+    }
+
+    [Fact]
+    public async Task Login_UsesForwardedClientIp_FromTrustedProxy()
+    {
+        await using var factory = CreateTrustedProxyFactory();
+        await factory.SeedUserAsync("operator-trusted-proxy", "Secret123!", true, AppRoleNames.FiscalOperator);
+        var client = factory.CreateClient();
+        ConfigureForwardedClientHeaders(client, correlationId: "auth-trusted-proxy", forwardedIp: "198.51.100.10", proxyIp: "127.0.0.1");
+
+        var response = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest
+        {
+            Username = "operator-trusted-proxy",
+            Password = "Wrong123!"
+        });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+
+        var auditEvents = await factory.GetAuditEventsAsync();
+        var loginAudit = Assert.Single(auditEvents, x => x.CorrelationId == "auth-trusted-proxy");
+        Assert.Equal("198.51.100.10", loginAudit.IpAddress);
+    }
+
+    [Fact]
+    public async Task Login_IgnoresForwardedHeaders_FromUntrustedProxy()
+    {
+        await using var factory = new MvpApiFactory(new Dictionary<string, string?>
+        {
+            ["Networking:ForwardedHeaders:Enabled"] = "true",
+            ["Networking:ForwardedHeaders:KnownNetworks:0"] = "10.10.10.0/24"
+        }, useTestingEnvironment: true);
+        await factory.SeedUserAsync("operator-untrusted-proxy", "Secret123!", true, AppRoleNames.FiscalOperator);
+        var client = factory.CreateClient();
+        ConfigureForwardedClientHeaders(client, correlationId: "auth-untrusted-proxy", forwardedIp: "198.51.100.11", proxyIp: "127.0.0.1");
+
+        var response = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest
+        {
+            Username = "operator-untrusted-proxy",
+            Password = "Wrong123!"
+        });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+
+        var auditEvents = await factory.GetAuditEventsAsync();
+        var loginAudit = Assert.Single(auditEvents, x => x.CorrelationId == "auth-untrusted-proxy");
+        Assert.NotEqual("198.51.100.11", loginAudit.IpAddress);
+        Assert.False(string.IsNullOrWhiteSpace(loginAudit.IpAddress));
+    }
+
+    [Fact]
     public async Task Login_Fails_ForInactiveUser()
     {
         await using var factory = new MvpApiFactory();
@@ -196,6 +265,43 @@ public class AuthApiTests
         var auditEvents = await factory.GetAuditEventsAsync();
         Assert.Contains(auditEvents, x => x.ActionType == "Auth.Login" && x.Outcome == "ThrottledByIp");
         Assert.DoesNotContain(auditEvents, x => x.ActionType == "Auth.Login" && x.Outcome == "Authenticated");
+    }
+
+    [Fact]
+    public async Task Login_SeparatesThrottleBuckets_ByResolvedForwardedClientIp()
+    {
+        await using var factory = CreateTrustedProxyFactory();
+        var forwardedClientA = factory.CreateClient();
+        var forwardedClientB = factory.CreateClient();
+        ConfigureForwardedClientHeaders(forwardedClientA, correlationId: "auth-forwarded-ip-a", forwardedIp: "198.51.100.20", proxyIp: "127.0.0.1");
+        ConfigureForwardedClientHeaders(forwardedClientB, correlationId: "auth-forwarded-ip-b", forwardedIp: "198.51.100.21", proxyIp: "127.0.0.1");
+
+        for (var attempt = 1; attempt <= LoginHardeningPolicy.UsernameIpThrottleMaxFailedAttempts; attempt++)
+        {
+            var response = await forwardedClientA.PostAsJsonAsync("/api/auth/login", new LoginRequest
+            {
+                Username = "ghost-forwarded-scope",
+                Password = $"Wrong-{attempt}"
+            });
+
+            Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        }
+
+        var otherIpResponse = await forwardedClientB.PostAsJsonAsync("/api/auth/login", new LoginRequest
+        {
+            Username = "ghost-forwarded-scope",
+            Password = "Wrong-other-ip"
+        });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, otherIpResponse.StatusCode);
+
+        var auditEvents = await factory.GetAuditEventsAsync();
+        var throttledAudit = auditEvents.Last(x => x.CorrelationId == "auth-forwarded-ip-a");
+        var otherIpAudit = auditEvents.Last(x => x.CorrelationId == "auth-forwarded-ip-b");
+        Assert.Equal("ThrottledByUsernameIp", throttledAudit.Outcome);
+        Assert.Equal("198.51.100.20", throttledAudit.IpAddress);
+        Assert.Equal("InvalidCredentials", otherIpAudit.Outcome);
+        Assert.Equal("198.51.100.21", otherIpAudit.IpAddress);
     }
 
     [Fact]
@@ -405,6 +511,24 @@ public class AuthApiTests
         })).Content.ReadFromJsonAsync<BillingDocumentsEndpoints.PrepareFiscalDocumentResponse>();
 
         return fiscalBody!.FiscalDocumentId!.Value;
+    }
+
+    private static MvpApiFactory CreateTrustedProxyFactory()
+    {
+        return new MvpApiFactory(new Dictionary<string, string?>
+        {
+            ["Networking:ForwardedHeaders:Enabled"] = "true",
+            ["Networking:ForwardedHeaders:KnownNetworks:0"] = "127.0.0.0/8",
+            ["Networking:ForwardedHeaders:KnownNetworks:1"] = "::1/128"
+        }, useTestingEnvironment: true);
+    }
+
+    private static void ConfigureForwardedClientHeaders(HttpClient client, string correlationId, string forwardedIp, string proxyIp)
+    {
+        client.DefaultRequestHeaders.Add("X-Correlation-Id", correlationId);
+        client.DefaultRequestHeaders.Add("X-Forwarded-For", forwardedIp);
+        client.DefaultRequestHeaders.Add("X-Forwarded-Proto", "https");
+        client.DefaultRequestHeaders.Add("X-Testing-Remote-Ip", proxyIp);
     }
 
     private static async Task<long> PrepareStampedFiscalDocumentThroughApiAsync(MvpApiFactory factory, HttpClient client, string legacyOrderId)

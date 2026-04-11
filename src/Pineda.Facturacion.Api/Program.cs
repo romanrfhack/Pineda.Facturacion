@@ -1,4 +1,5 @@
 using System.Text;
+using System.Net;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
@@ -77,6 +78,7 @@ builder.Services.AddSwaggerGen(options =>
 });
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddForwardedHeadersHardening(builder.Configuration);
 builder.Services.AddLegacyReadInfrastructure(builder.Configuration);
 builder.Services.AddBillingWriteInfrastructure(builder.Configuration);
 builder.Services.AddFacturaloPlusInfrastructure(builder.Configuration);
@@ -124,6 +126,21 @@ if (args.Contains("seed-initial-production-users", StringComparer.OrdinalIgnoreC
 
 var enableSwagger = app.Configuration.GetValue<bool?>("OpenApi:EnableSwagger") ?? IsSwaggerEnabledByEnvironment(app.Environment);
 
+if (app.Environment.IsEnvironment("Testing"))
+{
+    app.Use(async (context, next) =>
+    {
+        var rawRemoteIp = context.Request.Headers["X-Testing-Remote-Ip"].FirstOrDefault();
+        if (IPAddress.TryParse(rawRemoteIp, out var remoteIpAddress))
+        {
+            context.Connection.RemoteIpAddress = remoteIpAddress;
+        }
+
+        await next();
+    });
+}
+
+app.UseConfiguredForwardedHeaders();
 app.UseExceptionHandler();
 
 if (enableSwagger)
