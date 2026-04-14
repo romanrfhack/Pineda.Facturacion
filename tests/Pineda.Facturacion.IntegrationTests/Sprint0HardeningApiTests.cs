@@ -133,7 +133,7 @@ public class Sprint0HardeningApiTests
             new Dictionary<string, string?>
             {
                 ["LegacyRead:ConnectionString"] = "Server=localhost;Database=test;User ID=root;Password=test;",
-                ["BillingWrite:ConnectionString"] = "Server=localhost;Database=test;User ID=test;Password=test;",
+                ["ConnectionStrings:BillingWrite"] = "Server=localhost;Database=test;User ID=test;Password=test;",
                 ["Auth:Jwt:Issuer"] = "Pineda.Facturacion.Tests",
                 ["Auth:Jwt:Audience"] = "Pineda.Facturacion.Api",
                 ["Auth:Jwt:SigningKey"] = "ProductionValidationSigningKeyMinimum32!",
@@ -157,7 +157,7 @@ public class Sprint0HardeningApiTests
             new Dictionary<string, string?>
             {
                 ["LegacyRead:ConnectionString"] = "Server=localhost;Database=test;User ID=legacy_reader;Password=test;",
-                ["BillingWrite:ConnectionString"] = "Server=localhost;Database=test;User ID=test;Password=test;",
+                ["ConnectionStrings:BillingWrite"] = "Server=localhost;Database=test;User ID=test;Password=test;",
                 ["Auth:Jwt:Issuer"] = "Pineda.Facturacion.Tests",
                 ["Auth:Jwt:Audience"] = "Pineda.Facturacion.Api",
                 ["Auth:Jwt:SigningKey"] = "SandboxValidationSigningKeyMinimum32!!!",
@@ -180,7 +180,7 @@ public class Sprint0HardeningApiTests
             new Dictionary<string, string?>
             {
                 ["LegacyRead:ConnectionString"] = "Server=localhost;Database=test;User ID=legacy_reader;Password=test;",
-                ["BillingWrite:ConnectionString"] = "Server=localhost;Database=test;User ID=test;Password=test;",
+                ["ConnectionStrings:BillingWrite"] = "Server=localhost;Database=test;User ID=test;Password=test;",
                 ["Auth:Jwt:Issuer"] = "Pineda.Facturacion.Tests",
                 ["Auth:Jwt:Audience"] = "Pineda.Facturacion.Api",
                 ["Auth:Jwt:SigningKey"] = "CHANGE_ME_MIN_32_CHARACTERS_FOR_PRODUCTION_USE",
@@ -297,7 +297,7 @@ internal sealed class TestingApiFactory : WebApplicationFactory<Program>, IAsync
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["LegacyRead:ConnectionString"] = "Server=localhost;Database=test;User ID=legacy_reader;Password=test;",
-                ["BillingWrite:ConnectionString"] = "Server=localhost;Database=test;User ID=test;Password=test;",
+                ["ConnectionStrings:BillingWrite"] = "Server=localhost;Database=test;User ID=test;Password=test;",
                 ["FacturaloPlus:BaseUrl"] = "https://facturaloplus-placeholder.local/",
                 ["FacturaloPlus:StampPath"] = "/cfdi/stamp",
                 ["FacturaloPlus:PaymentComplementStampPath"] = "timbrarJSON3",

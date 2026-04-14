@@ -24,10 +24,12 @@ jobs:
       SSH_PORT: ${{ secrets.FACTURAS_SSH_PORT }}
       SSH_USER: ${{ secrets.FACTURAS_SSH_USER }}
       SSH_KEY: ${{ secrets.FACTURAS_SSH_KEY }}
-      # Sandbox runtime now requires RuntimeSafety__AllowSandboxEnvironment=true to be provided externally on the VPS service.
+      # The VPS service must provide Sandbox-only secrets from a persistent EnvironmentFile outside publish.
       ASPNETCORE_ENVIRONMENT: Sandbox
       DEPLOY_PATH: /var/www/facturas-dev-backend/publish
       SERVICE_NAME: facturas-dev-api
+      PERSISTENT_ENV_FILE: /etc/facturas-dev/facturas-dev-api.env
+      SMOKE_BASE_URL: http://localhost:5007
 
     steps:
       - name: Checkout
@@ -77,6 +79,14 @@ jobs:
           ssh-keygen -y -f ~/.ssh/id_ed25519 > /dev/null
           ssh-keyscan -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts
 
+      - name: Validate persistent server config
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" \
+            "$SSH_USER@$SSH_HOST" \
+            "sudo test -s '$PERSISTENT_ENV_FILE' && sudo systemctl cat '$SERVICE_NAME' | grep -F 'EnvironmentFile=$PERSISTENT_ENV_FILE'"
+
       - name: Upload API to server
         shell: bash
         run: |
@@ -105,13 +115,51 @@ jobs:
             "$SSH_USER@$SSH_HOST" \
             "sudo chown -R www-data:www-data /var/www/facturas-dev-backend && sudo chmod -R 755 /var/www/facturas-dev-backend"
 
-      - name: Restart service
+      - name: Reload systemd and restart service
         shell: bash
         run: |
           set -euo pipefail
           ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" \
             "$SSH_USER@$SSH_HOST" \
-            "sudo systemctl daemon-reload && \
-             sudo systemctl restart $SERVICE_NAME && \
-             systemctl is-active --quiet $SERVICE_NAME && \
-             systemctl status $SERVICE_NAME --no-pager -l"
+            "sudo systemctl daemon-reload && sudo systemctl restart '$SERVICE_NAME'"
+
+      - name: Validate service status
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" \
+            "$SSH_USER@$SSH_HOST" \
+            "sudo systemctl is-active --quiet '$SERVICE_NAME' && sudo systemctl status '$SERVICE_NAME' --no-pager -l"
+
+      - name: Smoke check live and ready endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" \
+            "$SSH_USER@$SSH_HOST" \
+            "set -e; \
+             live_file=\$(mktemp); \
+             ready_file=\$(mktemp); \
+             curl -fsS '$SMOKE_BASE_URL/health/live' > \"\$live_file\"; \
+             grep -F '\"status\":\"Healthy\"' \"\$live_file\"; \
+             curl -fsS '$SMOKE_BASE_URL/health/ready' > \"\$ready_file\"; \
+             grep -F '\"status\":\"Healthy\"' \"\$ready_file\"; \
+             grep -F 'billing_write_db' \"\$ready_file\"; \
+             cat \"\$live_file\"; \
+             echo; \
+             cat \"\$ready_file\""
+
+      - name: Collect diagnostics on failure
+        if: failure()
+        shell: bash
+        run: |
+          set +e
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" \
+            "$SSH_USER@$SSH_HOST" \
+            "sudo systemctl status '$SERVICE_NAME' --no-pager -l || true; \
+             echo; \
+             sudo systemctl cat '$SERVICE_NAME' || true; \
+             echo; \
+             sudo systemctl show '$SERVICE_NAME' -p EnvironmentFiles --no-pager || true; \
+             echo; \
+             sudo journalctl -u '$SERVICE_NAME' -n 120 --no-pager || true"

@@ -13,14 +13,16 @@ public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddBillingWriteInfrastructure(
         this IServiceCollection services,
-        IConfiguration configuration,
-        string sectionName = BillingWriteOptions.SectionName)
+        IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
         services.AddOptions<BillingWriteOptions>()
-            .Bind(configuration.GetSection(sectionName))
+            .Configure(options =>
+            {
+                options.ConnectionString = configuration.GetConnectionString("BillingWrite") ?? string.Empty;
+            })
             .Validate(options => !string.IsNullOrWhiteSpace(options.ConnectionString), "BillingWrite connection string is required.");
 
         services.AddDbContext<BillingDbContext>((serviceProvider, options) =>

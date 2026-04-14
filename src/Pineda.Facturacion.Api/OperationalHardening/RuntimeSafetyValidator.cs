@@ -31,8 +31,8 @@ internal static class RuntimeSafetyValidator
         }
 
         ValidateConnectionString(
-            configuration["BillingWrite:ConnectionString"],
-            "BillingWrite:ConnectionString",
+            configuration.GetConnectionString("BillingWrite"),
+            "ConnectionStrings:BillingWrite",
             disallowRootUser: false);
 
         ValidateConnectionString(

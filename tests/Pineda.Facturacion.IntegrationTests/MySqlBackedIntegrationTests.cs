@@ -890,7 +890,7 @@ internal sealed class MySqlApiFactory : WebApplicationFactory<Program>, IAsyncDi
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["LegacyRead:ConnectionString"] = "Server=localhost;Database=legacy_test;User ID=legacy_reader;Password=test;",
-                ["BillingWrite:ConnectionString"] = _databaseConnectionString,
+                ["ConnectionStrings:BillingWrite"] = _databaseConnectionString,
                 ["FacturaloPlus:BaseUrl"] = "https://facturaloplus-placeholder.local/",
                 ["FacturaloPlus:StampPath"] = "/cfdi/stamp",
                 ["FacturaloPlus:PaymentComplementStampPath"] = "timbrarJSON3",

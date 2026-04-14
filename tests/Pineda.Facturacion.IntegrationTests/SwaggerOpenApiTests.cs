@@ -96,7 +96,7 @@ internal sealed class SwaggerApiFactory : WebApplicationFactory<Program>, IAsync
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["LegacyRead:ConnectionString"] = "Server=localhost;Database=test;User ID=test;Password=test;",
-                ["BillingWrite:ConnectionString"] = "Server=localhost;Database=test;User ID=test;Password=test;",
+                ["ConnectionStrings:BillingWrite"] = "Server=localhost;Database=test;User ID=test;Password=test;",
                 ["FacturaloPlus:BaseUrl"] = "https://facturaloplus-placeholder.local/",
                 ["FacturaloPlus:StampPath"] = "/cfdi/stamp",
                 ["FacturaloPlus:PaymentComplementStampPath"] = "timbrarJSON3",

@@ -24,6 +24,8 @@ Production guardrails:
 - automatic startup migrations are disabled unless explicitly enabled in a non-production environment
 - bootstrap admin should remain disabled in production except for a controlled one-time access process
 
+`launchSettings.json` is only for local project launch profiles. It does not configure a VPS service managed by systemd.
+
 ## Seeded roles and users
 When enabled, the system ensures these roles exist:
 - `Admin`
@@ -62,7 +64,7 @@ Key settings:
 - `Auth:BootstrapAdmin:Username`
 - `Auth:BootstrapAdmin:DisplayName`
 - `Auth:BootstrapAdmin:Password`
-- `BillingWrite:ConnectionString`
+- `ConnectionStrings:BillingWrite`
 - `LegacyRead:ConnectionString`
 - `FacturaloPlus:*`
 - `SecretReferences:Values:*`
@@ -73,6 +75,8 @@ Checked-in placeholders now exist in:
 - `appsettings.json`
 - `appsettings.Development.json`
 - `appsettings.Sandbox.json`
+
+For VPS Sandbox deploys, real secrets must live outside `publish` in a persistent systemd `EnvironmentFile`.
 
 ## Practical commands
 Manual migration:
@@ -123,6 +127,7 @@ This is intentional. Automatic seeding of issuer fiscal identity or fake busines
 Recommended manual sandbox sequence:
 
 1. Start backend with `ASPNETCORE_ENVIRONMENT=Sandbox`.
+   On the VPS, this must come from the systemd service environment, not from `launchSettings.json`.
    Optional: verify `/swagger` loads if backend-only diagnostics are needed.
 2. Verify migrations applied or apply them manually.
 3. Sign in with `supervisor.test` or `admin.test`.
@@ -164,6 +169,10 @@ Fail:
 - PAC sandbox connectivity or credential failures
 - provider rejection or unavailable responses
 - status/evidence not matching the executed operation
+
+Minimum post-deploy smoke without credentials:
+- `curl -fsS http://localhost:5007/health/live`
+- `curl -fsS http://localhost:5007/health/ready`
 
 ## Troubleshooting
 If login fails:

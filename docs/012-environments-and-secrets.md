@@ -2,13 +2,32 @@
 
 ## Runtime rule
 - No runtime secret or operative credential must remain in versioned `appsettings*.json`.
+- `launchSettings.json` applies only to local `dotnet run` / IDE profiles. It does not configure the VPS service.
+- Published `appsettings*.json` remain placeholders and non-secret defaults only.
+- The backend deploy workflows sync the `publish` folder with `rsync --delete`, so `publish` is not a persistent or safe place for secrets.
 - Production must run with `ASPNETCORE_ENVIRONMENT=Production`.
 - Sandbox is allowed only for intentional non-production deployments and now requires `RuntimeSafety__AllowSandboxEnvironment=true` from external configuration.
+
+## Server-side configuration model
+DEV backend on the VPS is expected to use persistent external configuration through systemd:
+- service: `facturas-dev-api.service`
+- publish directory: `/var/www/facturas-dev-backend/publish`
+- systemd drop-in: `/etc/systemd/system/facturas-dev-api.service.d/override.conf`
+- persistent env file: `/etc/facturas-dev/facturas-dev-api.env`
+
+The drop-in stays minimal:
+
+```ini
+[Service]
+EnvironmentFile=/etc/facturas-dev/facturas-dev-api.env
+```
+
+This keeps secrets outside the repo and outside `publish`, so future deploys can replace binaries without destroying runtime configuration.
 
 ## Required external configuration
 Minimum server-side variables or secret injections:
 - `LegacyRead__ConnectionString`
-- `BillingWrite__ConnectionString`
+- `ConnectionStrings__BillingWrite`
 - `Auth__Jwt__SigningKey`
 - `FacturaloPlus__ApiKeyReference` when PAC flows are enabled
 - `SecretReferences__Values__FACTURALOPLUS_API_KEY_REFERENCE` when PAC flows are enabled
@@ -22,15 +41,27 @@ Conditional non-production variables:
 - `Bootstrap__SeedDefaultTestUsers=true` requires `Bootstrap__DefaultTestUserPassword`
 - `RuntimeSafety__AllowSandboxEnvironment=true` only on intentional sandbox servers
 
+Minimum DEV Sandbox startup set confirmed for the VPS:
+- `RuntimeSafety__AllowSandboxEnvironment=true`
+- `LegacyRead__ConnectionString`
+- `ConnectionStrings__BillingWrite`
+- `Auth__Jwt__SigningKey`
+- `Auth__BootstrapAdmin__Password`
+- `Bootstrap__DefaultTestUserPassword`
+
 ## Legacy MySQL hardening
 - `LegacyRead__ConnectionString` must use a dedicated SELECT-only MySQL user.
 - `LegacyRead__ConnectionString` must not use `root` outside local development.
 - The repo no longer carries a working legacy credential by default.
 
+## BillingWrite hardening
+- `ConnectionStrings__BillingWrite` must use a dedicated read/write application user.
+- Do not use MySQL `root` for `ConnectionStrings__BillingWrite` in server environments.
+
 ## Production guardrails
 The app now fails startup in non-local environments when:
 - `LegacyRead__ConnectionString` is missing, placeholder-based or uses `root`
-- `BillingWrite__ConnectionString` is missing or placeholder-based
+- `ConnectionStrings__BillingWrite` is missing or placeholder-based
 - `Auth__Jwt__SigningKey` is missing, placeholder-based or shorter than 32 chars
 - bootstrap passwords are missing while their bootstrap flags are enabled
 
@@ -55,7 +86,14 @@ These steps are operational and were not auto-executed from the repository:
 - Dev sandbox service must explicitly export `RuntimeSafety__AllowSandboxEnvironment=true`.
 - Production service must not export `RuntimeSafety__AllowSandboxEnvironment=true`.
 - Server-side environment files must provide the required secrets listed above.
+- Do not place real secrets under `/var/www/.../publish`.
+- Prefer new passwords and signing secrets without `%` when storing them in a systemd `EnvironmentFile`, unless you handle systemd escaping explicitly.
 - Verify `/health/live` and `/health/ready` after each deployment.
+
+## Deploy expectation
+- Deploy workflows publish binaries, copy them to the server, reload systemd, restart the service, and verify health.
+- Deploy must not re-inject secrets into `publish`.
+- Persistent server env files are prepared one time and then preserved across future deploys.
 
 ## DBA checklist
 - Create a dedicated legacy MySQL user with `SELECT` only on the required legacy schema.
