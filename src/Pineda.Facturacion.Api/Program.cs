@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.OpenApi.Models;
 using Pineda.Facturacion.Api.OperationalHardening;
 using Pineda.Facturacion.Application.Security;
@@ -22,6 +23,24 @@ var builder = WebApplication.CreateBuilder(args);
 if (builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Sandbox"))
 {
     builder.Configuration.AddUserSecrets<Program>(optional: true);
+}
+
+var externalSecretReferencesPath = builder.Configuration["SecretReferences:ExternalJsonPath"];
+if (!string.IsNullOrWhiteSpace(externalSecretReferencesPath))
+{
+    var externalSecretReferencesDirectory = Path.GetDirectoryName(externalSecretReferencesPath);
+    var externalSecretReferencesFileName = Path.GetFileName(externalSecretReferencesPath);
+
+    if (!string.IsNullOrWhiteSpace(externalSecretReferencesDirectory) &&
+        !string.IsNullOrWhiteSpace(externalSecretReferencesFileName) &&
+        Directory.Exists(externalSecretReferencesDirectory))
+    {
+        builder.Configuration.AddJsonFile(
+            provider: new PhysicalFileProvider(externalSecretReferencesDirectory),
+            path: externalSecretReferencesFileName,
+            optional: true,
+            reloadOnChange: false);
+    }
 }
 
 builder.Services.AddProblemDetails(options =>

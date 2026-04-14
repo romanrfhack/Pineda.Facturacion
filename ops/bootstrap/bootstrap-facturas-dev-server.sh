@@ -12,6 +12,7 @@ repo_root="$(cd "${script_dir}/../.." && pwd)"
 service_name="facturas-dev-api"
 env_dir="/etc/facturas-dev"
 env_file="${env_dir}/facturas-dev-api.env"
+secret_references_file="${env_dir}/facturas-dev-secretreferences.json"
 publish_root="/var/www/facturas-dev-backend"
 publish_path="${publish_root}/publish"
 env_example="${repo_root}/ops/env/facturas-dev-api.env.example"
@@ -28,14 +29,34 @@ else
   echo "Preserved existing ${env_file}."
 fi
 
+if [[ ! -f "${secret_references_file}" ]]; then
+  cat > "${secret_references_file}" <<'EOF'
+{
+  "SecretReferences": {
+    "Values": {
+      "FACTURALOPLUS_API_KEY_REFERENCE": "",
+      "CSD_CERTIFICATE_REFERENCE": "",
+      "CSD_PRIVATE_KEY_REFERENCE": "",
+      "CSD_PRIVATE_KEY_PASSWORD_REFERENCE": ""
+    }
+  }
+}
+EOF
+  chmod 600 "${secret_references_file}"
+  echo "Created ${secret_references_file}. Fill it with real SecretReferences values before PAC/CSD operations."
+else
+  echo "Preserved existing ${secret_references_file}."
+fi
+
 bash "${dropin_installer}" "${service_name}" "${env_file}"
 
 cat <<EOF
 Next steps:
 1. Edit ${env_file} and replace every placeholder with real values.
-2. Verify systemd is reading the EnvironmentFile:
+2. Edit ${secret_references_file} and set real SecretReferences values for PAC/CSD material.
+3. Verify systemd is reading the EnvironmentFile:
    systemctl cat ${service_name}
-3. Restart and validate:
+4. Restart and validate:
    systemctl restart ${service_name}
    systemctl status ${service_name} --no-pager -l
    curl -fsS http://localhost:5007/health/live

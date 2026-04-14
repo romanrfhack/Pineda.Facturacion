@@ -9,6 +9,7 @@ Keep backend secrets outside the repo and outside the published output so future
 - runtime environment: `ASPNETCORE_ENVIRONMENT=Sandbox`
 - internal smoke URL: `http://localhost:5007`
 - persistent env file: `/etc/facturas-dev/facturas-dev-api.env`
+- persistent secret references file: `/etc/facturas-dev/facturas-dev-secretreferences.json`
 - systemd drop-in: `/etc/systemd/system/facturas-dev-api.service.d/override.conf`
 
 ## Versioned artifacts in this repo
@@ -23,6 +24,7 @@ Run from a checkout of this repo on the server:
 ```bash
 sudo bash ops/bootstrap/bootstrap-facturas-dev-server.sh
 sudoedit /etc/facturas-dev/facturas-dev-api.env
+sudoedit /etc/facturas-dev/facturas-dev-secretreferences.json
 sudo systemctl cat facturas-dev-api
 sudo systemctl restart facturas-dev-api
 sudo systemctl status facturas-dev-api --no-pager -l
@@ -45,12 +47,14 @@ The DEV Sandbox server must provide real values for:
 - `Auth__Jwt__SigningKey`
 - `Auth__BootstrapAdmin__Password`
 - `Bootstrap__DefaultTestUserPassword`
+- `SecretReferences__ExternalJsonPath` when PAC/CSD secret material is stored in a persistent JSON file
 
 Rules:
 - `LegacyRead__ConnectionString` must use a dedicated read-only MySQL user
 - `ConnectionStrings__BillingWrite` must use a dedicated read/write MySQL user
 - do not use MySQL `root` for either connection
 - avoid `%` in new passwords stored in the systemd `EnvironmentFile` unless you handle escaping explicitly
+- prefer storing multiline PAC/CSD secret material in `/etc/facturas-dev/facturas-dev-secretreferences.json` referenced by `SecretReferences__ExternalJsonPath`
 
 ## Installing or updating only the drop-in
 If the real env file already exists and you only need to re-point systemd without touching secrets:
