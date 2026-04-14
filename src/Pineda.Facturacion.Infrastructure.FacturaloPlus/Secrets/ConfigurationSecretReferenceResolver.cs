@@ -20,9 +20,16 @@ public class ConfigurationSecretReferenceResolver : ISecretReferenceResolver
             return Task.FromResult<string?>(null);
         }
 
-        return Task.FromResult(
-            _options.Values.TryGetValue(referenceKey, out var value) && !string.IsNullOrWhiteSpace(value)
-                ? value
-                : null);
+        if (!_options.Values.TryGetValue(referenceKey, out var value) || string.IsNullOrWhiteSpace(value))
+        {
+            return Task.FromResult<string?>(null);
+        }
+
+        if (_options.Values.TryGetValue(value, out var dereferencedValue) && !string.IsNullOrWhiteSpace(dereferencedValue))
+        {
+            return Task.FromResult<string?>(dereferencedValue);
+        }
+
+        return Task.FromResult<string?>(value);
     }
 }
