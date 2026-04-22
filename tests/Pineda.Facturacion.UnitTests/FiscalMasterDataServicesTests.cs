@@ -150,6 +150,102 @@ public class FiscalMasterDataServicesTests
     }
 
     [Fact]
+    public async Task CreateProductFiscalProfile_ReturnsValidationFailure_WhenSatProductCodeDoesNotExistInLocalCatalog()
+    {
+        var service = new CreateProductFiscalProfileService(
+            new FakeProductFiscalProfileRepository(),
+            new FakeUnitOfWork(),
+            new FakeSatProductServiceCatalogRepository(),
+            new FakeSatClaveUnidadRepository
+            {
+                ExistingByCode = new SatClaveUnidad
+                {
+                    Code = "H87",
+                    Description = "Pieza",
+                    IsActive = true
+                }
+            });
+
+        var result = await service.ExecuteAsync(new CreateProductFiscalProfileCommand
+        {
+            InternalCode = "SKU-1",
+            Description = "Demo",
+            SatProductServiceCode = "99999999",
+            SatUnitCode = "H87",
+            TaxObjectCode = "02",
+            VatRate = 0.16m,
+            DefaultUnitText = "PIEZA",
+            IsActive = true
+        });
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(CreateProductFiscalProfileOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("SAT product/service code '99999999' was not found or is inactive.", result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task UpdateProductFiscalProfile_ReturnsValidationFailure_WhenSatUnitCodeIsInactiveInLocalCatalog()
+    {
+        var existingProfile = new ProductFiscalProfile
+        {
+            Id = 7,
+            InternalCode = "SKU-1",
+            Description = "Demo",
+            NormalizedDescription = "DEMO",
+            SatProductServiceCode = "10101504",
+            SatUnitCode = "H87",
+            TaxObjectCode = "02",
+            VatRate = 0.16m,
+            DefaultUnitText = "PIEZA",
+            IsActive = false
+        };
+
+        var repository = new FakeProductFiscalProfileRepository
+        {
+            ExistingByCode = existingProfile,
+            ExistingById = existingProfile
+        };
+        var service = new UpdateProductFiscalProfileService(
+            repository,
+            new FakeUnitOfWork(),
+            new FakeSatProductServiceCatalogRepository
+            {
+                ExistingByCode = new SatProductServiceCatalogEntry
+                {
+                    Code = "10101504",
+                    Description = "Ganado bovino",
+                    IsActive = true
+                }
+            },
+            new FakeSatClaveUnidadRepository
+            {
+                ExistingByCode = new SatClaveUnidad
+                {
+                    Code = "H87",
+                    Description = "Pieza",
+                    IsActive = false
+                }
+            });
+
+        var result = await service.ExecuteAsync(new UpdateProductFiscalProfileCommand
+        {
+            Id = 7,
+            InternalCode = "SKU-1",
+            Description = "Demo",
+            SatProductServiceCode = "10101504",
+            SatUnitCode = "H87",
+            TaxObjectCode = "02",
+            VatRate = 0.16m,
+            DefaultUnitText = "PIEZA",
+            IsActive = true
+        });
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(UpdateProductFiscalProfileOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("SAT unit code 'H87' was not found or is inactive.", result.ErrorMessage);
+    }
+
+    [Fact]
     public async Task GetByRfc_And_ByCode_ReturnHappyPaths()
     {
         var receiverService = new GetFiscalReceiverByRfcService(new FakeFiscalReceiverRepository
@@ -348,6 +444,7 @@ public class FiscalMasterDataServicesTests
     private sealed class FakeProductFiscalProfileRepository : IProductFiscalProfileRepository
     {
         public ProductFiscalProfile? ExistingByCode { get; init; }
+        public ProductFiscalProfile? ExistingById { get; init; }
         public IReadOnlyList<ProductFiscalProfile> SearchResults { get; init; } = [];
         public ProductFiscalProfile? AssignmentSyncedProfile { get; private set; }
         public string? AssignmentSyncSource { get; private set; }
@@ -361,7 +458,7 @@ public class FiscalMasterDataServicesTests
             => Task.FromResult(ExistingByCode);
 
         public Task<ProductFiscalProfile?> GetByIdAsync(long productFiscalProfileId, CancellationToken cancellationToken = default)
-            => Task.FromResult<ProductFiscalProfile?>(null);
+            => Task.FromResult(ExistingById?.Id == productFiscalProfileId ? ExistingById : null);
 
         public Task AddAsync(ProductFiscalProfile productFiscalProfile, CancellationToken cancellationToken = default)
         {
@@ -386,6 +483,38 @@ public class FiscalMasterDataServicesTests
             AssignmentSyncReviewStatus = reviewStatus;
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class FakeSatProductServiceCatalogRepository : ISatProductServiceCatalogRepository
+    {
+        public SatProductServiceCatalogEntry? ExistingByCode { get; init; }
+
+        public Task<IReadOnlyList<SatProductServiceCatalogEntry>> SearchAsync(string normalizedQuery, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<SatProductServiceCatalogEntry>>([]);
+
+        public Task<SatProductServiceCatalogEntry?> GetByCodeAsync(string normalizedCode, CancellationToken cancellationToken = default)
+            => Task.FromResult(ExistingByCode?.Code == normalizedCode ? ExistingByCode : null);
+    }
+
+    private sealed class FakeSatClaveUnidadRepository : ISatClaveUnidadRepository
+    {
+        public SatClaveUnidad? ExistingByCode { get; init; }
+
+        public Task<IReadOnlyList<SatClaveUnidad>> SearchAsync(
+            string normalizedQuery,
+            int maxCandidates,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<SatClaveUnidad>>([]);
+
+        public Task<SatClaveUnidad?> GetByCodeAsync(string normalizedCode, CancellationToken cancellationToken = default)
+            => Task.FromResult(ExistingByCode?.Code == normalizedCode ? ExistingByCode : null);
+
+        public Task<SatCatalogSyncResult> SyncAsync(
+            IReadOnlyList<SatClaveUnidad> entries,
+            string sourceVersion,
+            DateTime syncedAtUtc,
+            CancellationToken cancellationToken = default)
+            => Task.FromException<SatCatalogSyncResult>(new NotSupportedException());
     }
 
     private sealed class FakeFiscalReceiverSatCatalogProvider : IFiscalReceiverSatCatalogProvider

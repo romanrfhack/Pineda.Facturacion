@@ -1,3 +1,5 @@
+import { ProductFiscalProfileRecoverySuggestion } from '../../catalogs/models/catalogs.models';
+
 export interface IssuerProfileResponse {
   id: number;
   legalName: string;
@@ -195,6 +197,29 @@ export interface PrepareFiscalDocumentResponse {
   billingDocumentId: number;
   fiscalDocumentId?: number | null;
   status?: string | null;
+  missingProductFiscalProfile?: MissingProductFiscalProfileResponse | null;
+}
+
+export interface MissingProductFiscalProfileResponse {
+  billingDocumentItemId?: number | null;
+  lineNumber?: number | null;
+  internalCode?: string | null;
+  description: string;
+  existingProfileStatus: 'Active' | 'Inactive' | 'None' | string;
+  existingProductFiscalProfileId?: number | null;
+  canUseExplicitGeneric: boolean;
+  prefill: MissingProductFiscalProfilePrefillResponse;
+  suggestions?: ProductFiscalProfileRecoverySuggestion[] | null;
+}
+
+export interface MissingProductFiscalProfilePrefillResponse {
+  satProductServiceCode: string;
+  satUnitCode: string;
+  taxObjectCode: string;
+  vatRate: number;
+  defaultUnitText?: string | null;
+  isActive: boolean;
+  requiresExplicitProductServiceConfirmation: boolean;
 }
 
 export interface UpdateBillingDocumentOrderAssociationResponse {

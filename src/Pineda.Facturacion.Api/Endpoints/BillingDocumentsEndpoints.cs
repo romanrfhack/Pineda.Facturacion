@@ -257,7 +257,8 @@ public static class BillingDocumentsEndpoints
             ErrorMessage = result.ErrorMessage,
             BillingDocumentId = result.BillingDocumentId,
             FiscalDocumentId = result.FiscalDocumentId,
-            Status = result.Status?.ToString()
+            Status = result.Status?.ToString(),
+            MissingProductFiscalProfile = MapMissingProductFiscalProfile(result.MissingProductFiscalProfile)
         };
 
         await AuditApiHelper.RecordAsync(
@@ -455,6 +456,49 @@ public static class BillingDocumentsEndpoints
         public long BillingDocumentId { get; init; }
         public long? FiscalDocumentId { get; init; }
         public string? Status { get; init; }
+        public MissingProductFiscalProfileResponse? MissingProductFiscalProfile { get; init; }
+    }
+
+    public sealed class MissingProductFiscalProfileResponse
+    {
+        public long? BillingDocumentItemId { get; init; }
+        public int? LineNumber { get; init; }
+        public string? InternalCode { get; init; }
+        public string Description { get; init; } = string.Empty;
+        public string ExistingProfileStatus { get; init; } = PrepareFiscalDocumentExistingProductFiscalProfileStatus.None.ToString();
+        public long? ExistingProductFiscalProfileId { get; init; }
+        public bool CanUseExplicitGeneric { get; init; }
+        public MissingProductFiscalProfilePrefillResponse Prefill { get; init; } = new();
+        public IReadOnlyList<MissingProductFiscalProfileSuggestionResponse> Suggestions { get; init; } = [];
+    }
+
+    public sealed class MissingProductFiscalProfilePrefillResponse
+    {
+        public string SatProductServiceCode { get; init; } = string.Empty;
+        public string SatUnitCode { get; init; } = string.Empty;
+        public string TaxObjectCode { get; init; } = string.Empty;
+        public decimal VatRate { get; init; }
+        public string? DefaultUnitText { get; init; }
+        public bool IsActive { get; init; }
+        public bool RequiresExplicitProductServiceConfirmation { get; init; }
+    }
+
+    public sealed class MissingProductFiscalProfileSuggestionResponse
+    {
+        public string SatProductServiceCode { get; init; } = string.Empty;
+        public string? SatProductServiceDescription { get; init; }
+        public string SatUnitCode { get; init; } = string.Empty;
+        public string? SatUnitDescription { get; init; }
+        public string TaxObjectCode { get; init; } = string.Empty;
+        public decimal VatRate { get; init; }
+        public string? DefaultUnitText { get; init; }
+        public decimal Score { get; init; }
+        public decimal Confidence { get; init; }
+        public string Source { get; init; } = string.Empty;
+        public string MatchKind { get; init; } = string.Empty;
+        public string Reason { get; init; } = string.Empty;
+        public bool IsActive { get; init; }
+        public bool RequiresExplicitConfirmation { get; init; }
     }
 
     public sealed class BillingDocumentLookupResponse
@@ -630,6 +674,55 @@ public static class BillingDocumentsEndpoints
         public int AssignedCount { get; init; }
         public int IncludedItemCount { get; init; }
         public decimal Total { get; init; }
+    }
+
+    private static MissingProductFiscalProfileResponse? MapMissingProductFiscalProfile(
+        PrepareFiscalDocumentMissingProductFiscalProfile? missingProductFiscalProfile)
+    {
+        if (missingProductFiscalProfile is null)
+        {
+            return null;
+        }
+
+        return new MissingProductFiscalProfileResponse
+        {
+            BillingDocumentItemId = missingProductFiscalProfile.BillingDocumentItemId,
+            LineNumber = missingProductFiscalProfile.LineNumber,
+            InternalCode = missingProductFiscalProfile.InternalCode,
+            Description = missingProductFiscalProfile.Description,
+            ExistingProfileStatus = missingProductFiscalProfile.ExistingProfileStatus.ToString(),
+            ExistingProductFiscalProfileId = missingProductFiscalProfile.ExistingProductFiscalProfileId,
+            CanUseExplicitGeneric = missingProductFiscalProfile.CanUseExplicitGeneric,
+            Prefill = new MissingProductFiscalProfilePrefillResponse
+            {
+                SatProductServiceCode = missingProductFiscalProfile.Prefill.SatProductServiceCode,
+                SatUnitCode = missingProductFiscalProfile.Prefill.SatUnitCode,
+                TaxObjectCode = missingProductFiscalProfile.Prefill.TaxObjectCode,
+                VatRate = missingProductFiscalProfile.Prefill.VatRate,
+                DefaultUnitText = missingProductFiscalProfile.Prefill.DefaultUnitText,
+                IsActive = missingProductFiscalProfile.Prefill.IsActive,
+                RequiresExplicitProductServiceConfirmation = missingProductFiscalProfile.Prefill.RequiresExplicitProductServiceConfirmation
+            },
+            Suggestions = missingProductFiscalProfile.Suggestions
+                .Select(suggestion => new MissingProductFiscalProfileSuggestionResponse
+                {
+                    SatProductServiceCode = suggestion.SatProductServiceCode,
+                    SatProductServiceDescription = suggestion.SatProductServiceDescription,
+                    SatUnitCode = suggestion.SatUnitCode,
+                    SatUnitDescription = suggestion.SatUnitDescription,
+                    TaxObjectCode = suggestion.TaxObjectCode,
+                    VatRate = suggestion.VatRate,
+                    DefaultUnitText = suggestion.DefaultUnitText,
+                    Score = suggestion.Score,
+                    Confidence = suggestion.Confidence,
+                    Source = suggestion.Source,
+                    MatchKind = suggestion.MatchKind,
+                    Reason = suggestion.Reason,
+                    IsActive = suggestion.IsActive,
+                    RequiresExplicitConfirmation = suggestion.RequiresExplicitConfirmation
+                })
+                .ToArray()
+        };
     }
 
     private static BillingDocumentLookupResponse MapBillingDocumentLookup(Application.Abstractions.Persistence.BillingDocumentLookupModel billingDocument)

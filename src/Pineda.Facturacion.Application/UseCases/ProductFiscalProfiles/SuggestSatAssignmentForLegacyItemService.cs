@@ -52,6 +52,7 @@ public sealed class SuggestSatAssignmentForLegacyItemService
 
         await TryAddCurrentAssignmentCandidatesAsync(productCandidates, productCodes, unitCandidates, unitCodes, effectiveAssignment, cancellationToken);
         await TryAddCurrentProfileCandidatesAsync(productCandidates, productCodes, unitCandidates, unitCodes, existingProfile, cancellationToken);
+        await TryAddBillingDocumentItemCandidatesAsync(productCandidates, productCodes, unitCandidates, unitCodes, command, cancellationToken);
         await TryAddImportedSnapshotCandidatesAsync(productCandidates, productCodes, unitCandidates, unitCodes, command, cancellationToken);
         await TryAddSearchCandidatesAsync(productCandidates, productCodes, unitCandidates, unitCodes, command, cancellationToken);
 
@@ -92,7 +93,9 @@ public sealed class SuggestSatAssignmentForLegacyItemService
             Source = effectiveAssignment.Source,
             Confidence = effectiveAssignment.Confidence,
             Score = 1.0000m,
-            IsActive = product?.IsActive ?? false
+            IsActive = product?.IsActive ?? false,
+            Reason = "Asignacion efectiva vigente para el mismo codigo interno.",
+            RequiresExplicitConfirmation = false
         });
 
         AddCandidate(unitCandidates, unitCodes, new SatAssignmentSuggestionItem
@@ -104,7 +107,9 @@ public sealed class SuggestSatAssignmentForLegacyItemService
             Source = effectiveAssignment.Source,
             Confidence = effectiveAssignment.Confidence,
             Score = 1.0000m,
-            IsActive = unit?.IsActive ?? false
+            IsActive = unit?.IsActive ?? false,
+            Reason = "Unidad vigente tomada de la asignacion efectiva del mismo codigo interno.",
+            RequiresExplicitConfirmation = false
         });
     }
 
@@ -116,7 +121,7 @@ public sealed class SuggestSatAssignmentForLegacyItemService
         Domain.Entities.ProductFiscalProfile? existingProfile,
         CancellationToken cancellationToken)
     {
-        if (existingProfile is null || !existingProfile.IsActive)
+        if (existingProfile is null)
         {
             return;
         }
@@ -131,9 +136,13 @@ public sealed class SuggestSatAssignmentForLegacyItemService
             DisplayText = BuildDisplayText(existingProfile.SatProductServiceCode, product?.Description ?? existingProfile.Description),
             MatchKind = "currentProfile",
             Source = "product_fiscal_profile_current",
-            Confidence = 0.9200m,
-            Score = 0.9800m,
-            IsActive = product?.IsActive ?? false
+            Confidence = existingProfile.IsActive ? 0.9200m : 0.8800m,
+            Score = existingProfile.IsActive ? 0.9800m : 0.9700m,
+            IsActive = product?.IsActive ?? false,
+            Reason = existingProfile.IsActive
+                ? "Perfil fiscal actual encontrado para el mismo codigo interno."
+                : "Perfil fiscal actual encontrado para el mismo codigo interno, pero el maestro esta inactivo.",
+            RequiresExplicitConfirmation = false
         });
 
         AddCandidate(unitCandidates, unitCodes, new SatAssignmentSuggestionItem
@@ -143,10 +152,67 @@ public sealed class SuggestSatAssignmentForLegacyItemService
             DisplayText = BuildDisplayText(existingProfile.SatUnitCode, unit?.Description ?? existingProfile.DefaultUnitText),
             MatchKind = "currentProfile",
             Source = "product_fiscal_profile_current",
-            Confidence = 0.9200m,
-            Score = 0.9800m,
-            IsActive = unit?.IsActive ?? false
+            Confidence = existingProfile.IsActive ? 0.9200m : 0.8800m,
+            Score = existingProfile.IsActive ? 0.9800m : 0.9700m,
+            IsActive = unit?.IsActive ?? false,
+            Reason = existingProfile.IsActive
+                ? "Unidad del perfil fiscal actual para el mismo codigo interno."
+                : "Unidad del perfil fiscal actual para el mismo codigo interno; el maestro esta inactivo.",
+            RequiresExplicitConfirmation = false
         });
+    }
+
+    private async Task TryAddBillingDocumentItemCandidatesAsync(
+        List<SatAssignmentSuggestionItem> productCandidates,
+        HashSet<string> productCodes,
+        List<SatAssignmentSuggestionItem> unitCandidates,
+        HashSet<string> unitCodes,
+        SuggestSatAssignmentForLegacyItemCommand command,
+        CancellationToken cancellationToken)
+    {
+        var itemProductCode = NormalizeOptionalCode(command.BillingDocumentItemSatProductServiceCode);
+        if (!string.IsNullOrWhiteSpace(itemProductCode))
+        {
+            var product = await _satProductServiceCatalogRepository.GetByCodeAsync(itemProductCode, cancellationToken);
+            if (product is not null)
+            {
+                AddCandidate(productCandidates, productCodes, new SatAssignmentSuggestionItem
+                {
+                    Code = product.Code,
+                    Description = product.Description,
+                    DisplayText = BuildDisplayText(product.Code, product.Description),
+                    MatchKind = "billingDocumentItem",
+                    Source = "billing_document_item",
+                    Confidence = product.IsActive ? 0.9000m : 0.6500m,
+                    Score = 0.9600m,
+                    IsActive = product.IsActive,
+                    Reason = "Hint SAT persistido en billing_document_item.",
+                    RequiresExplicitConfirmation = false
+                });
+            }
+        }
+
+        var itemUnitCode = NormalizeOptionalCode(command.BillingDocumentItemSatUnitCode);
+        if (!string.IsNullOrWhiteSpace(itemUnitCode))
+        {
+            var unit = await _satClaveUnidadRepository.GetByCodeAsync(itemUnitCode, cancellationToken);
+            if (unit is not null)
+            {
+                AddCandidate(unitCandidates, unitCodes, new SatAssignmentSuggestionItem
+                {
+                    Code = unit.Code,
+                    Description = unit.Description,
+                    DisplayText = BuildDisplayText(unit.Code, unit.Description),
+                    MatchKind = "billingDocumentItem",
+                    Source = "billing_document_item",
+                    Confidence = unit.IsActive ? 0.9000m : 0.6500m,
+                    Score = 0.9600m,
+                    IsActive = unit.IsActive,
+                    Reason = "Unidad sugerida por los hints SAT persistidos en billing_document_item.",
+                    RequiresExplicitConfirmation = false
+                });
+            }
+        }
     }
 
     private async Task TryAddImportedSnapshotCandidatesAsync(
@@ -172,7 +238,9 @@ public sealed class SuggestSatAssignmentForLegacyItemService
                     Source = "legacy_snapshot",
                     Confidence = product.IsActive ? 0.8600m : 0.6000m,
                     Score = 0.9200m,
-                    IsActive = product.IsActive
+                    IsActive = product.IsActive,
+                    Reason = "Clave SAT recuperada desde un snapshot o importacion historica.",
+                    RequiresExplicitConfirmation = false
                 });
             }
         }
@@ -192,7 +260,9 @@ public sealed class SuggestSatAssignmentForLegacyItemService
                     Source = "legacy_snapshot",
                     Confidence = unit.IsActive ? 0.8600m : 0.6000m,
                     Score = 0.9200m,
-                    IsActive = unit.IsActive
+                    IsActive = unit.IsActive,
+                    Reason = "Unidad recuperada desde un snapshot o importacion historica.",
+                    RequiresExplicitConfirmation = false
                 });
             }
         }
@@ -220,7 +290,9 @@ public sealed class SuggestSatAssignmentForLegacyItemService
                     Source = "catalog_search",
                     Confidence = MapSearchConfidence(item.Score),
                     Score = item.Score,
-                    IsActive = true
+                    IsActive = true,
+                    Reason = BuildCatalogSearchReason(item.MatchKind),
+                    RequiresExplicitConfirmation = true
                 });
             }
         }
@@ -240,7 +312,9 @@ public sealed class SuggestSatAssignmentForLegacyItemService
                     Source = "catalog_search",
                     Confidence = MapSearchConfidence(item.Score),
                     Score = item.Score,
-                    IsActive = true
+                    IsActive = true,
+                    Reason = BuildCatalogSearchReason(item.MatchKind),
+                    RequiresExplicitConfirmation = true
                 });
             }
         }
@@ -301,5 +375,15 @@ public sealed class SuggestSatAssignmentForLegacyItemService
     private static string? FirstNonEmpty(params string?[] values)
     {
         return values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x));
+    }
+
+    private static string BuildCatalogSearchReason(string? matchKind)
+    {
+        return matchKind switch
+        {
+            "exactCode" => "Coincidencia exacta por codigo en el catalogo SAT local.",
+            "prefixCode" => "Coincidencia por prefijo de codigo en el catalogo SAT local.",
+            _ => "Coincidencia por descripcion o keywords en el catalogo SAT local."
+        };
     }
 }

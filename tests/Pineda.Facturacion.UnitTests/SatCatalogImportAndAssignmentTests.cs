@@ -6,6 +6,7 @@ using Pineda.Facturacion.Application.UseCases.ProductFiscalProfiles;
 using Pineda.Facturacion.Application.UseCases.SatCatalogs;
 using Pineda.Facturacion.Application.UseCases.SatClaveUnidad;
 using Pineda.Facturacion.Application.UseCases.SatProductServices;
+using Pineda.Facturacion.Domain.Entities;
 using Pineda.Facturacion.Infrastructure.BillingWrite.Persistence;
 using Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Repositories;
 using Pineda.Facturacion.Infrastructure.Excel;
@@ -215,6 +216,87 @@ public sealed class SatCatalogImportAndAssignmentTests
         Assert.Equal("catalog_search", result.SuggestedProductService.Source);
         Assert.Equal("H87", result.SuggestedUnit!.Code);
         Assert.Equal("catalog_search", result.SuggestedUnit.Source);
+    }
+
+    [Fact]
+    public async Task SuggestSatAssignmentForLegacyItem_PrioritizesBillingDocumentItemHints_WhenAvailable()
+    {
+        await using var dbContext = CreateDbContext();
+        await ImportSampleCatalogAsync(dbContext);
+
+        var productCatalogRepository = new SatProductServiceCatalogRepository(dbContext);
+        var unitRepository = new SatClaveUnidadRepository(dbContext);
+        var suggestionService = new SuggestSatAssignmentForLegacyItemService(
+            new ProductFiscalProfileRepository(dbContext),
+            productCatalogRepository,
+            unitRepository,
+            new SearchSatProductServicesService(productCatalogRepository),
+            new SearchSatClaveUnidadService(unitRepository));
+
+        var result = await suggestionService.ExecuteAsync(new SuggestSatAssignmentForLegacyItemCommand
+        {
+            InternalCode = "SKU-LEG-9",
+            Description = "Descripcion libre sin match fuerte",
+            BillingDocumentItemSatProductServiceCode = "40161513",
+            BillingDocumentItemSatUnitCode = "H87"
+        });
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("40161513", result.SuggestedProductService!.Code);
+        Assert.Equal("billing_document_item", result.SuggestedProductService.Source);
+        Assert.False(result.SuggestedProductService.RequiresExplicitConfirmation);
+        Assert.Contains("billing_document_item", result.SuggestedProductService.Reason, StringComparison.Ordinal);
+        Assert.Equal("H87", result.SuggestedUnit!.Code);
+        Assert.Equal("billing_document_item", result.SuggestedUnit.Source);
+        Assert.False(result.SuggestedUnit.RequiresExplicitConfirmation);
+    }
+
+    [Fact]
+    public async Task ProductFiscalProfileRepository_PrefersEffectiveAssignment_WhenMasterProfileIsInactive()
+    {
+        await using var dbContext = CreateDbContext();
+        var now = DateTime.UtcNow;
+
+        dbContext.ProductFiscalProfiles.Add(new ProductFiscalProfile
+        {
+            InternalCode = "SKU-INACTIVE-1",
+            Description = "Filtro legado",
+            NormalizedDescription = "FILTRO LEGADO",
+            SatProductServiceCode = "10101504",
+            SatUnitCode = "E48",
+            TaxObjectCode = "02",
+            VatRate = 0.16m,
+            DefaultUnitText = "SERVICIO",
+            IsActive = false,
+            CreatedAtUtc = now.AddDays(-10),
+            UpdatedAtUtc = now.AddDays(-10)
+        });
+        dbContext.ProductFiscalAssignments.Add(new ProductFiscalAssignment
+        {
+            InternalCode = "SKU-INACTIVE-1",
+            SatProductServiceCode = "40161513",
+            SatUnitCode = "H87",
+            TaxObjectCode = "02",
+            VatRate = 0.16m,
+            DefaultUnitText = "PIEZA",
+            Source = "legacy_snapshot",
+            Confidence = 0.9100m,
+            ReviewStatus = "approved",
+            ValidFromUtc = now.AddDays(-2),
+            ValidToUtc = null,
+            CreatedAtUtc = now.AddDays(-2),
+            UpdatedAtUtc = now.AddDays(-2)
+        });
+        await dbContext.SaveChangesAsync();
+
+        var repository = new ProductFiscalProfileRepository(dbContext);
+        var result = await repository.GetEffectiveByInternalCodeAsync("SKU-INACTIVE-1", now);
+
+        Assert.NotNull(result);
+        Assert.True(result!.IsActive);
+        Assert.Equal("40161513", result.SatProductServiceCode);
+        Assert.Equal("H87", result.SatUnitCode);
+        Assert.Equal("PIEZA", result.DefaultUnitText);
     }
 
     [Fact]

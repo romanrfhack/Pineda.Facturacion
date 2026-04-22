@@ -144,6 +144,97 @@ public class FiscalDocumentServicesTests
 
         Assert.Equal(PrepareFiscalDocumentOutcome.MissingProductFiscalProfile, result.Outcome);
         Assert.Contains("internal code", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.NotNull(result.MissingProductFiscalProfile);
+        Assert.Equal(1, result.MissingProductFiscalProfile!.LineNumber);
+        Assert.Equal("SKU-1", result.MissingProductFiscalProfile.InternalCode);
+        Assert.Equal("Product", result.MissingProductFiscalProfile.Description);
+        Assert.Equal(PrepareFiscalDocumentExistingProductFiscalProfileStatus.None, result.MissingProductFiscalProfile.ExistingProfileStatus);
+        Assert.True(result.MissingProductFiscalProfile.CanUseExplicitGeneric);
+        Assert.Empty(result.MissingProductFiscalProfile.Suggestions);
+        Assert.Equal(string.Empty, result.MissingProductFiscalProfile.Prefill.SatProductServiceCode);
+        Assert.Equal("H87", result.MissingProductFiscalProfile.Prefill.SatUnitCode);
+        Assert.True(result.MissingProductFiscalProfile.Prefill.RequiresExplicitProductServiceConfirmation);
+    }
+
+    [Fact]
+    public async Task PrepareFiscalDocument_ReturnsInactiveExistingProfileContext_WhenExactProfileExistsButMasterIsInactive()
+    {
+        var inactiveProfile = CreateProductFiscalProfile();
+        inactiveProfile.IsActive = false;
+
+        var service = new PrepareFiscalDocumentService(
+            new FakeBillingDocumentRepository { BillingDocumentById = CreateBillingDocument() },
+            new FakeFiscalDocumentRepository(),
+            new FakeIssuerProfileRepository { Active = CreateIssuerProfile() },
+            new FakeFiscalReceiverRepository { ExistingById = CreateReceiver() },
+            new FakeProductFiscalProfileRepository { ExistingByCode = inactiveProfile, EffectiveByCode = inactiveProfile },
+            new FakeSatCatalogDescriptionProvider(),
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new PrepareFiscalDocumentCommand
+        {
+            BillingDocumentId = 5,
+            FiscalReceiverId = 11,
+            PaymentMethodSat = "PUE",
+            PaymentFormSat = "03",
+            PaymentCondition = "Contado"
+        });
+
+        Assert.Equal(PrepareFiscalDocumentOutcome.MissingProductFiscalProfile, result.Outcome);
+        Assert.Contains("inactive", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.NotNull(result.MissingProductFiscalProfile);
+        Assert.Equal(PrepareFiscalDocumentExistingProductFiscalProfileStatus.Inactive, result.MissingProductFiscalProfile!.ExistingProfileStatus);
+        Assert.Equal(21, result.MissingProductFiscalProfile.ExistingProductFiscalProfileId);
+        Assert.Equal("10101504", result.MissingProductFiscalProfile.Prefill.SatProductServiceCode);
+        Assert.Equal("H87", result.MissingProductFiscalProfile.Prefill.SatUnitCode);
+        Assert.False(result.MissingProductFiscalProfile.Prefill.RequiresExplicitProductServiceConfirmation);
+        Assert.Contains(
+            result.MissingProductFiscalProfile.Suggestions,
+            x => x.Source == "product_fiscal_profile_current" && x.SatProductServiceCode == "10101504");
+    }
+
+    [Fact]
+    public async Task PrepareFiscalDocument_UsesEffectiveAssignment_WhenMasterProfileIsInactive()
+    {
+        var repository = new FakeFiscalDocumentRepository();
+        var inactiveProfile = CreateProductFiscalProfile();
+        inactiveProfile.IsActive = false;
+        var productRepository = new FakeProductFiscalProfileRepository
+        {
+            ExistingByCode = inactiveProfile,
+            EffectiveByCode = new ProductFiscalProfile
+            {
+                InternalCode = "SKU-1",
+                SatProductServiceCode = "20101500",
+                SatUnitCode = "E48",
+                TaxObjectCode = "02",
+                VatRate = 0.16m,
+                DefaultUnitText = "SERVICIO",
+                IsActive = true
+            }
+        };
+        var service = new PrepareFiscalDocumentService(
+            new FakeBillingDocumentRepository { BillingDocumentById = CreateBillingDocument() },
+            repository,
+            new FakeIssuerProfileRepository { Active = CreateIssuerProfile() },
+            new FakeFiscalReceiverRepository { ExistingById = CreateReceiver() },
+            productRepository,
+            new FakeSatCatalogDescriptionProvider(),
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new PrepareFiscalDocumentCommand
+        {
+            BillingDocumentId = 5,
+            FiscalReceiverId = 11,
+            PaymentMethodSat = "PUE",
+            PaymentFormSat = "03",
+            PaymentCondition = "Contado"
+        });
+
+        Assert.Equal(PrepareFiscalDocumentOutcome.Created, result.Outcome);
+        Assert.Equal("20101500", repository.Added!.Items[0].SatProductServiceCode);
+        Assert.Equal("E48", repository.Added.Items[0].SatUnitCode);
+        Assert.Equal("SERVICIO", repository.Added.Items[0].UnitText);
     }
 
     [Fact]
@@ -843,7 +934,8 @@ public class FiscalDocumentServicesTests
     {
         var dependencyNames = typeof(PrepareFiscalDocumentService)
             .GetConstructors()
-            .Single()
+            .OrderByDescending(x => x.GetParameters().Length)
+            .First()
             .GetParameters()
             .Select(x => x.ParameterType.FullName ?? x.ParameterType.Name)
             .ToList();
@@ -857,7 +949,8 @@ public class FiscalDocumentServicesTests
     {
         var dependencyNames = typeof(PrepareFiscalDocumentService)
             .GetConstructors()
-            .Single()
+            .OrderByDescending(x => x.GetParameters().Length)
+            .First()
             .GetParameters()
             .Select(x => x.ParameterType.FullName ?? x.ParameterType.Name)
             .ToList();
@@ -1005,6 +1098,27 @@ public class FiscalDocumentServicesTests
         Assert.Contains("SatUnitCode", itemFields);
         Assert.Contains("TaxObjectCode", itemFields);
         Assert.Contains("VatRate", itemFields);
+    }
+
+    [Fact]
+    public void PrepareFiscalDocumentResponse_ExposesStructuredMissingProductFiscalProfileFields()
+    {
+        var responseFields = typeof(BillingDocumentsEndpoints.PrepareFiscalDocumentResponse).GetProperties().Select(x => x.Name).ToList();
+        var missingFields = typeof(BillingDocumentsEndpoints.MissingProductFiscalProfileResponse).GetProperties().Select(x => x.Name).ToList();
+        var prefillFields = typeof(BillingDocumentsEndpoints.MissingProductFiscalProfilePrefillResponse).GetProperties().Select(x => x.Name).ToList();
+        var suggestionFields = typeof(BillingDocumentsEndpoints.MissingProductFiscalProfileSuggestionResponse).GetProperties().Select(x => x.Name).ToList();
+
+        Assert.Contains("MissingProductFiscalProfile", responseFields);
+        Assert.Contains("LineNumber", missingFields);
+        Assert.Contains("BillingDocumentItemId", missingFields);
+        Assert.Contains("InternalCode", missingFields);
+        Assert.Contains("ExistingProfileStatus", missingFields);
+        Assert.Contains("ExistingProductFiscalProfileId", missingFields);
+        Assert.Contains("CanUseExplicitGeneric", missingFields);
+        Assert.Contains("Suggestions", missingFields);
+        Assert.Contains("RequiresExplicitProductServiceConfirmation", prefillFields);
+        Assert.Contains("Reason", suggestionFields);
+        Assert.Contains("RequiresExplicitConfirmation", suggestionFields);
     }
 
     private static PrepareFiscalDocumentService CreateService(

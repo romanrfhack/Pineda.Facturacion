@@ -15,4 +15,6 @@ public class PrepareFiscalDocumentResult
     public long? FiscalDocumentId { get; set; }
 
     public FiscalDocumentStatus? Status { get; set; }
+
+    public PrepareFiscalDocumentMissingProductFiscalProfile? MissingProductFiscalProfile { get; set; }
 }

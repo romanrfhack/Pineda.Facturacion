@@ -11,6 +11,65 @@ import { SatProductServicesApiService } from '../../catalogs/infrastructure/sat-
 import { OrdersApiService } from '../../orders/infrastructure/orders-api.service';
 
 describe('FiscalDocumentOperationsPageComponent', () => {
+  function buildMissingProductFiscalProfilePayload(
+    internalCode: string,
+    options?: {
+      lineNumber?: number;
+      description?: string;
+      existingProfileStatus?: 'Active' | 'Inactive' | 'None';
+      existingProductFiscalProfileId?: number | null;
+      prefillSatProductServiceCode?: string;
+      suggestions?: Array<{
+        satProductServiceCode: string;
+        satProductServiceDescription?: string | null;
+        satUnitCode: string;
+        satUnitDescription?: string | null;
+        taxObjectCode: string;
+        vatRate: number;
+        defaultUnitText?: string | null;
+        score: number;
+        confidence: number;
+        source: string;
+        matchKind: string;
+        reason: string;
+        isActive: boolean;
+        requiresExplicitConfirmation: boolean;
+      }>;
+    },
+  ) {
+    return {
+      outcome: 'MissingProductFiscalProfile',
+      isSuccess: false,
+      errorMessage:
+        options?.existingProfileStatus === 'Inactive'
+          ? 'Product fiscal profile exists but is inactive.'
+          : 'No active product fiscal profile exists.',
+      billingDocumentId: 30,
+      fiscalDocumentId: null,
+      status: null,
+      missingProductFiscalProfile: {
+        billingDocumentItemId: 501,
+        lineNumber: options?.lineNumber ?? 1,
+        internalCode,
+        description: options?.description ?? internalCode,
+        existingProfileStatus: options?.existingProfileStatus ?? 'None',
+        existingProductFiscalProfileId: options?.existingProductFiscalProfileId ?? null,
+        canUseExplicitGeneric: true,
+        prefill: {
+          satProductServiceCode: options?.prefillSatProductServiceCode ?? '',
+          satUnitCode: 'H87',
+          taxObjectCode: '02',
+          vatRate: 0.16,
+          defaultUnitText: 'PIEZA',
+          isActive: true,
+          requiresExplicitProductServiceConfirmation:
+            !(options?.prefillSatProductServiceCode?.trim()?.length),
+        },
+        suggestions: options?.suggestions ?? [],
+      },
+    };
+  }
+
   function createApi(overrides?: Partial<Record<keyof FiscalDocumentsApiService, unknown>>) {
     return {
       getActiveIssuer: vi.fn().mockReturnValue(
@@ -343,6 +402,13 @@ describe('FiscalDocumentOperationsPageComponent', () => {
                 id: 15,
               }),
             ),
+            update: vi.fn().mockReturnValue(
+              of({
+                outcome: 'Updated',
+                isSuccess: true,
+                id: 15,
+              }),
+            ),
             ...productApiOverrides,
           },
         },
@@ -362,6 +428,47 @@ describe('FiscalDocumentOperationsPageComponent', () => {
                   description: 'No existe en el catálogo',
                   displayText: '01010101 — No existe en el catálogo',
                   matchKind: 'exactCode',
+                },
+              ]),
+            ),
+            searchPaged: vi.fn().mockReturnValue(
+              of({
+                page: 1,
+                pageSize: 12,
+                hasMore: false,
+                items: [
+                  {
+                    code: '40161513',
+                    description: 'Filtro de aceite',
+                    displayText: '40161513 — Filtro de aceite',
+                    matchKind: 'text',
+                    score: 0.86,
+                  },
+                  {
+                    code: '01010101',
+                    description: 'No existe en el catálogo',
+                    displayText: '01010101 — No existe en el catálogo',
+                    matchKind: 'exactCode',
+                    score: 1,
+                  },
+                ],
+              }),
+            ),
+            searchBestEffort: vi.fn().mockReturnValue(
+              of([
+                {
+                  code: '40161513',
+                  description: 'Filtro de aceite',
+                  displayText: '40161513 — Filtro de aceite',
+                  matchKind: 'text',
+                  score: 0.86,
+                },
+                {
+                  code: '01010101',
+                  description: 'No existe en el catálogo',
+                  displayText: '01010101 — No existe en el catálogo',
+                  matchKind: 'exactCode',
+                  score: 1,
                 },
               ]),
             ),
@@ -2759,15 +2866,27 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     const prepareFiscalDocument = vi.fn().mockReturnValue(
       throwError(() => ({
         status: 400,
-        error: {
-          outcome: 'MissingProductFiscalProfile',
-          isSuccess: false,
-          errorMessage:
-            "No active product fiscal profile exists for item line '1' and internal code 'MTE-4259'.",
-          billingDocumentId: 30,
-          fiscalDocumentId: null,
-          status: null,
-        },
+        error: buildMissingProductFiscalProfilePayload('MTE-4259', {
+          description: 'FILTRO DE ACEITE',
+          suggestions: [
+            {
+              satProductServiceCode: '40161513',
+              satProductServiceDescription: 'Filtro de aceite',
+              satUnitCode: 'H87',
+              satUnitDescription: 'Pieza',
+              taxObjectCode: '02',
+              vatRate: 0.16,
+              defaultUnitText: 'PIEZA',
+              score: 0.72,
+              confidence: 0.68,
+              source: 'catalog_search',
+              matchKind: 'text',
+              reason: 'Coincidencia por descripción o keywords en el catálogo SAT local.',
+              isActive: true,
+              requiresExplicitConfirmation: true,
+            },
+          ],
+        }),
       })),
     );
     const feedback = { show: vi.fn() };
@@ -2871,15 +2990,9 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       .mockReturnValueOnce(
         throwError(() => ({
           status: 400,
-          error: {
-            outcome: 'MissingProductFiscalProfile',
-            isSuccess: false,
-            errorMessage:
-              "No active product fiscal profile exists for item line '1' and internal code 'MTE-4259'.",
-            billingDocumentId: 30,
-            fiscalDocumentId: null,
-            status: null,
-          },
+          error: buildMissingProductFiscalProfilePayload('MTE-4259', {
+            description: 'FILTRO DE ACEITE',
+          }),
         })),
       )
       .mockReturnValueOnce(
@@ -2990,21 +3103,160 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(feedback.show).toHaveBeenCalledWith('success', 'Documento fiscal preparado.');
   });
 
+  it('reactivates an existing inactive product fiscal profile and retries preparation without create conflicts', async () => {
+    const prepareFiscalDocument = vi
+      .fn()
+      .mockReturnValueOnce(
+        throwError(() => ({
+          status: 400,
+          error: buildMissingProductFiscalProfilePayload('MTE-4259', {
+            description: 'FILTRO DE ACEITE',
+            existingProfileStatus: 'Inactive',
+            existingProductFiscalProfileId: 44,
+            prefillSatProductServiceCode: '40161513',
+          }),
+        })),
+      )
+      .mockReturnValueOnce(
+        of({
+          outcome: 'Prepared',
+          isSuccess: true,
+          errorMessage: null,
+          billingDocumentId: 30,
+          fiscalDocumentId: 40,
+          status: 'ReadyForStamping',
+        }),
+      );
+    const create = vi.fn().mockReturnValue(of({ outcome: 'Created', isSuccess: true, id: 15 }));
+    const update = vi.fn().mockReturnValue(of({ outcome: 'Updated', isSuccess: true, id: 44 }));
+    const feedback = { show: vi.fn() };
+
+    await TestBed.configureTestingModule({
+      imports: [FiscalDocumentOperationsPageComponent],
+      providers: [
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            snapshot: {
+              queryParamMap: convertToParamMap({ billingDocumentId: '30' }),
+              paramMap: convertToParamMap({}),
+            },
+          },
+        },
+        { provide: FiscalDocumentsApiService, useValue: createApi({ prepareFiscalDocument }) },
+        { provide: ProductFiscalProfilesApiService, useValue: { create, update } },
+        {
+          provide: FiscalReceiversApiService,
+          useValue: {
+            search: vi.fn().mockReturnValue(of([])),
+            getByRfc: vi.fn(),
+            getSatCatalog: vi.fn().mockReturnValue(
+              of({
+                regimenFiscal: [{ code: '601', description: 'General de Ley Personas Morales' }],
+                usoCfdi: [{ code: 'G03', description: 'Gastos en general' }],
+                paymentMethods: [
+                  { code: 'PUE', description: 'Pago en una sola exhibición' },
+                  { code: 'PPD', description: 'Pago en parcialidades o diferido' },
+                ],
+                paymentForms: [
+                  { code: '03', description: 'Transferencia electrónica de fondos' },
+                  { code: '99', description: 'Por definir' },
+                ],
+                byRegimenFiscal: [
+                  {
+                    code: '601',
+                    description: 'General de Ley Personas Morales',
+                    allowedUsoCfdi: [{ code: 'G03', description: 'Gastos en general' }],
+                  },
+                ],
+              }),
+            ),
+            create: vi.fn(),
+            update: vi.fn(),
+          },
+        },
+        { provide: FeedbackService, useValue: feedback },
+        { provide: Router, useValue: { navigate: vi.fn().mockResolvedValue(true) } },
+        {
+          provide: PermissionService,
+          useValue: {
+            canStampFiscal: vi.fn().mockReturnValue(true),
+            canCancelFiscal: vi.fn().mockReturnValue(true),
+            canWriteMasterData: vi.fn().mockReturnValue(true),
+          },
+        },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(FiscalDocumentOperationsPageComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.componentInstance['selectedReceiverId'] = 9;
+    fixture.componentInstance['onPaymentMethodChange']('PUE');
+    fixture.componentInstance['onPaymentFormChange']('03');
+    fixture.componentInstance['onPaymentConditionChange']('Contado');
+
+    await fixture.componentInstance['prepare']();
+    await fixture.componentInstance['saveMissingProductProfile']({
+      internalCode: 'MTE-4259',
+      description: 'FILTRO DE ACEITE',
+      satProductServiceCode: '40161513',
+      satUnitCode: 'H87',
+      taxObjectCode: '02',
+      vatRate: 0.16,
+      defaultUnitText: 'PIEZA',
+      isActive: true,
+    });
+
+    expect(create).not.toHaveBeenCalled();
+    expect(update).toHaveBeenCalledWith(44, {
+      internalCode: 'MTE-4259',
+      description: 'FILTRO DE ACEITE',
+      satProductServiceCode: '40161513',
+      satUnitCode: 'H87',
+      taxObjectCode: '02',
+      vatRate: 0.16,
+      defaultUnitText: 'PIEZA',
+      isActive: true,
+    });
+    expect(prepareFiscalDocument).toHaveBeenCalledTimes(2);
+    expect(feedback.show).toHaveBeenCalledWith(
+      'warning',
+      'El perfil fiscal del producto MTE-4259 existe pero está inactivo. Debes reactivarlo o actualizarlo para continuar.',
+    );
+    expect(feedback.show).toHaveBeenCalledWith(
+      'success',
+      'Perfil fiscal del producto MTE-4259 reactivado y actualizado.',
+    );
+  });
+
   it('keeps SAT product selection pending in the recovery form until the user chooses one explicitly', async () => {
     const fixture = await configure(
       {
         prepareFiscalDocument: vi.fn().mockReturnValue(
           throwError(() => ({
             status: 400,
-            error: {
-              outcome: 'MissingProductFiscalProfile',
-              isSuccess: false,
-              errorMessage:
-                "No active product fiscal profile exists for item line '1' and internal code 'MTE-4259'.",
-              billingDocumentId: 30,
-              fiscalDocumentId: null,
-              status: null,
-            },
+            error: buildMissingProductFiscalProfilePayload('MTE-4259', {
+              description: 'FILTRO DE ACEITE',
+              suggestions: [
+                {
+                  satProductServiceCode: '40161513',
+                  satProductServiceDescription: 'Filtro de aceite',
+                  satUnitCode: 'H87',
+                  satUnitDescription: 'Pieza',
+                  taxObjectCode: '02',
+                  vatRate: 0.16,
+                  defaultUnitText: 'PIEZA',
+                  score: 0.72,
+                  confidence: 0.68,
+                  source: 'catalog_search',
+                  matchKind: 'text',
+                  reason: 'Coincidencia por descripción o keywords en el catálogo SAT local.',
+                  isActive: true,
+                  requiresExplicitConfirmation: true,
+                },
+              ],
+            }),
           })),
         ),
       },
@@ -3028,15 +3280,9 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     const prepareFiscalDocument = vi.fn().mockReturnValue(
       throwError(() => ({
         status: 400,
-        error: {
-          outcome: 'MissingProductFiscalProfile',
-          isSuccess: false,
-          errorMessage:
-            "No active product fiscal profile exists for item line '1' and internal code 'MTE-4259'.",
-          billingDocumentId: 30,
-          fiscalDocumentId: null,
-          status: null,
-        },
+        error: buildMissingProductFiscalProfilePayload('MTE-4259', {
+          description: 'FILTRO DE ACEITE',
+        }),
       })),
     );
 
@@ -3066,29 +3312,18 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       .mockReturnValueOnce(
         throwError(() => ({
           status: 400,
-          error: {
-            outcome: 'MissingProductFiscalProfile',
-            isSuccess: false,
-            errorMessage:
-              "No active product fiscal profile exists for item line '1' and internal code 'MTE-4259'.",
-            billingDocumentId: 30,
-            fiscalDocumentId: null,
-            status: null,
-          },
+          error: buildMissingProductFiscalProfilePayload('MTE-4259', {
+            description: 'FILTRO DE ACEITE',
+          }),
         })),
       )
       .mockReturnValueOnce(
         throwError(() => ({
           status: 400,
-          error: {
-            outcome: 'MissingProductFiscalProfile',
-            isSuccess: false,
-            errorMessage:
-              "No active product fiscal profile exists for item line '2' and internal code 'PS-317'.",
-            billingDocumentId: 30,
-            fiscalDocumentId: null,
-            status: null,
-          },
+          error: buildMissingProductFiscalProfilePayload('PS-317', {
+            lineNumber: 2,
+            description: 'PS-317',
+          }),
         })),
       );
     const create = vi.fn().mockReturnValue(of({ outcome: 'Created', isSuccess: true, id: 15 }));
@@ -3127,15 +3362,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     const prepareFiscalDocument = vi.fn().mockReturnValue(
       throwError(() => ({
         status: 400,
-        error: {
-          outcome: 'MissingProductFiscalProfile',
-          isSuccess: false,
-          errorMessage:
-            "No active product fiscal profile exists for item line '1' and internal code 'GP-149'.",
-          billingDocumentId: 30,
-          fiscalDocumentId: null,
-          status: null,
-        },
+        error: buildMissingProductFiscalProfilePayload('GP-149'),
       })),
     );
 

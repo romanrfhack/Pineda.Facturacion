@@ -118,6 +118,26 @@ public class LegacyOrderReaderTests
     }
 
     [Fact]
+    public void BuildSearchSql_Applies_Exact_Legacy_Order_Filter_Before_Pagination()
+    {
+        var schema = CreateResolvedSchema(
+            ordersTableName: "Pedidos",
+            customersTableName: "Clientes",
+            orderItemsTableName: "PedidosDet",
+            articlesTableName: "Articulos",
+            articleNamesTableName: "NombresArticulos",
+            orderDateColumnName: "FechaPedido");
+
+        var countSql = LegacyOrderReader.BuildCountSql(schema);
+        var listSql = LegacyOrderReader.BuildListSql(schema);
+
+        Assert.Contains("= @legacyOrderId", countSql, StringComparison.Ordinal);
+        Assert.Contains("= @legacyOrderId", listSql, StringComparison.Ordinal);
+        Assert.DoesNotContain("LIKE @legacyOrderId", listSql, StringComparison.Ordinal);
+        Assert.True(listSql.IndexOf("@legacyOrderId", StringComparison.Ordinal) < listSql.IndexOf("LIMIT @skip, @take", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void LegacySchemaResolver_Column_Error_Includes_Diagnostics()
     {
         var exception = Assert.Throws<InvalidOperationException>(() => LegacySchemaResolver.SelectResolvedColumnName(

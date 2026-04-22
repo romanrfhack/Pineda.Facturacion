@@ -221,6 +221,7 @@ describe('OrdersOperationsPageComponent', () => {
     expect(api.searchLegacyOrders).toHaveBeenCalledWith({
       fromDate: '2026-03-23',
       toDate: '2026-03-23',
+      legacyOrderId: '',
       customerQuery: '',
       page: 1,
       pageSize: 10
@@ -236,7 +237,25 @@ describe('OrdersOperationsPageComponent', () => {
     expect(api.searchLegacyOrders).toHaveBeenLastCalledWith({
       fromDate: '2026-03-23',
       toDate: '2026-03-23',
+      legacyOrderId: '',
       customerQuery: 'Cliente Uno',
+      page: 1,
+      pageSize: 10
+    });
+    expect(api.importLegacyOrder).toHaveBeenCalledTimes(0);
+  });
+
+  it('applies the exact legacy order filter to the legacy orders search', async () => {
+    const { fixture, api } = await configure();
+
+    fixture.componentInstance['setLegacyOrderIdFilter']('117-5479');
+    await fixture.componentInstance['searchCurrentRange']();
+
+    expect(api.searchLegacyOrders).toHaveBeenLastCalledWith({
+      fromDate: '2026-03-23',
+      toDate: '2026-03-23',
+      legacyOrderId: '1175479',
+      customerQuery: '',
       page: 1,
       pageSize: 10
     });

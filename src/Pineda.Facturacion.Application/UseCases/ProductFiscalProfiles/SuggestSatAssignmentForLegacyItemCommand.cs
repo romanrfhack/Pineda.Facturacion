@@ -8,6 +8,10 @@ public sealed class SuggestSatAssignmentForLegacyItemCommand
 
     public string? UnitName { get; init; }
 
+    public string? BillingDocumentItemSatProductServiceCode { get; init; }
+
+    public string? BillingDocumentItemSatUnitCode { get; init; }
+
     public string? ImportedSatProductServiceCode { get; init; }
 
     public string? ImportedSatUnitCode { get; init; }

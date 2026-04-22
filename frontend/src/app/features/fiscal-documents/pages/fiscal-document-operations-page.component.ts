@@ -743,9 +743,16 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
                     >Falta el perfil fiscal del producto {{ missingProduct.internalCode }}.</strong
                   >
                   <span>Producto interno: {{ missingProduct.description }}.</span>
-                  <span>Debes darlo de alta para continuar.</span>
+                  @if (missingProduct.existingProfileStatus === 'Inactive') {
+                    <span>Ya existe un perfil maestro inactivo para este código. Puedes actualizarlo y reactivarlo para continuar.</span>
+                  } @else {
+                    <span>Debes darlo de alta para continuar.</span>
+                  }
                   @if (missingProduct.lineNumber) {
                     <span>Línea {{ missingProduct.lineNumber }} del documento de facturación.</span>
+                  }
+                  @if (missingProduct.suggestions.length) {
+                    <span>Hay sugerencias determinísticas disponibles. Las coincidencias por descripción requieren confirmación explícita.</span>
                   }
                 </div>
 
@@ -773,10 +780,18 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
 
               @if (showMissingProductProfileForm()) {
                 <section class="card nested-card">
-                  <h4>Alta de perfil fiscal de producto</h4>
+                  <h4>
+                    {{
+                      missingProduct.existingProfileStatus === 'Inactive'
+                        ? 'Reactivar perfil fiscal de producto'
+                        : 'Alta de perfil fiscal de producto'
+                    }}
+                  </h4>
                   <app-product-fiscal-profile-form
                     [initialValue]="missingProduct.draft"
-                    [submitLabel]="'Guardar y reintentar'"
+                    [recoverySuggestions]="missingProduct.suggestions"
+                    [allowExplicitGeneric]="missingProduct.canUseExplicitGeneric"
+                    [submitLabel]="resolveMissingProductSubmitLabel(missingProduct)"
                     [submitting]="savingMissingProductProfile()"
                     [errorMessage]="missingProductProfileError()"
                     (submitted)="saveMissingProductProfile($event)"
@@ -2836,7 +2851,12 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected async saveMissingProductProfile(
     request: UpsertProductFiscalProfileRequest,
   ): Promise<void> {
-    if (!this.permissionService.canWriteMasterData() || this.savingMissingProductProfile()) {
+    const missingProfile = this.missingProductFiscalProfile();
+    if (
+      !this.permissionService.canWriteMasterData()
+      || this.savingMissingProductProfile()
+      || !missingProfile
+    ) {
       return;
     }
 
@@ -2844,11 +2864,18 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     this.missingProductProfileError.set(null);
 
     try {
-      await firstValueFrom(this.productFiscalProfilesApi.create(request));
-      this.feedbackService.show(
-        'success',
-        `Perfil fiscal del producto ${request.internalCode} creado.`,
-      );
+      if (missingProfile.existingProductFiscalProfileId) {
+        await firstValueFrom(
+          this.productFiscalProfilesApi.update(
+            missingProfile.existingProductFiscalProfileId,
+            request,
+          ),
+        );
+      } else {
+        await firstValueFrom(this.productFiscalProfilesApi.create(request));
+      }
+
+      this.feedbackService.show('success', this.buildMissingProductProfileSavedMessage(missingProfile, request));
       const pendingRequest = this.pendingPrepareRequest();
       this.closeMissingProductProfileForm();
       if (pendingRequest) {
@@ -2857,7 +2884,12 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     } catch (error) {
       this.showMissingProductProfileForm.set(true);
       this.missingProductProfileError.set(
-        extractApiErrorMessage(error, 'No fue posible crear el perfil fiscal del producto.'),
+        extractApiErrorMessage(
+          error,
+          missingProfile.existingProductFiscalProfileId
+            ? 'No fue posible actualizar o reactivar el perfil fiscal del producto.'
+            : 'No fue posible crear el perfil fiscal del producto.',
+        ),
       );
     } finally {
       this.savingMissingProductProfile.set(false);
@@ -2899,7 +2931,9 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
         this.showMissingProductProfileForm.set(true);
         this.feedbackService.show(
           'warning',
-          `Falta el perfil fiscal del producto ${missingProfile.internalCode}. Debes darlo de alta para continuar.`,
+          missingProfile.existingProfileStatus === 'Inactive'
+            ? `El perfil fiscal del producto ${missingProfile.internalCode} existe pero está inactivo. Debes reactivarlo o actualizarlo para continuar.`
+            : `Falta el perfil fiscal del producto ${missingProfile.internalCode}. Debes darlo de alta para continuar.`,
         );
         return;
       }
@@ -3382,6 +3416,29 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     );
 
     return codeMatch?.description?.trim() || null;
+  }
+
+  protected resolveMissingProductSubmitLabel(
+    missingProduct: MissingProductFiscalProfileContext,
+  ): string {
+    return missingProduct.existingProfileStatus === 'Inactive'
+      ? 'Reactivar y reintentar'
+      : 'Guardar y reintentar';
+  }
+
+  private buildMissingProductProfileSavedMessage(
+    missingProduct: MissingProductFiscalProfileContext,
+    request: UpsertProductFiscalProfileRequest,
+  ): string {
+    if (missingProduct.existingProfileStatus === 'Inactive') {
+      return `Perfil fiscal del producto ${request.internalCode} reactivado y actualizado.`;
+    }
+
+    if (missingProduct.existingProductFiscalProfileId) {
+      return `Perfil fiscal del producto ${request.internalCode} actualizado.`;
+    }
+
+    return `Perfil fiscal del producto ${request.internalCode} creado.`;
   }
 
   private async loadStamp(fiscalDocumentId: number, notifyOnMissing = false): Promise<void> {

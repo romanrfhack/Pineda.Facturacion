@@ -92,6 +92,51 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
+    public async Task SearchLegacyOrders_Filters_ByExactLegacyOrderId_AndCombinesWithCustomer()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        factory.LegacyOrderReader.SearchResults =
+        [
+            new LegacyOrderListItemReadModel
+            {
+                LegacyOrderId = "1175479",
+                OrderDateUtc = new DateTime(2026, 03, 23, 12, 0, 0, DateTimeKind.Utc),
+                CustomerName = "Cliente Exacto",
+                Total = 116m,
+                LegacyOrderType = "F"
+            },
+            new LegacyOrderListItemReadModel
+            {
+                LegacyOrderId = "11754791",
+                OrderDateUtc = new DateTime(2026, 03, 23, 11, 0, 0, DateTimeKind.Utc),
+                CustomerName = "Cliente Exacto",
+                Total = 232m,
+                LegacyOrderType = "F"
+            },
+            new LegacyOrderListItemReadModel
+            {
+                LegacyOrderId = "1175478",
+                OrderDateUtc = new DateTime(2026, 03, 23, 10, 0, 0, DateTimeKind.Utc),
+                CustomerName = "Otro cliente",
+                Total = 58m,
+                LegacyOrderType = "F"
+            }
+        ];
+
+        var response = await client.GetAsync("/api/orders/legacy?fromDate=2026-03-23&toDate=2026-03-23&legacyOrderId=1175479&customerQuery=Cliente%20Exacto&page=1&pageSize=10");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var body = await response.Content.ReadFromJsonAsync<OrdersEndpoints.SearchLegacyOrdersResponse>();
+        Assert.NotNull(body);
+        Assert.True(body!.IsSuccess);
+        Assert.Equal(1, body.TotalCount);
+        Assert.Single(body.Items);
+        Assert.Equal("1175479", body.Items[0].LegacyOrderId);
+    }
+
+    [Fact]
     public async Task IssuerProfile_Logo_Can_Be_Uploaded_And_Retrieved()
     {
         await using var factory = new MvpApiFactory();
@@ -171,6 +216,47 @@ public class MvpLifecycleApiTests
         Assert.False(fiscalJson.RootElement.TryGetProperty("certificateReference", out _));
         Assert.False(fiscalJson.RootElement.TryGetProperty("privateKeyReference", out _));
         Assert.False(fiscalJson.RootElement.TryGetProperty("privateKeyPasswordReference", out _));
+    }
+
+    [Fact]
+    public async Task PrepareFiscalDocument_ReturnsStructuredMissingProductFiscalProfilePayload()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        var seed = await factory.SeedStandardFiscalMasterDataAsync();
+        factory.LegacyOrderReader.Orders["LEG-MISSING-1001"] = CreateLegacyOrder("LEG-MISSING-1001", "SKU-MISSING-1", 100m);
+
+        var importBody = await (await client.PostAsync("/api/orders/LEG-MISSING-1001/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+        var billingBody = await (await client.PostAsJsonAsync($"/api/sales-orders/{importBody!.SalesOrderId}/billing-documents", new SalesOrdersEndpoints.CreateBillingDocumentRequest
+        {
+            DocumentType = "I"
+        })).Content.ReadFromJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>();
+
+        var fiscalResponse = await client.PostAsJsonAsync($"/api/billing-documents/{billingBody!.BillingDocumentId}/fiscal-documents", new BillingDocumentsEndpoints.PrepareFiscalDocumentRequest
+        {
+            FiscalReceiverId = seed.ReceiverId,
+            IssuerProfileId = seed.IssuerId,
+            PaymentMethodSat = "PPD",
+            PaymentFormSat = "99",
+            PaymentCondition = "CREDITO",
+            IsCreditSale = true,
+            CreditDays = 7
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, fiscalResponse.StatusCode);
+        var fiscalBody = await fiscalResponse.Content.ReadFromJsonAsync<BillingDocumentsEndpoints.PrepareFiscalDocumentResponse>();
+        Assert.NotNull(fiscalBody);
+        Assert.Equal("MissingProductFiscalProfile", fiscalBody!.Outcome);
+        Assert.NotNull(fiscalBody.MissingProductFiscalProfile);
+        Assert.Equal("SKU-MISSING-1", fiscalBody.MissingProductFiscalProfile!.InternalCode);
+        Assert.Equal("Product SKU-MISSING-1", fiscalBody.MissingProductFiscalProfile.Description);
+        Assert.Equal("None", fiscalBody.MissingProductFiscalProfile.ExistingProfileStatus);
+        Assert.True(fiscalBody.MissingProductFiscalProfile.CanUseExplicitGeneric);
+        Assert.NotNull(fiscalBody.MissingProductFiscalProfile.Prefill);
+        Assert.Equal(string.Empty, fiscalBody.MissingProductFiscalProfile.Prefill.SatProductServiceCode);
+        Assert.Equal("H87", fiscalBody.MissingProductFiscalProfile.Prefill.SatUnitCode);
+        Assert.True(fiscalBody.MissingProductFiscalProfile.Prefill.RequiresExplicitProductServiceConfirmation);
     }
 
     [Fact]
@@ -4641,6 +4727,8 @@ internal sealed class FakeLegacyOrderReader : ILegacyOrderReader
     {
         var filtered = SearchResults
             .Where(x => x.OrderDateUtc >= search.FromDateUtc && x.OrderDateUtc < search.ToDateUtcExclusive)
+            .Where(x => string.IsNullOrWhiteSpace(search.LegacyOrderId) || string.Equals(x.LegacyOrderId, search.LegacyOrderId, StringComparison.Ordinal))
+            .Where(x => string.IsNullOrWhiteSpace(search.CustomerQuery) || x.CustomerName.Contains(search.CustomerQuery, StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(x => x.OrderDateUtc)
             .ThenByDescending(x => x.LegacyOrderId)
             .ToArray();

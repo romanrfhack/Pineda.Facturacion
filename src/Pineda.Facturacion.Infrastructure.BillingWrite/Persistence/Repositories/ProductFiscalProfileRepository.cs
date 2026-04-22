@@ -36,15 +36,6 @@ public class ProductFiscalProfileRepository : IProductFiscalProfileRepository
         DateTime asOfUtc,
         CancellationToken cancellationToken = default)
     {
-        var currentProfile = await _dbContext.ProductFiscalProfiles
-            .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.InternalCode == normalizedInternalCode, cancellationToken);
-
-        if (currentProfile is not null && !currentProfile.IsActive)
-        {
-            return currentProfile;
-        }
-
         var assignment = await _dbContext.ProductFiscalAssignments
             .AsNoTracking()
             .Where(x => x.InternalCode == normalizedInternalCode
@@ -69,7 +60,9 @@ public class ProductFiscalProfileRepository : IProductFiscalProfileRepository
             };
         }
 
-        return currentProfile;
+        return await _dbContext.ProductFiscalProfiles
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.InternalCode == normalizedInternalCode, cancellationToken);
     }
 
     public Task<ProductFiscalAssignment?> GetEffectiveAssignmentAsync(
