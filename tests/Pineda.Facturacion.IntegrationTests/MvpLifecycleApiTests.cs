@@ -1090,6 +1090,258 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
+    public async Task BillingDocument_Can_Be_Cancelled_And_Recreated_For_The_Same_Order()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        factory.LegacyOrderReader.Orders["LEG-7001"] = CreateLegacyOrder("LEG-7001", "SKU-1", 100m);
+
+        var importBody = await (await client.PostAsync("/api/orders/LEG-7001/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+        Assert.NotNull(importBody);
+
+        var firstBillingBody = await (await client.PostAsJsonAsync($"/api/sales-orders/{importBody!.SalesOrderId}/billing-documents", new SalesOrdersEndpoints.CreateBillingDocumentRequest
+        {
+            DocumentType = "I"
+        })).Content.ReadFromJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>();
+        Assert.NotNull(firstBillingBody);
+
+        var cancelResponse = await client.PostAsync($"/api/billing-documents/{firstBillingBody!.BillingDocumentId}/cancel", null);
+        Assert.Equal(HttpStatusCode.OK, cancelResponse.StatusCode);
+
+        var cancelledBilling = await (await client.GetAsync($"/api/billing-documents/{firstBillingBody.BillingDocumentId}"))
+            .Content.ReadFromJsonAsync<BillingDocumentsEndpoints.BillingDocumentLookupResponse>();
+        Assert.NotNull(cancelledBilling);
+        Assert.Equal("Cancelled", cancelledBilling!.Status);
+
+        var secondBillingResponse = await client.PostAsJsonAsync($"/api/sales-orders/{importBody.SalesOrderId}/billing-documents", new SalesOrdersEndpoints.CreateBillingDocumentRequest
+        {
+            DocumentType = "I"
+        });
+        Assert.Equal(HttpStatusCode.OK, secondBillingResponse.StatusCode);
+
+        var secondBillingBody = await secondBillingResponse.Content.ReadFromJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>();
+        Assert.NotNull(secondBillingBody);
+        Assert.NotEqual(firstBillingBody.BillingDocumentId, secondBillingBody!.BillingDocumentId);
+    }
+
+    [Fact]
+    public async Task BillingDocument_Cancel_Releases_All_Associated_Orders_And_Preserves_Historical_Composition()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        factory.LegacyOrderReader.Orders["LEG-7002A"] = CreateLegacyOrder("LEG-7002A", "SKU-1", 100m);
+        factory.LegacyOrderReader.Orders["LEG-7002B"] = CreateLegacyOrder("LEG-7002B", "SKU-1", 50m);
+
+        var importOrder1 = await (await client.PostAsync("/api/orders/LEG-7002A/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+        var importOrder2 = await (await client.PostAsync("/api/orders/LEG-7002B/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+
+        var billingBody = await (await client.PostAsJsonAsync($"/api/sales-orders/{importOrder1!.SalesOrderId}/billing-documents", new SalesOrdersEndpoints.CreateBillingDocumentRequest
+        {
+            DocumentType = "I"
+        })).Content.ReadFromJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>();
+        Assert.NotNull(billingBody);
+
+        var addResponse = await client.PostAsync($"/api/billing-documents/{billingBody!.BillingDocumentId}/sales-orders/{importOrder2!.SalesOrderId}", null);
+        Assert.Equal(HttpStatusCode.OK, addResponse.StatusCode);
+
+        var cancelResponse = await client.PostAsync($"/api/billing-documents/{billingBody.BillingDocumentId}/cancel", null);
+        Assert.Equal(HttpStatusCode.OK, cancelResponse.StatusCode);
+
+        var conflictOrder1 = await (await client.PostAsync("/api/orders/LEG-7002A/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+        var conflictOrder2 = await (await client.PostAsync("/api/orders/LEG-7002B/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+
+        Assert.NotNull(conflictOrder1);
+        Assert.NotNull(conflictOrder2);
+        Assert.Null(conflictOrder1!.ExistingBillingDocumentId);
+        Assert.Null(conflictOrder2!.ExistingBillingDocumentId);
+
+        var historicalLookup = await (await client.GetAsync($"/api/billing-documents/{billingBody.BillingDocumentId}"))
+            .Content.ReadFromJsonAsync<BillingDocumentsEndpoints.BillingDocumentLookupResponse>();
+        Assert.NotNull(historicalLookup);
+        Assert.Equal("Cancelled", historicalLookup!.Status);
+        Assert.Equal(2, historicalLookup.AssociatedOrders.Count);
+    }
+
+    [Fact]
+    public async Task BillingDocument_Cancel_Discards_Unstamped_Fiscal_And_Blocks_Further_Mutations()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        var seed = await factory.SeedStandardFiscalMasterDataAsync();
+
+        factory.LegacyOrderReader.Orders["LEG-7003"] = CreateLegacyOrder("LEG-7003", "SKU-1", 100m);
+        factory.LegacyOrderReader.Orders["LEG-7003B"] = CreateLegacyOrder("LEG-7003B", "SKU-1", 100m);
+
+        var importOrder1 = await (await client.PostAsync("/api/orders/LEG-7003/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+        var importOrder2 = await (await client.PostAsync("/api/orders/LEG-7003B/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+
+        var billingBody = await (await client.PostAsJsonAsync($"/api/sales-orders/{importOrder1!.SalesOrderId}/billing-documents", new SalesOrdersEndpoints.CreateBillingDocumentRequest
+        {
+            DocumentType = "I"
+        })).Content.ReadFromJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>();
+        Assert.NotNull(billingBody);
+
+        var fiscalBody = await (await client.PostAsJsonAsync($"/api/billing-documents/{billingBody!.BillingDocumentId}/fiscal-documents", new BillingDocumentsEndpoints.PrepareFiscalDocumentRequest
+        {
+            FiscalReceiverId = seed.ReceiverId,
+            IssuerProfileId = seed.IssuerId,
+            PaymentMethodSat = "PPD",
+            PaymentFormSat = "99",
+            PaymentCondition = "CREDITO",
+            IsCreditSale = true,
+            CreditDays = 7
+        })).Content.ReadFromJsonAsync<BillingDocumentsEndpoints.PrepareFiscalDocumentResponse>();
+        Assert.NotNull(fiscalBody);
+
+        var cancelResponse = await client.PostAsync($"/api/billing-documents/{billingBody.BillingDocumentId}/cancel", null);
+        Assert.Equal(HttpStatusCode.OK, cancelResponse.StatusCode);
+
+        var prepareAgainResponse = await client.PostAsJsonAsync($"/api/billing-documents/{billingBody.BillingDocumentId}/fiscal-documents", new BillingDocumentsEndpoints.PrepareFiscalDocumentRequest
+        {
+            FiscalReceiverId = seed.ReceiverId,
+            IssuerProfileId = seed.IssuerId,
+            PaymentMethodSat = "PPD",
+            PaymentFormSat = "99",
+            PaymentCondition = "CREDITO",
+            IsCreditSale = true,
+            CreditDays = 7
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, prepareAgainResponse.StatusCode);
+
+        var reprepareResponse = await client.PostAsync($"/api/fiscal-documents/{fiscalBody!.FiscalDocumentId}/reprepare", null);
+        Assert.Equal(HttpStatusCode.Conflict, reprepareResponse.StatusCode);
+
+        var stampResponse = await client.PostAsJsonAsync(
+            $"/api/fiscal-documents/{fiscalBody.FiscalDocumentId}/stamp",
+            new FiscalDocumentsEndpoints.StampFiscalDocumentRequest());
+        Assert.Equal(HttpStatusCode.Conflict, stampResponse.StatusCode);
+
+        var addOrderResponse = await client.PostAsync($"/api/billing-documents/{billingBody.BillingDocumentId}/sales-orders/{importOrder2!.SalesOrderId}", null);
+        Assert.Equal(HttpStatusCode.Conflict, addOrderResponse.StatusCode);
+
+        var fiscalDocument = await (await client.GetAsync($"/api/fiscal-documents/{fiscalBody.FiscalDocumentId}"))
+            .Content.ReadFromJsonAsync<FiscalDocumentsEndpoints.FiscalDocumentResponse>();
+        Assert.NotNull(fiscalDocument);
+        Assert.Equal("DiscardedUnstamped", fiscalDocument!.Status);
+    }
+
+    [Fact]
+    public async Task BillingDocument_Cancel_Releases_PendingBilling_Assignments_For_Reuse()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        var seed = await factory.SeedStandardFiscalMasterDataAsync();
+
+        var legacyOrder1 = CreateLegacyOrder("LEG-7004A", "SKU-1", 100m);
+        legacyOrder1.Subtotal = 150m;
+        legacyOrder1.Total = 150m;
+        legacyOrder1.Items.Add(new LegacyOrderItemReadModel
+        {
+            LineNumber = 2,
+            LegacyArticleId = "SKU-1",
+            Sku = "SKU-1",
+            Description = "Product SKU-1 Extra",
+            UnitCode = "H87",
+            UnitName = "Pieza",
+            Quantity = 1m,
+            UnitPrice = 50m,
+            DiscountAmount = 0m,
+            TaxRate = 0m,
+            TaxAmount = 0m,
+            LineTotal = 50m
+        });
+        factory.LegacyOrderReader.Orders["LEG-7004A"] = legacyOrder1;
+        factory.LegacyOrderReader.Orders["LEG-7004B"] = CreateLegacyOrder("LEG-7004B", "SKU-1", 100m);
+
+        var importOrder1 = await (await client.PostAsync("/api/orders/LEG-7004A/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+        var importOrder2 = await (await client.PostAsync("/api/orders/LEG-7004B/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+
+        var billingBody1 = await (await client.PostAsJsonAsync($"/api/sales-orders/{importOrder1!.SalesOrderId}/billing-documents", new SalesOrdersEndpoints.CreateBillingDocumentRequest
+        {
+            DocumentType = "I"
+        })).Content.ReadFromJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>();
+        var fiscalBody1 = await (await client.PostAsJsonAsync($"/api/billing-documents/{billingBody1!.BillingDocumentId}/fiscal-documents", new BillingDocumentsEndpoints.PrepareFiscalDocumentRequest
+        {
+            FiscalReceiverId = seed.ReceiverId,
+            IssuerProfileId = seed.IssuerId,
+            PaymentMethodSat = "PPD",
+            PaymentFormSat = "99",
+            PaymentCondition = "CREDITO",
+            IsCreditSale = true,
+            CreditDays = 7
+        })).Content.ReadFromJsonAsync<BillingDocumentsEndpoints.PrepareFiscalDocumentResponse>();
+
+        var lookupBeforeRemoval = await (await client.GetAsync($"/api/billing-documents/{billingBody1.BillingDocumentId}"))
+            .Content.ReadFromJsonAsync<BillingDocumentsEndpoints.BillingDocumentLookupResponse>();
+        var itemToRemove = lookupBeforeRemoval!.Items.Single(x => x.SourceSalesOrderLineNumber == 2);
+
+        var removeResponse = await client.PostAsJsonAsync(
+            $"/api/billing-documents/{billingBody1.BillingDocumentId}/items/{itemToRemove.BillingDocumentItemId}/remove",
+            new BillingDocumentsEndpoints.RemoveBillingDocumentItemRequest
+            {
+                RemovalReason = "WrongDocument",
+                Observations = "Pendiente de facturar en otro CFDI.",
+                RemovalDisposition = "PendingBilling"
+            });
+        Assert.Equal(HttpStatusCode.OK, removeResponse.StatusCode);
+
+        var billingBody2 = await (await client.PostAsJsonAsync($"/api/sales-orders/{importOrder2!.SalesOrderId}/billing-documents", new SalesOrdersEndpoints.CreateBillingDocumentRequest
+        {
+            DocumentType = "I"
+        })).Content.ReadFromJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>();
+        var fiscalBody2 = await (await client.PostAsJsonAsync($"/api/billing-documents/{billingBody2!.BillingDocumentId}/fiscal-documents", new BillingDocumentsEndpoints.PrepareFiscalDocumentRequest
+        {
+            FiscalReceiverId = seed.ReceiverId,
+            IssuerProfileId = seed.IssuerId,
+            PaymentMethodSat = "PPD",
+            PaymentFormSat = "99",
+            PaymentCondition = "CREDITO",
+            IsCreditSale = true,
+            CreditDays = 7
+        })).Content.ReadFromJsonAsync<BillingDocumentsEndpoints.PrepareFiscalDocumentResponse>();
+
+        var pendingItems = await (await client.GetAsync("/api/billing-documents/pending-items"))
+            .Content.ReadFromJsonAsync<BillingDocumentsEndpoints.PendingBillingItemResponse[]>();
+        var pendingItem = Assert.Single(pendingItems!);
+
+        var assignResponse = await client.PostAsJsonAsync(
+            $"/api/billing-documents/{billingBody2.BillingDocumentId}/pending-items/assign",
+            new BillingDocumentsEndpoints.AssignPendingBillingItemsRequest
+            {
+                RemovalIds = [pendingItem.RemovalId]
+            });
+        Assert.Equal(HttpStatusCode.OK, assignResponse.StatusCode);
+
+        var cancelResponse = await client.PostAsync($"/api/billing-documents/{billingBody2.BillingDocumentId}/cancel", null);
+        Assert.Equal(HttpStatusCode.OK, cancelResponse.StatusCode);
+
+        var pendingAfterCancel = await (await client.GetAsync("/api/billing-documents/pending-items"))
+            .Content.ReadFromJsonAsync<BillingDocumentsEndpoints.PendingBillingItemResponse[]>();
+        Assert.NotNull(pendingAfterCancel);
+        Assert.Contains(pendingAfterCancel!, x => x.RemovalId == pendingItem.RemovalId);
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+        var removal = await dbContext.BillingDocumentItemRemovals.SingleAsync(x => x.Id == pendingItem.RemovalId);
+        var assignment = await dbContext.BillingDocumentPendingItemAssignments.SingleAsync(x => x.DestinationBillingDocumentId == billingBody2.BillingDocumentId);
+
+        Assert.True(removal.AvailableForPendingBillingReuse);
+        Assert.NotNull(assignment.ReleasedAtUtc);
+        Assert.Equal(fiscalBody2!.FiscalDocumentId, assignment.DestinationFiscalDocumentId);
+    }
+
+    [Fact]
     public async Task BillingDocument_RemoveItem_Is_Blocked_After_Stamping()
     {
         await using var factory = new MvpApiFactory();

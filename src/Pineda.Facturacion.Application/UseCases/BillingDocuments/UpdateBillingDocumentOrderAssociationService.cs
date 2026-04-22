@@ -96,13 +96,14 @@ public sealed class UpdateBillingDocumentOrderAssociationService
         var persistedFiscalDocument = await _fiscalDocumentRepository.GetTrackedByBillingDocumentIdAsync(billingDocumentId, cancellationToken);
         var fiscalDocument = FiscalDocumentCompositionEditPolicy.NormalizeOperationalFiscalDocument(persistedFiscalDocument);
 
-        if (!FiscalDocumentCompositionEditPolicy.CanEdit(persistedFiscalDocument))
+        var mutationLockReason = BillingDocumentMutationPolicy.GetMutationLockReason(billingDocument, persistedFiscalDocument);
+        if (mutationLockReason is not null)
         {
             return Conflict(
                 billingDocument,
                 persistedFiscalDocument,
                 salesOrderId,
-                "The billing document composition is locked because the fiscal document is no longer editable before stamping.");
+                mutationLockReason);
         }
 
         IReadOnlyList<SalesOrder> nextSalesOrders;

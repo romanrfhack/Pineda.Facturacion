@@ -63,6 +63,18 @@ export interface BillingDocumentAssociatedOrderResponse {
   isPrimary: boolean;
 }
 
+export interface CancelBillingDocumentResponse {
+  outcome: string;
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  billingDocumentId: number;
+  billingDocumentStatus?: string | null;
+  fiscalDocumentId?: number | null;
+  fiscalDocumentStatus?: string | null;
+  releasedOrderLinkCount: number;
+  releasedPendingAssignmentCount: number;
+}
+
 export interface BillingDocumentRemovedItemTraceResponse {
   removalId: number;
   billingDocumentId: number;

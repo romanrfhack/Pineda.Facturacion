@@ -37,6 +37,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<GetBillingDocumentLookupByIdService>();
         services.AddScoped<SearchBillingDocumentsService>();
         services.AddScoped<ListPendingBillingItemsService>();
+        services.AddScoped<CancelBillingDocumentService>();
         services.AddScoped<UpdateBillingDocumentOrderAssociationService>();
         services.AddScoped<RemoveBillingDocumentItemService>();
         services.AddScoped<AssignPendingBillingItemsService>();

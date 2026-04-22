@@ -44,6 +44,7 @@ public class BillingDocumentRepository : IBillingDocumentRepository
                     && _dbContext.SalesOrders.Any(
                         salesOrder => salesOrder.Id == salesOrderId
                             && salesOrder.LegacyImportRecordId == legacyImportRecord.Id))
+            where billingDocument.Status != BillingDocumentStatus.Cancelled
             where fiscalDocument == null || fiscalDocument.Status != FiscalDocumentStatus.Cancelled
             orderby billingDocument.Id descending
             select billingDocument)

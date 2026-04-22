@@ -125,7 +125,7 @@ public class PrepareFiscalDocumentService
             };
         }
 
-        if (billingDocument.Status != BillingDocumentStatus.Draft)
+        if (!BillingDocumentMutationPolicy.CanEditStatus(billingDocument.Status))
         {
             return ValidationFailure(command.BillingDocumentId, "Billing document is not eligible for fiscal snapshot creation.");
         }

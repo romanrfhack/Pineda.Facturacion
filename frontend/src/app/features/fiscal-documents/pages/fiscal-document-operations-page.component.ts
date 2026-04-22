@@ -189,6 +189,16 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
                   Abrir documento fiscal existente
                 </button>
               }
+              @if (permissionService.canCancelFiscal()) {
+                <button
+                  type="button"
+                  class="danger"
+                  (click)="openCancelBillingDocumentDialog()"
+                  [disabled]="loadingOperation() || !canCancelCurrentBillingDocument()"
+                >
+                  Cancelar documento
+                </button>
+              }
               <button type="button" class="secondary" (click)="clearBillingDocumentSelection()">
                 Cambiar documento
               </button>
@@ -508,13 +518,19 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
         }
       </section>
 
-      @if (!fiscalDocument() && billingDocumentContext()) {
+      @if (!fiscalDocument() && billingDocumentContext(); as currentBillingDocument) {
         <section class="card">
           <h3>Preparar documento fiscal</h3>
           <p class="helper">
             Id de documento de facturación: <strong>{{ billingDocumentId() }}</strong>
           </p>
 
+          @if (currentBillingDocument.status === 'Cancelled') {
+            <p class="helper">
+              El documento está cancelado. Su composición permanece visible como histórico, pero ya
+              no puede prepararse ni editarse.
+            </p>
+          } @else {
           <form class="form-grid" (ngSubmit)="prepare()">
             <section class="receiver-selector">
               <label>
@@ -768,6 +784,7 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
                 </section>
               }
             </section>
+          }
           }
         </section>
       } @else if (!fiscalDocument()) {
@@ -1223,6 +1240,20 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
         [busy]="loadingOperation()"
         (confirmed)="confirmCancellation()"
         (cancelled)="closeCancelConfirmationDialog()"
+      />
+
+      <app-confirmation-modal
+        [open]="showBillingCancelConfirmationDialog()"
+        eyebrow="Cancelación interna"
+        title="Cancelar documento de facturación"
+        [message]="billingCancellationConfirmationMessage()"
+        confirmLabel="Sí, cancelar documento"
+        cancelLabel="No, volver"
+        busyConfirmLabel="Cancelando..."
+        tone="danger"
+        [busy]="loadingOperation()"
+        (confirmed)="confirmBillingCancellation()"
+        (cancelled)="closeCancelBillingDocumentDialog()"
       />
 
       @if (showRemoveBillingItemDialog()) {
@@ -1805,6 +1836,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected readonly lastOperationMessage = signal<string | null>(null);
   protected readonly showCancelDialog = signal(false);
   protected readonly showCancelConfirmationDialog = signal(false);
+  protected readonly showBillingCancelConfirmationDialog = signal(false);
   protected readonly showRemoveBillingItemDialog = signal(false);
   protected readonly selectedBillingItemForRemoval =
     signal<BillingDocumentLookupItemResponse | null>(null);
@@ -1833,6 +1865,16 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
 
     const request = this.buildCancellationRequest();
     return request ? buildCancellationConfirmationMessage(request) : '';
+  });
+  protected readonly billingCancellationConfirmationMessage = computed(() => {
+    const billingDocument = this.billingDocumentContext();
+    if (!billingDocument) {
+      return '';
+    }
+
+    return this.fiscalDocument()
+      ? `¿Confirmas cancelar el documento #${billingDocument.billingDocumentId}? Se liberarán las asociaciones operativas, el snapshot fiscal no timbrado se descartará automáticamente y el documento quedará sólo como histórico no editable.`
+      : `¿Confirmas cancelar el documento #${billingDocument.billingDocumentId}? Se liberarán las asociaciones operativas y el documento quedará sólo como histórico no editable.`;
   });
   protected readonly searchingReceivers = signal(false);
   protected readonly receiverSearchError = signal<string | null>(null);
@@ -1993,6 +2035,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
 
   protected canPrepareFiscalDocument(): boolean {
     return (
+      this.currentBillingDocumentIsDraft() &&
       !this.loadingPrepare() &&
       !this.savingMissingProductProfile() &&
       !!this.selectedReceiverId &&
@@ -2240,10 +2283,15 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     this.cancellation.set(null);
     this.pendingAutomaticEmailStatus.set(null);
     this.fiscalDocumentId.set(null);
+    this.showBillingCancelConfirmationDialog.set(false);
     await this.router.navigate(['/app/fiscal-documents'], { queryParams: {} });
   }
 
   protected canEditCurrentBillingComposition(): boolean {
+    if (!this.currentBillingDocumentIsDraft()) {
+      return false;
+    }
+
     const fiscalDocument = this.fiscalDocument();
     if (!fiscalDocument) {
       return true;
@@ -2262,6 +2310,10 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   }
 
   protected canReprepareCurrentFiscalDocument(): boolean {
+    if (!this.currentBillingDocumentIsDraft()) {
+      return false;
+    }
+
     const fiscalDocument = this.fiscalDocument();
     if (!fiscalDocument || this.hasPersistedStampedUuid()) {
       return false;
@@ -2281,6 +2333,69 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
 
   protected shouldExplainStampEvidenceAsHistory(): boolean {
     return !!this.stampEvidence() && !this.hasPersistedStampedUuid();
+  }
+
+  protected canCancelCurrentBillingDocument(): boolean {
+    if (!this.currentBillingDocumentIsDraft()) {
+      return false;
+    }
+
+    const fiscalDocument = this.fiscalDocument();
+    if (!fiscalDocument) {
+      return true;
+    }
+
+    if (this.hasPersistedStampedUuid() || fiscalDocument.status === 'Stamped') {
+      return false;
+    }
+
+    return (
+      fiscalDocument.status === 'Draft' ||
+      fiscalDocument.status === 'ReadyForStamping' ||
+      fiscalDocument.status === 'StampingRejected' ||
+      fiscalDocument.status === 'DiscardedUnstamped'
+    );
+  }
+
+  protected openCancelBillingDocumentDialog(): void {
+    if (!this.canCancelCurrentBillingDocument() || this.loadingOperation()) {
+      return;
+    }
+
+    this.showBillingCancelConfirmationDialog.set(true);
+  }
+
+  protected closeCancelBillingDocumentDialog(): void {
+    this.showBillingCancelConfirmationDialog.set(false);
+  }
+
+  protected async confirmBillingCancellation(): Promise<void> {
+    const billingDocumentId = this.billingDocumentId();
+    if (
+      !billingDocumentId ||
+      !this.showBillingCancelConfirmationDialog() ||
+      !this.canCancelCurrentBillingDocument()
+    ) {
+      return;
+    }
+
+    await this.runOperation(async () => {
+      const response = await firstValueFrom(this.api.cancelBillingDocument(billingDocumentId));
+      this.lastOperationMessage.set(
+        response.errorMessage ||
+          this.buildBillingCancellationMessage(
+            response.releasedOrderLinkCount,
+            response.releasedPendingAssignmentCount,
+          ),
+      );
+      this.showBillingCancelConfirmationDialog.set(false);
+      this.resetFiscalContextAfterBillingCancellation();
+      await this.loadBillingDocumentContext(response.billingDocumentId, true);
+      this.feedbackService.show(
+        response.isSuccess ? 'success' : 'error',
+        response.errorMessage || 'Documento de facturación cancelado correctamente.',
+      );
+    });
   }
 
   protected async addLegacyOrderToBillingDocument(): Promise<void> {
@@ -3400,12 +3515,16 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
 
   protected canStampCurrentFiscalDocument(): boolean {
     const status = this.fiscalDocument()?.status;
-    return !this.hasPersistedStampedUuid() && (status === 'ReadyForStamping' || status === 'StampingRejected');
+    return this.currentBillingDocumentIsDraft()
+      && !this.hasPersistedStampedUuid()
+      && (status === 'ReadyForStamping' || status === 'StampingRejected');
   }
 
   protected canSyncCurrentFiscalDocument(): boolean {
     const status = this.fiscalDocument()?.status;
-    return !this.hasPersistedStampedUuid() && (status === 'ReadyForStamping' || status === 'StampingRejected');
+    return this.currentBillingDocumentIsDraft()
+      && !this.hasPersistedStampedUuid()
+      && (status === 'ReadyForStamping' || status === 'StampingRejected');
   }
 
   protected stampActionLabel(): string {
@@ -3465,6 +3584,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected canLocalDiscardCurrentFiscalDocument(): boolean {
     const status = this.fiscalDocument()?.status;
     return (
+      this.currentBillingDocumentIsDraft() &&
       !this.hasPersistedStampedUuid() &&
       (status === 'Draft' || status === 'ReadyForStamping' || status === 'StampingRejected')
     );
@@ -3475,8 +3595,38 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     return status === 'Stamped' || status === 'CancellationRejected';
   }
 
+  private currentBillingDocumentIsDraft(): boolean {
+    return this.billingDocumentContext()?.status === 'Draft';
+  }
+
   private hasPersistedStampedUuid(): boolean {
     return !!this.stampEvidence()?.uuid;
+  }
+
+  private resetFiscalContextAfterBillingCancellation(): void {
+    this.fiscalDocument.set(null);
+    this.stampEvidence.set(null);
+    this.cancellation.set(null);
+    this.pendingAutomaticEmailStatus.set(null);
+    this.fiscalDocumentId.set(null);
+    this.showCancelDialog.set(false);
+    this.showCancelConfirmationDialog.set(false);
+  }
+
+  private buildBillingCancellationMessage(
+    releasedOrderLinkCount: number,
+    releasedPendingAssignmentCount: number,
+  ): string {
+    const releasedOrdersMessage =
+      releasedOrderLinkCount > 0
+        ? `${releasedOrderLinkCount} vínculo(s) operativo(s) liberado(s)`
+        : 'sin vínculos operativos pendientes por liberar';
+    const releasedAssignmentsMessage =
+      releasedPendingAssignmentCount > 0
+        ? `${releasedPendingAssignmentCount} asignación(es) PendingBilling liberada(s)`
+        : 'sin asignaciones PendingBilling activas';
+
+    return `Documento de facturación cancelado. ${releasedOrdersMessage}; ${releasedAssignmentsMessage}.`;
   }
 
   private buildCancellationFeedbackMessage(

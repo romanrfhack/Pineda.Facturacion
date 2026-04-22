@@ -34,6 +34,15 @@ public static class BillingDocumentsEndpoints
             .WithSummary("List reusable pending billing items removed from other billing documents")
             .Produces<IReadOnlyList<PendingBillingItemResponse>>(StatusCodes.Status200OK);
 
+        group.MapPost("/{billingDocumentId:long}/cancel", CancelBillingDocumentAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
+            .WithName("CancelBillingDocument")
+            .WithSummary("Cancel an unstamped billing document, release operational order links, and lock future edits")
+            .Produces<CancelBillingDocumentResponse>(StatusCodes.Status200OK)
+            .Produces<CancelBillingDocumentResponse>(StatusCodes.Status400BadRequest)
+            .Produces<CancelBillingDocumentResponse>(StatusCodes.Status404NotFound)
+            .Produces<CancelBillingDocumentResponse>(StatusCodes.Status409Conflict);
+
         group.MapPost("/{billingDocumentId:long}/sales-orders/{salesOrderId:long}", AddSalesOrderToBillingDocumentAsync)
             .WithName("AddSalesOrderToBillingDocument")
             .WithSummary("Associate another imported sales order to a draft billing document before stamping")
@@ -103,6 +112,54 @@ public static class BillingDocumentsEndpoints
     {
         var results = await service.ExecuteAsync(cancellationToken);
         return TypedResults.Ok(results.Select(MapPendingBillingItem).ToArray());
+    }
+
+    private static async Task<Results<Ok<CancelBillingDocumentResponse>, NotFound<CancelBillingDocumentResponse>, Conflict<CancelBillingDocumentResponse>, BadRequest<CancelBillingDocumentResponse>>> CancelBillingDocumentAsync(
+        long billingDocumentId,
+        CancelBillingDocumentService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(billingDocumentId, cancellationToken);
+        var response = new CancelBillingDocumentResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            BillingDocumentId = result.BillingDocumentId,
+            BillingDocumentStatus = result.BillingDocumentStatus?.ToString(),
+            FiscalDocumentId = result.FiscalDocumentId,
+            FiscalDocumentStatus = result.FiscalDocumentStatus?.ToString(),
+            ReleasedOrderLinkCount = result.ReleasedOrderLinkCount,
+            ReleasedPendingAssignmentCount = result.ReleasedPendingAssignmentCount
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "BillingDocument.Cancel",
+            "BillingDocument",
+            billingDocumentId.ToString(),
+            result.Outcome.ToString(),
+            new { billingDocumentId },
+            new
+            {
+                result.BillingDocumentStatus,
+                result.FiscalDocumentId,
+                result.FiscalDocumentStatus,
+                result.ReleasedOrderLinkCount,
+                result.ReleasedPendingAssignmentCount
+            },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            CancelBillingDocumentOutcome.Cancelled => TypedResults.Ok(response),
+            CancelBillingDocumentOutcome.NotFound => TypedResults.NotFound(response),
+            CancelBillingDocumentOutcome.Conflict => TypedResults.Conflict(response),
+            CancelBillingDocumentOutcome.ValidationFailed => TypedResults.BadRequest(response),
+            _ => TypedResults.BadRequest(response)
+        };
     }
 
     private static async Task<Results<Ok<UpdateBillingDocumentOrderAssociationResponse>, NotFound<UpdateBillingDocumentOrderAssociationResponse>, Conflict<UpdateBillingDocumentOrderAssociationResponse>, BadRequest<UpdateBillingDocumentOrderAssociationResponse>>> AddSalesOrderToBillingDocumentAsync(
@@ -458,6 +515,19 @@ public static class BillingDocumentsEndpoints
         public string CustomerName { get; init; } = string.Empty;
         public decimal Total { get; init; }
         public bool IsPrimary { get; init; }
+    }
+
+    public sealed class CancelBillingDocumentResponse
+    {
+        public string Outcome { get; init; } = string.Empty;
+        public bool IsSuccess { get; init; }
+        public string? ErrorMessage { get; init; }
+        public long BillingDocumentId { get; init; }
+        public string? BillingDocumentStatus { get; init; }
+        public long? FiscalDocumentId { get; init; }
+        public string? FiscalDocumentStatus { get; init; }
+        public int ReleasedOrderLinkCount { get; init; }
+        public int ReleasedPendingAssignmentCount { get; init; }
     }
 
     public sealed class BillingDocumentRemovedItemTraceResponse

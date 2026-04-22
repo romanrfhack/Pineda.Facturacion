@@ -167,7 +167,7 @@ public sealed class ReimportLegacyOrderService
                     };
                 }
 
-                if (!LegacyOrderReimportPolicy.CanEditBillingDocument(billingDocument.Status.ToString()))
+                if (!BillingDocumentMutationPolicy.CanEditStatus(billingDocument.Status))
                 {
                     return ProtectedStateConflict(preview, $"Reimport is blocked because billing document '{billingDocument.Id}' is in protected state '{billingDocument.Status}'.");
                 }

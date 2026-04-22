@@ -1,4 +1,4 @@
-import { TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, Router } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { FiscalDocumentOperationsPageComponent } from './fiscal-document-operations-page.component';
@@ -263,6 +263,18 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         }),
       ),
       cancelFiscalDocument: vi.fn(),
+      cancelBillingDocument: vi.fn().mockReturnValue(
+        of({
+          outcome: 'Cancelled',
+          isSuccess: true,
+          billingDocumentId: 30,
+          billingDocumentStatus: 'Cancelled',
+          fiscalDocumentId: null,
+          fiscalDocumentStatus: null,
+          releasedOrderLinkCount: 1,
+          releasedPendingAssignmentCount: 0,
+        }),
+      ),
       refreshStatus: vi.fn(),
       queryRemoteStamp: vi.fn(),
       ...overrides,
@@ -424,6 +436,46 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
     return fixture;
+  }
+
+  function setDraftBillingContext(
+    fixture: ComponentFixture<FiscalDocumentOperationsPageComponent>,
+  ): void {
+    fixture.componentInstance['billingDocumentContext'].set({
+      billingDocumentId: 30,
+      salesOrderId: 20,
+      legacyOrderId: 'LEG-1001',
+      status: 'Draft',
+      documentType: 'I',
+      currencyCode: 'MXN',
+      total: 100,
+      createdAtUtc: '2026-03-20T12:00:00Z',
+      fiscalDocumentId: 40,
+      fiscalDocumentStatus: 'ReadyForStamping',
+      associatedOrders: [
+        {
+          salesOrderId: 20,
+          legacyOrderId: 'LEG-1001-ORD-LEG-1001',
+          customerName: 'Receiver One',
+          total: 100,
+          isPrimary: true,
+        },
+      ],
+      items: [
+        {
+          billingDocumentItemId: 501,
+          salesOrderId: 20,
+          salesOrderItemId: 601,
+          sourceSalesOrderLineNumber: 1,
+          sourceLegacyOrderId: 'LEG-1001-ORD-LEG-1001',
+          lineNumber: 1,
+          productInternalCode: 'MTE-4259',
+          description: 'FILTRO DE ACEITE',
+          quantity: 1,
+          total: 100,
+        },
+      ],
+    });
   }
 
   it('shows empty evidence state when the fiscal document is not stamped yet', async () => {
@@ -744,7 +796,6 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     const getFiscalDocumentById = vi
       .fn()
       .mockReturnValue(of(stampedDocument))
-      .mockReturnValueOnce(of(readyDocument))
       .mockReturnValueOnce(of(readyDocument));
     const getEmailDraft = vi.fn().mockReturnValue(
       of({
@@ -840,7 +891,6 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     const getFiscalDocumentById = vi
       .fn()
       .mockReturnValue(of(stampedDocument))
-      .mockReturnValueOnce(of(readyDocument))
       .mockReturnValueOnce(of(readyDocument));
     const getEmailDraft = vi.fn().mockReturnValue(
       of({
@@ -955,9 +1005,13 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       'CFDI timbrado correctamente, pero no fue posible enviar el correo.',
     );
 
+    fixture.componentInstance['fiscalDocument'].set(stampedDocument);
+    fixture.componentInstance['pendingAutomaticEmailStatus'].set('failed');
     fixture.componentInstance['closeEmailComposer']();
+    await fixture.whenStable();
     fixture.detectChanges();
 
+    expect(fixture.componentInstance['shouldShowEmailFallbackAction']()).toBe(true);
     expect(fixture.nativeElement.textContent).toContain('Completar envío por correo');
   });
 
@@ -1268,6 +1322,137 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(fixture.componentInstance['showCancelConfirmationDialog']()).toBe(false);
   });
 
+  it('shows billing cancellation only while the billing document remains draft', async () => {
+    const fixture = await configure(undefined, { id: null, billingDocumentId: '30' });
+
+    expect(fixture.componentInstance['canCancelCurrentBillingDocument']()).toBe(true);
+
+    fixture.componentInstance['billingDocumentContext'].set({
+      ...fixture.componentInstance['billingDocumentContext']()!,
+      status: 'Cancelled',
+    });
+
+    expect(fixture.componentInstance['canCancelCurrentBillingDocument']()).toBe(false);
+    expect(fixture.componentInstance['canEditCurrentBillingComposition']()).toBe(false);
+  });
+
+  it('cancels the billing document, reloads historical cancelled context, and blocks further edits', async () => {
+    const cancelledBillingDocument = {
+      billingDocumentId: 30,
+      salesOrderId: 20,
+      legacyOrderId: 'LEG-1001',
+      status: 'Cancelled',
+      documentType: 'I',
+      currencyCode: 'MXN',
+      total: 100,
+      createdAtUtc: '2026-03-20T12:00:00Z',
+      fiscalDocumentId: null,
+      fiscalDocumentStatus: null,
+      associatedOrders: [
+        {
+          salesOrderId: 20,
+          legacyOrderId: 'LEG-1001-ORD-LEG-1001',
+          customerName: 'Receiver One',
+          total: 100,
+          isPrimary: true,
+        },
+      ],
+      items: [
+        {
+          billingDocumentItemId: 501,
+          salesOrderId: 20,
+          salesOrderItemId: 601,
+          sourceSalesOrderLineNumber: 1,
+          sourceLegacyOrderId: 'LEG-1001-ORD-LEG-1001',
+          lineNumber: 1,
+          productInternalCode: 'MTE-4259',
+          description: 'FILTRO DE ACEITE',
+          quantity: 1,
+          total: 100,
+        },
+      ],
+    };
+    const getBillingDocumentById = vi
+      .fn()
+      .mockReturnValueOnce(
+        of({
+          billingDocumentId: 30,
+          salesOrderId: 20,
+          legacyOrderId: 'LEG-1001',
+          status: 'Draft',
+          documentType: 'I',
+          currencyCode: 'MXN',
+          total: 100,
+          createdAtUtc: '2026-03-20T12:00:00Z',
+          fiscalDocumentId: null,
+          fiscalDocumentStatus: null,
+          associatedOrders: [
+            {
+              salesOrderId: 20,
+              legacyOrderId: 'LEG-1001-ORD-LEG-1001',
+              customerName: 'Receiver One',
+              total: 100,
+              isPrimary: true,
+            },
+          ],
+          items: [
+            {
+              billingDocumentItemId: 501,
+              salesOrderId: 20,
+              salesOrderItemId: 601,
+              sourceSalesOrderLineNumber: 1,
+              sourceLegacyOrderId: 'LEG-1001-ORD-LEG-1001',
+              lineNumber: 1,
+              productInternalCode: 'MTE-4259',
+              description: 'FILTRO DE ACEITE',
+              quantity: 1,
+              total: 100,
+            },
+          ],
+        }),
+      )
+      .mockReturnValue(of(cancelledBillingDocument));
+    const cancelBillingDocument = vi.fn().mockReturnValue(
+      of({
+        outcome: 'Cancelled',
+        isSuccess: true,
+        billingDocumentId: 30,
+        billingDocumentStatus: 'Cancelled',
+        fiscalDocumentId: 40,
+        fiscalDocumentStatus: 'DiscardedUnstamped',
+        releasedOrderLinkCount: 2,
+        releasedPendingAssignmentCount: 1,
+      }),
+    );
+    const fixture = await configure(
+      { getBillingDocumentById, cancelBillingDocument },
+      { id: null, billingDocumentId: '30' },
+    );
+    const router = TestBed.inject(Router) as unknown as {
+      navigate: ReturnType<typeof vi.fn>;
+    };
+
+    fixture.componentInstance['openCancelBillingDocumentDialog']();
+    expect(fixture.componentInstance['showBillingCancelConfirmationDialog']()).toBe(true);
+
+    await fixture.componentInstance['confirmBillingCancellation']();
+    fixture.detectChanges();
+
+    expect(cancelBillingDocument).toHaveBeenCalledWith(30);
+    expect(fixture.componentInstance['billingDocumentContext']()?.status).toBe('Cancelled');
+    expect(fixture.componentInstance['showBillingCancelConfirmationDialog']()).toBe(false);
+    expect(fixture.componentInstance['canEditCurrentBillingComposition']()).toBe(false);
+    expect(fixture.componentInstance['canPrepareFiscalDocument']()).toBe(false);
+    expect(fixture.componentInstance['canCancelCurrentBillingDocument']()).toBe(false);
+    expect(fixture.componentInstance['lastOperationMessage']()).toContain(
+      'Documento de facturación cancelado.',
+    );
+    expect(fixture.nativeElement.textContent).toContain('El documento está cancelado.');
+    expect(router.navigate).toHaveBeenCalledWith(['/app/fiscal-documents'], {
+      queryParams: { billingDocumentId: 30 },
+    });
+  });
+
   it('uses local discard semantics for recoverable unstamped snapshots and enables reprepare afterwards', async () => {
     const recoverableDocument = {
       id: 40,
@@ -1352,6 +1537,8 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     const feedback = TestBed.inject(FeedbackService) as unknown as {
       show: ReturnType<typeof vi.fn>;
     };
+    setDraftBillingContext(fixture);
+    fixture.detectChanges();
 
     fixture.componentInstance['openCancelDialog']();
 
@@ -1581,6 +1768,8 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     const feedback = TestBed.inject(FeedbackService) as unknown as {
       show: ReturnType<typeof vi.fn>;
     };
+    setDraftBillingContext(fixture);
+    fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).toContain('Regenerar snapshot');
 
@@ -2108,6 +2297,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         value: '2026',
       },
     ]);
+    setDraftBillingContext(fixture);
 
     await fixture.componentInstance['stamp']();
 
@@ -3304,6 +3494,8 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         }),
       ),
     });
+    setDraftBillingContext(fixture);
+    fixture.detectChanges();
 
     fixture.componentInstance['openRemoveBillingItemDialog']({
       billingDocumentItemId: 501,

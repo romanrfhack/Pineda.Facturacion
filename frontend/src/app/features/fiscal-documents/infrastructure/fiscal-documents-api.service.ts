@@ -6,6 +6,7 @@ import {
   BillingDocumentLookupResponse,
   AssignPendingBillingItemsRequest,
   AssignPendingBillingItemsResponse,
+  CancelBillingDocumentResponse,
   CancelFiscalDocumentRequest,
   CancelFiscalDocumentResponse,
   FiscalCancellationResponse,
@@ -105,6 +106,10 @@ export class FiscalDocumentsApiService {
 
   listPendingBillingItems(): Observable<PendingBillingItemResponse[]> {
     return this.http.get<PendingBillingItemResponse[]>(buildApiUrl('/billing-documents/pending-items'));
+  }
+
+  cancelBillingDocument(billingDocumentId: number): Observable<CancelBillingDocumentResponse> {
+    return this.http.post<CancelBillingDocumentResponse>(buildApiUrl(`/billing-documents/${billingDocumentId}/cancel`), {});
   }
 
   assignPendingBillingItems(billingDocumentId: number, request: AssignPendingBillingItemsRequest): Observable<AssignPendingBillingItemsResponse> {
