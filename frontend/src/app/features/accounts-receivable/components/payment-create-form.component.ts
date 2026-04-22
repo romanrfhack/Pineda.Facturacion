@@ -51,8 +51,8 @@ export function formatDateTimeLocalValue(date: Date): string {
           @if (normalizedMaxOperationalAmount() != null) {
             <small class="helper">Saldo pendiente operativo: {{ normalizedMaxOperationalAmount()!.toFixed(2) }} MXN</small>
           }
-          @if (getAmountGuardrailMessage(); as amountGuardrailMessage) {
-            <small class="helper error" data-testid="payment-create-amount-guardrail">{{ amountGuardrailMessage }}</small>
+          @if (getAmountInfoMessage(); as amountInfoMessage) {
+            <small class="helper info" data-testid="payment-create-amount-info">{{ amountInfoMessage }}</small>
           }
         </label>
         <label><span>Referencia</span><input class="field-control" [(ngModel)]="model.reference" name="reference" /></label>
@@ -70,6 +70,7 @@ export function formatDateTimeLocalValue(date: Date): string {
     .payment-form-select { max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .helper { margin:0; color:#5f6b76; font-size:0.82rem; }
     .helper.error { color:#7a2020; }
+    .helper.info { color:#2d5d7b; }
     button { border:none; border-radius:0.8rem; padding:0.75rem 1rem; background:#182533; color:#fff; cursor:pointer; }
   `],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -124,18 +125,17 @@ export class PaymentCreateFormComponent {
   protected canSubmit(): boolean {
     return !!this.model.paymentDateUtc
       && this.model.amount > 0
-      && this.getExcessAmount() <= 0
       && this.paymentFormOptions().some((option) => option.code === this.model.paymentFormSat);
   }
 
-  protected getAmountGuardrailMessage(): string | null {
+  protected getAmountInfoMessage(): string | null {
     const maxAmount = this.normalizedMaxOperationalAmount();
     const excessAmount = this.getExcessAmount();
     if (maxAmount == null || excessAmount <= 0) {
       return null;
     }
 
-    return `El monto capturado excede el saldo pendiente por ${excessAmount.toFixed(2)}. Ajusta el monto o asigna explícitamente el excedente.`;
+    return `El pago excede el saldo pendiente operativo por ${excessAmount.toFixed(2)} MXN. Se registrará completo y el remanente quedará disponible para aplicarse después.`;
   }
 
   private async loadSatCatalog(): Promise<void> {

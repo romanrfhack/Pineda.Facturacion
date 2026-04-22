@@ -272,6 +272,63 @@ public class AccountsReceivableServicesTests
         Assert.Equal(CreateAccountsReceivablePaymentOutcome.Created, result.Outcome);
         Assert.NotNull(repository.Added);
         Assert.Equal(1190m, repository.Added!.Amount);
+        Assert.Equal(77, repository.Added.ReceivedFromFiscalReceiverId);
+    }
+
+    [Fact]
+    public async Task CreateAccountsReceivablePayment_Succeeds_WhenExplicitReceiverMatchesContextInvoiceReceiver()
+    {
+        var repository = new ArFakeAccountsReceivablePaymentRepository();
+        var invoiceRepository = new ArFakeAccountsReceivableInvoiceRepository
+        {
+            TrackedById = { [200] = CreateInvoice(id: 200, total: 1190m) }
+        };
+        var service = new CreateAccountsReceivablePaymentService(
+            repository,
+            new ArFakeSatCatalogDescriptionProvider(),
+            new ArFakeUnitOfWork(),
+            invoiceRepository);
+
+        var result = await service.ExecuteAsync(new CreateAccountsReceivablePaymentCommand
+        {
+            AccountsReceivableInvoiceId = 200,
+            PaymentDateUtc = new DateTime(2026, 3, 20, 12, 0, 0, DateTimeKind.Utc),
+            PaymentFormSat = "03",
+            Amount = 1190m,
+            ReceivedFromFiscalReceiverId = 77
+        });
+
+        Assert.Equal(CreateAccountsReceivablePaymentOutcome.Created, result.Outcome);
+        Assert.NotNull(repository.Added);
+        Assert.Equal(77, repository.Added!.ReceivedFromFiscalReceiverId);
+    }
+
+    [Fact]
+    public async Task CreateAccountsReceivablePayment_Fails_WhenExplicitReceiverDoesNotMatchContextInvoiceReceiver()
+    {
+        var repository = new ArFakeAccountsReceivablePaymentRepository();
+        var invoiceRepository = new ArFakeAccountsReceivableInvoiceRepository
+        {
+            TrackedById = { [200] = CreateInvoice(id: 200, total: 1190m) }
+        };
+        var service = new CreateAccountsReceivablePaymentService(
+            repository,
+            new ArFakeSatCatalogDescriptionProvider(),
+            new ArFakeUnitOfWork(),
+            invoiceRepository);
+
+        var result = await service.ExecuteAsync(new CreateAccountsReceivablePaymentCommand
+        {
+            AccountsReceivableInvoiceId = 200,
+            PaymentDateUtc = new DateTime(2026, 3, 20, 12, 0, 0, DateTimeKind.Utc),
+            PaymentFormSat = "03",
+            Amount = 1190m,
+            ReceivedFromFiscalReceiverId = 88
+        });
+
+        Assert.Equal(CreateAccountsReceivablePaymentOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("must match the contextual accounts receivable invoice receiver", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(repository.Added);
     }
 
     [Fact]
@@ -302,7 +359,7 @@ public class AccountsReceivableServicesTests
     }
 
     [Fact]
-    public async Task CreateAccountsReceivablePayment_Blocks_WhenContextInvoiceAmountExceedsOutstandingBalance()
+    public async Task CreateAccountsReceivablePayment_AllowsAmountAboveContextInvoiceOutstandingBalance()
     {
         var repository = new ArFakeAccountsReceivablePaymentRepository();
         var invoiceRepository = new ArFakeAccountsReceivableInvoiceRepository
@@ -323,9 +380,10 @@ public class AccountsReceivableServicesTests
             Amount = 1190.04m
         });
 
-        Assert.Equal(CreateAccountsReceivablePaymentOutcome.ValidationFailed, result.Outcome);
-        Assert.Contains("exceeds the outstanding balance by 0.04", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
-        Assert.Null(repository.Added);
+        Assert.Equal(CreateAccountsReceivablePaymentOutcome.Created, result.Outcome);
+        Assert.NotNull(repository.Added);
+        Assert.Equal(1190.04m, repository.Added!.Amount);
+        Assert.Equal(77, repository.Added.ReceivedFromFiscalReceiverId);
     }
 
     [Fact]

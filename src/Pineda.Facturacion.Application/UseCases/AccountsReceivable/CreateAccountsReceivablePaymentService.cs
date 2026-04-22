@@ -8,8 +8,6 @@ namespace Pineda.Facturacion.Application.UseCases.AccountsReceivable;
 
 public class CreateAccountsReceivablePaymentService
 {
-    private const int OperationalMoneyScale = 2;
-
     private readonly IAccountsReceivablePaymentRepository _accountsReceivablePaymentRepository;
     private readonly IAccountsReceivableInvoiceRepository? _accountsReceivableInvoiceRepository;
     private readonly ISatCatalogDescriptionProvider _satCatalogDescriptionProvider;
@@ -52,6 +50,7 @@ public class CreateAccountsReceivablePaymentService
             return Failure("Payment amount must be greater than zero.");
         }
 
+        AccountsReceivableInvoice? contextInvoice = null;
         if (command.AccountsReceivableInvoiceId.HasValue)
         {
             if (_accountsReceivableInvoiceRepository is null)
@@ -59,17 +58,17 @@ public class CreateAccountsReceivablePaymentService
                 return Failure("Accounts receivable invoice validation is not available for this payment context.");
             }
 
-            var invoice = await _accountsReceivableInvoiceRepository.GetTrackedByIdAsync(command.AccountsReceivableInvoiceId.Value, cancellationToken);
-            if (invoice is null)
+            contextInvoice = await _accountsReceivableInvoiceRepository.GetTrackedByIdAsync(command.AccountsReceivableInvoiceId.Value, cancellationToken);
+            if (contextInvoice is null)
             {
                 return Failure($"Accounts receivable invoice '{command.AccountsReceivableInvoiceId.Value}' was not found.");
             }
 
-            var normalizedOutstandingBalance = NormalizeOperationalMoney(invoice.OutstandingBalance);
-            if (command.Amount > normalizedOutstandingBalance)
+            if (command.ReceivedFromFiscalReceiverId.HasValue
+                && contextInvoice.FiscalReceiverId.HasValue
+                && command.ReceivedFromFiscalReceiverId.Value != contextInvoice.FiscalReceiverId.Value)
             {
-                var excessAmount = NormalizeOperationalMoney(command.Amount - normalizedOutstandingBalance);
-                return Failure($"Captured payment amount exceeds the outstanding balance by {excessAmount:0.00}. Adjust the amount or explicitly assign the excess.");
+                return Failure("Explicit received fiscal receiver must match the contextual accounts receivable invoice receiver.");
             }
         }
 
@@ -82,7 +81,7 @@ public class CreateAccountsReceivablePaymentService
             Amount = command.Amount,
             Reference = FiscalMasterDataNormalization.NormalizeOptionalText(command.Reference),
             Notes = FiscalMasterDataNormalization.NormalizeOptionalText(command.Notes),
-            ReceivedFromFiscalReceiverId = command.ReceivedFromFiscalReceiverId,
+            ReceivedFromFiscalReceiverId = command.ReceivedFromFiscalReceiverId ?? contextInvoice?.FiscalReceiverId,
             UnappliedDisposition = AccountsReceivablePaymentUnappliedDisposition.PendingAllocation,
             CreatedAtUtc = now,
             UpdatedAtUtc = now
@@ -109,7 +108,4 @@ public class CreateAccountsReceivablePaymentService
             ErrorMessage = errorMessage
         };
     }
-
-    private static decimal NormalizeOperationalMoney(decimal amount)
-        => decimal.Round(amount, OperationalMoneyScale, MidpointRounding.AwayFromZero);
 }

@@ -1557,6 +1557,146 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
+    public async Task CreateAccountsReceivablePayment_AllowsOverContextAmount_AndTracksRemainderAcrossMultipleInvoices()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        var seed = await factory.SeedStandardFiscalMasterDataAsync();
+
+        var fiscalDocumentId1 = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-AR-MULTI-1001", seed.ReceiverId, "SKU-1", "UUID-AR-MULTI-1001");
+        var fiscalDocumentId2 = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-AR-MULTI-1002", seed.ReceiverId, "SKU-1", "UUID-AR-MULTI-1002");
+
+        var invoice1 = await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId1);
+        var invoice2 = await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId2);
+        var invoice1Id = invoice1!.AccountsReceivableInvoice!.Id;
+        var invoice2Id = invoice2!.AccountsReceivableInvoice!.Id;
+        var invoice1Outstanding = invoice1.AccountsReceivableInvoice.OutstandingBalance;
+        const decimal secondInvoicePartialAmount = 50m;
+        var paymentAmount = invoice1Outstanding + secondInvoicePartialAmount;
+
+        var createPaymentResponse = await client.PostAsJsonAsync("/api/accounts-receivable/payments", new CreateAccountsReceivablePaymentRequest
+        {
+            AccountsReceivableInvoiceId = invoice1Id,
+            PaymentDateUtc = DateTime.UtcNow,
+            PaymentFormSat = "03",
+            Amount = paymentAmount,
+            Reference = "PAY-MULTI-1",
+            ReceivedFromFiscalReceiverId = seed.ReceiverId
+        });
+        Assert.Equal(HttpStatusCode.OK, createPaymentResponse.StatusCode);
+        var createPaymentBody = await createPaymentResponse.Content.ReadFromJsonAsync<CreateAccountsReceivablePaymentResponse>();
+        Assert.NotNull(createPaymentBody?.Payment);
+        Assert.Equal(paymentAmount, createPaymentBody!.Payment!.Amount);
+        Assert.Equal(paymentAmount, createPaymentBody.Payment.RemainingAmount);
+        Assert.Equal(seed.ReceiverId, createPaymentBody.Payment.ReceivedFromFiscalReceiverId);
+        var paymentId = createPaymentBody.Payment.Id;
+
+        var firstApplyResponse = await client.PostAsJsonAsync($"/api/accounts-receivable/payments/{paymentId}/apply", new ApplyAccountsReceivablePaymentRequest
+        {
+            Applications =
+            [
+                new ApplyAccountsReceivablePaymentRowRequest
+                {
+                    AccountsReceivableInvoiceId = invoice1Id,
+                    AppliedAmount = invoice1Outstanding
+                }
+            ]
+        });
+        Assert.Equal(HttpStatusCode.OK, firstApplyResponse.StatusCode);
+        var firstApplyBody = await firstApplyResponse.Content.ReadFromJsonAsync<ApplyAccountsReceivablePaymentResponse>();
+        Assert.NotNull(firstApplyBody?.Payment);
+        Assert.Equal(secondInvoicePartialAmount, firstApplyBody!.RemainingPaymentAmount);
+        Assert.Equal(secondInvoicePartialAmount, firstApplyBody.Payment!.RemainingAmount);
+
+        var secondApplyResponse = await client.PostAsJsonAsync($"/api/accounts-receivable/payments/{paymentId}/apply", new ApplyAccountsReceivablePaymentRequest
+        {
+            Applications =
+            [
+                new ApplyAccountsReceivablePaymentRowRequest
+                {
+                    AccountsReceivableInvoiceId = invoice2Id,
+                    AppliedAmount = secondInvoicePartialAmount
+                }
+            ]
+        });
+        Assert.Equal(HttpStatusCode.OK, secondApplyResponse.StatusCode);
+        var secondApplyBody = await secondApplyResponse.Content.ReadFromJsonAsync<ApplyAccountsReceivablePaymentResponse>();
+        Assert.NotNull(secondApplyBody?.Payment);
+        Assert.Equal(0m, secondApplyBody!.RemainingPaymentAmount);
+        Assert.Equal(0m, secondApplyBody.Payment!.RemainingAmount);
+        Assert.Equal(2, secondApplyBody.Payment.Applications.Count);
+
+        var getPaymentResponse = await client.GetAsync($"/api/accounts-receivable/payments/{paymentId}");
+        Assert.Equal(HttpStatusCode.OK, getPaymentResponse.StatusCode);
+        using (var paymentJson = await JsonDocument.ParseAsync(await getPaymentResponse.Content.ReadAsStreamAsync()))
+        {
+            Assert.Equal(paymentAmount, paymentJson.RootElement.GetProperty("amount").GetDecimal());
+            Assert.Equal(0m, paymentJson.RootElement.GetProperty("remainingAmount").GetDecimal());
+            Assert.Equal("FullyApplied", paymentJson.RootElement.GetProperty("operationalStatus").GetString());
+            Assert.Equal(2, paymentJson.RootElement.GetProperty("applications").GetArrayLength());
+        }
+
+        var getInvoice1Response = await client.GetAsync($"/api/accounts-receivable/invoices/{invoice1Id}");
+        Assert.Equal(HttpStatusCode.OK, getInvoice1Response.StatusCode);
+        using (var invoice1Json = await JsonDocument.ParseAsync(await getInvoice1Response.Content.ReadAsStreamAsync()))
+        {
+            Assert.Equal("Paid", invoice1Json.RootElement.GetProperty("status").GetString());
+            Assert.Equal(0m, invoice1Json.RootElement.GetProperty("outstandingBalance").GetDecimal());
+        }
+
+        var getInvoice2Response = await client.GetAsync($"/api/accounts-receivable/invoices/{invoice2Id}");
+        Assert.Equal(HttpStatusCode.OK, getInvoice2Response.StatusCode);
+        using var invoice2Json = await JsonDocument.ParseAsync(await getInvoice2Response.Content.ReadAsStreamAsync());
+        Assert.Equal("PartiallyPaid", invoice2Json.RootElement.GetProperty("status").GetString());
+        Assert.Equal(secondInvoicePartialAmount, invoice2Json.RootElement.GetProperty("paidTotal").GetDecimal());
+    }
+
+    [Fact]
+    public async Task CreateAccountsReceivablePayment_RejectsExplicitReceiverMismatchAgainstContextInvoice()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        var seed = await factory.SeedStandardFiscalMasterDataAsync();
+        var secondReceiverId = await factory.SeedFiscalReceiverAsync("CCC010101CCC", "Receiver Two");
+
+        var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-AR-RECV-MISMATCH-1001", seed.ReceiverId, "SKU-1", "UUID-AR-RECV-MISMATCH-1001");
+        var invoice = await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId);
+        var invoiceId = invoice!.AccountsReceivableInvoice!.Id;
+
+        int paymentsBefore;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+            paymentsBefore = await dbContext.AccountsReceivablePayments.CountAsync();
+        }
+
+        var createPaymentResponse = await client.PostAsJsonAsync("/api/accounts-receivable/payments", new CreateAccountsReceivablePaymentRequest
+        {
+            AccountsReceivableInvoiceId = invoiceId,
+            PaymentDateUtc = DateTime.UtcNow,
+            PaymentFormSat = "03",
+            Amount = 116m,
+            Reference = "PAY-RECV-MISMATCH-1",
+            ReceivedFromFiscalReceiverId = secondReceiverId
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, createPaymentResponse.StatusCode);
+        var createPaymentBody = await createPaymentResponse.Content.ReadFromJsonAsync<CreateAccountsReceivablePaymentResponse>();
+        Assert.NotNull(createPaymentBody);
+        Assert.False(createPaymentBody!.IsSuccess);
+        Assert.Equal("ValidationFailed", createPaymentBody.Outcome);
+        Assert.Null(createPaymentBody.Payment);
+        Assert.Contains("must match the contextual accounts receivable invoice receiver", createPaymentBody.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+            var paymentsAfter = await dbContext.AccountsReceivablePayments.CountAsync();
+            Assert.Equal(paymentsBefore, paymentsAfter);
+        }
+    }
+
+    [Fact]
     public async Task StampFiscalDocument_AutoEnsuresAccountsReceivable_ForCreditSalePpd99()
     {
         await using var factory = new MvpApiFactory();

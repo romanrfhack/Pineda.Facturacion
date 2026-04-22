@@ -1222,16 +1222,23 @@ import {
             </table>
           }
           @if (permissionService.canManagePayments()) {
-            <app-payment-application-form
-              [loading]="loading()"
-              [currentInvoiceId]="invoice()?.id ?? null"
-              [invoiceLabel]="invoiceApplicationLabel()"
-              [outstandingBalance]="invoice()?.outstandingBalance ?? 0"
-              [paymentAmount]="currentPayment.amount"
-              [appliedAmount]="currentPayment.appliedTotal"
-              [remainingAmount]="currentPayment.remainingAmount"
-              (submit)="applyPayment($event)"
-            />
+            @if (invoice()?.id) {
+              <app-payment-application-form
+                [loading]="loading()"
+                [currentInvoiceId]="invoice()?.id ?? null"
+                [invoiceLabel]="invoiceApplicationLabel()"
+                [outstandingBalance]="invoice()?.outstandingBalance ?? 0"
+                [paymentAmount]="currentPayment.amount"
+                [appliedAmount]="currentPayment.appliedTotal"
+                [remainingAmount]="currentPayment.remainingAmount"
+                (submit)="applyPayment($event)"
+              />
+            } @else if (showRemainderApplicationSection()) {
+              <p class="helper">
+                Este pago se abrió desde la lista de pagos. Puedes distribuir el remanente entre
+                otras facturas abiertas del mismo receptor.
+              </p>
+            }
             @if (showRemainderApplicationSection()) {
               <app-payment-remainder-application-form
                 [loading]="loading()"
@@ -1658,10 +1665,13 @@ export class AccountsReceivablePageComponent {
 
     return this.formatInvoiceFiscalLabel(currentInvoice);
   });
+  protected readonly paymentReceiverFiscalReceiverId = computed(
+    () => this.invoice()?.fiscalReceiverId ?? this.payment()?.receivedFromFiscalReceiverId ?? null,
+  );
   protected readonly showRemainderApplicationSection = computed(
     () =>
       !!this.payment() &&
-      !!this.invoice()?.fiscalReceiverId &&
+      !!this.paymentReceiverFiscalReceiverId() &&
       (this.payment()?.remainingAmount ?? 0) > 0 &&
       this.eligibleReceiverInvoices().length > 0,
   );
@@ -1867,17 +1877,6 @@ export class AccountsReceivablePageComponent {
 
   protected async createPayment(request: CreateAccountsReceivablePaymentRequest): Promise<void> {
     const currentInvoice = this.invoice();
-    const normalizedOutstandingBalance = currentInvoice
-      ? this.normalizeMoney(currentInvoice.outstandingBalance)
-      : null;
-    if (normalizedOutstandingBalance != null && request.amount > normalizedOutstandingBalance) {
-      const excessAmount = this.normalizeMoney(request.amount - normalizedOutstandingBalance);
-      this.feedbackService.show(
-        'error',
-        `El monto capturado excede el saldo pendiente por ${excessAmount.toFixed(2)}. Ajusta el monto o asigna explícitamente el excedente.`,
-      );
-      return;
-    }
 
     await this.run(async () => {
       const payload = {
@@ -2084,25 +2083,33 @@ export class AccountsReceivablePageComponent {
 
   private async loadEligibleReceiverInvoices(): Promise<void> {
     const currentInvoice = this.invoice();
-    if (!currentInvoice?.fiscalReceiverId) {
+    const currentPayment = this.payment();
+    const fiscalReceiverId =
+      currentInvoice?.fiscalReceiverId ?? currentPayment?.receivedFromFiscalReceiverId ?? null;
+    if (!fiscalReceiverId) {
       this.eligibleReceiverInvoices.set([]);
       return;
     }
 
     const response = await firstValueFrom(
       this.api.searchPortfolio({
-        fiscalReceiverId: currentInvoice.fiscalReceiverId,
+        fiscalReceiverId,
         hasPendingBalance: true,
       }),
     );
 
+    const appliedInvoiceIdsWithoutContext = !currentInvoice
+      ? new Set((currentPayment?.applications ?? []).map((application) => application.accountsReceivableInvoiceId))
+      : null;
+
     const items = response.items.filter(
       (item) =>
-        item.accountsReceivableInvoiceId !== currentInvoice.id &&
-        item.fiscalReceiverId === currentInvoice.fiscalReceiverId &&
+        item.accountsReceivableInvoiceId !== currentInvoice?.id &&
+        item.fiscalReceiverId === fiscalReceiverId &&
         item.outstandingBalance > 0 &&
         item.status !== 'Cancelled' &&
-        item.status !== 'Paid',
+        item.status !== 'Paid' &&
+        !(appliedInvoiceIdsWithoutContext?.has(item.accountsReceivableInvoiceId) ?? false),
     );
 
     this.eligibleReceiverInvoices.set(items);

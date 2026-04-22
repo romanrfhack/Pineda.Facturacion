@@ -1,6 +1,9 @@
 import { expect, test } from '@playwright/test';
 import { LoginPage } from '../support/login-page';
-import { mockAccountsReceivableJourney } from '../support/mock-operational-scenarios';
+import {
+  mockAccountsReceivableJourney,
+  mockAccountsReceivablePaymentRemainderJourney
+} from '../support/mock-operational-scenarios';
 
 async function openAccountsReceivablePaymentForm(page: import('@playwright/test').Page): Promise<void> {
   const loginPage = new LoginPage(page);
@@ -43,7 +46,7 @@ test('operator can continue when the payment amount matches the operational outs
   await paymentForm.getByTestId('payment-create-amount').fill('100');
   await paymentForm.getByLabel('Referencia').fill('PAY-701-EXACT');
 
-  await expect(paymentForm.getByTestId('payment-create-amount-guardrail')).toHaveCount(0);
+  await expect(paymentForm.getByTestId('payment-create-amount-info')).toHaveCount(0);
   await expect(paymentForm.getByTestId('payment-create-submit')).toBeEnabled();
 
   await paymentForm.getByTestId('payment-create-submit').click();
@@ -52,14 +55,45 @@ test('operator can continue when the payment amount matches the operational outs
   await expect(page.getByText('Remanente disponible 100 MXN')).toBeVisible();
 });
 
-test('operator sees the overpayment guardrail and cannot submit when the amount exceeds the operational outstanding balance', async ({ page }) => {
+test('operator can register the full received amount even when it exceeds the current operational outstanding balance', async ({ page }) => {
   await mockAccountsReceivableJourney(page);
   await openAccountsReceivablePaymentForm(page);
 
   const paymentForm = page.locator('app-payment-create-form');
   await paymentForm.getByTestId('payment-create-amount').fill('100.01');
 
-  await expect(paymentForm.getByTestId('payment-create-amount-guardrail')).toBeVisible();
-  await expect(paymentForm.getByTestId('payment-create-amount-guardrail')).toContainText('0.01');
-  await expect(paymentForm.getByTestId('payment-create-submit')).toBeDisabled();
+  await expect(paymentForm.getByTestId('payment-create-amount-info')).toBeVisible();
+  await expect(paymentForm.getByTestId('payment-create-amount-info')).toContainText('0.01 MXN');
+  await expect(paymentForm.getByTestId('payment-create-submit')).toBeEnabled();
+
+  await paymentForm.getByTestId('payment-create-submit').click();
+
+  await expect(page.getByText('Pago #701')).toBeVisible();
+  await expect(page.getByText('Remanente disponible 100.01 MXN')).toBeVisible();
+});
+
+test('operator can reopen a payment by paymentId and apply its remainder to another invoice from the same receiver', async ({ page }) => {
+  await mockAccountsReceivablePaymentRemainderJourney(page);
+
+  const loginPage = new LoginPage(page);
+  await loginPage.open();
+  await loginPage.signIn('operator', 'Secret123!');
+  await expect(page).toHaveURL(/\/app\/orders$/);
+
+  await page.goto('/app/accounts-receivable?paymentId=702');
+
+  await expect(page.getByText('Pago #702')).toBeVisible();
+  await expect(page.getByText('Remanente disponible 60 MXN')).toBeVisible();
+  await expect(page.getByText('Aplicar remanente a otras facturas del mismo receptor')).toBeVisible();
+  await expect(page.getByText('Aplicar pago a esta cuenta')).toHaveCount(0);
+
+  const remainderForm = page.locator('app-payment-remainder-application-form');
+  await expect(remainderForm.getByText('#602')).toBeVisible();
+  await remainderForm.locator('input').first().fill('60.00');
+  await remainderForm.getByRole('button', { name: 'Aplicar remanente seleccionado' }).click();
+
+  await expect(page.getByText('Remanente disponible 0 MXN')).toBeVisible();
+  const appliedRow = page.locator('table.applications tbody tr').filter({ hasText: '602' });
+  await expect(appliedRow).toBeVisible();
+  await expect(appliedRow).toContainText('60');
 });

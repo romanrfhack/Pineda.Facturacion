@@ -320,6 +320,130 @@ export async function mockAccountsReceivableJourney(page: Page): Promise<void> {
   });
 }
 
+export async function mockAccountsReceivablePaymentRemainderJourney(page: Page): Promise<void> {
+  const firstApplication = {
+    id: 901,
+    accountsReceivablePaymentId: 702,
+    accountsReceivableInvoiceId: 601,
+    applicationSequence: 1,
+    appliedAmount: 40,
+    previousBalance: 100,
+    newBalance: 60,
+    createdAtUtc: '2026-03-20T14:05:00Z'
+  };
+
+  let payment: Record<string, unknown> = {
+    id: 702,
+    paymentDateUtc: '2026-03-20T14:00:00Z',
+    paymentFormSat: '03',
+    currencyCode: 'MXN',
+    amount: 100,
+    appliedTotal: 40,
+    remainingAmount: 60,
+    customerCreditBalanceAmount: 0,
+    reference: 'PAY-702',
+    notes: 'Partial payment',
+    receivedFromFiscalReceiverId: 9,
+    operationalStatus: 'PartiallyApplied',
+    repStatus: 'PendingApplications',
+    readyToPrepareRep: false,
+    repBlockReason: 'Unapplied payment remainder must be explicitly assigned before preparing REP.',
+    unappliedDisposition: 'PendingAllocation',
+    repDocumentStatus: null,
+    repReservedAmount: 0,
+    repFiscalizedAmount: 0,
+    applicationsCount: 1,
+    linkedFiscalDocumentId: 401,
+    createdAtUtc: '2026-03-20T14:00:00Z',
+    updatedAtUtc: '2026-03-20T14:05:00Z',
+    applications: [firstApplication]
+  };
+
+  await mockSession(page, {
+    username: 'operator',
+    displayName: 'Operador',
+    role: 'FiscalOperator'
+  });
+
+  await page.route('**/api/accounts-receivable/payments/702', async (route) => {
+    await route.fulfill({ json: payment });
+  });
+
+  await page.route('**/api/accounts-receivable/invoices?**', async (route) => {
+    const requestUrl = new URL(route.request().url());
+    if (requestUrl.searchParams.get('fiscalReceiverId') !== '9') {
+      await route.fulfill({ json: { items: [] } });
+      return;
+    }
+
+    await route.fulfill({
+      json: {
+        items: [
+          {
+            accountsReceivableInvoiceId: 602,
+            fiscalDocumentId: 402,
+            fiscalReceiverId: 9,
+            receiverRfc: 'BBB010101BBB',
+            receiverLegalName: 'Receiver One',
+            fiscalSeries: 'A',
+            fiscalFolio: '402',
+            fiscalUuid: 'UUID-FISCAL-412',
+            total: 60,
+            paidTotal: 0,
+            outstandingBalance: 60,
+            issuedAtUtc: '2026-03-21T12:00:00Z',
+            dueAtUtc: '2026-03-28T12:00:00Z',
+            status: 'Open',
+            daysPastDue: 0,
+            agingBucket: 'Current',
+            hasPendingCommitment: false,
+            nextCommitmentDateUtc: null,
+            nextFollowUpAtUtc: null,
+            followUpPending: false
+          }
+        ]
+      }
+    });
+  });
+
+  await page.route('**/api/accounts-receivable/payments/702/apply', async (route) => {
+    const payload = route.request().postDataJSON() as { applications?: Array<{ accountsReceivableInvoiceId: number; appliedAmount: number }> };
+    const newApplicationRequest = payload.applications?.[0];
+    const secondApplication = {
+      id: 902,
+      accountsReceivablePaymentId: 702,
+      accountsReceivableInvoiceId: newApplicationRequest?.accountsReceivableInvoiceId ?? 602,
+      applicationSequence: 2,
+      appliedAmount: newApplicationRequest?.appliedAmount ?? 60,
+      previousBalance: 60,
+      newBalance: 0,
+      createdAtUtc: '2026-03-20T14:10:00Z'
+    };
+
+    payment = {
+      ...payment,
+      appliedTotal: 100,
+      remainingAmount: 0,
+      operationalStatus: 'FullyApplied',
+      applicationsCount: 2,
+      updatedAtUtc: '2026-03-20T14:10:00Z',
+      applications: [firstApplication, secondApplication]
+    };
+
+    await route.fulfill({
+      json: {
+        outcome: 'Applied',
+        isSuccess: true,
+        accountsReceivablePaymentId: 702,
+        appliedCount: 1,
+        remainingPaymentAmount: 0,
+        payment,
+        applications: [secondApplication]
+      }
+    });
+  });
+}
+
 export async function mockPaymentComplementJourney(page: Page): Promise<void> {
   let complementStatus = 'ReadyForStamping';
   let complementExists = false;

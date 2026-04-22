@@ -260,6 +260,58 @@ describe('AccountsReceivablePageComponent', () => {
     expect(api.searchPortfolio).toHaveBeenCalledWith({ fiscalReceiverId: 77, hasPendingBalance: true });
   });
 
+  it('uses the payment receiver to load eligible remainder invoices when opening payment detail without invoice context', async () => {
+    queryParams$.next(convertToParamMap({ paymentId: '6' }));
+    api.getInvoiceById.mockClear();
+    api.searchPortfolio.mockClear();
+    api.getPaymentById.mockReset().mockReturnValue(of({
+      id: 6,
+      paymentDateUtc: '2026-04-03T00:00:00Z',
+      paymentFormSat: '03',
+      currencyCode: 'MXN',
+      amount: 5000,
+      appliedTotal: 1722,
+      remainingAmount: 3278,
+      customerCreditBalanceAmount: 0,
+      reference: 'DEP-1',
+      notes: null,
+      receivedFromFiscalReceiverId: 77,
+      operationalStatus: 'PartiallyApplied',
+      repStatus: 'PendingApplications',
+      readyToPrepareRep: false,
+      repBlockReason: 'Unapplied payment remainder must be explicitly assigned before preparing REP.',
+      unappliedDisposition: 'PendingAllocation',
+      repDocumentStatus: null,
+      repReservedAmount: 0,
+      repFiscalizedAmount: 0,
+      applicationsCount: 1,
+      linkedFiscalDocumentId: 31809,
+      createdAtUtc: '2026-04-03T00:00:00Z',
+      updatedAtUtc: '2026-04-03T00:00:00Z',
+      applications: [
+        {
+          id: 900,
+          accountsReceivablePaymentId: 6,
+          accountsReceivableInvoiceId: 2,
+          applicationSequence: 1,
+          appliedAmount: 1722,
+          previousBalance: 1722,
+          newBalance: 0,
+          createdAtUtc: '2026-04-03T00:00:00Z'
+        }
+      ]
+    }));
+
+    const fixture = TestBed.createComponent(AccountsReceivablePageComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(api.searchPortfolio).toHaveBeenCalledWith({ fiscalReceiverId: 77, hasPendingBalance: true });
+    expect(api.getInvoiceById).not.toHaveBeenCalled();
+    expect(fixture.nativeElement.textContent).not.toContain('Aplicar pago a esta cuenta');
+  });
+
   it('renders the customer credit balance action when a payment has pending remainder allocation', async () => {
     queryParams$.next(convertToParamMap({ invoiceId: '2', paymentId: '6' }));
 
@@ -366,7 +418,7 @@ describe('AccountsReceivablePageComponent', () => {
     }));
   });
 
-  it('blocks creating a payment when the captured amount exceeds the current operational outstanding balance', async () => {
+  it('creates the payment even when the captured amount exceeds the current operational outstanding balance', async () => {
     queryParams$.next(convertToParamMap({ invoiceId: '2' }));
 
     const feedback = TestBed.inject(FeedbackService) as unknown as { show: ReturnType<typeof vi.fn> };
@@ -384,8 +436,13 @@ describe('AccountsReceivablePageComponent', () => {
       notes: null
     });
 
-    expect(api.createPayment).not.toHaveBeenCalled();
-    expect(feedback.show).toHaveBeenCalledWith('error', 'El monto capturado excede el saldo pendiente por 0.01. Ajusta el monto o asigna explícitamente el excedente.');
+    expect(api.createPayment).toHaveBeenCalledWith(expect.objectContaining({
+      accountsReceivableInvoiceId: 2,
+      receivedFromFiscalReceiverId: 77,
+      amount: 1722.01
+    }));
+    expect(feedback.show).toHaveBeenCalledWith('success', 'Pago registrado.');
+    expect(feedback.show).not.toHaveBeenCalledWith('error', expect.stringContaining('excede el saldo pendiente'));
   });
 
   it('loads the receiver workspace when fiscalReceiverId is present in query params', async () => {
