@@ -1076,7 +1076,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Agregar receptor');
   });
 
-  it('renders SAT payment catalogs and disables prepare until the capture is valid', async () => {
+  it('renders SAT payment catalogs with an empty payment method and keeps prepare disabled until explicit capture', async () => {
     const fixture = await configure(undefined, { id: null, billingDocumentId: '30' });
     fixture.componentInstance['selectedReceiverId'] = 9;
     fixture.componentInstance['selectedReceiver'].set({
@@ -1095,11 +1095,11 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       createdAtUtc: '2026-03-20T12:00:00Z',
       updatedAtUtc: '2026-03-20T12:00:00Z',
     });
-    fixture.componentInstance['paymentMethodSat'] = '';
-    fixture.componentInstance['paymentFormSat'] = '';
-    fixture.componentInstance['paymentCondition'] = '';
     fixture.detectChanges();
 
+    const paymentMethodSelect = fixture.nativeElement.querySelector(
+      'select[name="paymentMethodSat"]',
+    ) as HTMLSelectElement;
     const submitButton = Array.from(
       fixture.nativeElement.querySelectorAll(
         'button[type="submit"]',
@@ -1107,12 +1107,20 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     ).find((button: HTMLButtonElement) =>
       button.textContent?.includes('Preparar documento fiscal'),
     ) as HTMLButtonElement;
+    expect(fixture.componentInstance['paymentMethodSat']).toBe('');
+    expect(paymentMethodSelect.value).toBe('');
+    expect(paymentMethodSelect.selectedOptions[0]?.textContent?.trim()).toBe(
+      'Selecciona método de pago',
+    );
     expect(fixture.nativeElement.textContent).toContain('PUE - Pago en una sola exhibición');
     expect(fixture.nativeElement.textContent).toContain('99 - Por definir');
     expect(submitButton.disabled).toBe(true);
 
-    fixture.componentInstance['onCreditSaleChange'](false);
     fixture.componentInstance['onPaymentMethodChange']('PUE');
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['canPrepareFiscalDocument']()).toBe(false);
+
     fixture.componentInstance['onPaymentFormChange']('03');
     fixture.componentInstance['onPaymentConditionChange']('Contado');
     fixture.detectChanges();
@@ -1120,18 +1128,38 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(fixture.componentInstance['canPrepareFiscalDocument']()).toBe(true);
   });
 
-  it('forces payment form 99 and suggests credit condition when credit sale is enabled', async () => {
+  it('choosing PPD forces payment form 99 and suggests a credit condition', async () => {
     const fixture = await configure(undefined, { id: null, billingDocumentId: '30' });
 
     fixture.componentInstance['onCreditDaysChange'](21);
-    fixture.componentInstance['onCreditSaleChange'](true);
+    fixture.componentInstance['onPaymentMethodChange']('PPD');
 
     expect(fixture.componentInstance['paymentMethodSat']).toBe('PPD');
     expect(fixture.componentInstance['paymentFormSat']).toBe('99');
+    expect(fixture.componentInstance['isCreditSale']).toBe(true);
     expect(fixture.componentInstance['paymentCondition']).toBe('Crédito a 21 días');
     expect(fixture.componentInstance['availablePaymentFormOptions']()).toEqual([
       { code: '99', description: 'Por definir' },
     ]);
+  });
+
+  it('toggling credit sale does not auto-select or replace the chosen payment method', async () => {
+    const fixture = await configure(undefined, { id: null, billingDocumentId: '30' });
+
+    fixture.componentInstance['onPaymentMethodChange']('PPD');
+    fixture.componentInstance['onCreditSaleChange'](false);
+
+    expect(fixture.componentInstance['paymentMethodSat']).toBe('PPD');
+    expect(fixture.componentInstance['paymentFormSat']).toBe('99');
+    expect(fixture.componentInstance['isCreditSale']).toBe(false);
+    expect(fixture.componentInstance['paymentCondition']).toBe('Contado');
+
+    fixture.componentInstance['onCreditSaleChange'](true);
+
+    expect(fixture.componentInstance['paymentMethodSat']).toBe('PPD');
+    expect(fixture.componentInstance['paymentFormSat']).toBe('99');
+    expect(fixture.componentInstance['isCreditSale']).toBe(true);
+    expect(fixture.componentInstance['paymentCondition']).toBe('Crédito a 7 días');
   });
 
   it('sends only SAT codes plus payment condition text when preparing', async () => {
@@ -2288,6 +2316,9 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       isActive: true,
     });
     await fixture.whenStable();
+    fixture.componentInstance['onPaymentMethodChange']('PUE');
+    fixture.componentInstance['onPaymentFormChange']('03');
+    fixture.componentInstance['onPaymentConditionChange']('Contado');
 
     await fixture.componentInstance['prepare']();
 
@@ -2617,6 +2648,9 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.componentInstance['selectedReceiverId'] = 9;
+    fixture.componentInstance['onPaymentMethodChange']('PUE');
+    fixture.componentInstance['onPaymentFormChange']('03');
+    fixture.componentInstance['onPaymentConditionChange']('Contado');
     await fixture.componentInstance['prepare']();
     fixture.detectChanges();
 
@@ -2732,6 +2766,9 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.componentInstance['selectedReceiverId'] = 9;
+    fixture.componentInstance['onPaymentMethodChange']('PUE');
+    fixture.componentInstance['onPaymentFormChange']('03');
+    fixture.componentInstance['onPaymentConditionChange']('Contado');
 
     await fixture.componentInstance['prepare']();
     await fixture.componentInstance['saveMissingProductProfile']({
@@ -2785,6 +2822,9 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     );
 
     fixture.componentInstance['selectedReceiverId'] = 9;
+    fixture.componentInstance['onPaymentMethodChange']('PUE');
+    fixture.componentInstance['onPaymentFormChange']('03');
+    fixture.componentInstance['onPaymentConditionChange']('Contado');
     await fixture.componentInstance['prepare']();
     fixture.detectChanges();
 
@@ -2816,6 +2856,9 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     );
 
     fixture.componentInstance['selectedReceiverId'] = 9;
+    fixture.componentInstance['onPaymentMethodChange']('PUE');
+    fixture.componentInstance['onPaymentFormChange']('03');
+    fixture.componentInstance['onPaymentConditionChange']('Contado');
     await fixture.componentInstance['prepare']();
     fixture.componentInstance['closeMissingProductProfileForm']();
     fixture.detectChanges();
@@ -2867,6 +2910,9 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     );
 
     fixture.componentInstance['selectedReceiverId'] = 9;
+    fixture.componentInstance['onPaymentMethodChange']('PUE');
+    fixture.componentInstance['onPaymentFormChange']('03');
+    fixture.componentInstance['onPaymentConditionChange']('Contado');
     await fixture.componentInstance['prepare']();
     await fixture.componentInstance['saveMissingProductProfile']({
       internalCode: 'MTE-4259',
@@ -2926,6 +2972,9 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     );
 
     fixture.componentInstance['selectedReceiverId'] = 9;
+    fixture.componentInstance['onPaymentMethodChange']('PUE');
+    fixture.componentInstance['onPaymentFormChange']('03');
+    fixture.componentInstance['onPaymentConditionChange']('Contado');
     await fixture.componentInstance['prepare']();
 
     expect(fixture.componentInstance['missingProductFiscalProfile']()?.description).toBe('GP-149');

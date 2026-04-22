@@ -213,6 +213,29 @@ public class FiscalStampingServicesTests
     }
 
     [Fact]
+    public async Task StampFiscalDocument_MissingPaymentMethod_FailsBeforeCallingProvider()
+    {
+        var fiscalDocument = CreateFiscalDocument();
+        fiscalDocument.PaymentMethodSat = string.Empty;
+
+        var gateway = new FakeFiscalStampingGateway();
+        var service = new StampFiscalDocumentService(
+            new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
+            new FakeFiscalStampRepository(),
+            gateway,
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new StampFiscalDocumentCommand
+        {
+            FiscalDocumentId = fiscalDocument.Id
+        });
+
+        Assert.Equal(StampFiscalDocumentOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("payment method SAT is required", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, gateway.CallCount);
+    }
+
+    [Fact]
     public async Task StampFiscalDocument_Reclassifies_ZeroBase_Taxable_Line_BeforeCallingProvider()
     {
         var fiscalDocument = CreateFiscalDocument();

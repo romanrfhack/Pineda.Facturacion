@@ -1924,9 +1924,6 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected readonly activeReceiverSpecialFields = computed(() =>
     this.specialFieldDrafts().filter((field) => field.isActive),
   );
-  protected readonly isCreditSaleCheckboxDisabled = computed(
-    () => this.normalizedPaymentMethodSat() !== 'PPD',
-  );
   private receiverSearchTimer: number | null = null;
 
   constructor() {
@@ -2021,7 +2018,6 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
 
   protected onCreditSaleChange(value: boolean): void {
     this.isCreditSale = value;
-    this.paymentMethodSat = value ? 'PPD' : 'PUE';
     this.syncPaymentMethodDependencies(true);
     this.paymentConditionEditedByUser = false;
     this.applySuggestedPaymentCondition();
@@ -2032,6 +2028,10 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     if (this.isCreditSale) {
       this.applySuggestedPaymentCondition();
     }
+  }
+
+  protected isCreditSaleCheckboxDisabled(): boolean {
+    return this.normalizedPaymentMethodSat() !== 'PPD';
   }
 
   protected openCancelDialog(): void {
@@ -3127,9 +3127,6 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       const catalog = await firstValueFrom(this.fiscalReceiversApi.getSatCatalog());
       this.paymentMethodCatalog.set(catalog.paymentMethods ?? []);
       this.paymentFormCatalog.set(catalog.paymentForms ?? []);
-      if (!this.paymentMethodSat) {
-        this.paymentMethodSat = this.isCreditSale ? 'PPD' : 'PUE';
-      }
       this.syncPaymentMethodDependencies(false);
       this.syncCreditSaleWithPaymentMethod();
       this.applySuggestedPaymentCondition();
