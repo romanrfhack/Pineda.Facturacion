@@ -109,7 +109,7 @@ public sealed class MySqlBackedIntegrationTests
             .ToListAsync();
 
         Assert.Equal(2, issuers.Count);
-        var activeIssuer = Assert.Single(issuers.Where(x => x.IsActive));
+        var activeIssuer = Assert.Single(issuers, x => x.IsActive);
         Assert.Equal("BBB010101BBB", activeIssuer.Rfc);
 
         var indexCount = await _fixture.ExecuteScalarAsync<long>(
@@ -160,7 +160,7 @@ public sealed class MySqlBackedIntegrationTests
         var responses = await Task.WhenAll(createTaskA, createTaskB);
 
         Assert.Contains(responses, response => response.StatusCode == HttpStatusCode.OK);
-        var conflictResponse = Assert.Single(responses.Where(response => response.StatusCode == HttpStatusCode.Conflict));
+        var conflictResponse = Assert.Single(responses, response => response.StatusCode == HttpStatusCode.Conflict);
         Assert.Equal("application/problem+json", conflictResponse.Content.Headers.ContentType?.MediaType);
 
         using var json = JsonDocument.Parse(await conflictResponse.Content.ReadAsStringAsync());
@@ -462,7 +462,7 @@ public sealed class MySqlBackedIntegrationTests
 
         var body = await response.Content.ReadFromJsonAsync<CreateAccountsReceivableInvoiceResponse>();
         Assert.NotNull(body);
-        Assert.NotNull(body!.AccountsReceivableInvoice);
+        Assert.NotNull(body.AccountsReceivableInvoice);
         return body;
     }
 
@@ -858,7 +858,19 @@ public sealed class MySqlDatabaseFixture : IAsyncLifetime
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
         var result = await command.ExecuteScalarAsync();
-        return (T)Convert.ChangeType(result, typeof(T), CultureInfo.InvariantCulture);
+        
+        if (result is null)
+        {
+            throw new InvalidOperationException("ExecuteScalarAsync returned null.");
+        }
+        
+        var converted = Convert.ChangeType(result, typeof(T), CultureInfo.InvariantCulture);
+        if (converted is null)
+        {
+            throw new InvalidOperationException("Convert.ChangeType returned null.");
+        }
+        
+        return (T)converted;
     }
 }
 

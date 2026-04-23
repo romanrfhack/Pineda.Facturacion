@@ -113,6 +113,14 @@ public class CancelFiscalDocumentService
             return await DiscardUnstampedAsync(fiscalDocument, cancellationToken);
         }
 
+        if (fiscalStamp is null)
+        {
+            return ValidationFailure(
+                command.FiscalDocumentId,
+                "Fiscal stamp record was not found.",
+                CancelFiscalDocumentOperationType.ProviderCancellation);
+        }
+
         if (string.IsNullOrWhiteSpace(command.CancellationReasonCode))
         {
             return ValidationFailure(
