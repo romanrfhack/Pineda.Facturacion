@@ -33,6 +33,8 @@ import {
   SendFiscalDocumentEmailResponse,
   SyncFiscalDocumentSpecialFieldsRequest,
   SyncFiscalDocumentSpecialFieldsResponse,
+  UpdateFiscalDocumentItemFiscalProfileRequest,
+  UpdateFiscalDocumentItemFiscalProfileResponse,
   UpdateBillingDocumentOrderAssociationResponse,
   StampFiscalDocumentRequest,
   StampFiscalDocumentResponse,
@@ -128,6 +130,14 @@ export class FiscalDocumentsApiService {
 
   reprepareFiscalDocument(fiscalDocumentId: number): Observable<ReprepareFiscalDocumentResponse> {
     return this.http.post<ReprepareFiscalDocumentResponse>(buildApiUrl(`/fiscal-documents/${fiscalDocumentId}/reprepare`), {});
+  }
+
+  updateFiscalDocumentItemFiscalProfile(
+    fiscalDocumentItemId: number,
+    request: UpdateFiscalDocumentItemFiscalProfileRequest): Observable<UpdateFiscalDocumentItemFiscalProfileResponse> {
+    return this.http.post<UpdateFiscalDocumentItemFiscalProfileResponse>(
+      buildApiUrl(`/fiscal-documents/items/${fiscalDocumentItemId}/fiscal-profile`),
+      request);
   }
 
   stampAndEmailFiscalDocument(fiscalDocumentId: number, request: StampFiscalDocumentRequest): Observable<StampAndEmailFiscalDocumentResponse> {

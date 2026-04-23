@@ -9,6 +9,11 @@ public interface IFiscalDocumentRepository
 
     Task<FiscalDocument?> GetTrackedByIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default);
 
+    Task<FiscalDocument?> GetTrackedByItemIdAsync(long fiscalDocumentItemId, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult<FiscalDocument?>(null);
+    }
+
     Task<FiscalDocument?> GetByBillingDocumentIdAsync(long billingDocumentId, CancellationToken cancellationToken = default);
 
     async Task<IReadOnlyList<FiscalDocument>> GetByIdsAsync(

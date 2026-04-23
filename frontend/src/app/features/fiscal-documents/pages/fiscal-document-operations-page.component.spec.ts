@@ -230,6 +230,34 @@ describe('FiscalDocumentOperationsPageComponent', () => {
           fiscalDocumentStatus: 'ReadyForStamping',
         }),
       ),
+      updateFiscalDocumentItemFiscalProfile: vi.fn().mockReturnValue(
+        of({
+          outcome: 'Updated',
+          isSuccess: true,
+          fiscalDocumentId: 40,
+          fiscalDocumentItemId: 15,
+          fiscalDocumentStatus: 'ReadyForStamping',
+          item: {
+            id: 15,
+            fiscalDocumentId: 40,
+            lineNumber: 1,
+            billingDocumentItemId: 501,
+            internalCode: 'MTE-4259',
+            description: 'FILTRO DE ACEITE',
+            quantity: 1,
+            unitPrice: 100,
+            discountAmount: 0,
+            subtotal: 100,
+            taxTotal: 16,
+            total: 116,
+            satProductServiceCode: '40161513',
+            satUnitCode: 'E48',
+            taxObjectCode: '02',
+            vatRate: 0.16,
+            unitText: 'SERVICIO',
+          },
+        }),
+      ),
       getStamp: vi.fn().mockReturnValue(
         of({
           id: 11,
@@ -593,6 +621,263 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain(
       'Aún no hay evidencia de timbrado disponible',
     );
+  });
+
+  it('shows the fiscal-profile edit action for editable fiscal lines', async () => {
+    const readyDocument = {
+      id: 40,
+      billingDocumentId: 30,
+      issuerProfileId: 1,
+      fiscalReceiverId: 9,
+      status: 'ReadyForStamping',
+      cfdiVersion: '4.0',
+      documentType: 'I',
+      series: 'A',
+      folio: '31787',
+      issuedAtUtc: '2026-03-20T12:00:00Z',
+      currencyCode: 'MXN',
+      exchangeRate: 1,
+      paymentMethodSat: 'PPD',
+      paymentFormSat: '99',
+      paymentCondition: 'CREDITO',
+      isCreditSale: true,
+      creditDays: 7,
+      issuerRfc: 'AAA010101AAA',
+      issuerLegalName: 'Issuer SA',
+      issuerFiscalRegimeCode: '601',
+      issuerPostalCode: '01000',
+      pacEnvironment: 'Sandbox',
+      hasCertificateReference: true,
+      hasPrivateKeyReference: true,
+      hasPrivateKeyPasswordReference: true,
+      receiverRfc: 'BBB010101BBB',
+      receiverLegalName: 'Receiver One',
+      receiverFiscalRegimeCode: '601',
+      receiverCfdiUseCode: 'G03',
+      receiverPostalCode: '02000',
+      receiverCountryCode: 'MX',
+      receiverForeignTaxRegistration: null,
+      subtotal: 100,
+      discountTotal: 0,
+      taxTotal: 16,
+      total: 116,
+      items: [
+        {
+          id: 15,
+          fiscalDocumentId: 40,
+          lineNumber: 1,
+          billingDocumentItemId: 501,
+          internalCode: 'MTE-4259',
+          description: 'FILTRO DE ACEITE',
+          quantity: 1,
+          unitPrice: 100,
+          discountAmount: 0,
+          subtotal: 100,
+          taxTotal: 16,
+          total: 116,
+          satProductServiceCode: '10101504',
+          satUnitCode: 'H87',
+          taxObjectCode: '02',
+          vatRate: 0.16,
+          unitText: 'PIEZA',
+        },
+      ],
+    };
+    const fixture = await configure({
+      getFiscalDocumentById: vi.fn().mockReturnValue(of(readyDocument)),
+      getStamp: vi.fn().mockReturnValue(throwError(() => ({ status: 404 }))),
+    });
+    setDraftBillingContext(fixture);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Perfil fiscal por línea');
+    expect(fixture.nativeElement.textContent).toContain('Editar perfil fiscal');
+  });
+
+  it('hides the fiscal-profile edit action when the fiscal document is no longer editable', async () => {
+    const stampedDocument = {
+      id: 40,
+      billingDocumentId: 30,
+      issuerProfileId: 1,
+      fiscalReceiverId: 9,
+      status: 'Stamped',
+      cfdiVersion: '4.0',
+      documentType: 'I',
+      series: 'A',
+      folio: '31787',
+      issuedAtUtc: '2026-03-20T12:00:00Z',
+      currencyCode: 'MXN',
+      exchangeRate: 1,
+      paymentMethodSat: 'PPD',
+      paymentFormSat: '99',
+      paymentCondition: 'CREDITO',
+      isCreditSale: true,
+      creditDays: 7,
+      issuerRfc: 'AAA010101AAA',
+      issuerLegalName: 'Issuer SA',
+      issuerFiscalRegimeCode: '601',
+      issuerPostalCode: '01000',
+      pacEnvironment: 'Sandbox',
+      hasCertificateReference: true,
+      hasPrivateKeyReference: true,
+      hasPrivateKeyPasswordReference: true,
+      receiverRfc: 'BBB010101BBB',
+      receiverLegalName: 'Receiver One',
+      receiverFiscalRegimeCode: '601',
+      receiverCfdiUseCode: 'G03',
+      receiverPostalCode: '02000',
+      receiverCountryCode: 'MX',
+      receiverForeignTaxRegistration: null,
+      subtotal: 100,
+      discountTotal: 0,
+      taxTotal: 16,
+      total: 116,
+      items: [
+        {
+          id: 15,
+          fiscalDocumentId: 40,
+          lineNumber: 1,
+          billingDocumentItemId: 501,
+          internalCode: 'MTE-4259',
+          description: 'FILTRO DE ACEITE',
+          quantity: 1,
+          unitPrice: 100,
+          discountAmount: 0,
+          subtotal: 100,
+          taxTotal: 16,
+          total: 116,
+          satProductServiceCode: '10101504',
+          satUnitCode: 'H87',
+          taxObjectCode: '02',
+          vatRate: 0.16,
+          unitText: 'PIEZA',
+        },
+      ],
+    };
+    const fixture = await configure({
+      getFiscalDocumentById: vi.fn().mockReturnValue(of(stampedDocument)),
+    });
+    setDraftBillingContext(fixture);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Perfil fiscal por línea');
+    expect(fixture.nativeElement.textContent).not.toContain('Editar perfil fiscal');
+  });
+
+  it('saves a fiscal-line override and refreshes the local snapshot item without reloading the whole document', async () => {
+    const readyDocument = {
+      id: 40,
+      billingDocumentId: 30,
+      issuerProfileId: 1,
+      fiscalReceiverId: 9,
+      status: 'ReadyForStamping',
+      cfdiVersion: '4.0',
+      documentType: 'I',
+      series: 'A',
+      folio: '31787',
+      issuedAtUtc: '2026-03-20T12:00:00Z',
+      currencyCode: 'MXN',
+      exchangeRate: 1,
+      paymentMethodSat: 'PPD',
+      paymentFormSat: '99',
+      paymentCondition: 'CREDITO',
+      isCreditSale: true,
+      creditDays: 7,
+      issuerRfc: 'AAA010101AAA',
+      issuerLegalName: 'Issuer SA',
+      issuerFiscalRegimeCode: '601',
+      issuerPostalCode: '01000',
+      pacEnvironment: 'Sandbox',
+      hasCertificateReference: true,
+      hasPrivateKeyReference: true,
+      hasPrivateKeyPasswordReference: true,
+      receiverRfc: 'BBB010101BBB',
+      receiverLegalName: 'Receiver One',
+      receiverFiscalRegimeCode: '601',
+      receiverCfdiUseCode: 'G03',
+      receiverPostalCode: '02000',
+      receiverCountryCode: 'MX',
+      receiverForeignTaxRegistration: null,
+      subtotal: 100,
+      discountTotal: 0,
+      taxTotal: 16,
+      total: 116,
+      items: [
+        {
+          id: 15,
+          fiscalDocumentId: 40,
+          lineNumber: 1,
+          billingDocumentItemId: 501,
+          internalCode: 'MTE-4259',
+          description: 'FILTRO DE ACEITE',
+          quantity: 1,
+          unitPrice: 100,
+          discountAmount: 0,
+          subtotal: 100,
+          taxTotal: 16,
+          total: 116,
+          satProductServiceCode: '10101504',
+          satUnitCode: 'H87',
+          taxObjectCode: '02',
+          vatRate: 0.16,
+          unitText: 'PIEZA',
+        },
+      ],
+    };
+    const updatedItem = {
+      ...readyDocument.items[0],
+      satProductServiceCode: '40161513',
+      satUnitCode: 'E48',
+      unitText: 'SERVICIO',
+    };
+    const updateFiscalDocumentItemFiscalProfile = vi.fn().mockReturnValue(
+      of({
+        outcome: 'Updated',
+        isSuccess: true,
+        fiscalDocumentId: 40,
+        fiscalDocumentItemId: 15,
+        fiscalDocumentStatus: 'ReadyForStamping',
+        item: updatedItem,
+      }),
+    );
+    const getFiscalDocumentById = vi.fn().mockReturnValue(of(readyDocument));
+    const fixture = await configure({
+      getFiscalDocumentById,
+      getStamp: vi.fn().mockReturnValue(throwError(() => ({ status: 404 }))),
+      updateFiscalDocumentItemFiscalProfile,
+    });
+    setDraftBillingContext(fixture);
+    fixture.detectChanges();
+
+    fixture.componentInstance['openFiscalItemProfileDialog'](
+      fixture.componentInstance['fiscalDocument']()!.items[0],
+    );
+    await fixture.componentInstance['saveFiscalItemProfile']({
+      internalCode: 'MTE-4259',
+      description: 'FILTRO DE ACEITE',
+      satProductServiceCode: '40161513',
+      satUnitCode: 'E48',
+      taxObjectCode: '02',
+      vatRate: 0.16,
+      defaultUnitText: 'SERVICIO',
+      isActive: true,
+    });
+    fixture.detectChanges();
+
+    expect(updateFiscalDocumentItemFiscalProfile).toHaveBeenCalledWith(15, {
+      satProductServiceCode: '40161513',
+      satUnitCode: 'E48',
+      taxObjectCode: '02',
+      vatRate: 0.16,
+      unitText: 'SERVICIO',
+    });
+    expect(getFiscalDocumentById).toHaveBeenCalledTimes(1);
+    expect(fixture.componentInstance['fiscalDocument']()?.items[0].satProductServiceCode).toBe(
+      '40161513',
+    );
+    expect(fixture.componentInstance['fiscalDocument']()?.items[0].satUnitCode).toBe('E48');
+    expect(fixture.nativeElement.textContent).toContain('40161513');
+    expect(fixture.nativeElement.textContent).toContain('SERVICIO');
   });
 
   it('keeps the current fiscal status as the source of truth even when stamp evidence is a rejected historical attempt', async () => {

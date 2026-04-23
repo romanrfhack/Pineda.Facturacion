@@ -24,15 +24,17 @@ import { SatProductServicesApiService } from '../infrastructure/sat-product-serv
   imports: [DecimalPipe, FormsModule],
   template: `
     <form class="form-grid" (ngSubmit)="submitForm()">
-      <label>
-        <span>Código interno</span>
-        <input [(ngModel)]="draft.internalCode" name="internalCode" required />
-      </label>
+      @if (showIdentityFields()) {
+        <label>
+          <span>Código interno</span>
+          <input [(ngModel)]="draft.internalCode" name="internalCode" required />
+        </label>
 
-      <label>
-        <span>Descripción</span>
-        <input [(ngModel)]="draft.description" name="description" required />
-      </label>
+        <label>
+          <span>Descripción</span>
+          <input [(ngModel)]="draft.description" name="description" required />
+        </label>
+      }
 
       <section class="sat-search-card">
         <div class="sat-search-header">
@@ -191,14 +193,16 @@ import { SatProductServicesApiService } from '../infrastructure/sat-product-serv
       </label>
 
       <label>
-        <span>Texto de unidad predeterminado</span>
+        <span>{{ unitTextLabel() }}</span>
         <input [(ngModel)]="draft.defaultUnitText" name="defaultUnitText" />
       </label>
 
-      <label class="checkbox">
-        <input [(ngModel)]="draft.isActive" name="isActive" type="checkbox" />
-        <span>Activo</span>
-      </label>
+      @if (showActiveField()) {
+        <label class="checkbox">
+          <input [(ngModel)]="draft.isActive" name="isActive" type="checkbox" />
+          <span>Activo</span>
+        </label>
+      }
 
       @if (errorMessage()) {
         <p class="error">{{ errorMessage() }}</p>
@@ -246,6 +250,9 @@ export class ProductFiscalProfileFormComponent implements OnChanges, OnDestroy {
   readonly submitting = input(false);
   readonly errorMessage = input<string | null>(null);
   readonly allowExplicitGeneric = input(true);
+  readonly showIdentityFields = input(true);
+  readonly showActiveField = input(true);
+  readonly unitTextLabel = input('Texto de unidad predeterminado');
   readonly submitted = output<UpsertProductFiscalProfileRequest>();
 
   protected draft: UpsertProductFiscalProfileRequest = emptyProductProfile();

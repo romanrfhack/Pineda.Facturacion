@@ -32,6 +32,16 @@ public class FiscalDocumentRepository : IFiscalDocumentRepository
             .FirstOrDefaultAsync(x => x.Id == fiscalDocumentId, cancellationToken);
     }
 
+    public Task<FiscalDocument?> GetTrackedByItemIdAsync(long fiscalDocumentItemId, CancellationToken cancellationToken = default)
+    {
+        return _dbContext.FiscalDocuments
+            .Include(x => x.Items)
+            .Include(x => x.SpecialFieldValues.OrderBy(field => field.DisplayOrder))
+            .FirstOrDefaultAsync(
+                x => x.Items.Any(item => item.Id == fiscalDocumentItemId),
+                cancellationToken);
+    }
+
     public Task<FiscalDocument?> GetByBillingDocumentIdAsync(long billingDocumentId, CancellationToken cancellationToken = default)
     {
         return _dbContext.FiscalDocuments

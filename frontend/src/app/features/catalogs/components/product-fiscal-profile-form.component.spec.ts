@@ -295,4 +295,36 @@ describe('ProductFiscalProfileFormComponent', () => {
       'Debes seleccionar o capturar un producto/servicio SAT antes de guardar.',
     );
   });
+
+  it('can hide master-only fields when reused for document-line overrides', async () => {
+    await TestBed.configureTestingModule({
+      imports: [ProductFiscalProfileFormComponent],
+      providers: [
+        {
+          provide: SatProductServicesApiService,
+          useValue: createSatProductServicesApi(),
+        },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(ProductFiscalProfileFormComponent);
+    fixture.componentRef.setInput('showIdentityFields', false);
+    fixture.componentRef.setInput('showActiveField', false);
+    fixture.componentRef.setInput('unitTextLabel', 'Texto de unidad en esta línea');
+    fixture.componentRef.setInput('initialValue', {
+      internalCode: 'SKU-9',
+      description: 'Producto documento',
+      satProductServiceCode: '40161513',
+      satUnitCode: 'E48',
+      taxObjectCode: '02',
+      vatRate: 0.16,
+      defaultUnitText: 'SERVICIO',
+      isActive: true,
+    });
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).not.toContain('Código interno');
+    expect(fixture.nativeElement.textContent).not.toContain('Activo');
+    expect(fixture.nativeElement.textContent).toContain('Texto de unidad en esta línea');
+  });
 });

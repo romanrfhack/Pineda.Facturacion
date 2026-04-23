@@ -109,6 +109,30 @@ describe('FiscalDocumentsApiService', () => {
     httpTesting.verify();
   });
 
+  it('posts the fiscal-profile override request for a persisted fiscal line', () => {
+    const service = TestBed.inject(FiscalDocumentsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.updateFiscalDocumentItemFiscalProfile(15, {
+      satProductServiceCode: '40161513',
+      satUnitCode: 'E48',
+      taxObjectCode: '02',
+      vatRate: 0.16,
+      unitText: 'SERVICIO'
+    }).subscribe();
+
+    const req = httpTesting.expectOne('/api/fiscal-documents/items/15/fiscal-profile');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({
+      satProductServiceCode: '40161513',
+      satUnitCode: 'E48',
+      taxObjectCode: '02',
+      vatRate: 0.16,
+      unitText: 'SERVICIO'
+    });
+    httpTesting.verify();
+  });
+
   it('gets billing document context by id', () => {
     const service = TestBed.inject(FiscalDocumentsApiService);
     const httpTesting = TestBed.inject(HttpTestingController);

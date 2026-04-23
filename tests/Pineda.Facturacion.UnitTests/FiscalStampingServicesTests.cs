@@ -306,6 +306,38 @@ public class FiscalStampingServicesTests
     }
 
     [Fact]
+    public async Task StampFiscalDocument_UsesUpdatedFiscalDocumentItemSnapshotValues()
+    {
+        var fiscalDocument = CreateFiscalDocument();
+        fiscalDocument.Items[0].SatProductServiceCode = "40161513";
+        fiscalDocument.Items[0].SatUnitCode = "E48";
+        fiscalDocument.Items[0].TaxObjectCode = "02";
+        fiscalDocument.Items[0].VatRate = 0.16m;
+        fiscalDocument.Items[0].UnitText = "SERVICIO";
+
+        var gateway = new FakeFiscalStampingGateway();
+        var service = new StampFiscalDocumentService(
+            new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
+            new FakeFiscalStampRepository(),
+            gateway,
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new StampFiscalDocumentCommand
+        {
+            FiscalDocumentId = fiscalDocument.Id
+        });
+
+        Assert.Equal(StampFiscalDocumentOutcome.Stamped, result.Outcome);
+        Assert.NotNull(gateway.LastRequest);
+        var stampedItem = gateway.LastRequest!.Items.Single();
+        Assert.Equal("40161513", stampedItem.SatProductServiceCode);
+        Assert.Equal("E48", stampedItem.SatUnitCode);
+        Assert.Equal("02", stampedItem.TaxObjectCode);
+        Assert.Equal(0.16m, stampedItem.VatRate);
+        Assert.Equal("SERVICIO", stampedItem.UnitText);
+    }
+
+    [Fact]
     public async Task StampFiscalDocument_AllowsMinorCurrencyScaleDifferences_WhenRoundedCfdiAmountsStillMatch()
     {
         var fiscalDocument = CreateFiscalDocument();

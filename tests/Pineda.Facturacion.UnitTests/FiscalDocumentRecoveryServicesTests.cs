@@ -89,6 +89,33 @@ public sealed class FiscalDocumentRecoveryServicesTests
     }
 
     [Fact]
+    public async Task ReprepareFiscalDocument_PreservesFiscalItemOverrides_WhenSemanticLineStillMatches()
+    {
+        var billingDocument = CreateBillingDocument();
+        var fiscalDocument = CreateInconsistentFiscalDocument();
+        fiscalDocument.Items[0].SatProductServiceCode = "40161513";
+        fiscalDocument.Items[0].SatUnitCode = "E48";
+        fiscalDocument.Items[0].UnitText = "SERVICIO";
+
+        var service = new ReprepareFiscalDocumentService(
+            new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
+            new FakeBillingDocumentRepository { Existing = billingDocument },
+            new FakeFiscalStampRepository(),
+            new FakeProductFiscalProfileRepository { Existing = CreateProductFiscalProfile() },
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new ReprepareFiscalDocumentCommand
+        {
+            FiscalDocumentId = fiscalDocument.Id
+        });
+
+        Assert.Equal(ReprepareFiscalDocumentOutcome.Reprepared, result.Outcome);
+        Assert.Equal("40161513", fiscalDocument.Items[0].SatProductServiceCode);
+        Assert.Equal("E48", fiscalDocument.Items[0].SatUnitCode);
+        Assert.Equal("SERVICIO", fiscalDocument.Items[0].UnitText);
+    }
+
+    [Fact]
     public void FiscalDocumentCompositionEditPolicy_TreatsDiscardedSnapshotAsNonOperational()
     {
         var discarded = new FiscalDocument

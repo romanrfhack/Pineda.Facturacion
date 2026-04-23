@@ -404,6 +404,24 @@ export interface ReprepareFiscalDocumentResponse {
   fiscalDocumentStatus?: string | null;
 }
 
+export interface UpdateFiscalDocumentItemFiscalProfileRequest {
+  satProductServiceCode: string;
+  satUnitCode: string;
+  taxObjectCode: string;
+  vatRate: number;
+  unitText?: string | null;
+}
+
+export interface UpdateFiscalDocumentItemFiscalProfileResponse {
+  outcome: string;
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  fiscalDocumentId: number;
+  fiscalDocumentItemId: number;
+  fiscalDocumentStatus?: string | null;
+  item?: FiscalDocumentItemResponse | null;
+}
+
 export interface SyncFiscalDocumentSpecialFieldsResponse {
   outcome: string;
   isSuccess: boolean;
