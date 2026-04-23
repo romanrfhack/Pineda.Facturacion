@@ -25,8 +25,9 @@ jobs:
       SSH_USER: ${{ secrets.FACTURAS_SSH_USER }}
       SSH_KEY: ${{ secrets.FACTURAS_SSH_KEY }}
       # Expected runtime environment on the VPS. The systemd service must enforce this server-side.
-      ASPNETCORE_ENVIRONMENT: Sandbox
+      ASPNETCORE_ENVIRONMENT: Production
       DEPLOY_PATH: /var/www/facturas-backend/publish
+      SERVICE_NAME: facturas-api
 
     steps:
       - name: Checkout
@@ -101,12 +102,32 @@ jobs:
             "$SSH_USER@$SSH_HOST" \
             "sudo chown -R www-data:www-data /var/www/facturas-backend && sudo chmod -R 755 /var/www/facturas-backend"
 
-      - name: Restart service
+      - name: Reload systemd and restart service
         run: |
           set -euo pipefail
           ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" \
             "$SSH_USER@$SSH_HOST" \
-            "sudo systemctl daemon-reload && \
-             sudo systemctl restart facturas-api && \
-             systemctl is-active --quiet facturas-api && \
-             systemctl status facturas-api --no-pager -l"
+            "sudo systemctl daemon-reload && sudo systemctl restart '$SERVICE_NAME'"
+
+      - name: Validate service status
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" \
+            "$SSH_USER@$SSH_HOST" \
+            "sudo systemctl is-active --quiet '$SERVICE_NAME' && sudo systemctl status '$SERVICE_NAME' --no-pager -l"
+
+      - name: Collect diagnostics on failure
+        if: failure()
+        shell: bash
+        run: |
+          set +e
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" \
+            "$SSH_USER@$SSH_HOST" \
+            "sudo systemctl status '$SERVICE_NAME' --no-pager -l || true; \
+             echo; \
+             sudo systemctl cat '$SERVICE_NAME' || true; \
+             echo; \
+             sudo systemctl show '$SERVICE_NAME' -p EnvironmentFiles --no-pager || true; \
+             echo; \
+             sudo journalctl -u '$SERVICE_NAME' -n 120 --no-pager || true"

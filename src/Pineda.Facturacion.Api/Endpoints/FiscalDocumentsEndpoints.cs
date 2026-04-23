@@ -54,6 +54,15 @@ public static class FiscalDocumentsEndpoints
             .Produces<ReprepareFiscalDocumentResponse>(StatusCodes.Status404NotFound)
             .Produces<ReprepareFiscalDocumentResponse>(StatusCodes.Status409Conflict);
 
+        group.MapPost("/items/{fiscalDocumentItemId:long}/fiscal-profile", UpdateFiscalDocumentItemFiscalProfileAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
+            .WithName("UpdateFiscalDocumentItemFiscalProfile")
+            .WithSummary("Override the fiscal profile snapshot for one fiscal-document line without updating the product master profile")
+            .Produces<UpdateFiscalDocumentItemFiscalProfileResponse>(StatusCodes.Status200OK)
+            .Produces<UpdateFiscalDocumentItemFiscalProfileResponse>(StatusCodes.Status400BadRequest)
+            .Produces<UpdateFiscalDocumentItemFiscalProfileResponse>(StatusCodes.Status404NotFound)
+            .Produces<UpdateFiscalDocumentItemFiscalProfileResponse>(StatusCodes.Status409Conflict);
+
         group.MapPost("/{fiscalDocumentId:long}/stamp-and-email", StampAndEmailFiscalDocumentAsync)
             .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
             .WithName("StampAndEmailFiscalDocument")
@@ -109,6 +118,7 @@ public static class FiscalDocumentsEndpoints
             .Produces<FiscalDocumentEmailDraftResponse>(StatusCodes.Status409Conflict);
 
         group.MapPost("/{fiscalDocumentId:long}/email", SendFiscalDocumentEmailAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
             .WithName("SendFiscalDocumentEmail")
             .WithSummary("Send a stamped fiscal document by email with XML and PDF attachments")
             .Produces<SendFiscalDocumentEmailResponse>(StatusCodes.Status200OK)
@@ -354,6 +364,84 @@ public static class FiscalDocumentsEndpoints
             ReprepareFiscalDocumentOutcome.NotFound => TypedResults.NotFound(response),
             ReprepareFiscalDocumentOutcome.Conflict => TypedResults.Conflict(response),
             ReprepareFiscalDocumentOutcome.ValidationFailed => TypedResults.BadRequest(response),
+            _ => TypedResults.BadRequest(response)
+        };
+    }
+
+    private static async Task<Results<Ok<UpdateFiscalDocumentItemFiscalProfileResponse>, BadRequest<UpdateFiscalDocumentItemFiscalProfileResponse>, NotFound<UpdateFiscalDocumentItemFiscalProfileResponse>, Conflict<UpdateFiscalDocumentItemFiscalProfileResponse>>> UpdateFiscalDocumentItemFiscalProfileAsync(
+        long fiscalDocumentItemId,
+        UpdateFiscalDocumentItemFiscalProfileRequest? request,
+        UpdateFiscalDocumentItemFiscalProfileService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(
+            new UpdateFiscalDocumentItemFiscalProfileCommand
+            {
+                FiscalDocumentItemId = fiscalDocumentItemId,
+                SatProductServiceCode = request?.SatProductServiceCode ?? string.Empty,
+                SatUnitCode = request?.SatUnitCode ?? string.Empty,
+                TaxObjectCode = request?.TaxObjectCode ?? string.Empty,
+                VatRate = request?.VatRate ?? 0m,
+                UnitText = request?.UnitText
+            },
+            cancellationToken);
+
+        var response = new UpdateFiscalDocumentItemFiscalProfileResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            FiscalDocumentId = result.FiscalDocumentId,
+            FiscalDocumentItemId = result.FiscalDocumentItemId,
+            FiscalDocumentStatus = result.FiscalDocumentStatus?.ToString(),
+            Item = result.FiscalDocumentItem is null ? null : MapItem(result.FiscalDocumentItem)
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "FiscalDocumentItem.UpdateFiscalProfileOverride",
+            "FiscalDocumentItem",
+            fiscalDocumentItemId.ToString(),
+            result.Outcome.ToString(),
+            new
+            {
+                fiscalDocumentItemId,
+                scope = "FiscalDocumentSnapshotOverride",
+                requestedSnapshot = new
+                {
+                    request?.SatProductServiceCode,
+                    request?.SatUnitCode,
+                    request?.TaxObjectCode,
+                    request?.VatRate,
+                    request?.UnitText
+                }
+            },
+            new
+            {
+                result.FiscalDocumentId,
+                result.FiscalDocumentStatus,
+                item = response.Item is null
+                    ? null
+                    : new
+                    {
+                        response.Item.Id,
+                        response.Item.LineNumber,
+                        response.Item.SatProductServiceCode,
+                        response.Item.SatUnitCode,
+                        response.Item.TaxObjectCode,
+                        response.Item.VatRate,
+                        response.Item.UnitText
+                    }
+            },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            UpdateFiscalDocumentItemFiscalProfileOutcome.Updated => TypedResults.Ok(response),
+            UpdateFiscalDocumentItemFiscalProfileOutcome.NotFound => TypedResults.NotFound(response),
+            UpdateFiscalDocumentItemFiscalProfileOutcome.Conflict => TypedResults.Conflict(response),
             _ => TypedResults.BadRequest(response)
         };
     }
@@ -1416,6 +1504,26 @@ public static class FiscalDocumentsEndpoints
         public long FiscalDocumentId { get; init; }
         public long BillingDocumentId { get; init; }
         public string? FiscalDocumentStatus { get; init; }
+    }
+
+    public sealed class UpdateFiscalDocumentItemFiscalProfileRequest
+    {
+        public string SatProductServiceCode { get; init; } = string.Empty;
+        public string SatUnitCode { get; init; } = string.Empty;
+        public string TaxObjectCode { get; init; } = string.Empty;
+        public decimal VatRate { get; init; }
+        public string? UnitText { get; init; }
+    }
+
+    public sealed class UpdateFiscalDocumentItemFiscalProfileResponse
+    {
+        public string Outcome { get; init; } = string.Empty;
+        public bool IsSuccess { get; init; }
+        public string? ErrorMessage { get; init; }
+        public long FiscalDocumentId { get; init; }
+        public long FiscalDocumentItemId { get; init; }
+        public string? FiscalDocumentStatus { get; init; }
+        public FiscalDocumentItemResponse? Item { get; init; }
     }
 
     public sealed class SyncFiscalDocumentSpecialFieldsRequest

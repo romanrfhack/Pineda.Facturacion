@@ -1,4 +1,5 @@
 using Pineda.Facturacion.Application.Abstractions.Persistence;
+using Pineda.Facturacion.Application.Common;
 using Pineda.Facturacion.Application.UseCases.ImportLegacyOrder;
 using Pineda.Facturacion.Domain.Enums;
 
@@ -83,7 +84,7 @@ internal static class LegacyOrderReimportPolicy
 
     public static bool CanEditBillingDocument(string? billingDocumentStatus)
     {
-        return billingDocumentStatus is null or nameof(BillingDocumentStatus.Draft);
+        return BillingDocumentMutationPolicy.CanEditStatus(billingDocumentStatus);
     }
 
     public static bool CanEditFiscalComposition(string? fiscalDocumentStatus)

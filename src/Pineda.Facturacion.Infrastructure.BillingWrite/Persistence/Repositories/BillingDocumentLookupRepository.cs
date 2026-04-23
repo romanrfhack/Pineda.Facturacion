@@ -71,8 +71,11 @@ public sealed class BillingDocumentLookupRepository : IBillingDocumentLookupRepo
                     (from salesOrder in _dbContext.SalesOrders
                      join legacyImportRecord in _dbContext.LegacyImportRecords
                          on salesOrder.LegacyImportRecordId equals legacyImportRecord.Id
-                     where legacyImportRecord.BillingDocumentId == billingDocument.Id
-                         || salesOrder.Id == billingDocument.SalesOrderId
+                     where salesOrder.Id == billingDocument.SalesOrderId
+                         || billingDocument.Items.Any(item => item.SalesOrderId == salesOrder.Id)
+                         || _dbContext.BillingDocumentItemRemovals.Any(
+                             removal => removal.BillingDocumentId == billingDocument.Id
+                                 && removal.SalesOrderId == salesOrder.Id)
                      orderby salesOrder.Id == billingDocument.SalesOrderId ? 0 : 1, salesOrder.Id
                      select new BillingDocumentAssociatedOrderLookupModel
                      {
@@ -173,8 +176,11 @@ public sealed class BillingDocumentLookupRepository : IBillingDocumentLookupRepo
                     (from linkedSalesOrder in _dbContext.SalesOrders.AsNoTracking()
                      join linkedImportRecord in _dbContext.LegacyImportRecords.AsNoTracking()
                          on linkedSalesOrder.LegacyImportRecordId equals linkedImportRecord.Id
-                     where linkedImportRecord.BillingDocumentId == billingDocument.Id
-                         || linkedSalesOrder.Id == billingDocument.SalesOrderId
+                     where linkedSalesOrder.Id == billingDocument.SalesOrderId
+                         || billingDocument.Items.Any(item => item.SalesOrderId == linkedSalesOrder.Id)
+                         || _dbContext.BillingDocumentItemRemovals.Any(
+                             removal => removal.BillingDocumentId == billingDocument.Id
+                                 && removal.SalesOrderId == linkedSalesOrder.Id)
                      orderby linkedSalesOrder.Id == billingDocument.SalesOrderId ? 0 : 1, linkedSalesOrder.Id
                      select new BillingDocumentAssociatedOrderLookupModel
                      {

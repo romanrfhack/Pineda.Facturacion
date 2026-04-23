@@ -309,13 +309,27 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
                         .HasColumnType("varchar(200)")
                         .HasColumnName("display_name");
 
+                    b.Property<int>("FailedLoginAttemptCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("failed_login_attempt_count")
+                        .HasDefaultValue(0);
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("tinyint(1)")
                         .HasColumnName("is_active");
 
+                    b.Property<DateTime?>("LastFailedLoginAtUtc")
+                        .HasColumnType("datetime(6)")
+                        .HasColumnName("last_failed_login_at_utc");
+
                     b.Property<DateTime?>("LastLoginAtUtc")
                         .HasColumnType("datetime(6)")
                         .HasColumnName("last_login_at_utc");
+
+                    b.Property<DateTime?>("LockoutEndAtUtc")
+                        .HasColumnType("datetime(6)")
+                        .HasColumnName("lockout_end_at_utc");
 
                     b.Property<string>("NormalizedUsername")
                         .IsRequired()
@@ -2327,6 +2341,12 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
 
+                    b.Property<int?>("ActiveSingletonKey")
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("int")
+                        .HasColumnName("active_singleton_key")
+                        .HasComputedColumnSql("CASE WHEN is_active THEN 1 ELSE NULL END", true);
+
                     b.Property<string>("CertificateReference")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -2422,6 +2442,10 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
                         .HasColumnName("updated_at_utc");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ActiveSingletonKey")
+                        .IsUnique()
+                        .HasDatabaseName("ux_issuer_profile_active_singleton_key");
 
                     b.ToTable("issuer_profile", (string)null);
                 });

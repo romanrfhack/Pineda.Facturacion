@@ -130,6 +130,24 @@ export interface SatProductServiceSearchItem {
   description: string;
   displayText: string;
   matchKind: 'exactCode' | 'prefixCode' | 'text' | string;
+  score?: number | null;
+}
+
+export interface ProductFiscalProfileRecoverySuggestion {
+  satProductServiceCode: string;
+  satProductServiceDescription?: string | null;
+  satUnitCode: string;
+  satUnitDescription?: string | null;
+  taxObjectCode: string;
+  vatRate: number;
+  defaultUnitText?: string | null;
+  score: number;
+  confidence: number;
+  source: string;
+  matchKind: string;
+  reason: string;
+  isActive: boolean;
+  requiresExplicitConfirmation: boolean;
 }
 
 export interface UpsertProductFiscalProfileRequest {

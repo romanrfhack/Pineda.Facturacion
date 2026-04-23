@@ -84,6 +84,35 @@ public class ListPendingFiscalCancellationAuthorizationsService
             };
         }
 
+        var requestedUuids = gatewayResult.Items
+            .Where(static item => !string.IsNullOrWhiteSpace(item.Uuid))
+            .Select(static item => item.Uuid!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var fiscalStamps = await _fiscalStampRepository.GetByUuidsAsync(requestedUuids, cancellationToken);
+        var fiscalStampByUuid = fiscalStamps
+            .Where(static stamp => !string.IsNullOrWhiteSpace(stamp.Uuid))
+            .GroupBy(static stamp => stamp.Uuid!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(static group => group.Key, static group => group.First(), StringComparer.OrdinalIgnoreCase);
+
+        var fiscalDocumentIds = fiscalStamps
+            .Select(static stamp => stamp.FiscalDocumentId)
+            .Distinct()
+            .ToArray();
+
+        var fiscalDocumentsTask = _fiscalDocumentRepository.GetByIdsAsync(fiscalDocumentIds, cancellationToken);
+        var fiscalCancellationsTask = _fiscalCancellationRepository.GetByFiscalDocumentIdsAsync(fiscalDocumentIds, cancellationToken);
+        await Task.WhenAll(fiscalDocumentsTask, fiscalCancellationsTask);
+
+        var fiscalDocumentsById = (await fiscalDocumentsTask)
+            .GroupBy(static document => document.Id)
+            .ToDictionary(static group => group.Key, static group => group.First());
+
+        var fiscalCancellationsByFiscalDocumentId = (await fiscalCancellationsTask)
+            .GroupBy(static cancellation => cancellation.FiscalDocumentId)
+            .ToDictionary(static group => group.Key, static group => group.First());
+
         var items = new List<PendingFiscalCancellationAuthorizationItem>();
         foreach (var item in gatewayResult.Items)
         {
@@ -98,28 +127,23 @@ public class ListPendingFiscalCancellationAuthorizationsService
                 RawItemSummaryJson = item.RawItemSummaryJson
             };
 
-            if (!string.IsNullOrWhiteSpace(item.Uuid))
+            if (!string.IsNullOrWhiteSpace(item.Uuid)
+                && fiscalStampByUuid.TryGetValue(item.Uuid, out var fiscalStamp))
             {
-                var fiscalStamp = await _fiscalStampRepository.GetByUuidAsync(item.Uuid, cancellationToken);
-                if (fiscalStamp is not null)
+                pendingItem.FiscalDocumentId = fiscalStamp.FiscalDocumentId;
+
+                if (fiscalDocumentsById.TryGetValue(fiscalStamp.FiscalDocumentId, out var fiscalDocument))
                 {
-                    pendingItem.FiscalDocumentId = fiscalStamp.FiscalDocumentId;
+                    pendingItem.FiscalDocumentStatus = fiscalDocument.Status.ToString();
+                    pendingItem.LocalOperationalStatus = MapLocalOperationalStatus(fiscalDocument.Status);
+                    pendingItem.LocalOperationalMessage = BuildLocalOperationalMessage(fiscalDocument.Status);
+                }
 
-                    var fiscalDocument = await _fiscalDocumentRepository.GetByIdAsync(fiscalStamp.FiscalDocumentId, cancellationToken);
-                    if (fiscalDocument is not null)
-                    {
-                        pendingItem.FiscalDocumentStatus = fiscalDocument.Status.ToString();
-                        pendingItem.LocalOperationalStatus = MapLocalOperationalStatus(fiscalDocument.Status);
-                        pendingItem.LocalOperationalMessage = BuildLocalOperationalMessage(fiscalDocument.Status);
-                    }
-
-                    var fiscalCancellation = await _fiscalCancellationRepository.GetByFiscalDocumentIdAsync(fiscalStamp.FiscalDocumentId, cancellationToken);
-                    if (fiscalCancellation is not null)
-                    {
-                        pendingItem.FiscalCancellationId = fiscalCancellation.Id;
-                        pendingItem.CancellationStatus = fiscalCancellation.Status.ToString();
-                        pendingItem.AuthorizationStatus = FiscalCancellationAuthorizationStatus.Pending.ToString();
-                    }
+                if (fiscalCancellationsByFiscalDocumentId.TryGetValue(fiscalStamp.FiscalDocumentId, out var fiscalCancellation))
+                {
+                    pendingItem.FiscalCancellationId = fiscalCancellation.Id;
+                    pendingItem.CancellationStatus = fiscalCancellation.Status.ToString();
+                    pendingItem.AuthorizationStatus = FiscalCancellationAuthorizationStatus.Pending.ToString();
                 }
             }
 

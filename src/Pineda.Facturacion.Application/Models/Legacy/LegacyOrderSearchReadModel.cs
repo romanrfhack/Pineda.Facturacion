@@ -6,6 +6,8 @@ public sealed class LegacyOrderSearchReadModel
 
     public DateTime ToDateUtcExclusive { get; init; }
 
+    public string? LegacyOrderId { get; init; }
+
     public string? CustomerQuery { get; init; }
 
     public int Page { get; init; } = 1;

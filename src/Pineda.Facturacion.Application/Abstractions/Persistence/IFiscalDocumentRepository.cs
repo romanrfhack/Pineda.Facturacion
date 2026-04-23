@@ -9,7 +9,25 @@ public interface IFiscalDocumentRepository
 
     Task<FiscalDocument?> GetTrackedByIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default);
 
+    Task<FiscalDocument?> GetTrackedByItemIdAsync(long fiscalDocumentItemId, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult<FiscalDocument?>(null);
+    }
+
     Task<FiscalDocument?> GetByBillingDocumentIdAsync(long billingDocumentId, CancellationToken cancellationToken = default);
+
+    async Task<IReadOnlyList<FiscalDocument>> GetByIdsAsync(
+        IReadOnlyCollection<long> fiscalDocumentIds,
+        CancellationToken cancellationToken = default)
+    {
+        if (fiscalDocumentIds.Count == 0)
+        {
+            return [];
+        }
+
+        var documents = await Task.WhenAll(fiscalDocumentIds.Select(id => GetByIdAsync(id, cancellationToken)));
+        return documents.Where(document => document is not null).Cast<FiscalDocument>().ToList();
+    }
 
     Task<FiscalDocument?> GetTrackedByBillingDocumentIdAsync(long billingDocumentId, CancellationToken cancellationToken = default)
     {

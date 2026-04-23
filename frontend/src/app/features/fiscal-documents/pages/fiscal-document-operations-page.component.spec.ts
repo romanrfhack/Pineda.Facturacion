@@ -1,4 +1,4 @@
-import { TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, Router } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { FiscalDocumentOperationsPageComponent } from './fiscal-document-operations-page.component';
@@ -11,6 +11,65 @@ import { SatProductServicesApiService } from '../../catalogs/infrastructure/sat-
 import { OrdersApiService } from '../../orders/infrastructure/orders-api.service';
 
 describe('FiscalDocumentOperationsPageComponent', () => {
+  function buildMissingProductFiscalProfilePayload(
+    internalCode: string,
+    options?: {
+      lineNumber?: number;
+      description?: string;
+      existingProfileStatus?: 'Active' | 'Inactive' | 'None';
+      existingProductFiscalProfileId?: number | null;
+      prefillSatProductServiceCode?: string;
+      suggestions?: Array<{
+        satProductServiceCode: string;
+        satProductServiceDescription?: string | null;
+        satUnitCode: string;
+        satUnitDescription?: string | null;
+        taxObjectCode: string;
+        vatRate: number;
+        defaultUnitText?: string | null;
+        score: number;
+        confidence: number;
+        source: string;
+        matchKind: string;
+        reason: string;
+        isActive: boolean;
+        requiresExplicitConfirmation: boolean;
+      }>;
+    },
+  ) {
+    return {
+      outcome: 'MissingProductFiscalProfile',
+      isSuccess: false,
+      errorMessage:
+        options?.existingProfileStatus === 'Inactive'
+          ? 'Product fiscal profile exists but is inactive.'
+          : 'No active product fiscal profile exists.',
+      billingDocumentId: 30,
+      fiscalDocumentId: null,
+      status: null,
+      missingProductFiscalProfile: {
+        billingDocumentItemId: 501,
+        lineNumber: options?.lineNumber ?? 1,
+        internalCode,
+        description: options?.description ?? internalCode,
+        existingProfileStatus: options?.existingProfileStatus ?? 'None',
+        existingProductFiscalProfileId: options?.existingProductFiscalProfileId ?? null,
+        canUseExplicitGeneric: true,
+        prefill: {
+          satProductServiceCode: options?.prefillSatProductServiceCode ?? '',
+          satUnitCode: 'H87',
+          taxObjectCode: '02',
+          vatRate: 0.16,
+          defaultUnitText: 'PIEZA',
+          isActive: true,
+          requiresExplicitProductServiceConfirmation:
+            !(options?.prefillSatProductServiceCode?.trim()?.length),
+        },
+        suggestions: options?.suggestions ?? [],
+      },
+    };
+  }
+
   function createApi(overrides?: Partial<Record<keyof FiscalDocumentsApiService, unknown>>) {
     return {
       getActiveIssuer: vi.fn().mockReturnValue(
@@ -171,6 +230,34 @@ describe('FiscalDocumentOperationsPageComponent', () => {
           fiscalDocumentStatus: 'ReadyForStamping',
         }),
       ),
+      updateFiscalDocumentItemFiscalProfile: vi.fn().mockReturnValue(
+        of({
+          outcome: 'Updated',
+          isSuccess: true,
+          fiscalDocumentId: 40,
+          fiscalDocumentItemId: 15,
+          fiscalDocumentStatus: 'ReadyForStamping',
+          item: {
+            id: 15,
+            fiscalDocumentId: 40,
+            lineNumber: 1,
+            billingDocumentItemId: 501,
+            internalCode: 'MTE-4259',
+            description: 'FILTRO DE ACEITE',
+            quantity: 1,
+            unitPrice: 100,
+            discountAmount: 0,
+            subtotal: 100,
+            taxTotal: 16,
+            total: 116,
+            satProductServiceCode: '40161513',
+            satUnitCode: 'E48',
+            taxObjectCode: '02',
+            vatRate: 0.16,
+            unitText: 'SERVICIO',
+          },
+        }),
+      ),
       getStamp: vi.fn().mockReturnValue(
         of({
           id: 11,
@@ -263,6 +350,18 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         }),
       ),
       cancelFiscalDocument: vi.fn(),
+      cancelBillingDocument: vi.fn().mockReturnValue(
+        of({
+          outcome: 'Cancelled',
+          isSuccess: true,
+          billingDocumentId: 30,
+          billingDocumentStatus: 'Cancelled',
+          fiscalDocumentId: null,
+          fiscalDocumentStatus: null,
+          releasedOrderLinkCount: 1,
+          releasedPendingAssignmentCount: 0,
+        }),
+      ),
       refreshStatus: vi.fn(),
       queryRemoteStamp: vi.fn(),
       ...overrides,
@@ -331,6 +430,13 @@ describe('FiscalDocumentOperationsPageComponent', () => {
                 id: 15,
               }),
             ),
+            update: vi.fn().mockReturnValue(
+              of({
+                outcome: 'Updated',
+                isSuccess: true,
+                id: 15,
+              }),
+            ),
             ...productApiOverrides,
           },
         },
@@ -350,6 +456,47 @@ describe('FiscalDocumentOperationsPageComponent', () => {
                   description: 'No existe en el catálogo',
                   displayText: '01010101 — No existe en el catálogo',
                   matchKind: 'exactCode',
+                },
+              ]),
+            ),
+            searchPaged: vi.fn().mockReturnValue(
+              of({
+                page: 1,
+                pageSize: 12,
+                hasMore: false,
+                items: [
+                  {
+                    code: '40161513',
+                    description: 'Filtro de aceite',
+                    displayText: '40161513 — Filtro de aceite',
+                    matchKind: 'text',
+                    score: 0.86,
+                  },
+                  {
+                    code: '01010101',
+                    description: 'No existe en el catálogo',
+                    displayText: '01010101 — No existe en el catálogo',
+                    matchKind: 'exactCode',
+                    score: 1,
+                  },
+                ],
+              }),
+            ),
+            searchBestEffort: vi.fn().mockReturnValue(
+              of([
+                {
+                  code: '40161513',
+                  description: 'Filtro de aceite',
+                  displayText: '40161513 — Filtro de aceite',
+                  matchKind: 'text',
+                  score: 0.86,
+                },
+                {
+                  code: '01010101',
+                  description: 'No existe en el catálogo',
+                  displayText: '01010101 — No existe en el catálogo',
+                  matchKind: 'exactCode',
+                  score: 1,
                 },
               ]),
             ),
@@ -426,6 +573,46 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     return fixture;
   }
 
+  function setDraftBillingContext(
+    fixture: ComponentFixture<FiscalDocumentOperationsPageComponent>,
+  ): void {
+    fixture.componentInstance['billingDocumentContext'].set({
+      billingDocumentId: 30,
+      salesOrderId: 20,
+      legacyOrderId: 'LEG-1001',
+      status: 'Draft',
+      documentType: 'I',
+      currencyCode: 'MXN',
+      total: 100,
+      createdAtUtc: '2026-03-20T12:00:00Z',
+      fiscalDocumentId: 40,
+      fiscalDocumentStatus: 'ReadyForStamping',
+      associatedOrders: [
+        {
+          salesOrderId: 20,
+          legacyOrderId: 'LEG-1001-ORD-LEG-1001',
+          customerName: 'Receiver One',
+          total: 100,
+          isPrimary: true,
+        },
+      ],
+      items: [
+        {
+          billingDocumentItemId: 501,
+          salesOrderId: 20,
+          salesOrderItemId: 601,
+          sourceSalesOrderLineNumber: 1,
+          sourceLegacyOrderId: 'LEG-1001-ORD-LEG-1001',
+          lineNumber: 1,
+          productInternalCode: 'MTE-4259',
+          description: 'FILTRO DE ACEITE',
+          quantity: 1,
+          total: 100,
+        },
+      ],
+    });
+  }
+
   it('shows empty evidence state when the fiscal document is not stamped yet', async () => {
     const fixture = await configure({
       getStamp: vi.fn().mockReturnValue(throwError(() => ({ status: 404 }))),
@@ -434,6 +621,263 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain(
       'Aún no hay evidencia de timbrado disponible',
     );
+  });
+
+  it('shows the fiscal-profile edit action for editable fiscal lines', async () => {
+    const readyDocument = {
+      id: 40,
+      billingDocumentId: 30,
+      issuerProfileId: 1,
+      fiscalReceiverId: 9,
+      status: 'ReadyForStamping',
+      cfdiVersion: '4.0',
+      documentType: 'I',
+      series: 'A',
+      folio: '31787',
+      issuedAtUtc: '2026-03-20T12:00:00Z',
+      currencyCode: 'MXN',
+      exchangeRate: 1,
+      paymentMethodSat: 'PPD',
+      paymentFormSat: '99',
+      paymentCondition: 'CREDITO',
+      isCreditSale: true,
+      creditDays: 7,
+      issuerRfc: 'AAA010101AAA',
+      issuerLegalName: 'Issuer SA',
+      issuerFiscalRegimeCode: '601',
+      issuerPostalCode: '01000',
+      pacEnvironment: 'Sandbox',
+      hasCertificateReference: true,
+      hasPrivateKeyReference: true,
+      hasPrivateKeyPasswordReference: true,
+      receiverRfc: 'BBB010101BBB',
+      receiverLegalName: 'Receiver One',
+      receiverFiscalRegimeCode: '601',
+      receiverCfdiUseCode: 'G03',
+      receiverPostalCode: '02000',
+      receiverCountryCode: 'MX',
+      receiverForeignTaxRegistration: null,
+      subtotal: 100,
+      discountTotal: 0,
+      taxTotal: 16,
+      total: 116,
+      items: [
+        {
+          id: 15,
+          fiscalDocumentId: 40,
+          lineNumber: 1,
+          billingDocumentItemId: 501,
+          internalCode: 'MTE-4259',
+          description: 'FILTRO DE ACEITE',
+          quantity: 1,
+          unitPrice: 100,
+          discountAmount: 0,
+          subtotal: 100,
+          taxTotal: 16,
+          total: 116,
+          satProductServiceCode: '10101504',
+          satUnitCode: 'H87',
+          taxObjectCode: '02',
+          vatRate: 0.16,
+          unitText: 'PIEZA',
+        },
+      ],
+    };
+    const fixture = await configure({
+      getFiscalDocumentById: vi.fn().mockReturnValue(of(readyDocument)),
+      getStamp: vi.fn().mockReturnValue(throwError(() => ({ status: 404 }))),
+    });
+    setDraftBillingContext(fixture);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Perfil fiscal por línea');
+    expect(fixture.nativeElement.textContent).toContain('Editar perfil fiscal');
+  });
+
+  it('hides the fiscal-profile edit action when the fiscal document is no longer editable', async () => {
+    const stampedDocument = {
+      id: 40,
+      billingDocumentId: 30,
+      issuerProfileId: 1,
+      fiscalReceiverId: 9,
+      status: 'Stamped',
+      cfdiVersion: '4.0',
+      documentType: 'I',
+      series: 'A',
+      folio: '31787',
+      issuedAtUtc: '2026-03-20T12:00:00Z',
+      currencyCode: 'MXN',
+      exchangeRate: 1,
+      paymentMethodSat: 'PPD',
+      paymentFormSat: '99',
+      paymentCondition: 'CREDITO',
+      isCreditSale: true,
+      creditDays: 7,
+      issuerRfc: 'AAA010101AAA',
+      issuerLegalName: 'Issuer SA',
+      issuerFiscalRegimeCode: '601',
+      issuerPostalCode: '01000',
+      pacEnvironment: 'Sandbox',
+      hasCertificateReference: true,
+      hasPrivateKeyReference: true,
+      hasPrivateKeyPasswordReference: true,
+      receiverRfc: 'BBB010101BBB',
+      receiverLegalName: 'Receiver One',
+      receiverFiscalRegimeCode: '601',
+      receiverCfdiUseCode: 'G03',
+      receiverPostalCode: '02000',
+      receiverCountryCode: 'MX',
+      receiverForeignTaxRegistration: null,
+      subtotal: 100,
+      discountTotal: 0,
+      taxTotal: 16,
+      total: 116,
+      items: [
+        {
+          id: 15,
+          fiscalDocumentId: 40,
+          lineNumber: 1,
+          billingDocumentItemId: 501,
+          internalCode: 'MTE-4259',
+          description: 'FILTRO DE ACEITE',
+          quantity: 1,
+          unitPrice: 100,
+          discountAmount: 0,
+          subtotal: 100,
+          taxTotal: 16,
+          total: 116,
+          satProductServiceCode: '10101504',
+          satUnitCode: 'H87',
+          taxObjectCode: '02',
+          vatRate: 0.16,
+          unitText: 'PIEZA',
+        },
+      ],
+    };
+    const fixture = await configure({
+      getFiscalDocumentById: vi.fn().mockReturnValue(of(stampedDocument)),
+    });
+    setDraftBillingContext(fixture);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Perfil fiscal por línea');
+    expect(fixture.nativeElement.textContent).not.toContain('Editar perfil fiscal');
+  });
+
+  it('saves a fiscal-line override and refreshes the local snapshot item without reloading the whole document', async () => {
+    const readyDocument = {
+      id: 40,
+      billingDocumentId: 30,
+      issuerProfileId: 1,
+      fiscalReceiverId: 9,
+      status: 'ReadyForStamping',
+      cfdiVersion: '4.0',
+      documentType: 'I',
+      series: 'A',
+      folio: '31787',
+      issuedAtUtc: '2026-03-20T12:00:00Z',
+      currencyCode: 'MXN',
+      exchangeRate: 1,
+      paymentMethodSat: 'PPD',
+      paymentFormSat: '99',
+      paymentCondition: 'CREDITO',
+      isCreditSale: true,
+      creditDays: 7,
+      issuerRfc: 'AAA010101AAA',
+      issuerLegalName: 'Issuer SA',
+      issuerFiscalRegimeCode: '601',
+      issuerPostalCode: '01000',
+      pacEnvironment: 'Sandbox',
+      hasCertificateReference: true,
+      hasPrivateKeyReference: true,
+      hasPrivateKeyPasswordReference: true,
+      receiverRfc: 'BBB010101BBB',
+      receiverLegalName: 'Receiver One',
+      receiverFiscalRegimeCode: '601',
+      receiverCfdiUseCode: 'G03',
+      receiverPostalCode: '02000',
+      receiverCountryCode: 'MX',
+      receiverForeignTaxRegistration: null,
+      subtotal: 100,
+      discountTotal: 0,
+      taxTotal: 16,
+      total: 116,
+      items: [
+        {
+          id: 15,
+          fiscalDocumentId: 40,
+          lineNumber: 1,
+          billingDocumentItemId: 501,
+          internalCode: 'MTE-4259',
+          description: 'FILTRO DE ACEITE',
+          quantity: 1,
+          unitPrice: 100,
+          discountAmount: 0,
+          subtotal: 100,
+          taxTotal: 16,
+          total: 116,
+          satProductServiceCode: '10101504',
+          satUnitCode: 'H87',
+          taxObjectCode: '02',
+          vatRate: 0.16,
+          unitText: 'PIEZA',
+        },
+      ],
+    };
+    const updatedItem = {
+      ...readyDocument.items[0],
+      satProductServiceCode: '40161513',
+      satUnitCode: 'E48',
+      unitText: 'SERVICIO',
+    };
+    const updateFiscalDocumentItemFiscalProfile = vi.fn().mockReturnValue(
+      of({
+        outcome: 'Updated',
+        isSuccess: true,
+        fiscalDocumentId: 40,
+        fiscalDocumentItemId: 15,
+        fiscalDocumentStatus: 'ReadyForStamping',
+        item: updatedItem,
+      }),
+    );
+    const getFiscalDocumentById = vi.fn().mockReturnValue(of(readyDocument));
+    const fixture = await configure({
+      getFiscalDocumentById,
+      getStamp: vi.fn().mockReturnValue(throwError(() => ({ status: 404 }))),
+      updateFiscalDocumentItemFiscalProfile,
+    });
+    setDraftBillingContext(fixture);
+    fixture.detectChanges();
+
+    fixture.componentInstance['openFiscalItemProfileDialog'](
+      fixture.componentInstance['fiscalDocument']()!.items[0],
+    );
+    await fixture.componentInstance['saveFiscalItemProfile']({
+      internalCode: 'MTE-4259',
+      description: 'FILTRO DE ACEITE',
+      satProductServiceCode: '40161513',
+      satUnitCode: 'E48',
+      taxObjectCode: '02',
+      vatRate: 0.16,
+      defaultUnitText: 'SERVICIO',
+      isActive: true,
+    });
+    fixture.detectChanges();
+
+    expect(updateFiscalDocumentItemFiscalProfile).toHaveBeenCalledWith(15, {
+      satProductServiceCode: '40161513',
+      satUnitCode: 'E48',
+      taxObjectCode: '02',
+      vatRate: 0.16,
+      unitText: 'SERVICIO',
+    });
+    expect(getFiscalDocumentById).toHaveBeenCalledTimes(1);
+    expect(fixture.componentInstance['fiscalDocument']()?.items[0].satProductServiceCode).toBe(
+      '40161513',
+    );
+    expect(fixture.componentInstance['fiscalDocument']()?.items[0].satUnitCode).toBe('E48');
+    expect(fixture.nativeElement.textContent).toContain('40161513');
+    expect(fixture.nativeElement.textContent).toContain('SERVICIO');
   });
 
   it('keeps the current fiscal status as the source of truth even when stamp evidence is a rejected historical attempt', async () => {
@@ -744,7 +1188,6 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     const getFiscalDocumentById = vi
       .fn()
       .mockReturnValue(of(stampedDocument))
-      .mockReturnValueOnce(of(readyDocument))
       .mockReturnValueOnce(of(readyDocument));
     const getEmailDraft = vi.fn().mockReturnValue(
       of({
@@ -840,7 +1283,6 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     const getFiscalDocumentById = vi
       .fn()
       .mockReturnValue(of(stampedDocument))
-      .mockReturnValueOnce(of(readyDocument))
       .mockReturnValueOnce(of(readyDocument));
     const getEmailDraft = vi.fn().mockReturnValue(
       of({
@@ -955,9 +1397,13 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       'CFDI timbrado correctamente, pero no fue posible enviar el correo.',
     );
 
+    fixture.componentInstance['fiscalDocument'].set(stampedDocument);
+    fixture.componentInstance['pendingAutomaticEmailStatus'].set('failed');
     fixture.componentInstance['closeEmailComposer']();
+    await fixture.whenStable();
     fixture.detectChanges();
 
+    expect(fixture.componentInstance['shouldShowEmailFallbackAction']()).toBe(true);
     expect(fixture.nativeElement.textContent).toContain('Completar envío por correo');
   });
 
@@ -1076,7 +1522,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Agregar receptor');
   });
 
-  it('renders SAT payment catalogs and disables prepare until the capture is valid', async () => {
+  it('renders SAT payment catalogs with an empty payment method and keeps prepare disabled until explicit capture', async () => {
     const fixture = await configure(undefined, { id: null, billingDocumentId: '30' });
     fixture.componentInstance['selectedReceiverId'] = 9;
     fixture.componentInstance['selectedReceiver'].set({
@@ -1095,11 +1541,11 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       createdAtUtc: '2026-03-20T12:00:00Z',
       updatedAtUtc: '2026-03-20T12:00:00Z',
     });
-    fixture.componentInstance['paymentMethodSat'] = '';
-    fixture.componentInstance['paymentFormSat'] = '';
-    fixture.componentInstance['paymentCondition'] = '';
     fixture.detectChanges();
 
+    const paymentMethodSelect = fixture.nativeElement.querySelector(
+      'select[name="paymentMethodSat"]',
+    ) as HTMLSelectElement;
     const submitButton = Array.from(
       fixture.nativeElement.querySelectorAll(
         'button[type="submit"]',
@@ -1107,12 +1553,20 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     ).find((button: HTMLButtonElement) =>
       button.textContent?.includes('Preparar documento fiscal'),
     ) as HTMLButtonElement;
+    expect(fixture.componentInstance['paymentMethodSat']).toBe('');
+    expect(paymentMethodSelect.value).toBe('');
+    expect(paymentMethodSelect.selectedOptions[0]?.textContent?.trim()).toBe(
+      'Selecciona método de pago',
+    );
     expect(fixture.nativeElement.textContent).toContain('PUE - Pago en una sola exhibición');
     expect(fixture.nativeElement.textContent).toContain('99 - Por definir');
     expect(submitButton.disabled).toBe(true);
 
-    fixture.componentInstance['onCreditSaleChange'](false);
     fixture.componentInstance['onPaymentMethodChange']('PUE');
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['canPrepareFiscalDocument']()).toBe(false);
+
     fixture.componentInstance['onPaymentFormChange']('03');
     fixture.componentInstance['onPaymentConditionChange']('Contado');
     fixture.detectChanges();
@@ -1120,18 +1574,38 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(fixture.componentInstance['canPrepareFiscalDocument']()).toBe(true);
   });
 
-  it('forces payment form 99 and suggests credit condition when credit sale is enabled', async () => {
+  it('choosing PPD forces payment form 99 and suggests a credit condition', async () => {
     const fixture = await configure(undefined, { id: null, billingDocumentId: '30' });
 
     fixture.componentInstance['onCreditDaysChange'](21);
-    fixture.componentInstance['onCreditSaleChange'](true);
+    fixture.componentInstance['onPaymentMethodChange']('PPD');
 
     expect(fixture.componentInstance['paymentMethodSat']).toBe('PPD');
     expect(fixture.componentInstance['paymentFormSat']).toBe('99');
+    expect(fixture.componentInstance['isCreditSale']).toBe(true);
     expect(fixture.componentInstance['paymentCondition']).toBe('Crédito a 21 días');
     expect(fixture.componentInstance['availablePaymentFormOptions']()).toEqual([
       { code: '99', description: 'Por definir' },
     ]);
+  });
+
+  it('toggling credit sale does not auto-select or replace the chosen payment method', async () => {
+    const fixture = await configure(undefined, { id: null, billingDocumentId: '30' });
+
+    fixture.componentInstance['onPaymentMethodChange']('PPD');
+    fixture.componentInstance['onCreditSaleChange'](false);
+
+    expect(fixture.componentInstance['paymentMethodSat']).toBe('PPD');
+    expect(fixture.componentInstance['paymentFormSat']).toBe('99');
+    expect(fixture.componentInstance['isCreditSale']).toBe(false);
+    expect(fixture.componentInstance['paymentCondition']).toBe('Contado');
+
+    fixture.componentInstance['onCreditSaleChange'](true);
+
+    expect(fixture.componentInstance['paymentMethodSat']).toBe('PPD');
+    expect(fixture.componentInstance['paymentFormSat']).toBe('99');
+    expect(fixture.componentInstance['isCreditSale']).toBe(true);
+    expect(fixture.componentInstance['paymentCondition']).toBe('Crédito a 7 días');
   });
 
   it('sends only SAT codes plus payment condition text when preparing', async () => {
@@ -1240,6 +1714,137 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(fixture.componentInstance['showCancelConfirmationDialog']()).toBe(false);
   });
 
+  it('shows billing cancellation only while the billing document remains draft', async () => {
+    const fixture = await configure(undefined, { id: null, billingDocumentId: '30' });
+
+    expect(fixture.componentInstance['canCancelCurrentBillingDocument']()).toBe(true);
+
+    fixture.componentInstance['billingDocumentContext'].set({
+      ...fixture.componentInstance['billingDocumentContext']()!,
+      status: 'Cancelled',
+    });
+
+    expect(fixture.componentInstance['canCancelCurrentBillingDocument']()).toBe(false);
+    expect(fixture.componentInstance['canEditCurrentBillingComposition']()).toBe(false);
+  });
+
+  it('cancels the billing document, reloads historical cancelled context, and blocks further edits', async () => {
+    const cancelledBillingDocument = {
+      billingDocumentId: 30,
+      salesOrderId: 20,
+      legacyOrderId: 'LEG-1001',
+      status: 'Cancelled',
+      documentType: 'I',
+      currencyCode: 'MXN',
+      total: 100,
+      createdAtUtc: '2026-03-20T12:00:00Z',
+      fiscalDocumentId: null,
+      fiscalDocumentStatus: null,
+      associatedOrders: [
+        {
+          salesOrderId: 20,
+          legacyOrderId: 'LEG-1001-ORD-LEG-1001',
+          customerName: 'Receiver One',
+          total: 100,
+          isPrimary: true,
+        },
+      ],
+      items: [
+        {
+          billingDocumentItemId: 501,
+          salesOrderId: 20,
+          salesOrderItemId: 601,
+          sourceSalesOrderLineNumber: 1,
+          sourceLegacyOrderId: 'LEG-1001-ORD-LEG-1001',
+          lineNumber: 1,
+          productInternalCode: 'MTE-4259',
+          description: 'FILTRO DE ACEITE',
+          quantity: 1,
+          total: 100,
+        },
+      ],
+    };
+    const getBillingDocumentById = vi
+      .fn()
+      .mockReturnValueOnce(
+        of({
+          billingDocumentId: 30,
+          salesOrderId: 20,
+          legacyOrderId: 'LEG-1001',
+          status: 'Draft',
+          documentType: 'I',
+          currencyCode: 'MXN',
+          total: 100,
+          createdAtUtc: '2026-03-20T12:00:00Z',
+          fiscalDocumentId: null,
+          fiscalDocumentStatus: null,
+          associatedOrders: [
+            {
+              salesOrderId: 20,
+              legacyOrderId: 'LEG-1001-ORD-LEG-1001',
+              customerName: 'Receiver One',
+              total: 100,
+              isPrimary: true,
+            },
+          ],
+          items: [
+            {
+              billingDocumentItemId: 501,
+              salesOrderId: 20,
+              salesOrderItemId: 601,
+              sourceSalesOrderLineNumber: 1,
+              sourceLegacyOrderId: 'LEG-1001-ORD-LEG-1001',
+              lineNumber: 1,
+              productInternalCode: 'MTE-4259',
+              description: 'FILTRO DE ACEITE',
+              quantity: 1,
+              total: 100,
+            },
+          ],
+        }),
+      )
+      .mockReturnValue(of(cancelledBillingDocument));
+    const cancelBillingDocument = vi.fn().mockReturnValue(
+      of({
+        outcome: 'Cancelled',
+        isSuccess: true,
+        billingDocumentId: 30,
+        billingDocumentStatus: 'Cancelled',
+        fiscalDocumentId: 40,
+        fiscalDocumentStatus: 'DiscardedUnstamped',
+        releasedOrderLinkCount: 2,
+        releasedPendingAssignmentCount: 1,
+      }),
+    );
+    const fixture = await configure(
+      { getBillingDocumentById, cancelBillingDocument },
+      { id: null, billingDocumentId: '30' },
+    );
+    const router = TestBed.inject(Router) as unknown as {
+      navigate: ReturnType<typeof vi.fn>;
+    };
+
+    fixture.componentInstance['openCancelBillingDocumentDialog']();
+    expect(fixture.componentInstance['showBillingCancelConfirmationDialog']()).toBe(true);
+
+    await fixture.componentInstance['confirmBillingCancellation']();
+    fixture.detectChanges();
+
+    expect(cancelBillingDocument).toHaveBeenCalledWith(30);
+    expect(fixture.componentInstance['billingDocumentContext']()?.status).toBe('Cancelled');
+    expect(fixture.componentInstance['showBillingCancelConfirmationDialog']()).toBe(false);
+    expect(fixture.componentInstance['canEditCurrentBillingComposition']()).toBe(false);
+    expect(fixture.componentInstance['canPrepareFiscalDocument']()).toBe(false);
+    expect(fixture.componentInstance['canCancelCurrentBillingDocument']()).toBe(false);
+    expect(fixture.componentInstance['lastOperationMessage']()).toContain(
+      'Documento de facturación cancelado.',
+    );
+    expect(fixture.nativeElement.textContent).toContain('El documento está cancelado.');
+    expect(router.navigate).toHaveBeenCalledWith(['/app/fiscal-documents'], {
+      queryParams: { billingDocumentId: 30 },
+    });
+  });
+
   it('uses local discard semantics for recoverable unstamped snapshots and enables reprepare afterwards', async () => {
     const recoverableDocument = {
       id: 40,
@@ -1324,6 +1929,8 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     const feedback = TestBed.inject(FeedbackService) as unknown as {
       show: ReturnType<typeof vi.fn>;
     };
+    setDraftBillingContext(fixture);
+    fixture.detectChanges();
 
     fixture.componentInstance['openCancelDialog']();
 
@@ -1553,6 +2160,8 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     const feedback = TestBed.inject(FeedbackService) as unknown as {
       show: ReturnType<typeof vi.fn>;
     };
+    setDraftBillingContext(fixture);
+    fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).toContain('Regenerar snapshot');
 
@@ -2080,6 +2689,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         value: '2026',
       },
     ]);
+    setDraftBillingContext(fixture);
 
     await fixture.componentInstance['stamp']();
 
@@ -2288,6 +2898,9 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       isActive: true,
     });
     await fixture.whenStable();
+    fixture.componentInstance['onPaymentMethodChange']('PUE');
+    fixture.componentInstance['onPaymentFormChange']('03');
+    fixture.componentInstance['onPaymentConditionChange']('Contado');
 
     await fixture.componentInstance['prepare']();
 
@@ -2538,15 +3151,27 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     const prepareFiscalDocument = vi.fn().mockReturnValue(
       throwError(() => ({
         status: 400,
-        error: {
-          outcome: 'MissingProductFiscalProfile',
-          isSuccess: false,
-          errorMessage:
-            "No active product fiscal profile exists for item line '1' and internal code 'MTE-4259'.",
-          billingDocumentId: 30,
-          fiscalDocumentId: null,
-          status: null,
-        },
+        error: buildMissingProductFiscalProfilePayload('MTE-4259', {
+          description: 'FILTRO DE ACEITE',
+          suggestions: [
+            {
+              satProductServiceCode: '40161513',
+              satProductServiceDescription: 'Filtro de aceite',
+              satUnitCode: 'H87',
+              satUnitDescription: 'Pieza',
+              taxObjectCode: '02',
+              vatRate: 0.16,
+              defaultUnitText: 'PIEZA',
+              score: 0.72,
+              confidence: 0.68,
+              source: 'catalog_search',
+              matchKind: 'text',
+              reason: 'Coincidencia por descripción o keywords en el catálogo SAT local.',
+              isActive: true,
+              requiresExplicitConfirmation: true,
+            },
+          ],
+        }),
       })),
     );
     const feedback = { show: vi.fn() };
@@ -2617,6 +3242,9 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.componentInstance['selectedReceiverId'] = 9;
+    fixture.componentInstance['onPaymentMethodChange']('PUE');
+    fixture.componentInstance['onPaymentFormChange']('03');
+    fixture.componentInstance['onPaymentConditionChange']('Contado');
     await fixture.componentInstance['prepare']();
     fixture.detectChanges();
 
@@ -2647,15 +3275,9 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       .mockReturnValueOnce(
         throwError(() => ({
           status: 400,
-          error: {
-            outcome: 'MissingProductFiscalProfile',
-            isSuccess: false,
-            errorMessage:
-              "No active product fiscal profile exists for item line '1' and internal code 'MTE-4259'.",
-            billingDocumentId: 30,
-            fiscalDocumentId: null,
-            status: null,
-          },
+          error: buildMissingProductFiscalProfilePayload('MTE-4259', {
+            description: 'FILTRO DE ACEITE',
+          }),
         })),
       )
       .mockReturnValueOnce(
@@ -2732,6 +3354,9 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.componentInstance['selectedReceiverId'] = 9;
+    fixture.componentInstance['onPaymentMethodChange']('PUE');
+    fixture.componentInstance['onPaymentFormChange']('03');
+    fixture.componentInstance['onPaymentConditionChange']('Contado');
 
     await fixture.componentInstance['prepare']();
     await fixture.componentInstance['saveMissingProductProfile']({
@@ -2763,21 +3388,160 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(feedback.show).toHaveBeenCalledWith('success', 'Documento fiscal preparado.');
   });
 
+  it('reactivates an existing inactive product fiscal profile and retries preparation without create conflicts', async () => {
+    const prepareFiscalDocument = vi
+      .fn()
+      .mockReturnValueOnce(
+        throwError(() => ({
+          status: 400,
+          error: buildMissingProductFiscalProfilePayload('MTE-4259', {
+            description: 'FILTRO DE ACEITE',
+            existingProfileStatus: 'Inactive',
+            existingProductFiscalProfileId: 44,
+            prefillSatProductServiceCode: '40161513',
+          }),
+        })),
+      )
+      .mockReturnValueOnce(
+        of({
+          outcome: 'Prepared',
+          isSuccess: true,
+          errorMessage: null,
+          billingDocumentId: 30,
+          fiscalDocumentId: 40,
+          status: 'ReadyForStamping',
+        }),
+      );
+    const create = vi.fn().mockReturnValue(of({ outcome: 'Created', isSuccess: true, id: 15 }));
+    const update = vi.fn().mockReturnValue(of({ outcome: 'Updated', isSuccess: true, id: 44 }));
+    const feedback = { show: vi.fn() };
+
+    await TestBed.configureTestingModule({
+      imports: [FiscalDocumentOperationsPageComponent],
+      providers: [
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            snapshot: {
+              queryParamMap: convertToParamMap({ billingDocumentId: '30' }),
+              paramMap: convertToParamMap({}),
+            },
+          },
+        },
+        { provide: FiscalDocumentsApiService, useValue: createApi({ prepareFiscalDocument }) },
+        { provide: ProductFiscalProfilesApiService, useValue: { create, update } },
+        {
+          provide: FiscalReceiversApiService,
+          useValue: {
+            search: vi.fn().mockReturnValue(of([])),
+            getByRfc: vi.fn(),
+            getSatCatalog: vi.fn().mockReturnValue(
+              of({
+                regimenFiscal: [{ code: '601', description: 'General de Ley Personas Morales' }],
+                usoCfdi: [{ code: 'G03', description: 'Gastos en general' }],
+                paymentMethods: [
+                  { code: 'PUE', description: 'Pago en una sola exhibición' },
+                  { code: 'PPD', description: 'Pago en parcialidades o diferido' },
+                ],
+                paymentForms: [
+                  { code: '03', description: 'Transferencia electrónica de fondos' },
+                  { code: '99', description: 'Por definir' },
+                ],
+                byRegimenFiscal: [
+                  {
+                    code: '601',
+                    description: 'General de Ley Personas Morales',
+                    allowedUsoCfdi: [{ code: 'G03', description: 'Gastos en general' }],
+                  },
+                ],
+              }),
+            ),
+            create: vi.fn(),
+            update: vi.fn(),
+          },
+        },
+        { provide: FeedbackService, useValue: feedback },
+        { provide: Router, useValue: { navigate: vi.fn().mockResolvedValue(true) } },
+        {
+          provide: PermissionService,
+          useValue: {
+            canStampFiscal: vi.fn().mockReturnValue(true),
+            canCancelFiscal: vi.fn().mockReturnValue(true),
+            canWriteMasterData: vi.fn().mockReturnValue(true),
+          },
+        },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(FiscalDocumentOperationsPageComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.componentInstance['selectedReceiverId'] = 9;
+    fixture.componentInstance['onPaymentMethodChange']('PUE');
+    fixture.componentInstance['onPaymentFormChange']('03');
+    fixture.componentInstance['onPaymentConditionChange']('Contado');
+
+    await fixture.componentInstance['prepare']();
+    await fixture.componentInstance['saveMissingProductProfile']({
+      internalCode: 'MTE-4259',
+      description: 'FILTRO DE ACEITE',
+      satProductServiceCode: '40161513',
+      satUnitCode: 'H87',
+      taxObjectCode: '02',
+      vatRate: 0.16,
+      defaultUnitText: 'PIEZA',
+      isActive: true,
+    });
+
+    expect(create).not.toHaveBeenCalled();
+    expect(update).toHaveBeenCalledWith(44, {
+      internalCode: 'MTE-4259',
+      description: 'FILTRO DE ACEITE',
+      satProductServiceCode: '40161513',
+      satUnitCode: 'H87',
+      taxObjectCode: '02',
+      vatRate: 0.16,
+      defaultUnitText: 'PIEZA',
+      isActive: true,
+    });
+    expect(prepareFiscalDocument).toHaveBeenCalledTimes(2);
+    expect(feedback.show).toHaveBeenCalledWith(
+      'warning',
+      'El perfil fiscal del producto MTE-4259 existe pero está inactivo. Debes reactivarlo o actualizarlo para continuar.',
+    );
+    expect(feedback.show).toHaveBeenCalledWith(
+      'success',
+      'Perfil fiscal del producto MTE-4259 reactivado y actualizado.',
+    );
+  });
+
   it('keeps SAT product selection pending in the recovery form until the user chooses one explicitly', async () => {
     const fixture = await configure(
       {
         prepareFiscalDocument: vi.fn().mockReturnValue(
           throwError(() => ({
             status: 400,
-            error: {
-              outcome: 'MissingProductFiscalProfile',
-              isSuccess: false,
-              errorMessage:
-                "No active product fiscal profile exists for item line '1' and internal code 'MTE-4259'.",
-              billingDocumentId: 30,
-              fiscalDocumentId: null,
-              status: null,
-            },
+            error: buildMissingProductFiscalProfilePayload('MTE-4259', {
+              description: 'FILTRO DE ACEITE',
+              suggestions: [
+                {
+                  satProductServiceCode: '40161513',
+                  satProductServiceDescription: 'Filtro de aceite',
+                  satUnitCode: 'H87',
+                  satUnitDescription: 'Pieza',
+                  taxObjectCode: '02',
+                  vatRate: 0.16,
+                  defaultUnitText: 'PIEZA',
+                  score: 0.72,
+                  confidence: 0.68,
+                  source: 'catalog_search',
+                  matchKind: 'text',
+                  reason: 'Coincidencia por descripción o keywords en el catálogo SAT local.',
+                  isActive: true,
+                  requiresExplicitConfirmation: true,
+                },
+              ],
+            }),
           })),
         ),
       },
@@ -2785,6 +3549,9 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     );
 
     fixture.componentInstance['selectedReceiverId'] = 9;
+    fixture.componentInstance['onPaymentMethodChange']('PUE');
+    fixture.componentInstance['onPaymentFormChange']('03');
+    fixture.componentInstance['onPaymentConditionChange']('Contado');
     await fixture.componentInstance['prepare']();
     fixture.detectChanges();
 
@@ -2798,15 +3565,9 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     const prepareFiscalDocument = vi.fn().mockReturnValue(
       throwError(() => ({
         status: 400,
-        error: {
-          outcome: 'MissingProductFiscalProfile',
-          isSuccess: false,
-          errorMessage:
-            "No active product fiscal profile exists for item line '1' and internal code 'MTE-4259'.",
-          billingDocumentId: 30,
-          fiscalDocumentId: null,
-          status: null,
-        },
+        error: buildMissingProductFiscalProfilePayload('MTE-4259', {
+          description: 'FILTRO DE ACEITE',
+        }),
       })),
     );
 
@@ -2816,6 +3577,9 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     );
 
     fixture.componentInstance['selectedReceiverId'] = 9;
+    fixture.componentInstance['onPaymentMethodChange']('PUE');
+    fixture.componentInstance['onPaymentFormChange']('03');
+    fixture.componentInstance['onPaymentConditionChange']('Contado');
     await fixture.componentInstance['prepare']();
     fixture.componentInstance['closeMissingProductProfileForm']();
     fixture.detectChanges();
@@ -2833,29 +3597,18 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       .mockReturnValueOnce(
         throwError(() => ({
           status: 400,
-          error: {
-            outcome: 'MissingProductFiscalProfile',
-            isSuccess: false,
-            errorMessage:
-              "No active product fiscal profile exists for item line '1' and internal code 'MTE-4259'.",
-            billingDocumentId: 30,
-            fiscalDocumentId: null,
-            status: null,
-          },
+          error: buildMissingProductFiscalProfilePayload('MTE-4259', {
+            description: 'FILTRO DE ACEITE',
+          }),
         })),
       )
       .mockReturnValueOnce(
         throwError(() => ({
           status: 400,
-          error: {
-            outcome: 'MissingProductFiscalProfile',
-            isSuccess: false,
-            errorMessage:
-              "No active product fiscal profile exists for item line '2' and internal code 'PS-317'.",
-            billingDocumentId: 30,
-            fiscalDocumentId: null,
-            status: null,
-          },
+          error: buildMissingProductFiscalProfilePayload('PS-317', {
+            lineNumber: 2,
+            description: 'PS-317',
+          }),
         })),
       );
     const create = vi.fn().mockReturnValue(of({ outcome: 'Created', isSuccess: true, id: 15 }));
@@ -2867,6 +3620,9 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     );
 
     fixture.componentInstance['selectedReceiverId'] = 9;
+    fixture.componentInstance['onPaymentMethodChange']('PUE');
+    fixture.componentInstance['onPaymentFormChange']('03');
+    fixture.componentInstance['onPaymentConditionChange']('Contado');
     await fixture.componentInstance['prepare']();
     await fixture.componentInstance['saveMissingProductProfile']({
       internalCode: 'MTE-4259',
@@ -2891,15 +3647,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     const prepareFiscalDocument = vi.fn().mockReturnValue(
       throwError(() => ({
         status: 400,
-        error: {
-          outcome: 'MissingProductFiscalProfile',
-          isSuccess: false,
-          errorMessage:
-            "No active product fiscal profile exists for item line '1' and internal code 'GP-149'.",
-          billingDocumentId: 30,
-          fiscalDocumentId: null,
-          status: null,
-        },
+        error: buildMissingProductFiscalProfilePayload('GP-149'),
       })),
     );
 
@@ -2926,6 +3674,9 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     );
 
     fixture.componentInstance['selectedReceiverId'] = 9;
+    fixture.componentInstance['onPaymentMethodChange']('PUE');
+    fixture.componentInstance['onPaymentFormChange']('03');
+    fixture.componentInstance['onPaymentConditionChange']('Contado');
     await fixture.componentInstance['prepare']();
 
     expect(fixture.componentInstance['missingProductFiscalProfile']()?.description).toBe('GP-149');
@@ -3255,6 +4006,8 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         }),
       ),
     });
+    setDraftBillingContext(fixture);
+    fixture.detectChanges();
 
     fixture.componentInstance['openRemoveBillingItemDialog']({
       billingDocumentItemId: 501,

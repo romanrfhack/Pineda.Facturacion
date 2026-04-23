@@ -8,21 +8,15 @@ public sealed class SearchRepBaseDocumentsService
     private readonly IRepBaseDocumentRepository _internalRepository;
     private readonly IExternalRepBaseDocumentRepository _externalRepository;
     private readonly IIssuerProfileRepository _issuerProfileRepository;
-    private readonly IInternalRepBaseDocumentStateRepository _stateRepository;
-    private readonly IUnitOfWork _unitOfWork;
 
     public SearchRepBaseDocumentsService(
         IRepBaseDocumentRepository internalRepository,
         IExternalRepBaseDocumentRepository externalRepository,
-        IIssuerProfileRepository issuerProfileRepository,
-        IInternalRepBaseDocumentStateRepository stateRepository,
-        IUnitOfWork unitOfWork)
+        IIssuerProfileRepository issuerProfileRepository)
     {
         _internalRepository = internalRepository;
         _externalRepository = externalRepository;
         _issuerProfileRepository = issuerProfileRepository;
-        _stateRepository = stateRepository;
-        _unitOfWork = unitOfWork;
     }
 
     public async Task<SearchRepBaseDocumentsResult> ExecuteAsync(
@@ -121,8 +115,6 @@ public sealed class SearchRepBaseDocumentsService
             .Take(normalizedPageSize)
             .ToList();
 
-        await PersistInternalOperationalStatesAsync(pageItems, internalItems, cancellationToken);
-
         return new SearchRepBaseDocumentsResult
         {
             Page = normalizedPage,
@@ -132,41 +124,6 @@ public sealed class SearchRepBaseDocumentsService
             Items = pageItems,
             SummaryCounts = summaryCounts
         };
-    }
-
-    private async Task PersistInternalOperationalStatesAsync(
-        IReadOnlyList<RepBaseDocumentUnifiedListItem> pageItems,
-        IReadOnlyList<InternalRepBaseDocumentListItem> internalItems,
-        CancellationToken cancellationToken)
-    {
-        var internalPageItems = pageItems
-            .Where(x => string.Equals(x.SourceType, RepBaseDocumentSourceType.Internal.ToString(), StringComparison.Ordinal))
-            .Select(x => x.FiscalDocumentId)
-            .OfType<long>()
-            .ToHashSet();
-
-        if (internalPageItems.Count == 0)
-        {
-            return;
-        }
-
-        var sourceItems = internalItems
-            .Where(x => internalPageItems.Contains(x.FiscalDocumentId))
-            .ToList();
-        var existingStates = await _stateRepository.GetByFiscalDocumentIdsAsync(sourceItems.Select(x => x.FiscalDocumentId).ToArray(), cancellationToken);
-
-        foreach (var item in sourceItems)
-        {
-            var existingState = existingStates.TryGetValue(item.FiscalDocumentId, out var state) ? state : null;
-            await _stateRepository.UpsertAsync(
-                InternalRepBaseDocumentOperationalStateProjector.BuildEntity(
-                    item,
-                    item.Eligibility.EvaluatedAtUtc,
-                    existingState?.CreatedAtUtc),
-                cancellationToken);
-        }
-
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 
     private static bool MatchesInternalBaseFilter(InternalRepBaseDocumentListItem item, SearchRepBaseDocumentsFilter filter)

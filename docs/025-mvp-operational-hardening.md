@@ -5,7 +5,7 @@ This document captures the operational checklist for the completed MVP fiscal li
 
 ## Required configuration keys
 - `LegacyRead:ConnectionString`
-- `BillingWrite:ConnectionString`
+- `ConnectionStrings:BillingWrite`
 - `Auth:Jwt:Issuer`
 - `Auth:Jwt:Audience`
 - `Auth:Jwt:SigningKey`
@@ -35,7 +35,7 @@ This document captures the operational checklist for the completed MVP fiscal li
 
 Rules:
 - checked-in config remains placeholders only
-- runtime secrets come from deployment-time configuration or secret stores
+- runtime secrets come from persistent server-side environment files or secret stores, not from published `appsettings`
 - certificate/key/password values are resolved indirectly from references
 - JWT signing keys must be injected at deployment time and must not remain at placeholder values
 - bootstrap admin must stay disabled in production unless there is a controlled one-time access procedure
@@ -70,7 +70,7 @@ Recommended operator policy:
 
 ## Migration and deployment order
 Recommended order:
-1. deploy binaries and configuration placeholders
+1. deploy binaries only, while keeping runtime secrets in the persistent server-side environment file outside `publish`
 2. apply EF Core migrations
 3. verify JWT and PAC configuration binding
 4. verify bootstrap role/user policy for the target environment

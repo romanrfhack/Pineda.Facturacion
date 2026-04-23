@@ -30,26 +30,16 @@ test('fiscal document preparation guides SAT capture and submits only SAT codes'
   await page.getByRole('button', { name: 'BBB010101BBB Receiver One Código postal 02000' }).click();
   await expect(page.getByText('Receptor seleccionado')).toBeVisible();
 
-  await expect(paymentMethodSelect).toHaveValue('PPD');
-  await expect(paymentFormSelect).toHaveValue('99');
-  await expect(paymentConditionInput).toHaveValue('Crédito a 7 días');
-  await expect(prepareButton).toBeEnabled();
-
-  await creditSaleCheckbox.uncheck();
-  await expect(paymentMethodSelect).toHaveValue('PUE');
+  await expect(paymentMethodSelect).toHaveValue('');
+  await expect(paymentFormSelect).toHaveValue('');
   await expect(paymentConditionInput).toHaveValue('Contado');
+  await expect(prepareButton).toBeDisabled();
 
-  await paymentMethodSelect.selectOption('PUE');
-  await expect(paymentFormSelect.locator('option')).toHaveCount(3);
-  await expect(paymentFormSelect.locator('option[value="99"]')).toHaveCount(0);
-  await paymentFormSelect.selectOption('03');
-  await paymentConditionInput.fill('Contado');
-  await expect(prepareButton).toBeEnabled();
-
-  await creditSaleCheckbox.check();
+  await paymentMethodSelect.selectOption('PPD');
   await expect(paymentMethodSelect).toHaveValue('PPD');
   await expect(paymentFormSelect).toHaveValue('99');
   await expect(paymentConditionInput).toHaveValue('Crédito a 7 días');
+  await expect(prepareButton).toBeEnabled();
 
   await creditDaysInput.fill('21');
   await expect(paymentConditionInput).toHaveValue('Crédito a 21 días');
@@ -57,9 +47,17 @@ test('fiscal document preparation guides SAT capture and submits only SAT codes'
   await expect(paymentFormSelect.locator('option[value="99"]')).toHaveCount(1);
 
   await creditSaleCheckbox.uncheck();
-  await expect(paymentMethodSelect).toHaveValue('PUE');
+  await expect(paymentMethodSelect).toHaveValue('PPD');
+  await expect(paymentFormSelect).toHaveValue('99');
   await expect(paymentConditionInput).toHaveValue('Contado');
+  await expect(prepareButton).toBeEnabled();
+
+  await paymentMethodSelect.selectOption('PUE');
+  await expect(paymentMethodSelect).toHaveValue('PUE');
+  await expect(paymentFormSelect).toHaveValue('');
+  await expect(paymentFormSelect.locator('option')).toHaveCount(3);
   await expect(paymentFormSelect.locator('option[value="99"]')).toHaveCount(0);
+  await expect(prepareButton).toBeDisabled();
 
   await paymentFormSelect.selectOption('28');
   await paymentConditionInput.fill('Contado');

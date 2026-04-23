@@ -100,9 +100,9 @@ public class CancelFiscalDocumentService
         }
 
         var fiscalStamp = await _fiscalStampRepository.GetTrackedByFiscalDocumentIdAsync(command.FiscalDocumentId, cancellationToken);
-        if (fiscalStamp is null || string.IsNullOrWhiteSpace(fiscalStamp.Uuid))
+        if (!HasStampedUuid(fiscalStamp))
         {
-            if (!FiscalDocumentCompositionEditPolicy.CanEdit(fiscalDocument))
+            if (!CanDiscardLocally(fiscalDocument, fiscalStamp))
             {
                 return Conflict(
                     fiscalDocument,
@@ -111,6 +111,14 @@ public class CancelFiscalDocumentService
             }
 
             return await DiscardUnstampedAsync(fiscalDocument, cancellationToken);
+        }
+
+        if (fiscalStamp is null)
+        {
+            return ValidationFailure(
+                command.FiscalDocumentId,
+                "Fiscal stamp record was not found.",
+                CancelFiscalDocumentOperationType.ProviderCancellation);
         }
 
         if (string.IsNullOrWhiteSpace(command.CancellationReasonCode))
@@ -266,8 +274,7 @@ public class CancelFiscalDocumentService
         CancellationToken cancellationToken)
     {
         var now = DateTime.UtcNow;
-        fiscalDocument.Status = FiscalDocumentStatus.DiscardedUnstamped;
-        fiscalDocument.UpdatedAtUtc = now;
+        ApplyLocalDiscard(fiscalDocument, now);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return new CancelFiscalDocumentResult
@@ -281,6 +288,23 @@ public class CancelFiscalDocumentService
             SupportMessage = "Unstamped fiscal snapshot was discarded locally. No PAC cancellation was performed.",
             IsRetryable = false
         };
+    }
+
+    internal static bool HasStampedUuid(FiscalStamp? fiscalStamp)
+    {
+        return fiscalStamp is not null && !string.IsNullOrWhiteSpace(fiscalStamp.Uuid);
+    }
+
+    internal static bool CanDiscardLocally(FiscalDocument fiscalDocument, FiscalStamp? fiscalStamp)
+    {
+        return !HasStampedUuid(fiscalStamp)
+            && FiscalDocumentCompositionEditPolicy.CanEdit(fiscalDocument);
+    }
+
+    internal static void ApplyLocalDiscard(FiscalDocument fiscalDocument, DateTime now)
+    {
+        fiscalDocument.Status = FiscalDocumentStatus.DiscardedUnstamped;
+        fiscalDocument.UpdatedAtUtc = now;
     }
 
     private async Task CancelAccountsReceivableInvoiceIfPresentAsync(long fiscalDocumentId, DateTime now, CancellationToken cancellationToken)

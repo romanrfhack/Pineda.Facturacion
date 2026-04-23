@@ -67,6 +67,7 @@ export interface LegacyOrderListItem {
 export interface SearchLegacyOrdersRequest {
   fromDate: string;
   toDate: string;
+  legacyOrderId?: string | null;
   customerQuery?: string | null;
   page: number;
   pageSize: number;

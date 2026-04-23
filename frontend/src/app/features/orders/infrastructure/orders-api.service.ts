@@ -26,6 +26,10 @@ export class OrdersApiService {
       pageSize: request.pageSize
     };
 
+    if (request.legacyOrderId?.trim()) {
+      params['legacyOrderId'] = request.legacyOrderId.trim();
+    }
+
     if (request.customerQuery?.trim()) {
       params['customerQuery'] = request.customerQuery.trim();
     }

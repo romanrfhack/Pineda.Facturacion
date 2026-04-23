@@ -7,11 +7,33 @@ public class UpdateProductFiscalProfileService
 {
     private readonly IProductFiscalProfileRepository _productFiscalProfileRepository;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly ProductFiscalProfileSatCatalogValidation _satCatalogValidation;
 
     public UpdateProductFiscalProfileService(IProductFiscalProfileRepository productFiscalProfileRepository, IUnitOfWork unitOfWork)
+        : this(productFiscalProfileRepository, unitOfWork, new ProductFiscalProfileSatCatalogValidation())
+    {
+    }
+
+    public UpdateProductFiscalProfileService(
+        IProductFiscalProfileRepository productFiscalProfileRepository,
+        IUnitOfWork unitOfWork,
+        ISatProductServiceCatalogRepository satProductServiceCatalogRepository,
+        ISatClaveUnidadRepository satClaveUnidadRepository)
+        : this(
+            productFiscalProfileRepository,
+            unitOfWork,
+            new ProductFiscalProfileSatCatalogValidation(satProductServiceCatalogRepository, satClaveUnidadRepository))
+    {
+    }
+
+    private UpdateProductFiscalProfileService(
+        IProductFiscalProfileRepository productFiscalProfileRepository,
+        IUnitOfWork unitOfWork,
+        ProductFiscalProfileSatCatalogValidation satCatalogValidation)
     {
         _productFiscalProfileRepository = productFiscalProfileRepository;
         _unitOfWork = unitOfWork;
+        _satCatalogValidation = satCatalogValidation;
     }
 
     public async Task<UpdateProductFiscalProfileResult> ExecuteAsync(UpdateProductFiscalProfileCommand command, CancellationToken cancellationToken = default)
@@ -25,6 +47,16 @@ public class UpdateProductFiscalProfileService
         if (validationError is not null)
         {
             return ValidationFailure(validationError);
+        }
+
+        var satCatalogValidationError = await _satCatalogValidation.ValidateAsync(
+            command.SatProductServiceCode,
+            command.SatUnitCode,
+            command.TaxObjectCode,
+            cancellationToken);
+        if (satCatalogValidationError is not null)
+        {
+            return ValidationFailure(satCatalogValidationError);
         }
 
         var productFiscalProfile = await _productFiscalProfileRepository.GetByIdAsync(command.Id, cancellationToken);

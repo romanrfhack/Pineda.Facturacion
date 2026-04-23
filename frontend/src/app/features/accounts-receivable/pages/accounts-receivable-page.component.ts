@@ -18,12 +18,10 @@ import {
   ApplyAccountsReceivablePaymentRequest,
   CreateCollectionCommitmentRequest,
   CreateCollectionNoteRequest,
-  CreateAccountsReceivablePaymentRequest,
   SearchAccountsReceivablePortfolioRequest,
   SearchAccountsReceivablePaymentsRequest,
 } from '../models/accounts-receivable.models';
 import { AccountsReceivableCardComponent } from '../components/accounts-receivable-card.component';
-import { PaymentCreateFormComponent } from '../components/payment-create-form.component';
 import { PaymentApplicationFormComponent } from '../components/payment-application-form.component';
 import { PaymentRemainderApplicationFormComponent } from '../components/payment-remainder-application-form.component';
 import { extractApiErrorMessage } from '../../../core/http/api-error-message';
@@ -40,7 +38,6 @@ import {
     CurrencyPipe,
     DatePipe,
     AccountsReceivableCardComponent,
-    PaymentCreateFormComponent,
     PaymentApplicationFormComponent,
     PaymentRemainderApplicationFormComponent,
     StatusBadgeComponent,
@@ -576,11 +573,29 @@ import {
 
         <section class="card">
           <div class="section-head compact">
-            <h3>Pagos del receptor</h3>
-            <p class="helper">{{ workspace.payments.length }} pago(s)</p>
+            <div>
+              <h3>Pagos del receptor</h3>
+              <p class="helper">{{ workspace.payments.length }} pago(s)</p>
+            </div>
+            @if (workspace.payments.length && permissionService.canManagePayments()) {
+              <a
+                [routerLink]="['/app/accounts-receivable/new-payment']"
+                [queryParams]="newPaymentQueryParams(workspace.fiscalReceiverId)"
+                >Nuevo pago</a
+              >
+            }
           </div>
           @if (!workspace.payments.length) {
-            <p class="helper">No hay pagos asociados a este receptor.</p>
+            <div class="empty-state-actions">
+              <p class="helper">No hay pagos asociados a este receptor.</p>
+              @if (permissionService.canManagePayments()) {
+                <a
+                  [routerLink]="['/app/accounts-receivable/new-payment']"
+                  [queryParams]="newPaymentQueryParams(workspace.fiscalReceiverId)"
+                  >Nuevo pago</a
+                >
+              }
+            </div>
           } @else {
             <div class="table-wrap">
               <table class="portfolio">
@@ -816,8 +831,19 @@ import {
 
         <section class="card">
           <div class="section-head compact">
-            <h3>Pagos y aplicaciones relacionados</h3>
-            <p class="helper">{{ currentInvoice.relatedPayments.length }} pago(s)</p>
+            <div>
+              <h3>Pagos y aplicaciones relacionados</h3>
+              <p class="helper">{{ currentInvoice.relatedPayments.length }} pago(s)</p>
+            </div>
+            @if (permissionService.canManagePayments()) {
+              <a
+                [routerLink]="['/app/accounts-receivable/new-payment']"
+                [queryParams]="
+                  newPaymentQueryParams(currentInvoice.fiscalReceiverId ?? null, currentInvoice.id)
+                "
+                >Nuevo pago</a
+              >
+            }
           </div>
           @if (!currentInvoice.relatedPayments.length) {
             <p class="helper">No hay pagos relacionados con esta cuenta.</p>
@@ -1113,23 +1139,6 @@ import {
         </section>
       }
 
-      @if (detailMode() && permissionService.canManagePayments()) {
-        <section class="card">
-          <div class="section-head compact">
-            <h3>Crear pago</h3>
-            <p class="helper">
-              Registra un depósito o pago recibido. Después podrás aplicarlo total o parcialmente a
-              esta cuenta.
-            </p>
-          </div>
-          <app-payment-create-form
-            [loading]="loading()"
-            [maxOperationalAmount]="invoice()?.outstandingBalance ?? null"
-            (submit)="createPayment($event)"
-          />
-        </section>
-      }
-
       @if (detailMode() && payment(); as currentPayment) {
         <section class="card">
           <h3>Pago #{{ currentPayment.id }}</h3>
@@ -1222,16 +1231,23 @@ import {
             </table>
           }
           @if (permissionService.canManagePayments()) {
-            <app-payment-application-form
-              [loading]="loading()"
-              [currentInvoiceId]="invoice()?.id ?? null"
-              [invoiceLabel]="invoiceApplicationLabel()"
-              [outstandingBalance]="invoice()?.outstandingBalance ?? 0"
-              [paymentAmount]="currentPayment.amount"
-              [appliedAmount]="currentPayment.appliedTotal"
-              [remainingAmount]="currentPayment.remainingAmount"
-              (submit)="applyPayment($event)"
-            />
+            @if (invoice()?.id) {
+              <app-payment-application-form
+                [loading]="loading()"
+                [currentInvoiceId]="invoice()?.id ?? null"
+                [invoiceLabel]="invoiceApplicationLabel()"
+                [outstandingBalance]="invoice()?.outstandingBalance ?? 0"
+                [paymentAmount]="currentPayment.amount"
+                [appliedAmount]="currentPayment.appliedTotal"
+                [remainingAmount]="currentPayment.remainingAmount"
+                (submit)="applyPayment($event)"
+              />
+            } @else if (showRemainderApplicationSection()) {
+              <p class="helper">
+                Este pago se abrió desde la lista de pagos. Puedes distribuir el remanente entre
+                otras facturas abiertas del mismo receptor.
+              </p>
+            }
             @if (showRemainderApplicationSection()) {
               <app-payment-remainder-application-form
                 [loading]="loading()"
@@ -1494,6 +1510,12 @@ import {
       .links {
         margin-top: 1rem;
       }
+      .empty-state-actions {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        align-items: center;
+      }
       textarea {
         border: 1px solid #d8d1c2;
         border-radius: 0.75rem;
@@ -1570,6 +1592,10 @@ import {
       @media (max-width: 720px) {
         .actions {
           flex-direction: column;
+        }
+        .empty-state-actions {
+          flex-direction: column;
+          align-items: stretch;
         }
         .lookup-item {
           align-items: stretch;
@@ -1658,10 +1684,13 @@ export class AccountsReceivablePageComponent {
 
     return this.formatInvoiceFiscalLabel(currentInvoice);
   });
+  protected readonly paymentReceiverFiscalReceiverId = computed(
+    () => this.invoice()?.fiscalReceiverId ?? this.payment()?.receivedFromFiscalReceiverId ?? null,
+  );
   protected readonly showRemainderApplicationSection = computed(
     () =>
       !!this.payment() &&
-      !!this.invoice()?.fiscalReceiverId &&
+      !!this.paymentReceiverFiscalReceiverId() &&
       (this.payment()?.remainingAmount ?? 0) > 0 &&
       this.eligibleReceiverInvoices().length > 0,
   );
@@ -1799,6 +1828,21 @@ export class AccountsReceivablePageComponent {
     return `#${item.id}`;
   }
 
+  protected newPaymentQueryParams(
+    fiscalReceiverId: number | null,
+    invoiceId: number | null = null,
+  ): Record<string, number> {
+    if (invoiceId !== null) {
+      return { invoiceId };
+    }
+
+    if (fiscalReceiverId !== null) {
+      return { fiscalReceiverId };
+    }
+
+    return {};
+  }
+
   protected async applyPortfolioFilters(): Promise<void> {
     await this.run(async () => {
       await this.loadPortfolio();
@@ -1861,36 +1905,6 @@ export class AccountsReceivablePageComponent {
         this.invoice.set(response.accountsReceivableInvoice);
         this.accountsReceivableInvoiceId.set(response.accountsReceivableInvoice.id);
         this.feedbackService.show('success', 'Cuenta por cobrar creada.');
-      }
-    });
-  }
-
-  protected async createPayment(request: CreateAccountsReceivablePaymentRequest): Promise<void> {
-    const currentInvoice = this.invoice();
-    const normalizedOutstandingBalance = currentInvoice
-      ? this.normalizeMoney(currentInvoice.outstandingBalance)
-      : null;
-    if (normalizedOutstandingBalance != null && request.amount > normalizedOutstandingBalance) {
-      const excessAmount = this.normalizeMoney(request.amount - normalizedOutstandingBalance);
-      this.feedbackService.show(
-        'error',
-        `El monto capturado excede el saldo pendiente por ${excessAmount.toFixed(2)}. Ajusta el monto o asigna explícitamente el excedente.`,
-      );
-      return;
-    }
-
-    await this.run(async () => {
-      const payload = {
-        ...request,
-        accountsReceivableInvoiceId: currentInvoice?.id ?? null,
-        paymentDateUtc: new Date(request.paymentDateUtc).toISOString(),
-        receivedFromFiscalReceiverId: currentInvoice?.fiscalReceiverId ?? null,
-      };
-      const response = await firstValueFrom(this.api.createPayment(payload));
-      if (response.payment) {
-        this.payment.set(response.payment);
-        await this.loadEligibleReceiverInvoices();
-        this.feedbackService.show('success', 'Pago registrado.');
       }
     });
   }
@@ -2084,25 +2098,37 @@ export class AccountsReceivablePageComponent {
 
   private async loadEligibleReceiverInvoices(): Promise<void> {
     const currentInvoice = this.invoice();
-    if (!currentInvoice?.fiscalReceiverId) {
+    const currentPayment = this.payment();
+    const fiscalReceiverId =
+      currentInvoice?.fiscalReceiverId ?? currentPayment?.receivedFromFiscalReceiverId ?? null;
+    if (!fiscalReceiverId) {
       this.eligibleReceiverInvoices.set([]);
       return;
     }
 
     const response = await firstValueFrom(
       this.api.searchPortfolio({
-        fiscalReceiverId: currentInvoice.fiscalReceiverId,
+        fiscalReceiverId,
         hasPendingBalance: true,
       }),
     );
 
+    const appliedInvoiceIdsWithoutContext = !currentInvoice
+      ? new Set(
+          (currentPayment?.applications ?? []).map(
+            (application) => application.accountsReceivableInvoiceId,
+          ),
+        )
+      : null;
+
     const items = response.items.filter(
       (item) =>
-        item.accountsReceivableInvoiceId !== currentInvoice.id &&
-        item.fiscalReceiverId === currentInvoice.fiscalReceiverId &&
+        item.accountsReceivableInvoiceId !== currentInvoice?.id &&
+        item.fiscalReceiverId === fiscalReceiverId &&
         item.outstandingBalance > 0 &&
         item.status !== 'Cancelled' &&
-        item.status !== 'Paid',
+        item.status !== 'Paid' &&
+        !(appliedInvoiceIdsWithoutContext?.has(item.accountsReceivableInvoiceId) ?? false),
     );
 
     this.eligibleReceiverInvoices.set(items);

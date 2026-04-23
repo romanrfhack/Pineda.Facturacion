@@ -1,7 +1,13 @@
 using System.Text;
+using System.Net;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.OpenApi.Models;
+using Pineda.Facturacion.Api.OperationalHardening;
 using Pineda.Facturacion.Application.Security;
 using Pineda.Facturacion.Application.DependencyInjection;
 using Pineda.Facturacion.Api.Endpoints;
@@ -18,6 +24,43 @@ if (builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Sa
 {
     builder.Configuration.AddUserSecrets<Program>(optional: true);
 }
+
+var externalSecretReferencesPath = builder.Configuration["SecretReferences:ExternalJsonPath"];
+if (!string.IsNullOrWhiteSpace(externalSecretReferencesPath))
+{
+    var externalSecretReferencesDirectory = Path.GetDirectoryName(externalSecretReferencesPath);
+    var externalSecretReferencesFileName = Path.GetFileName(externalSecretReferencesPath);
+
+    if (!string.IsNullOrWhiteSpace(externalSecretReferencesDirectory) &&
+        !string.IsNullOrWhiteSpace(externalSecretReferencesFileName) &&
+        Directory.Exists(externalSecretReferencesDirectory))
+    {
+        builder.Configuration.AddJsonFile(
+            provider: new PhysicalFileProvider(externalSecretReferencesDirectory),
+            path: externalSecretReferencesFileName,
+            optional: true,
+            reloadOnChange: false);
+    }
+}
+
+builder.Services.AddProblemDetails(options =>
+{
+    options.CustomizeProblemDetails = context =>
+    {
+        context.ProblemDetails.Instance ??= context.HttpContext.Request.Path;
+        context.ProblemDetails.Extensions["traceId"] = context.HttpContext.TraceIdentifier;
+
+        var correlationId = context.HttpContext.Request.Headers["X-Correlation-Id"].FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(correlationId))
+        {
+            context.ProblemDetails.Extensions["correlationId"] = correlationId;
+        }
+    };
+});
+builder.Services.AddExceptionHandler<ApiExceptionHandler>();
+builder.Services.AddHealthChecks()
+    .AddCheck("self", () => HealthCheckResult.Healthy(), tags: ["live"])
+    .AddCheck<BillingWriteDatabaseHealthCheck>("billing_write_db", tags: ["ready"]);
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
@@ -54,6 +97,7 @@ builder.Services.AddSwaggerGen(options =>
 });
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddForwardedHeadersHardening(builder.Configuration);
 builder.Services.AddLegacyReadInfrastructure(builder.Configuration);
 builder.Services.AddBillingWriteInfrastructure(builder.Configuration);
 builder.Services.AddFacturaloPlusInfrastructure(builder.Configuration);
@@ -83,6 +127,7 @@ builder.Services.AddAuthorization(options =>
 });
 
 var app = builder.Build();
+RuntimeSafetyValidator.ValidateOrThrow(app.Configuration, app.Environment);
 
 if (args.Contains("seed-initial-production-users", StringComparer.OrdinalIgnoreCase))
 {
@@ -99,6 +144,23 @@ if (args.Contains("seed-initial-production-users", StringComparer.OrdinalIgnoreC
 }
 
 var enableSwagger = app.Configuration.GetValue<bool?>("OpenApi:EnableSwagger") ?? IsSwaggerEnabledByEnvironment(app.Environment);
+
+if (app.Environment.IsEnvironment("Testing"))
+{
+    app.Use(async (context, next) =>
+    {
+        var rawRemoteIp = context.Request.Headers["X-Testing-Remote-Ip"].FirstOrDefault();
+        if (IPAddress.TryParse(rawRemoteIp, out var remoteIpAddress))
+        {
+            context.Connection.RemoteIpAddress = remoteIpAddress;
+        }
+
+        await next();
+    });
+}
+
+app.UseConfiguredForwardedHeaders();
+app.UseExceptionHandler();
 
 if (enableSwagger)
 {
@@ -130,6 +192,23 @@ app.Use(async (context, next) =>
 });
 app.UseAuthentication();
 app.UseAuthorization();
+app.MapHealthChecks("/health/live", HealthCheckJsonResponseWriter.CreateOptions("live"));
+app.MapHealthChecks("/health/ready", HealthCheckJsonResponseWriter.CreateOptions("ready"));
+
+if (app.Environment.IsEnvironment("Testing"))
+{
+    app.MapGet("/_testing/throw/unhandled", static () =>
+    {
+        throw new InvalidOperationException("Simulated unhandled exception for integration testing.");
+    }).AllowAnonymous().ExcludeFromDescription();
+
+    app.MapGet("/_testing/throw/issuer-active-conflict", static () =>
+    {
+        throw new DbUpdateException(
+            $"Duplicate entry '1' for key '{Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Configurations.IssuerProfileConfiguration.ActiveSingletonIndexName}'.");
+    }).AllowAnonymous().ExcludeFromDescription();
+}
+
 app.MapAuthEndpoints();
 app.MapAuditEventsEndpoints();
 app.MapOrdersEndpoints();

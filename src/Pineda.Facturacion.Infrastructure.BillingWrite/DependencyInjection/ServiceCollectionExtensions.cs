@@ -13,22 +13,25 @@ public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddBillingWriteInfrastructure(
         this IServiceCollection services,
-        IConfiguration configuration,
-        string sectionName = BillingWriteOptions.SectionName)
+        IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
         services.AddOptions<BillingWriteOptions>()
-            .Bind(configuration.GetSection(sectionName))
+            .Configure(options =>
+            {
+                options.ConnectionString = BillingWriteConnectionStringResolver.Resolve(
+                        configuration,
+                        allowDesignTimeFallback: EF.IsDesignTime)
+                    ?? string.Empty;
+            })
             .Validate(options => !string.IsNullOrWhiteSpace(options.ConnectionString), "BillingWrite connection string is required.");
 
         services.AddDbContext<BillingDbContext>((serviceProvider, options) =>
         {
             var billingWriteOptions = serviceProvider.GetRequiredService<IOptions<BillingWriteOptions>>().Value;
-            options.UseMySql(
-                billingWriteOptions.ConnectionString,
-                ServerVersion.AutoDetect(billingWriteOptions.ConnectionString));
+            BillingDbContextOptionsConfigurator.Configure(options, billingWriteOptions.ConnectionString);
         });
 
         services.AddScoped<ILegacyImportRecordRepository, LegacyImportRecordRepository>();

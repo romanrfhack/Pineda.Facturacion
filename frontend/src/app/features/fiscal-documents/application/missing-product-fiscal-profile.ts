@@ -1,10 +1,22 @@
-import { UpsertProductFiscalProfileRequest } from '../../catalogs/models/catalogs.models';
-import { PrepareFiscalDocumentResponse } from '../models/fiscal-documents.models';
+import {
+  ProductFiscalProfileRecoverySuggestion,
+  UpsertProductFiscalProfileRequest,
+} from '../../catalogs/models/catalogs.models';
+import {
+  MissingProductFiscalProfileResponse,
+  PrepareFiscalDocumentResponse,
+} from '../models/fiscal-documents.models';
 
 export interface MissingProductFiscalProfileContext {
   internalCode: string;
+  billingDocumentItemId?: number | null;
   lineNumber?: number | null;
   description: string;
+  existingProfileStatus: 'Active' | 'Inactive' | 'None' | string;
+  existingProductFiscalProfileId?: number | null;
+  canUseExplicitGeneric: boolean;
+  requiresExplicitProductServiceConfirmation: boolean;
+  suggestions: ProductFiscalProfileRecoverySuggestion[];
   draft: UpsertProductFiscalProfileRequest;
 }
 
@@ -12,74 +24,80 @@ export function resolveMissingProductFiscalProfileContext(
   response: PrepareFiscalDocumentResponse,
   options?: {
     fallbackDescription?: string | null;
-  }
+  },
 ): MissingProductFiscalProfileContext | null {
   if (response.outcome !== 'MissingProductFiscalProfile') {
     return null;
   }
 
-  const parsed = parseMissingProductFiscalProfileError(response.errorMessage);
-  if (!parsed.internalCode) {
+  const missingProfile = response.missingProductFiscalProfile;
+  if (!missingProfile?.internalCode?.trim()) {
     return null;
   }
 
-  const description = (options?.fallbackDescription?.trim() || parsed.internalCode).trim();
-
-  return {
-    internalCode: parsed.internalCode,
-    lineNumber: parsed.lineNumber,
-    description,
-    draft: {
-      internalCode: parsed.internalCode,
-      description,
-      satProductServiceCode: '',
-      satUnitCode: 'H87',
-      taxObjectCode: '02',
-      vatRate: 0.16,
-      defaultUnitText: 'PIEZA',
-      isActive: true
-    }
-  };
+  return buildMissingProductFiscalProfileContext(missingProfile, options);
 }
 
 export function extractMissingProductFiscalProfileContext(
   error: unknown,
   options?: {
     fallbackDescription?: string | null;
-  }
+  },
 ): MissingProductFiscalProfileContext | null {
   if (typeof error !== 'object' || !error || !('error' in error)) {
     return null;
   }
 
   const payload = (error as { error?: Partial<PrepareFiscalDocumentResponse> }).error;
-  if (!payload || payload.outcome !== 'MissingProductFiscalProfile') {
+  if (
+    !payload
+    || payload.outcome !== 'MissingProductFiscalProfile'
+    || !payload.missingProductFiscalProfile
+  ) {
     return null;
   }
 
-  return resolveMissingProductFiscalProfileContext({
-    outcome: payload.outcome,
-    isSuccess: payload.isSuccess ?? false,
-    errorMessage: payload.errorMessage ?? null,
-    billingDocumentId: payload.billingDocumentId ?? 0,
-    fiscalDocumentId: payload.fiscalDocumentId ?? null,
-    status: payload.status ?? null
-  }, options);
+  return buildMissingProductFiscalProfileContext(payload.missingProductFiscalProfile, options);
 }
 
-export function parseMissingProductFiscalProfileError(errorMessage?: string | null): {
-  lineNumber?: number | null;
-  internalCode?: string | null;
-} {
-  if (!errorMessage) {
-    return {};
+function buildMissingProductFiscalProfileContext(
+  missingProfile: MissingProductFiscalProfileResponse,
+  options?: {
+    fallbackDescription?: string | null;
+  },
+): MissingProductFiscalProfileContext | null {
+  const internalCode = missingProfile.internalCode?.trim();
+  if (!internalCode) {
+    return null;
   }
 
-  const lineMatch = errorMessage.match(/item line '(\d+)'/i);
-  const codeMatch = errorMessage.match(/internal code '([^']+)'/i);
+  const description = (
+    options?.fallbackDescription?.trim()
+    || missingProfile.description?.trim()
+    || internalCode
+  ).trim();
+  const prefill = missingProfile.prefill;
 
   return {
-    lineNumber: lineMatch ? Number(lineMatch[1]) : null,
-    internalCode: codeMatch?.[1] ?? null
+    internalCode,
+    billingDocumentItemId: missingProfile.billingDocumentItemId ?? null,
+    lineNumber: missingProfile.lineNumber ?? null,
+    description,
+    existingProfileStatus: missingProfile.existingProfileStatus ?? 'None',
+    existingProductFiscalProfileId: missingProfile.existingProductFiscalProfileId ?? null,
+    canUseExplicitGeneric: missingProfile.canUseExplicitGeneric ?? true,
+    requiresExplicitProductServiceConfirmation:
+      prefill?.requiresExplicitProductServiceConfirmation ?? false,
+    suggestions: (missingProfile.suggestions ?? []).slice(),
+    draft: {
+      internalCode,
+      description,
+      satProductServiceCode: prefill?.satProductServiceCode?.trim() || '',
+      satUnitCode: prefill?.satUnitCode?.trim() || 'H87',
+      taxObjectCode: prefill?.taxObjectCode?.trim() || '02',
+      vatRate: prefill?.vatRate ?? 0.16,
+      defaultUnitText: prefill?.defaultUnitText?.trim() || 'PIEZA',
+      isActive: prefill?.isActive ?? true,
+    },
   };
 }

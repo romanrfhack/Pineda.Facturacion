@@ -34,6 +34,15 @@ public static class BillingDocumentsEndpoints
             .WithSummary("List reusable pending billing items removed from other billing documents")
             .Produces<IReadOnlyList<PendingBillingItemResponse>>(StatusCodes.Status200OK);
 
+        group.MapPost("/{billingDocumentId:long}/cancel", CancelBillingDocumentAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
+            .WithName("CancelBillingDocument")
+            .WithSummary("Cancel an unstamped billing document, release operational order links, and lock future edits")
+            .Produces<CancelBillingDocumentResponse>(StatusCodes.Status200OK)
+            .Produces<CancelBillingDocumentResponse>(StatusCodes.Status400BadRequest)
+            .Produces<CancelBillingDocumentResponse>(StatusCodes.Status404NotFound)
+            .Produces<CancelBillingDocumentResponse>(StatusCodes.Status409Conflict);
+
         group.MapPost("/{billingDocumentId:long}/sales-orders/{salesOrderId:long}", AddSalesOrderToBillingDocumentAsync)
             .WithName("AddSalesOrderToBillingDocument")
             .WithSummary("Associate another imported sales order to a draft billing document before stamping")
@@ -103,6 +112,54 @@ public static class BillingDocumentsEndpoints
     {
         var results = await service.ExecuteAsync(cancellationToken);
         return TypedResults.Ok(results.Select(MapPendingBillingItem).ToArray());
+    }
+
+    private static async Task<Results<Ok<CancelBillingDocumentResponse>, NotFound<CancelBillingDocumentResponse>, Conflict<CancelBillingDocumentResponse>, BadRequest<CancelBillingDocumentResponse>>> CancelBillingDocumentAsync(
+        long billingDocumentId,
+        CancelBillingDocumentService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(billingDocumentId, cancellationToken);
+        var response = new CancelBillingDocumentResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            BillingDocumentId = result.BillingDocumentId,
+            BillingDocumentStatus = result.BillingDocumentStatus?.ToString(),
+            FiscalDocumentId = result.FiscalDocumentId,
+            FiscalDocumentStatus = result.FiscalDocumentStatus?.ToString(),
+            ReleasedOrderLinkCount = result.ReleasedOrderLinkCount,
+            ReleasedPendingAssignmentCount = result.ReleasedPendingAssignmentCount
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "BillingDocument.Cancel",
+            "BillingDocument",
+            billingDocumentId.ToString(),
+            result.Outcome.ToString(),
+            new { billingDocumentId },
+            new
+            {
+                result.BillingDocumentStatus,
+                result.FiscalDocumentId,
+                result.FiscalDocumentStatus,
+                result.ReleasedOrderLinkCount,
+                result.ReleasedPendingAssignmentCount
+            },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            CancelBillingDocumentOutcome.Cancelled => TypedResults.Ok(response),
+            CancelBillingDocumentOutcome.NotFound => TypedResults.NotFound(response),
+            CancelBillingDocumentOutcome.Conflict => TypedResults.Conflict(response),
+            CancelBillingDocumentOutcome.ValidationFailed => TypedResults.BadRequest(response),
+            _ => TypedResults.BadRequest(response)
+        };
     }
 
     private static async Task<Results<Ok<UpdateBillingDocumentOrderAssociationResponse>, NotFound<UpdateBillingDocumentOrderAssociationResponse>, Conflict<UpdateBillingDocumentOrderAssociationResponse>, BadRequest<UpdateBillingDocumentOrderAssociationResponse>>> AddSalesOrderToBillingDocumentAsync(
@@ -200,7 +257,8 @@ public static class BillingDocumentsEndpoints
             ErrorMessage = result.ErrorMessage,
             BillingDocumentId = result.BillingDocumentId,
             FiscalDocumentId = result.FiscalDocumentId,
-            Status = result.Status?.ToString()
+            Status = result.Status?.ToString(),
+            MissingProductFiscalProfile = MapMissingProductFiscalProfile(result.MissingProductFiscalProfile)
         };
 
         await AuditApiHelper.RecordAsync(
@@ -398,6 +456,49 @@ public static class BillingDocumentsEndpoints
         public long BillingDocumentId { get; init; }
         public long? FiscalDocumentId { get; init; }
         public string? Status { get; init; }
+        public MissingProductFiscalProfileResponse? MissingProductFiscalProfile { get; init; }
+    }
+
+    public sealed class MissingProductFiscalProfileResponse
+    {
+        public long? BillingDocumentItemId { get; init; }
+        public int? LineNumber { get; init; }
+        public string? InternalCode { get; init; }
+        public string Description { get; init; } = string.Empty;
+        public string ExistingProfileStatus { get; init; } = PrepareFiscalDocumentExistingProductFiscalProfileStatus.None.ToString();
+        public long? ExistingProductFiscalProfileId { get; init; }
+        public bool CanUseExplicitGeneric { get; init; }
+        public MissingProductFiscalProfilePrefillResponse Prefill { get; init; } = new();
+        public IReadOnlyList<MissingProductFiscalProfileSuggestionResponse> Suggestions { get; init; } = [];
+    }
+
+    public sealed class MissingProductFiscalProfilePrefillResponse
+    {
+        public string SatProductServiceCode { get; init; } = string.Empty;
+        public string SatUnitCode { get; init; } = string.Empty;
+        public string TaxObjectCode { get; init; } = string.Empty;
+        public decimal VatRate { get; init; }
+        public string? DefaultUnitText { get; init; }
+        public bool IsActive { get; init; }
+        public bool RequiresExplicitProductServiceConfirmation { get; init; }
+    }
+
+    public sealed class MissingProductFiscalProfileSuggestionResponse
+    {
+        public string SatProductServiceCode { get; init; } = string.Empty;
+        public string? SatProductServiceDescription { get; init; }
+        public string SatUnitCode { get; init; } = string.Empty;
+        public string? SatUnitDescription { get; init; }
+        public string TaxObjectCode { get; init; } = string.Empty;
+        public decimal VatRate { get; init; }
+        public string? DefaultUnitText { get; init; }
+        public decimal Score { get; init; }
+        public decimal Confidence { get; init; }
+        public string Source { get; init; } = string.Empty;
+        public string MatchKind { get; init; } = string.Empty;
+        public string Reason { get; init; } = string.Empty;
+        public bool IsActive { get; init; }
+        public bool RequiresExplicitConfirmation { get; init; }
     }
 
     public sealed class BillingDocumentLookupResponse
@@ -458,6 +559,19 @@ public static class BillingDocumentsEndpoints
         public string CustomerName { get; init; } = string.Empty;
         public decimal Total { get; init; }
         public bool IsPrimary { get; init; }
+    }
+
+    public sealed class CancelBillingDocumentResponse
+    {
+        public string Outcome { get; init; } = string.Empty;
+        public bool IsSuccess { get; init; }
+        public string? ErrorMessage { get; init; }
+        public long BillingDocumentId { get; init; }
+        public string? BillingDocumentStatus { get; init; }
+        public long? FiscalDocumentId { get; init; }
+        public string? FiscalDocumentStatus { get; init; }
+        public int ReleasedOrderLinkCount { get; init; }
+        public int ReleasedPendingAssignmentCount { get; init; }
     }
 
     public sealed class BillingDocumentRemovedItemTraceResponse
@@ -560,6 +674,55 @@ public static class BillingDocumentsEndpoints
         public int AssignedCount { get; init; }
         public int IncludedItemCount { get; init; }
         public decimal Total { get; init; }
+    }
+
+    private static MissingProductFiscalProfileResponse? MapMissingProductFiscalProfile(
+        PrepareFiscalDocumentMissingProductFiscalProfile? missingProductFiscalProfile)
+    {
+        if (missingProductFiscalProfile is null)
+        {
+            return null;
+        }
+
+        return new MissingProductFiscalProfileResponse
+        {
+            BillingDocumentItemId = missingProductFiscalProfile.BillingDocumentItemId,
+            LineNumber = missingProductFiscalProfile.LineNumber,
+            InternalCode = missingProductFiscalProfile.InternalCode,
+            Description = missingProductFiscalProfile.Description,
+            ExistingProfileStatus = missingProductFiscalProfile.ExistingProfileStatus.ToString(),
+            ExistingProductFiscalProfileId = missingProductFiscalProfile.ExistingProductFiscalProfileId,
+            CanUseExplicitGeneric = missingProductFiscalProfile.CanUseExplicitGeneric,
+            Prefill = new MissingProductFiscalProfilePrefillResponse
+            {
+                SatProductServiceCode = missingProductFiscalProfile.Prefill.SatProductServiceCode,
+                SatUnitCode = missingProductFiscalProfile.Prefill.SatUnitCode,
+                TaxObjectCode = missingProductFiscalProfile.Prefill.TaxObjectCode,
+                VatRate = missingProductFiscalProfile.Prefill.VatRate,
+                DefaultUnitText = missingProductFiscalProfile.Prefill.DefaultUnitText,
+                IsActive = missingProductFiscalProfile.Prefill.IsActive,
+                RequiresExplicitProductServiceConfirmation = missingProductFiscalProfile.Prefill.RequiresExplicitProductServiceConfirmation
+            },
+            Suggestions = missingProductFiscalProfile.Suggestions
+                .Select(suggestion => new MissingProductFiscalProfileSuggestionResponse
+                {
+                    SatProductServiceCode = suggestion.SatProductServiceCode,
+                    SatProductServiceDescription = suggestion.SatProductServiceDescription,
+                    SatUnitCode = suggestion.SatUnitCode,
+                    SatUnitDescription = suggestion.SatUnitDescription,
+                    TaxObjectCode = suggestion.TaxObjectCode,
+                    VatRate = suggestion.VatRate,
+                    DefaultUnitText = suggestion.DefaultUnitText,
+                    Score = suggestion.Score,
+                    Confidence = suggestion.Confidence,
+                    Source = suggestion.Source,
+                    MatchKind = suggestion.MatchKind,
+                    Reason = suggestion.Reason,
+                    IsActive = suggestion.IsActive,
+                    RequiresExplicitConfirmation = suggestion.RequiresExplicitConfirmation
+                })
+                .ToArray()
+        };
     }
 
     private static BillingDocumentLookupResponse MapBillingDocumentLookup(Application.Abstractions.Persistence.BillingDocumentLookupModel billingDocument)

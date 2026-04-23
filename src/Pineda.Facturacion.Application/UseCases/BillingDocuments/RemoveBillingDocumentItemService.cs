@@ -68,13 +68,14 @@ public sealed class RemoveBillingDocumentItemService
 
         var persistedFiscalDocument = await _fiscalDocumentRepository.GetTrackedByBillingDocumentIdAsync(command.BillingDocumentId, cancellationToken);
         var fiscalDocument = FiscalDocumentCompositionEditPolicy.NormalizeOperationalFiscalDocument(persistedFiscalDocument);
-        if (!FiscalDocumentCompositionEditPolicy.CanEdit(persistedFiscalDocument))
+        var mutationLockReason = BillingDocumentMutationPolicy.GetMutationLockReason(billingDocument, persistedFiscalDocument);
+        if (mutationLockReason is not null)
         {
             return Conflict(
                 billingDocument,
                 persistedFiscalDocument,
                 command.BillingDocumentItemId,
-                "The billing document composition is locked because the fiscal document is no longer editable before stamping.");
+                mutationLockReason);
         }
 
         var removals = await _billingDocumentItemRemovalRepository.ListByBillingDocumentIdAsync(command.BillingDocumentId, cancellationToken);

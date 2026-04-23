@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Abstractions.Security;
 using Pineda.Facturacion.Application.Abstractions.Documents;
@@ -5,6 +6,8 @@ using Pineda.Facturacion.Application.Security;
 using Pineda.Facturacion.Application.UseCases.AccountsReceivable;
 using Pineda.Facturacion.Domain.Entities;
 using Pineda.Facturacion.Domain.Enums;
+using Pineda.Facturacion.Infrastructure.BillingWrite.Persistence;
+using Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Repositories;
 
 namespace Pineda.Facturacion.UnitTests;
 
@@ -269,6 +272,63 @@ public class AccountsReceivableServicesTests
         Assert.Equal(CreateAccountsReceivablePaymentOutcome.Created, result.Outcome);
         Assert.NotNull(repository.Added);
         Assert.Equal(1190m, repository.Added!.Amount);
+        Assert.Equal(77, repository.Added.ReceivedFromFiscalReceiverId);
+    }
+
+    [Fact]
+    public async Task CreateAccountsReceivablePayment_Succeeds_WhenExplicitReceiverMatchesContextInvoiceReceiver()
+    {
+        var repository = new ArFakeAccountsReceivablePaymentRepository();
+        var invoiceRepository = new ArFakeAccountsReceivableInvoiceRepository
+        {
+            TrackedById = { [200] = CreateInvoice(id: 200, total: 1190m) }
+        };
+        var service = new CreateAccountsReceivablePaymentService(
+            repository,
+            new ArFakeSatCatalogDescriptionProvider(),
+            new ArFakeUnitOfWork(),
+            invoiceRepository);
+
+        var result = await service.ExecuteAsync(new CreateAccountsReceivablePaymentCommand
+        {
+            AccountsReceivableInvoiceId = 200,
+            PaymentDateUtc = new DateTime(2026, 3, 20, 12, 0, 0, DateTimeKind.Utc),
+            PaymentFormSat = "03",
+            Amount = 1190m,
+            ReceivedFromFiscalReceiverId = 77
+        });
+
+        Assert.Equal(CreateAccountsReceivablePaymentOutcome.Created, result.Outcome);
+        Assert.NotNull(repository.Added);
+        Assert.Equal(77, repository.Added!.ReceivedFromFiscalReceiverId);
+    }
+
+    [Fact]
+    public async Task CreateAccountsReceivablePayment_Fails_WhenExplicitReceiverDoesNotMatchContextInvoiceReceiver()
+    {
+        var repository = new ArFakeAccountsReceivablePaymentRepository();
+        var invoiceRepository = new ArFakeAccountsReceivableInvoiceRepository
+        {
+            TrackedById = { [200] = CreateInvoice(id: 200, total: 1190m) }
+        };
+        var service = new CreateAccountsReceivablePaymentService(
+            repository,
+            new ArFakeSatCatalogDescriptionProvider(),
+            new ArFakeUnitOfWork(),
+            invoiceRepository);
+
+        var result = await service.ExecuteAsync(new CreateAccountsReceivablePaymentCommand
+        {
+            AccountsReceivableInvoiceId = 200,
+            PaymentDateUtc = new DateTime(2026, 3, 20, 12, 0, 0, DateTimeKind.Utc),
+            PaymentFormSat = "03",
+            Amount = 1190m,
+            ReceivedFromFiscalReceiverId = 88
+        });
+
+        Assert.Equal(CreateAccountsReceivablePaymentOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("must match the contextual accounts receivable invoice receiver", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(repository.Added);
     }
 
     [Fact]
@@ -299,7 +359,7 @@ public class AccountsReceivableServicesTests
     }
 
     [Fact]
-    public async Task CreateAccountsReceivablePayment_Blocks_WhenContextInvoiceAmountExceedsOutstandingBalance()
+    public async Task CreateAccountsReceivablePayment_AllowsAmountAboveContextInvoiceOutstandingBalance()
     {
         var repository = new ArFakeAccountsReceivablePaymentRepository();
         var invoiceRepository = new ArFakeAccountsReceivableInvoiceRepository
@@ -320,9 +380,10 @@ public class AccountsReceivableServicesTests
             Amount = 1190.04m
         });
 
-        Assert.Equal(CreateAccountsReceivablePaymentOutcome.ValidationFailed, result.Outcome);
-        Assert.Contains("exceeds the outstanding balance by 0.04", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
-        Assert.Null(repository.Added);
+        Assert.Equal(CreateAccountsReceivablePaymentOutcome.Created, result.Outcome);
+        Assert.NotNull(repository.Added);
+        Assert.Equal(1190.04m, repository.Added!.Amount);
+        Assert.Equal(77, repository.Added.ReceivedFromFiscalReceiverId);
     }
 
     [Fact]
@@ -553,6 +614,120 @@ public class AccountsReceivableServicesTests
         Assert.Equal(AccountsReceivableInvoiceStatus.PartiallyPaid, invoice2.Status);
         Assert.Equal(0m, result.RemainingPaymentAmount);
         Assert.Equal(77, payment.ReceivedFromFiscalReceiverId);
+    }
+
+    [Fact]
+    public async Task ApplyAccountsReceivablePayment_UsesSingleTrackedBatchFetch_WithoutPerItemInvoiceLookups()
+    {
+        var payment = CreatePayment(amount: 150m);
+        var invoice1 = CreateInvoice(id: 201, total: 100m);
+        var invoice2 = CreateInvoice(id: 202, total: 100m);
+        invoice1.FiscalReceiverId = 77;
+        invoice2.FiscalReceiverId = 77;
+
+        var invoiceRepository = new ArFakeAccountsReceivableInvoiceRepository
+        {
+            TrackedById = new Dictionary<long, AccountsReceivableInvoice>
+            {
+                [invoice1.Id] = invoice1,
+                [invoice2.Id] = invoice2
+            }
+        };
+
+        var service = new ApplyAccountsReceivablePaymentService(
+            new ArFakeAccountsReceivablePaymentRepository { ExistingTracked = payment },
+            invoiceRepository,
+            new ArFakeAccountsReceivablePaymentApplicationRepository(),
+            new ArFakePaymentComplementDocumentRepository(),
+            new ArFakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new ApplyAccountsReceivablePaymentCommand
+        {
+            AccountsReceivablePaymentId = payment.Id,
+            Applications =
+            [
+                new ApplyAccountsReceivablePaymentApplicationInput
+                {
+                    AccountsReceivableInvoiceId = invoice1.Id,
+                    AppliedAmount = 100m
+                },
+                new ApplyAccountsReceivablePaymentApplicationInput
+                {
+                    AccountsReceivableInvoiceId = invoice2.Id,
+                    AppliedAmount = 50m
+                }
+            ]
+        });
+
+        Assert.Equal(ApplyAccountsReceivablePaymentOutcome.Applied, result.Outcome);
+        Assert.Equal(0, invoiceRepository.GetTrackedByIdAsyncCallCount);
+        Assert.Equal(1, invoiceRepository.GetTrackedByIdsAsyncCallCount);
+        Assert.Equal([invoice1.Id, invoice2.Id], invoiceRepository.LastTrackedBatchIds.OrderBy(x => x).ToArray());
+    }
+
+    [Fact]
+    public async Task ApplyAccountsReceivablePayment_BatchTrackedFetch_PersistsMutations_WithRealRepositories()
+    {
+        await using var dbContext = CreateDbContext();
+
+        var payment = CreatePayment(id: 401, amount: 150m);
+        var invoice1 = CreateInvoice(id: 201, total: 100m);
+        var invoice2 = CreateInvoice(id: 202, total: 100m);
+        invoice1.FiscalReceiverId = 77;
+        invoice2.FiscalReceiverId = 77;
+
+        dbContext.AccountsReceivablePayments.Add(payment);
+        dbContext.AccountsReceivableInvoices.AddRange(invoice1, invoice2);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        var service = new ApplyAccountsReceivablePaymentService(
+            new AccountsReceivablePaymentRepository(dbContext),
+            new AccountsReceivableInvoiceRepository(dbContext),
+            new AccountsReceivablePaymentApplicationRepository(dbContext),
+            new ArFakePaymentComplementDocumentRepository(),
+            dbContext);
+
+        var result = await service.ExecuteAsync(new ApplyAccountsReceivablePaymentCommand
+        {
+            AccountsReceivablePaymentId = payment.Id,
+            Applications =
+            [
+                new ApplyAccountsReceivablePaymentApplicationInput
+                {
+                    AccountsReceivableInvoiceId = invoice1.Id,
+                    AppliedAmount = 100m
+                },
+                new ApplyAccountsReceivablePaymentApplicationInput
+                {
+                    AccountsReceivableInvoiceId = invoice2.Id,
+                    AppliedAmount = 50m
+                }
+            ]
+        });
+
+        Assert.Equal(ApplyAccountsReceivablePaymentOutcome.Applied, result.Outcome);
+
+        dbContext.ChangeTracker.Clear();
+
+        var persistedInvoice1 = await dbContext.AccountsReceivableInvoices.SingleAsync(x => x.Id == invoice1.Id);
+        var persistedInvoice2 = await dbContext.AccountsReceivableInvoices.SingleAsync(x => x.Id == invoice2.Id);
+        var persistedPayment = await dbContext.AccountsReceivablePayments.SingleAsync(x => x.Id == payment.Id);
+        var persistedApplications = await dbContext.AccountsReceivablePaymentApplications
+            .Where(x => x.AccountsReceivablePaymentId == payment.Id)
+            .OrderBy(x => x.ApplicationSequence)
+            .ToListAsync();
+
+        Assert.Equal(AccountsReceivableInvoiceStatus.Paid, persistedInvoice1.Status);
+        Assert.Equal(100m, persistedInvoice1.PaidTotal);
+        Assert.Equal(0m, persistedInvoice1.OutstandingBalance);
+        Assert.Equal(AccountsReceivableInvoiceStatus.PartiallyPaid, persistedInvoice2.Status);
+        Assert.Equal(50m, persistedInvoice2.PaidTotal);
+        Assert.Equal(50m, persistedInvoice2.OutstandingBalance);
+        Assert.Equal(77, persistedPayment.ReceivedFromFiscalReceiverId);
+        Assert.Equal(AccountsReceivablePaymentUnappliedDisposition.PendingAllocation, persistedPayment.UnappliedDisposition);
+        Assert.Equal(2, persistedApplications.Count);
+        Assert.Equal([invoice1.Id, invoice2.Id], persistedApplications.Select(x => x.AccountsReceivableInvoiceId).ToArray());
     }
 
     [Fact]
@@ -898,6 +1073,131 @@ public class AccountsReceivableServicesTests
         Assert.True(result.Items.Single(x => x.PaymentId == 4).ReadyToPrepareRep);
         Assert.Equal(0.2m, result.Items.Single(x => x.PaymentId == 4).CustomerCreditBalanceAmount);
         Assert.Equal("CustomerCreditBalance", result.Items.Single(x => x.PaymentId == 4).UnappliedDisposition);
+    }
+
+    [Fact]
+    public async Task SearchAccountsReceivablePayments_UsesSingleBatchReceiverLookup_ForRepeatedIds()
+    {
+        var receiver = CreateReceiver(id: 77, legalName: "Receiver One");
+        var payments = new[]
+        {
+            CreatePayment(id: 1, amount: 50m, receiverId: receiver.Id),
+            CreatePayment(id: 2, amount: 60m, receiverId: receiver.Id),
+            CreatePayment(id: 3, amount: 70m, receiverId: receiver.Id)
+        };
+
+        var receiverRepository = new ArFakeFiscalReceiverRepository { ExistingById = receiver };
+        var service = CreateSearchPaymentsService(payments, receiverRepository);
+
+        var result = await service.ExecuteAsync(new SearchAccountsReceivablePaymentsFilter());
+
+        Assert.Equal(3, result.Items.Count);
+        Assert.All(result.Items, item => Assert.Equal("Receiver One", item.PayerName));
+        Assert.Equal(0, receiverRepository.GetByIdAsyncCallCount);
+        Assert.Equal(1, receiverRepository.GetByIdsAsyncCallCount);
+        Assert.Equal([receiver.Id], receiverRepository.LastBatchIds);
+    }
+
+    [Fact]
+    public async Task SearchAccountsReceivablePayments_UsesSingleBatchReceiverLookup_ForTwentyPaymentsAcrossThreeReceivers()
+    {
+        var receivers = new[]
+        {
+            CreateReceiver(id: 77, legalName: "Receiver One"),
+            CreateReceiver(id: 88, legalName: "Receiver Two"),
+            CreateReceiver(id: 99, legalName: "Receiver Three")
+        };
+
+        var payments = Enumerable.Range(1, 20)
+            .Select(index =>
+            {
+                var receiverId = receivers[(index - 1) % receivers.Length].Id;
+                return CreatePayment(id: index, amount: 10m + index, receiverId: receiverId);
+            })
+            .ToArray();
+
+        var receiverRepository = new ArFakeFiscalReceiverRepository
+        {
+            ById = receivers.ToDictionary(x => x.Id, x => x)
+        };
+        var service = CreateSearchPaymentsService(payments, receiverRepository);
+
+        var result = await service.ExecuteAsync(new SearchAccountsReceivablePaymentsFilter());
+
+        Assert.Equal(20, result.Items.Count);
+        Assert.Equal(0, receiverRepository.GetByIdAsyncCallCount);
+        Assert.Equal(1, receiverRepository.GetByIdsAsyncCallCount);
+        Assert.Equal(receivers.Select(x => x.Id).OrderBy(x => x).ToArray(), receiverRepository.LastBatchIds.OrderBy(x => x).ToArray());
+        Assert.Equal(7, result.Items.Count(x => x.PayerName == "Receiver One"));
+        Assert.Equal(7, result.Items.Count(x => x.PayerName == "Receiver Two"));
+        Assert.Equal(6, result.Items.Count(x => x.PayerName == "Receiver Three"));
+    }
+
+    [Fact]
+    public async Task SearchAccountsReceivablePayments_ResolvesMultipleDistinctReceiverNames()
+    {
+        var receiver1 = CreateReceiver(id: 77, legalName: "Receiver One");
+        var receiver2 = CreateReceiver(id: 88, legalName: "Receiver Two");
+        var receiver3 = CreateReceiver(id: 99, legalName: "Receiver Three");
+        var payments = new[]
+        {
+            CreatePayment(id: 1, amount: 10m, receiverId: receiver1.Id),
+            CreatePayment(id: 2, amount: 20m, receiverId: receiver2.Id),
+            CreatePayment(id: 3, amount: 30m, receiverId: receiver3.Id)
+        };
+
+        var receiverRepository = new ArFakeFiscalReceiverRepository
+        {
+            ById = new Dictionary<long, FiscalReceiver>
+            {
+                [receiver1.Id] = receiver1,
+                [receiver2.Id] = receiver2,
+                [receiver3.Id] = receiver3
+            }
+        };
+        var service = CreateSearchPaymentsService(payments, receiverRepository);
+
+        var result = await service.ExecuteAsync(new SearchAccountsReceivablePaymentsFilter());
+
+        Assert.Equal(3, result.Items.Count);
+        Assert.Equal("Receiver One", result.Items.Single(x => x.PaymentId == 1).PayerName);
+        Assert.Equal("Receiver Two", result.Items.Single(x => x.PaymentId == 2).PayerName);
+        Assert.Equal("Receiver Three", result.Items.Single(x => x.PaymentId == 3).PayerName);
+        Assert.Equal(0, receiverRepository.GetByIdAsyncCallCount);
+        Assert.Equal(1, receiverRepository.GetByIdsAsyncCallCount);
+    }
+
+    [Fact]
+    public async Task SearchAccountsReceivablePayments_PreservesNullPayerName_WhenReceiverIsMissing()
+    {
+        var payment = CreatePayment(id: 1, amount: 50m, receiverId: 77);
+        var receiverRepository = new ArFakeFiscalReceiverRepository();
+        var service = CreateSearchPaymentsService([payment], receiverRepository);
+
+        var result = await service.ExecuteAsync(new SearchAccountsReceivablePaymentsFilter());
+
+        var item = Assert.Single(result.Items);
+        Assert.Null(item.PayerName);
+        Assert.Equal(0, receiverRepository.GetByIdAsyncCallCount);
+        Assert.Equal(1, receiverRepository.GetByIdsAsyncCallCount);
+        Assert.Equal([77L], receiverRepository.LastBatchIds);
+    }
+
+    [Fact]
+    public async Task SearchAccountsReceivablePayments_DoesNotLookupReceivers_WhenAllReceiverIdsAreNull()
+    {
+        var payment1 = CreatePayment(id: 1, amount: 50m, receiverId: null);
+        var payment2 = CreatePayment(id: 2, amount: 60m, receiverId: null);
+        var receiverRepository = new ArFakeFiscalReceiverRepository();
+        var service = CreateSearchPaymentsService([payment1, payment2], receiverRepository);
+
+        var result = await service.ExecuteAsync(new SearchAccountsReceivablePaymentsFilter());
+
+        Assert.Equal(2, result.Items.Count);
+        Assert.All(result.Items, item => Assert.Null(item.PayerName));
+        Assert.Equal(0, receiverRepository.GetByIdAsyncCallCount);
+        Assert.Equal(0, receiverRepository.GetByIdsAsyncCallCount);
+        Assert.Empty(receiverRepository.LastBatchIds);
     }
 
     [Fact]
@@ -1276,6 +1576,44 @@ public class AccountsReceivableServicesTests
             new ArFakeUnitOfWork());
     }
 
+    private static SearchAccountsReceivablePaymentsService CreateSearchPaymentsService(
+        IReadOnlyCollection<AccountsReceivablePayment> payments,
+        ArFakeFiscalReceiverRepository receiverRepository)
+    {
+        var linkedInvoiceIds = payments
+            .SelectMany(x => x.Applications)
+            .Select(x => x.AccountsReceivableInvoiceId)
+            .Distinct()
+            .ToArray();
+
+        var invoices = linkedInvoiceIds.ToDictionary(
+            id => id,
+            id => new AccountsReceivableInvoice
+            {
+                Id = id,
+                FiscalReceiverId = payments.FirstOrDefault(payment => payment.Applications.Any(application => application.AccountsReceivableInvoiceId == id))?.ReceivedFromFiscalReceiverId,
+                FiscalDocumentId = id + 1000
+            });
+
+        return new SearchAccountsReceivablePaymentsService(
+            new ArFakeAccountsReceivablePaymentRepository { SearchResults = payments.ToArray() },
+            new ArFakeAccountsReceivableInvoiceRepository
+            {
+                TrackedById = invoices
+            },
+            receiverRepository,
+            new ArFakePaymentComplementDocumentRepository());
+    }
+
+    private static BillingDbContext CreateDbContext()
+    {
+        var options = new DbContextOptionsBuilder<BillingDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+
+        return new BillingDbContext(options);
+    }
+
     private static FiscalDocument CreateStampedFiscalDocument()
     {
         return new FiscalDocument
@@ -1349,6 +1687,17 @@ public class AccountsReceivableServicesTests
         };
     }
 
+    private static FiscalReceiver CreateReceiver(long id, string legalName)
+    {
+        return new FiscalReceiver
+        {
+            Id = id,
+            LegalName = legalName,
+            Rfc = $"RFC{id}",
+            NormalizedLegalName = legalName.ToUpperInvariant()
+        };
+    }
+
     private static DateTime ConvertMexicoCityLocalToUtc(DateTime value)
     {
         var unspecifiedLocal = DateTime.SpecifyKind(value, DateTimeKind.Unspecified);
@@ -1412,6 +1761,12 @@ public class AccountsReceivableServicesTests
 
         public IReadOnlyList<AccountsReceivablePortfolioItem> PortfolioItems { get; set; } = [];
 
+        public int GetTrackedByIdAsyncCallCount { get; private set; }
+
+        public int GetTrackedByIdsAsyncCallCount { get; private set; }
+
+        public IReadOnlyList<long> LastTrackedBatchIds { get; private set; } = [];
+
         public AccountsReceivableInvoice? Added { get; private set; }
 
         public Task<AccountsReceivableInvoice?> GetByFiscalDocumentIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default)
@@ -1421,6 +1776,7 @@ public class AccountsReceivableServicesTests
 
         public Task<AccountsReceivableInvoice?> GetTrackedByIdAsync(long accountsReceivableInvoiceId, CancellationToken cancellationToken = default)
         {
+            GetTrackedByIdAsyncCallCount++;
             TrackedById.TryGetValue(accountsReceivableInvoiceId, out var invoice);
             return Task.FromResult(invoice);
         }
@@ -1442,6 +1798,18 @@ public class AccountsReceivableServicesTests
 
         public Task<IReadOnlyList<AccountsReceivableInvoice>> GetByIdsAsync(IReadOnlyCollection<long> accountsReceivableInvoiceIds, CancellationToken cancellationToken = default)
         {
+            IReadOnlyList<AccountsReceivableInvoice> invoices = TrackedById
+                .Where(x => accountsReceivableInvoiceIds.Contains(x.Key))
+                .Select(x => x.Value)
+                .ToList();
+            return Task.FromResult(invoices);
+        }
+
+        public Task<IReadOnlyList<AccountsReceivableInvoice>> GetTrackedByIdsAsync(IReadOnlyCollection<long> accountsReceivableInvoiceIds, CancellationToken cancellationToken = default)
+        {
+            GetTrackedByIdsAsyncCallCount++;
+            LastTrackedBatchIds = accountsReceivableInvoiceIds.ToArray();
+
             IReadOnlyList<AccountsReceivableInvoice> invoices = TrackedById
                 .Where(x => accountsReceivableInvoiceIds.Contains(x.Key))
                 .Select(x => x.Value)
@@ -1578,14 +1946,38 @@ public class AccountsReceivableServicesTests
     {
         public FiscalReceiver? ExistingById { get; set; }
 
+        public Dictionary<long, FiscalReceiver> ById { get; set; } = [];
+
+        public int GetByIdAsyncCallCount { get; private set; }
+
+        public int GetByIdsAsyncCallCount { get; private set; }
+
+        public IReadOnlyList<long> LastBatchIds { get; private set; } = [];
+
         public Task<IReadOnlyList<FiscalReceiver>> SearchAsync(string query, CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyList<FiscalReceiver>>(ExistingById is null ? [] : [ExistingById]);
+            => Task.FromResult<IReadOnlyList<FiscalReceiver>>(ResolveReceivers().ToList());
 
         public Task<FiscalReceiver?> GetByRfcAsync(string normalizedRfc, CancellationToken cancellationToken = default)
-            => Task.FromResult(ExistingById);
+            => Task.FromResult(ResolveReceivers().FirstOrDefault(x => x.Rfc == normalizedRfc));
 
         public Task<FiscalReceiver?> GetByIdAsync(long fiscalReceiverId, CancellationToken cancellationToken = default)
-            => Task.FromResult(ExistingById?.Id == fiscalReceiverId ? ExistingById : null);
+        {
+            GetByIdAsyncCallCount++;
+            ById.TryGetValue(fiscalReceiverId, out var receiver);
+            receiver ??= ExistingById?.Id == fiscalReceiverId ? ExistingById : null;
+            return Task.FromResult(receiver);
+        }
+
+        public Task<IReadOnlyList<FiscalReceiver>> GetByIdsAsync(IReadOnlyCollection<long> fiscalReceiverIds, CancellationToken cancellationToken = default)
+        {
+            GetByIdsAsyncCallCount++;
+            LastBatchIds = fiscalReceiverIds.ToArray();
+
+            IReadOnlyList<FiscalReceiver> receivers = ResolveReceivers()
+                .Where(x => fiscalReceiverIds.Contains(x.Id))
+                .ToList();
+            return Task.FromResult(receivers);
+        }
 
         public Task<IReadOnlyList<FiscalReceiverSpecialFieldDefinition>> GetActiveSpecialFieldDefinitionsAsync(CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<FiscalReceiverSpecialFieldDefinition>>([]);
@@ -1593,6 +1985,16 @@ public class AccountsReceivableServicesTests
         public Task AddAsync(FiscalReceiver fiscalReceiver, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
         public Task UpdateAsync(FiscalReceiver fiscalReceiver, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        private IEnumerable<FiscalReceiver> ResolveReceivers()
+        {
+            if (ById.Count > 0)
+            {
+                return ById.Values;
+            }
+
+            return ExistingById is null ? [] : [ExistingById];
+        }
     }
 
     private sealed class ArFakeAccountsReceivableCollectionRepository : IAccountsReceivableCollectionRepository

@@ -84,6 +84,17 @@ type QuickRange = 'today' | 'yesterday' | 'last7' | 'custom';
             />
           </label>
 
+          <label>
+            <span>Orden</span>
+            <input
+              [ngModel]="legacyOrderIdFilter()"
+              (ngModelChange)="setLegacyOrderIdFilter($event)"
+              name="legacyOrderIdFilter"
+              placeholder="Buscar por orden"
+              inputmode="numeric"
+            />
+          </label>
+
           @if (quickRange() !== 'custom') {
             <div class="actions align-end">
               <button type="button" class="secondary" (click)="searchCurrentRange()" [disabled]="loadingOrders()">
@@ -475,6 +486,7 @@ export class OrdersOperationsPageComponent implements OnInit {
   protected readonly quickRange = signal<QuickRange>('today');
   protected readonly fromDate = signal('');
   protected readonly toDate = signal('');
+  protected readonly legacyOrderIdFilter = signal('');
   protected readonly customerQuery = signal('');
   protected readonly loadingOrders = signal(false);
   protected readonly loadingImportOrderId = signal<string | null>(null);
@@ -537,6 +549,10 @@ export class OrdersOperationsPageComponent implements OnInit {
 
   protected async searchCurrentRange(): Promise<void> {
     await this.searchOrders(1);
+  }
+
+  protected setLegacyOrderIdFilter(value: string | number | null): void {
+    this.legacyOrderIdFilter.set(normalizeLegacyOrderIdFilter(value));
   }
 
   protected async changePage(delta: number): Promise<void> {
@@ -652,6 +668,7 @@ export class OrdersOperationsPageComponent implements OnInit {
       const response = await firstValueFrom(this.ordersApi.searchLegacyOrders({
         fromDate: range.fromDate,
         toDate: range.toDate,
+        legacyOrderId: this.legacyOrderIdFilter(),
         customerQuery: this.customerQuery(),
         page,
         pageSize: 10
@@ -977,6 +994,10 @@ function resolveRange(range: QuickRange, fromDate: string, toDate: string, today
   }
 
   return { fromDate, toDate };
+}
+
+function normalizeLegacyOrderIdFilter(value: string | number | null | undefined): string {
+  return String(value ?? '').replace(/\D+/g, '');
 }
 
 function toImportedOrder(order: LegacyOrderListItem): ImportLegacyOrderResponse {

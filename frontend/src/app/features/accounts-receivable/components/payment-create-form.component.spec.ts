@@ -100,7 +100,7 @@ describe('PaymentCreateFormComponent', () => {
     expect(fixture.nativeElement.textContent).not.toContain('excede el saldo pendiente');
   });
 
-  it('blocks submission when the payment amount exceeds the operational outstanding balance', async () => {
+  it('allows submission when the payment amount exceeds the operational outstanding balance and shows informative guidance', async () => {
     const fixture = TestBed.createComponent(PaymentCreateFormComponent);
     fixture.componentRef.setInput('maxOperationalAmount', 1190);
     fixture.detectChanges();
@@ -121,9 +121,10 @@ describe('PaymentCreateFormComponent', () => {
     form.dispatchEvent(new Event('submit'));
     fixture.detectChanges();
 
-    expect(emitSpy).not.toHaveBeenCalled();
-    expect(submitButton.disabled).toBe(true);
-    expect(fixture.nativeElement.textContent).toContain('El monto capturado excede el saldo pendiente por 0.04');
+    expect(emitSpy).toHaveBeenCalledWith(expect.objectContaining({ amount: 1190.04 }));
+    expect(submitButton.disabled).toBe(false);
+    expect(fixture.nativeElement.textContent).toContain('El pago excede el saldo pendiente operativo por 0.04 MXN');
+    expect(fixture.nativeElement.textContent).toContain('Se registrará completo y el remanente quedará disponible');
   });
 
   it('formats datetime-local defaults using local time instead of raw UTC text', () => {

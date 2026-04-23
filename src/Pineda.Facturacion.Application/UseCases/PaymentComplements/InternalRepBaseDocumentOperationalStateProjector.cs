@@ -39,4 +39,9 @@ internal static class InternalRepBaseDocumentOperationalStateProjector
             TotalPaidApplied = state.TotalPaidApplied
         };
     }
+
+    public static InternalRepBaseDocumentOperationalSnapshot BuildSnapshot(InternalRepBaseDocumentListItem item)
+    {
+        return BuildSnapshot(BuildEntity(item, item.Eligibility.EvaluatedAtUtc));
+    }
 }

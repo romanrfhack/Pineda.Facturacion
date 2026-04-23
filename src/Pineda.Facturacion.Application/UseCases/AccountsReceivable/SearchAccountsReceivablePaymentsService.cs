@@ -54,13 +54,10 @@ public sealed class SearchAccountsReceivablePaymentsService
             .ToArray();
 
         var receiverNames = new Dictionary<long, string>();
-        foreach (var receiverId in receiverIds)
+        if (receiverIds.Length > 0)
         {
-            var receiver = await _fiscalReceiverRepository.GetByIdAsync(receiverId, cancellationToken);
-            if (receiver is not null)
-            {
-                receiverNames[receiverId] = receiver.LegalName;
-            }
+            var receivers = await _fiscalReceiverRepository.GetByIdsAsync(receiverIds, cancellationToken);
+            receiverNames = receivers.ToDictionary(x => x.Id, x => x.LegalName);
         }
 
         var items = payments

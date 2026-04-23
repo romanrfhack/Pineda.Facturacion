@@ -1,6 +1,9 @@
 using Pineda.Facturacion.Application.Abstractions.Documents;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Common;
+using Pineda.Facturacion.Application.UseCases.ProductFiscalProfiles;
+using Pineda.Facturacion.Application.UseCases.SatClaveUnidad;
+using Pineda.Facturacion.Application.UseCases.SatProductServices;
 using Pineda.Facturacion.Domain.Entities;
 using Pineda.Facturacion.Domain.Enums;
 using System.Globalization;
@@ -15,6 +18,7 @@ public class PrepareFiscalDocumentService
     private readonly IFiscalReceiverRepository _fiscalReceiverRepository;
     private readonly IProductFiscalProfileRepository _productFiscalProfileRepository;
     private readonly ISatCatalogDescriptionProvider _satCatalogDescriptionProvider;
+    private readonly SuggestSatAssignmentForLegacyItemService _suggestSatAssignmentForLegacyItemService;
     private readonly IUnitOfWork _unitOfWork;
 
     public PrepareFiscalDocumentService(
@@ -25,6 +29,27 @@ public class PrepareFiscalDocumentService
         IProductFiscalProfileRepository productFiscalProfileRepository,
         ISatCatalogDescriptionProvider satCatalogDescriptionProvider,
         IUnitOfWork unitOfWork)
+        : this(
+            billingDocumentRepository,
+            fiscalDocumentRepository,
+            issuerProfileRepository,
+            fiscalReceiverRepository,
+            productFiscalProfileRepository,
+            satCatalogDescriptionProvider,
+            CreateNoOpSuggestionService(productFiscalProfileRepository),
+            unitOfWork)
+    {
+    }
+
+    public PrepareFiscalDocumentService(
+        IBillingDocumentRepository billingDocumentRepository,
+        IFiscalDocumentRepository fiscalDocumentRepository,
+        IIssuerProfileRepository issuerProfileRepository,
+        IFiscalReceiverRepository fiscalReceiverRepository,
+        IProductFiscalProfileRepository productFiscalProfileRepository,
+        ISatCatalogDescriptionProvider satCatalogDescriptionProvider,
+        SuggestSatAssignmentForLegacyItemService suggestSatAssignmentForLegacyItemService,
+        IUnitOfWork unitOfWork)
     {
         _billingDocumentRepository = billingDocumentRepository;
         _fiscalDocumentRepository = fiscalDocumentRepository;
@@ -32,6 +57,7 @@ public class PrepareFiscalDocumentService
         _fiscalReceiverRepository = fiscalReceiverRepository;
         _productFiscalProfileRepository = productFiscalProfileRepository;
         _satCatalogDescriptionProvider = satCatalogDescriptionProvider;
+        _suggestSatAssignmentForLegacyItemService = suggestSatAssignmentForLegacyItemService;
         _unitOfWork = unitOfWork;
     }
 
@@ -125,7 +151,7 @@ public class PrepareFiscalDocumentService
             };
         }
 
-        if (billingDocument.Status != BillingDocumentStatus.Draft)
+        if (!BillingDocumentMutationPolicy.CanEditStatus(billingDocument.Status))
         {
             return ValidationFailure(command.BillingDocumentId, "Billing document is not eligible for fiscal snapshot creation.");
         }
@@ -213,26 +239,24 @@ public class PrepareFiscalDocumentService
         {
             if (string.IsNullOrWhiteSpace(billingDocumentItem.ProductInternalCode))
             {
-                return new PrepareFiscalDocumentResult
-                {
-                    Outcome = PrepareFiscalDocumentOutcome.MissingProductFiscalProfile,
-                    IsSuccess = false,
-                    BillingDocumentId = command.BillingDocumentId,
-                    ErrorMessage = $"Billing document item line '{billingDocumentItem.LineNumber}' does not contain the persisted product internal code required for fiscal resolution."
-                };
+                return await MissingProductFiscalProfileFailureAsync(
+                    command.BillingDocumentId,
+                    billingDocumentItem,
+                    null,
+                    now,
+                    cancellationToken);
             }
 
             var internalCode = FiscalMasterDataNormalization.NormalizeRequiredCode(billingDocumentItem.ProductInternalCode);
             var productFiscalProfile = await _productFiscalProfileRepository.GetEffectiveByInternalCodeAsync(internalCode, now, cancellationToken);
             if (productFiscalProfile is null || !productFiscalProfile.IsActive)
             {
-                return new PrepareFiscalDocumentResult
-                {
-                    Outcome = PrepareFiscalDocumentOutcome.MissingProductFiscalProfile,
-                    IsSuccess = false,
-                    BillingDocumentId = command.BillingDocumentId,
-                    ErrorMessage = $"No active product fiscal profile exists for item line '{billingDocumentItem.LineNumber}' and internal code '{internalCode}'."
-                };
+                return await MissingProductFiscalProfileFailureAsync(
+                    command.BillingDocumentId,
+                    billingDocumentItem,
+                    internalCode,
+                    now,
+                    cancellationToken);
             }
 
             if (billingDocumentItem.TaxRate != productFiscalProfile.VatRate)
@@ -495,6 +519,231 @@ public class PrepareFiscalDocumentService
             && !string.IsNullOrWhiteSpace(receiverCfdiUseCode);
     }
 
+    private async Task<PrepareFiscalDocumentResult> MissingProductFiscalProfileFailureAsync(
+        long billingDocumentId,
+        BillingDocumentItem billingDocumentItem,
+        string? normalizedInternalCode,
+        DateTime asOfUtc,
+        CancellationToken cancellationToken)
+    {
+        var missingProductFiscalProfile = await BuildMissingProductFiscalProfileAsync(
+            billingDocumentItem,
+            normalizedInternalCode,
+            asOfUtc,
+            cancellationToken);
+
+        return new PrepareFiscalDocumentResult
+        {
+            Outcome = PrepareFiscalDocumentOutcome.MissingProductFiscalProfile,
+            IsSuccess = false,
+            BillingDocumentId = billingDocumentId,
+            ErrorMessage = BuildMissingProductFiscalProfileErrorMessage(missingProductFiscalProfile),
+            MissingProductFiscalProfile = missingProductFiscalProfile
+        };
+    }
+
+    private async Task<PrepareFiscalDocumentMissingProductFiscalProfile> BuildMissingProductFiscalProfileAsync(
+        BillingDocumentItem billingDocumentItem,
+        string? normalizedInternalCode,
+        DateTime asOfUtc,
+        CancellationToken cancellationToken)
+    {
+        ProductFiscalProfile? existingProfile = null;
+        var existingProfileStatus = PrepareFiscalDocumentExistingProductFiscalProfileStatus.None;
+        SuggestSatAssignmentForLegacyItemResult? suggestionResult = null;
+
+        if (!string.IsNullOrWhiteSpace(normalizedInternalCode))
+        {
+            existingProfile = await _productFiscalProfileRepository.GetByInternalCodeAsync(normalizedInternalCode, cancellationToken);
+            existingProfileStatus = existingProfile switch
+            {
+                null => PrepareFiscalDocumentExistingProductFiscalProfileStatus.None,
+                { IsActive: true } => PrepareFiscalDocumentExistingProductFiscalProfileStatus.Active,
+                _ => PrepareFiscalDocumentExistingProductFiscalProfileStatus.Inactive
+            };
+
+            suggestionResult = await _suggestSatAssignmentForLegacyItemService.ExecuteAsync(new SuggestSatAssignmentForLegacyItemCommand
+            {
+                InternalCode = normalizedInternalCode,
+                Description = billingDocumentItem.Description,
+                BillingDocumentItemSatProductServiceCode = billingDocumentItem.SatProductServiceCode,
+                BillingDocumentItemSatUnitCode = billingDocumentItem.SatUnitCode
+            }, cancellationToken);
+        }
+
+        var suggestions = BuildMissingProductFiscalProfileSuggestions(
+            billingDocumentItem,
+            existingProfile,
+            suggestionResult);
+
+        var autoPrefillSuggestion = suggestions.FirstOrDefault(x =>
+            !x.RequiresExplicitConfirmation
+            && x.IsActive
+            && !string.IsNullOrWhiteSpace(x.SatProductServiceCode));
+
+        return new PrepareFiscalDocumentMissingProductFiscalProfile
+        {
+            BillingDocumentItemId = billingDocumentItem.Id,
+            LineNumber = billingDocumentItem.LineNumber,
+            InternalCode = normalizedInternalCode,
+            Description = FiscalMasterDataNormalization.NormalizeOptionalText(billingDocumentItem.Description)
+                ?? normalizedInternalCode
+                ?? string.Empty,
+            ExistingProfileStatus = existingProfileStatus,
+            ExistingProductFiscalProfileId = existingProfile?.Id,
+            CanUseExplicitGeneric = true,
+            Prefill = BuildMissingProductFiscalProfilePrefill(
+                billingDocumentItem,
+                existingProfile,
+                suggestionResult,
+                autoPrefillSuggestion),
+            Suggestions = suggestions
+        };
+    }
+
+    private static IReadOnlyList<PrepareFiscalDocumentMissingProductFiscalProfileSuggestion> BuildMissingProductFiscalProfileSuggestions(
+        BillingDocumentItem billingDocumentItem,
+        ProductFiscalProfile? existingProfile,
+        SuggestSatAssignmentForLegacyItemResult? suggestionResult)
+    {
+        if (suggestionResult is null || suggestionResult.ProductServiceCandidates.Count == 0)
+        {
+            return [];
+        }
+
+        var fallbackUnitCode = NormalizeOptionalCode(billingDocumentItem.SatUnitCode)
+            ?? existingProfile?.SatUnitCode
+            ?? "H87";
+        var fallbackUnitDescription = existingProfile?.DefaultUnitText;
+        var fallbackTaxObjectCode = NormalizeOptionalCode(billingDocumentItem.TaxObjectCode)
+            ?? existingProfile?.TaxObjectCode
+            ?? "02";
+        var fallbackVatRate = existingProfile?.VatRate
+            ?? (billingDocumentItem.TaxRate > 0 ? billingDocumentItem.TaxRate : 0.16m);
+
+        return suggestionResult.ProductServiceCandidates
+            .Select(productCandidate =>
+            {
+                var pairedUnit = suggestionResult.UnitCandidates.FirstOrDefault(x =>
+                        string.Equals(x.Source, productCandidate.Source, StringComparison.Ordinal)
+                        && !string.IsNullOrWhiteSpace(x.Code))
+                    ?? suggestionResult.SuggestedUnit;
+
+                var unitCode = pairedUnit?.Code ?? fallbackUnitCode;
+                var unitDescription = pairedUnit?.Description ?? fallbackUnitDescription;
+
+                return new PrepareFiscalDocumentMissingProductFiscalProfileSuggestion
+                {
+                    SatProductServiceCode = productCandidate.Code,
+                    SatProductServiceDescription = productCandidate.Description,
+                    SatUnitCode = unitCode,
+                    SatUnitDescription = unitDescription,
+                    TaxObjectCode = fallbackTaxObjectCode,
+                    VatRate = fallbackVatRate,
+                    DefaultUnitText = ResolveDefaultUnitText(
+                        existingProfile?.DefaultUnitText,
+                        unitDescription,
+                        fallbackUnitCode),
+                    Score = productCandidate.Score,
+                    Confidence = productCandidate.Confidence,
+                    Source = productCandidate.Source,
+                    MatchKind = productCandidate.MatchKind,
+                    Reason = productCandidate.Reason,
+                    IsActive = productCandidate.IsActive && (pairedUnit?.IsActive ?? true),
+                    RequiresExplicitConfirmation = productCandidate.RequiresExplicitConfirmation
+                };
+            })
+            .ToList();
+    }
+
+    private static PrepareFiscalDocumentMissingProductFiscalProfilePrefill BuildMissingProductFiscalProfilePrefill(
+        BillingDocumentItem billingDocumentItem,
+        ProductFiscalProfile? existingProfile,
+        SuggestSatAssignmentForLegacyItemResult? suggestionResult,
+        PrepareFiscalDocumentMissingProductFiscalProfileSuggestion? autoPrefillSuggestion)
+    {
+        if (existingProfile is not null)
+        {
+            return new PrepareFiscalDocumentMissingProductFiscalProfilePrefill
+            {
+                SatProductServiceCode = existingProfile.SatProductServiceCode,
+                SatUnitCode = existingProfile.SatUnitCode,
+                TaxObjectCode = existingProfile.TaxObjectCode,
+                VatRate = existingProfile.VatRate,
+                DefaultUnitText = ResolveDefaultUnitText(
+                    existingProfile.DefaultUnitText,
+                    suggestionResult?.SuggestedUnit?.Description,
+                    existingProfile.SatUnitCode),
+                IsActive = true,
+                RequiresExplicitProductServiceConfirmation = false
+            };
+        }
+
+        if (autoPrefillSuggestion is not null)
+        {
+            return new PrepareFiscalDocumentMissingProductFiscalProfilePrefill
+            {
+                SatProductServiceCode = autoPrefillSuggestion.SatProductServiceCode,
+                SatUnitCode = autoPrefillSuggestion.SatUnitCode,
+                TaxObjectCode = autoPrefillSuggestion.TaxObjectCode,
+                VatRate = autoPrefillSuggestion.VatRate,
+                DefaultUnitText = autoPrefillSuggestion.DefaultUnitText,
+                IsActive = true,
+                RequiresExplicitProductServiceConfirmation = false
+            };
+        }
+
+        var suggestedUnit = suggestionResult?.SuggestedUnit;
+        var fallbackUnitCode = NormalizeOptionalCode(billingDocumentItem.SatUnitCode)
+            ?? suggestedUnit?.Code
+            ?? "H87";
+
+        return new PrepareFiscalDocumentMissingProductFiscalProfilePrefill
+        {
+            SatProductServiceCode = string.Empty,
+            SatUnitCode = fallbackUnitCode,
+            TaxObjectCode = NormalizeOptionalCode(billingDocumentItem.TaxObjectCode) ?? "02",
+            VatRate = billingDocumentItem.TaxRate > 0 ? billingDocumentItem.TaxRate : 0.16m,
+            DefaultUnitText = ResolveDefaultUnitText(null, suggestedUnit?.Description, fallbackUnitCode),
+            IsActive = true,
+            RequiresExplicitProductServiceConfirmation = true
+        };
+    }
+
+    private static string BuildMissingProductFiscalProfileErrorMessage(
+        PrepareFiscalDocumentMissingProductFiscalProfile missingProductFiscalProfile)
+    {
+        if (string.IsNullOrWhiteSpace(missingProductFiscalProfile.InternalCode))
+        {
+            return $"Billing document item line '{missingProductFiscalProfile.LineNumber}' does not contain the persisted product internal code required for fiscal resolution.";
+        }
+
+        if (missingProductFiscalProfile.ExistingProfileStatus == PrepareFiscalDocumentExistingProductFiscalProfileStatus.Inactive)
+        {
+            return $"Product fiscal profile for item line '{missingProductFiscalProfile.LineNumber}' and internal code '{missingProductFiscalProfile.InternalCode}' exists but is inactive.";
+        }
+
+        return $"No active product fiscal profile exists for item line '{missingProductFiscalProfile.LineNumber}' and internal code '{missingProductFiscalProfile.InternalCode}'.";
+    }
+
+    private static string? NormalizeOptionalCode(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? null
+            : FiscalMasterDataNormalization.NormalizeRequiredCode(value);
+    }
+
+    private static string ResolveDefaultUnitText(
+        string? currentValue,
+        string? catalogDescription,
+        string? fallbackUnitCode)
+    {
+        return FiscalMasterDataNormalization.NormalizeOptionalText(currentValue)
+            ?? FiscalMasterDataNormalization.NormalizeOptionalText(catalogDescription)
+            ?? (string.Equals(fallbackUnitCode, "H87", StringComparison.Ordinal) ? "PIEZA" : null)
+            ?? string.Empty;
+    }
+
     private static PrepareFiscalDocumentResult ValidationFailure(long billingDocumentId, string errorMessage)
     {
         return new PrepareFiscalDocumentResult
@@ -504,5 +753,48 @@ public class PrepareFiscalDocumentService
             BillingDocumentId = billingDocumentId,
             ErrorMessage = errorMessage
         };
+    }
+
+    private static SuggestSatAssignmentForLegacyItemService CreateNoOpSuggestionService(
+        IProductFiscalProfileRepository productFiscalProfileRepository)
+    {
+        var satProductServiceCatalogRepository = new NoOpSatProductServiceCatalogRepository();
+        var satClaveUnidadRepository = new NoOpSatClaveUnidadRepository();
+
+        return new SuggestSatAssignmentForLegacyItemService(
+            productFiscalProfileRepository,
+            satProductServiceCatalogRepository,
+            satClaveUnidadRepository,
+            new SearchSatProductServicesService(satProductServiceCatalogRepository),
+            new SearchSatClaveUnidadService(satClaveUnidadRepository));
+    }
+
+    private sealed class NoOpSatProductServiceCatalogRepository : ISatProductServiceCatalogRepository
+    {
+        public Task<IReadOnlyList<Domain.Entities.SatProductServiceCatalogEntry>> SearchAsync(
+            string normalizedQuery,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<Domain.Entities.SatProductServiceCatalogEntry>>([]);
+    }
+
+    private sealed class NoOpSatClaveUnidadRepository : ISatClaveUnidadRepository
+    {
+        public Task<IReadOnlyList<Domain.Entities.SatClaveUnidad>> SearchAsync(
+            string normalizedQuery,
+            int maxCandidates,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<Domain.Entities.SatClaveUnidad>>([]);
+
+        public Task<Domain.Entities.SatClaveUnidad?> GetByCodeAsync(
+            string normalizedCode,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<Domain.Entities.SatClaveUnidad?>(null);
+
+        public Task<SatCatalogSyncResult> SyncAsync(
+            IReadOnlyList<Domain.Entities.SatClaveUnidad> entries,
+            string sourceVersion,
+            DateTime syncedAtUtc,
+            CancellationToken cancellationToken = default)
+            => Task.FromException<SatCatalogSyncResult>(new NotSupportedException());
     }
 }

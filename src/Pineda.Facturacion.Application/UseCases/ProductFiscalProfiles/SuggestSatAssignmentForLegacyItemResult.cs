@@ -36,4 +36,8 @@ public sealed class SatAssignmentSuggestionItem
     public decimal Score { get; init; }
 
     public bool IsActive { get; init; }
+
+    public string Reason { get; init; } = string.Empty;
+
+    public bool RequiresExplicitConfirmation { get; init; }
 }

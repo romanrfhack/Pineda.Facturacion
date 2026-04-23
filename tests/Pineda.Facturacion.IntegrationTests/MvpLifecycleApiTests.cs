@@ -16,6 +16,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NPOI.HSSF.UserModel;
 using Pineda.Facturacion.Api.Endpoints;
+using Pineda.Facturacion.Application.Abstractions.Communication;
+using Pineda.Facturacion.Application.Abstractions.Documents;
 using Pineda.Facturacion.Application.Abstractions.Legacy;
 using Pineda.Facturacion.Application.Abstractions.Pac;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
@@ -87,6 +89,51 @@ public class MvpLifecycleApiTests
         Assert.NotNull(body);
         Assert.False(body!.IsSuccess);
         Assert.Contains("fecha inicial", body.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SearchLegacyOrders_Filters_ByExactLegacyOrderId_AndCombinesWithCustomer()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        factory.LegacyOrderReader.SearchResults =
+        [
+            new LegacyOrderListItemReadModel
+            {
+                LegacyOrderId = "1175479",
+                OrderDateUtc = new DateTime(2026, 03, 23, 12, 0, 0, DateTimeKind.Utc),
+                CustomerName = "Cliente Exacto",
+                Total = 116m,
+                LegacyOrderType = "F"
+            },
+            new LegacyOrderListItemReadModel
+            {
+                LegacyOrderId = "11754791",
+                OrderDateUtc = new DateTime(2026, 03, 23, 11, 0, 0, DateTimeKind.Utc),
+                CustomerName = "Cliente Exacto",
+                Total = 232m,
+                LegacyOrderType = "F"
+            },
+            new LegacyOrderListItemReadModel
+            {
+                LegacyOrderId = "1175478",
+                OrderDateUtc = new DateTime(2026, 03, 23, 10, 0, 0, DateTimeKind.Utc),
+                CustomerName = "Otro cliente",
+                Total = 58m,
+                LegacyOrderType = "F"
+            }
+        ];
+
+        var response = await client.GetAsync("/api/orders/legacy?fromDate=2026-03-23&toDate=2026-03-23&legacyOrderId=1175479&customerQuery=Cliente%20Exacto&page=1&pageSize=10");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var body = await response.Content.ReadFromJsonAsync<OrdersEndpoints.SearchLegacyOrdersResponse>();
+        Assert.NotNull(body);
+        Assert.True(body!.IsSuccess);
+        Assert.Equal(1, body.TotalCount);
+        Assert.Single(body.Items);
+        Assert.Equal("1175479", body.Items[0].LegacyOrderId);
     }
 
     [Fact]
@@ -169,6 +216,47 @@ public class MvpLifecycleApiTests
         Assert.False(fiscalJson.RootElement.TryGetProperty("certificateReference", out _));
         Assert.False(fiscalJson.RootElement.TryGetProperty("privateKeyReference", out _));
         Assert.False(fiscalJson.RootElement.TryGetProperty("privateKeyPasswordReference", out _));
+    }
+
+    [Fact]
+    public async Task PrepareFiscalDocument_ReturnsStructuredMissingProductFiscalProfilePayload()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        var seed = await factory.SeedStandardFiscalMasterDataAsync();
+        factory.LegacyOrderReader.Orders["LEG-MISSING-1001"] = CreateLegacyOrder("LEG-MISSING-1001", "SKU-MISSING-1", 100m);
+
+        var importBody = await (await client.PostAsync("/api/orders/LEG-MISSING-1001/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+        var billingBody = await (await client.PostAsJsonAsync($"/api/sales-orders/{importBody!.SalesOrderId}/billing-documents", new SalesOrdersEndpoints.CreateBillingDocumentRequest
+        {
+            DocumentType = "I"
+        })).Content.ReadFromJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>();
+
+        var fiscalResponse = await client.PostAsJsonAsync($"/api/billing-documents/{billingBody!.BillingDocumentId}/fiscal-documents", new BillingDocumentsEndpoints.PrepareFiscalDocumentRequest
+        {
+            FiscalReceiverId = seed.ReceiverId,
+            IssuerProfileId = seed.IssuerId,
+            PaymentMethodSat = "PPD",
+            PaymentFormSat = "99",
+            PaymentCondition = "CREDITO",
+            IsCreditSale = true,
+            CreditDays = 7
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, fiscalResponse.StatusCode);
+        var fiscalBody = await fiscalResponse.Content.ReadFromJsonAsync<BillingDocumentsEndpoints.PrepareFiscalDocumentResponse>();
+        Assert.NotNull(fiscalBody);
+        Assert.Equal("MissingProductFiscalProfile", fiscalBody!.Outcome);
+        Assert.NotNull(fiscalBody.MissingProductFiscalProfile);
+        Assert.Equal("SKU-MISSING-1", fiscalBody.MissingProductFiscalProfile!.InternalCode);
+        Assert.Equal("Product SKU-MISSING-1", fiscalBody.MissingProductFiscalProfile.Description);
+        Assert.Equal("None", fiscalBody.MissingProductFiscalProfile.ExistingProfileStatus);
+        Assert.True(fiscalBody.MissingProductFiscalProfile.CanUseExplicitGeneric);
+        Assert.NotNull(fiscalBody.MissingProductFiscalProfile.Prefill);
+        Assert.Equal(string.Empty, fiscalBody.MissingProductFiscalProfile.Prefill.SatProductServiceCode);
+        Assert.Equal("H87", fiscalBody.MissingProductFiscalProfile.Prefill.SatUnitCode);
+        Assert.True(fiscalBody.MissingProductFiscalProfile.Prefill.RequiresExplicitProductServiceConfirmation);
     }
 
     [Fact]
@@ -1088,6 +1176,258 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
+    public async Task BillingDocument_Can_Be_Cancelled_And_Recreated_For_The_Same_Order()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        factory.LegacyOrderReader.Orders["LEG-7001"] = CreateLegacyOrder("LEG-7001", "SKU-1", 100m);
+
+        var importBody = await (await client.PostAsync("/api/orders/LEG-7001/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+        Assert.NotNull(importBody);
+
+        var firstBillingBody = await (await client.PostAsJsonAsync($"/api/sales-orders/{importBody!.SalesOrderId}/billing-documents", new SalesOrdersEndpoints.CreateBillingDocumentRequest
+        {
+            DocumentType = "I"
+        })).Content.ReadFromJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>();
+        Assert.NotNull(firstBillingBody);
+
+        var cancelResponse = await client.PostAsync($"/api/billing-documents/{firstBillingBody!.BillingDocumentId}/cancel", null);
+        Assert.Equal(HttpStatusCode.OK, cancelResponse.StatusCode);
+
+        var cancelledBilling = await (await client.GetAsync($"/api/billing-documents/{firstBillingBody.BillingDocumentId}"))
+            .Content.ReadFromJsonAsync<BillingDocumentsEndpoints.BillingDocumentLookupResponse>();
+        Assert.NotNull(cancelledBilling);
+        Assert.Equal("Cancelled", cancelledBilling!.Status);
+
+        var secondBillingResponse = await client.PostAsJsonAsync($"/api/sales-orders/{importBody.SalesOrderId}/billing-documents", new SalesOrdersEndpoints.CreateBillingDocumentRequest
+        {
+            DocumentType = "I"
+        });
+        Assert.Equal(HttpStatusCode.OK, secondBillingResponse.StatusCode);
+
+        var secondBillingBody = await secondBillingResponse.Content.ReadFromJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>();
+        Assert.NotNull(secondBillingBody);
+        Assert.NotEqual(firstBillingBody.BillingDocumentId, secondBillingBody!.BillingDocumentId);
+    }
+
+    [Fact]
+    public async Task BillingDocument_Cancel_Releases_All_Associated_Orders_And_Preserves_Historical_Composition()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        factory.LegacyOrderReader.Orders["LEG-7002A"] = CreateLegacyOrder("LEG-7002A", "SKU-1", 100m);
+        factory.LegacyOrderReader.Orders["LEG-7002B"] = CreateLegacyOrder("LEG-7002B", "SKU-1", 50m);
+
+        var importOrder1 = await (await client.PostAsync("/api/orders/LEG-7002A/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+        var importOrder2 = await (await client.PostAsync("/api/orders/LEG-7002B/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+
+        var billingBody = await (await client.PostAsJsonAsync($"/api/sales-orders/{importOrder1!.SalesOrderId}/billing-documents", new SalesOrdersEndpoints.CreateBillingDocumentRequest
+        {
+            DocumentType = "I"
+        })).Content.ReadFromJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>();
+        Assert.NotNull(billingBody);
+
+        var addResponse = await client.PostAsync($"/api/billing-documents/{billingBody!.BillingDocumentId}/sales-orders/{importOrder2!.SalesOrderId}", null);
+        Assert.Equal(HttpStatusCode.OK, addResponse.StatusCode);
+
+        var cancelResponse = await client.PostAsync($"/api/billing-documents/{billingBody.BillingDocumentId}/cancel", null);
+        Assert.Equal(HttpStatusCode.OK, cancelResponse.StatusCode);
+
+        var conflictOrder1 = await (await client.PostAsync("/api/orders/LEG-7002A/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+        var conflictOrder2 = await (await client.PostAsync("/api/orders/LEG-7002B/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+
+        Assert.NotNull(conflictOrder1);
+        Assert.NotNull(conflictOrder2);
+        Assert.Null(conflictOrder1!.ExistingBillingDocumentId);
+        Assert.Null(conflictOrder2!.ExistingBillingDocumentId);
+
+        var historicalLookup = await (await client.GetAsync($"/api/billing-documents/{billingBody.BillingDocumentId}"))
+            .Content.ReadFromJsonAsync<BillingDocumentsEndpoints.BillingDocumentLookupResponse>();
+        Assert.NotNull(historicalLookup);
+        Assert.Equal("Cancelled", historicalLookup!.Status);
+        Assert.Equal(2, historicalLookup.AssociatedOrders.Count);
+    }
+
+    [Fact]
+    public async Task BillingDocument_Cancel_Discards_Unstamped_Fiscal_And_Blocks_Further_Mutations()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        var seed = await factory.SeedStandardFiscalMasterDataAsync();
+
+        factory.LegacyOrderReader.Orders["LEG-7003"] = CreateLegacyOrder("LEG-7003", "SKU-1", 100m);
+        factory.LegacyOrderReader.Orders["LEG-7003B"] = CreateLegacyOrder("LEG-7003B", "SKU-1", 100m);
+
+        var importOrder1 = await (await client.PostAsync("/api/orders/LEG-7003/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+        var importOrder2 = await (await client.PostAsync("/api/orders/LEG-7003B/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+
+        var billingBody = await (await client.PostAsJsonAsync($"/api/sales-orders/{importOrder1!.SalesOrderId}/billing-documents", new SalesOrdersEndpoints.CreateBillingDocumentRequest
+        {
+            DocumentType = "I"
+        })).Content.ReadFromJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>();
+        Assert.NotNull(billingBody);
+
+        var fiscalBody = await (await client.PostAsJsonAsync($"/api/billing-documents/{billingBody!.BillingDocumentId}/fiscal-documents", new BillingDocumentsEndpoints.PrepareFiscalDocumentRequest
+        {
+            FiscalReceiverId = seed.ReceiverId,
+            IssuerProfileId = seed.IssuerId,
+            PaymentMethodSat = "PPD",
+            PaymentFormSat = "99",
+            PaymentCondition = "CREDITO",
+            IsCreditSale = true,
+            CreditDays = 7
+        })).Content.ReadFromJsonAsync<BillingDocumentsEndpoints.PrepareFiscalDocumentResponse>();
+        Assert.NotNull(fiscalBody);
+
+        var cancelResponse = await client.PostAsync($"/api/billing-documents/{billingBody.BillingDocumentId}/cancel", null);
+        Assert.Equal(HttpStatusCode.OK, cancelResponse.StatusCode);
+
+        var prepareAgainResponse = await client.PostAsJsonAsync($"/api/billing-documents/{billingBody.BillingDocumentId}/fiscal-documents", new BillingDocumentsEndpoints.PrepareFiscalDocumentRequest
+        {
+            FiscalReceiverId = seed.ReceiverId,
+            IssuerProfileId = seed.IssuerId,
+            PaymentMethodSat = "PPD",
+            PaymentFormSat = "99",
+            PaymentCondition = "CREDITO",
+            IsCreditSale = true,
+            CreditDays = 7
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, prepareAgainResponse.StatusCode);
+
+        var reprepareResponse = await client.PostAsync($"/api/fiscal-documents/{fiscalBody!.FiscalDocumentId}/reprepare", null);
+        Assert.Equal(HttpStatusCode.Conflict, reprepareResponse.StatusCode);
+
+        var stampResponse = await client.PostAsJsonAsync(
+            $"/api/fiscal-documents/{fiscalBody.FiscalDocumentId}/stamp",
+            new FiscalDocumentsEndpoints.StampFiscalDocumentRequest());
+        Assert.Equal(HttpStatusCode.Conflict, stampResponse.StatusCode);
+
+        var addOrderResponse = await client.PostAsync($"/api/billing-documents/{billingBody.BillingDocumentId}/sales-orders/{importOrder2!.SalesOrderId}", null);
+        Assert.Equal(HttpStatusCode.Conflict, addOrderResponse.StatusCode);
+
+        var fiscalDocument = await (await client.GetAsync($"/api/fiscal-documents/{fiscalBody.FiscalDocumentId}"))
+            .Content.ReadFromJsonAsync<FiscalDocumentsEndpoints.FiscalDocumentResponse>();
+        Assert.NotNull(fiscalDocument);
+        Assert.Equal("DiscardedUnstamped", fiscalDocument!.Status);
+    }
+
+    [Fact]
+    public async Task BillingDocument_Cancel_Releases_PendingBilling_Assignments_For_Reuse()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        var seed = await factory.SeedStandardFiscalMasterDataAsync();
+
+        var legacyOrder1 = CreateLegacyOrder("LEG-7004A", "SKU-1", 100m);
+        legacyOrder1.Subtotal = 150m;
+        legacyOrder1.Total = 150m;
+        legacyOrder1.Items.Add(new LegacyOrderItemReadModel
+        {
+            LineNumber = 2,
+            LegacyArticleId = "SKU-1",
+            Sku = "SKU-1",
+            Description = "Product SKU-1 Extra",
+            UnitCode = "H87",
+            UnitName = "Pieza",
+            Quantity = 1m,
+            UnitPrice = 50m,
+            DiscountAmount = 0m,
+            TaxRate = 0m,
+            TaxAmount = 0m,
+            LineTotal = 50m
+        });
+        factory.LegacyOrderReader.Orders["LEG-7004A"] = legacyOrder1;
+        factory.LegacyOrderReader.Orders["LEG-7004B"] = CreateLegacyOrder("LEG-7004B", "SKU-1", 100m);
+
+        var importOrder1 = await (await client.PostAsync("/api/orders/LEG-7004A/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+        var importOrder2 = await (await client.PostAsync("/api/orders/LEG-7004B/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+
+        var billingBody1 = await (await client.PostAsJsonAsync($"/api/sales-orders/{importOrder1!.SalesOrderId}/billing-documents", new SalesOrdersEndpoints.CreateBillingDocumentRequest
+        {
+            DocumentType = "I"
+        })).Content.ReadFromJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>();
+        var fiscalBody1 = await (await client.PostAsJsonAsync($"/api/billing-documents/{billingBody1!.BillingDocumentId}/fiscal-documents", new BillingDocumentsEndpoints.PrepareFiscalDocumentRequest
+        {
+            FiscalReceiverId = seed.ReceiverId,
+            IssuerProfileId = seed.IssuerId,
+            PaymentMethodSat = "PPD",
+            PaymentFormSat = "99",
+            PaymentCondition = "CREDITO",
+            IsCreditSale = true,
+            CreditDays = 7
+        })).Content.ReadFromJsonAsync<BillingDocumentsEndpoints.PrepareFiscalDocumentResponse>();
+
+        var lookupBeforeRemoval = await (await client.GetAsync($"/api/billing-documents/{billingBody1.BillingDocumentId}"))
+            .Content.ReadFromJsonAsync<BillingDocumentsEndpoints.BillingDocumentLookupResponse>();
+        var itemToRemove = lookupBeforeRemoval!.Items.Single(x => x.SourceSalesOrderLineNumber == 2);
+
+        var removeResponse = await client.PostAsJsonAsync(
+            $"/api/billing-documents/{billingBody1.BillingDocumentId}/items/{itemToRemove.BillingDocumentItemId}/remove",
+            new BillingDocumentsEndpoints.RemoveBillingDocumentItemRequest
+            {
+                RemovalReason = "WrongDocument",
+                Observations = "Pendiente de facturar en otro CFDI.",
+                RemovalDisposition = "PendingBilling"
+            });
+        Assert.Equal(HttpStatusCode.OK, removeResponse.StatusCode);
+
+        var billingBody2 = await (await client.PostAsJsonAsync($"/api/sales-orders/{importOrder2!.SalesOrderId}/billing-documents", new SalesOrdersEndpoints.CreateBillingDocumentRequest
+        {
+            DocumentType = "I"
+        })).Content.ReadFromJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>();
+        var fiscalBody2 = await (await client.PostAsJsonAsync($"/api/billing-documents/{billingBody2!.BillingDocumentId}/fiscal-documents", new BillingDocumentsEndpoints.PrepareFiscalDocumentRequest
+        {
+            FiscalReceiverId = seed.ReceiverId,
+            IssuerProfileId = seed.IssuerId,
+            PaymentMethodSat = "PPD",
+            PaymentFormSat = "99",
+            PaymentCondition = "CREDITO",
+            IsCreditSale = true,
+            CreditDays = 7
+        })).Content.ReadFromJsonAsync<BillingDocumentsEndpoints.PrepareFiscalDocumentResponse>();
+
+        var pendingItems = await (await client.GetAsync("/api/billing-documents/pending-items"))
+            .Content.ReadFromJsonAsync<BillingDocumentsEndpoints.PendingBillingItemResponse[]>();
+        var pendingItem = Assert.Single(pendingItems!);
+
+        var assignResponse = await client.PostAsJsonAsync(
+            $"/api/billing-documents/{billingBody2.BillingDocumentId}/pending-items/assign",
+            new BillingDocumentsEndpoints.AssignPendingBillingItemsRequest
+            {
+                RemovalIds = [pendingItem.RemovalId]
+            });
+        Assert.Equal(HttpStatusCode.OK, assignResponse.StatusCode);
+
+        var cancelResponse = await client.PostAsync($"/api/billing-documents/{billingBody2.BillingDocumentId}/cancel", null);
+        Assert.Equal(HttpStatusCode.OK, cancelResponse.StatusCode);
+
+        var pendingAfterCancel = await (await client.GetAsync("/api/billing-documents/pending-items"))
+            .Content.ReadFromJsonAsync<BillingDocumentsEndpoints.PendingBillingItemResponse[]>();
+        Assert.NotNull(pendingAfterCancel);
+        Assert.Contains(pendingAfterCancel!, x => x.RemovalId == pendingItem.RemovalId);
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+        var removal = await dbContext.BillingDocumentItemRemovals.SingleAsync(x => x.Id == pendingItem.RemovalId);
+        var assignment = await dbContext.BillingDocumentPendingItemAssignments.SingleAsync(x => x.DestinationBillingDocumentId == billingBody2.BillingDocumentId);
+
+        Assert.True(removal.AvailableForPendingBillingReuse);
+        Assert.NotNull(assignment.ReleasedAtUtc);
+        Assert.Equal(fiscalBody2!.FiscalDocumentId, assignment.DestinationFiscalDocumentId);
+    }
+
+    [Fact]
     public async Task BillingDocument_RemoveItem_Is_Blocked_After_Stamping()
     {
         await using var factory = new MvpApiFactory();
@@ -1300,6 +1640,146 @@ public class MvpLifecycleApiTests
         Assert.Equal(HttpStatusCode.OK, getInvoiceResponse.StatusCode);
         using var invoiceJson = await JsonDocument.ParseAsync(await getInvoiceResponse.Content.ReadAsStreamAsync());
         Assert.Equal("PartiallyPaid", invoiceJson.RootElement.GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public async Task CreateAccountsReceivablePayment_AllowsOverContextAmount_AndTracksRemainderAcrossMultipleInvoices()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        var seed = await factory.SeedStandardFiscalMasterDataAsync();
+
+        var fiscalDocumentId1 = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-AR-MULTI-1001", seed.ReceiverId, "SKU-1", "UUID-AR-MULTI-1001");
+        var fiscalDocumentId2 = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-AR-MULTI-1002", seed.ReceiverId, "SKU-1", "UUID-AR-MULTI-1002");
+
+        var invoice1 = await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId1);
+        var invoice2 = await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId2);
+        var invoice1Id = invoice1!.AccountsReceivableInvoice!.Id;
+        var invoice2Id = invoice2!.AccountsReceivableInvoice!.Id;
+        var invoice1Outstanding = invoice1.AccountsReceivableInvoice.OutstandingBalance;
+        const decimal secondInvoicePartialAmount = 50m;
+        var paymentAmount = invoice1Outstanding + secondInvoicePartialAmount;
+
+        var createPaymentResponse = await client.PostAsJsonAsync("/api/accounts-receivable/payments", new CreateAccountsReceivablePaymentRequest
+        {
+            AccountsReceivableInvoiceId = invoice1Id,
+            PaymentDateUtc = DateTime.UtcNow,
+            PaymentFormSat = "03",
+            Amount = paymentAmount,
+            Reference = "PAY-MULTI-1",
+            ReceivedFromFiscalReceiverId = seed.ReceiverId
+        });
+        Assert.Equal(HttpStatusCode.OK, createPaymentResponse.StatusCode);
+        var createPaymentBody = await createPaymentResponse.Content.ReadFromJsonAsync<CreateAccountsReceivablePaymentResponse>();
+        Assert.NotNull(createPaymentBody?.Payment);
+        Assert.Equal(paymentAmount, createPaymentBody!.Payment!.Amount);
+        Assert.Equal(paymentAmount, createPaymentBody.Payment.RemainingAmount);
+        Assert.Equal(seed.ReceiverId, createPaymentBody.Payment.ReceivedFromFiscalReceiverId);
+        var paymentId = createPaymentBody.Payment.Id;
+
+        var firstApplyResponse = await client.PostAsJsonAsync($"/api/accounts-receivable/payments/{paymentId}/apply", new ApplyAccountsReceivablePaymentRequest
+        {
+            Applications =
+            [
+                new ApplyAccountsReceivablePaymentRowRequest
+                {
+                    AccountsReceivableInvoiceId = invoice1Id,
+                    AppliedAmount = invoice1Outstanding
+                }
+            ]
+        });
+        Assert.Equal(HttpStatusCode.OK, firstApplyResponse.StatusCode);
+        var firstApplyBody = await firstApplyResponse.Content.ReadFromJsonAsync<ApplyAccountsReceivablePaymentResponse>();
+        Assert.NotNull(firstApplyBody?.Payment);
+        Assert.Equal(secondInvoicePartialAmount, firstApplyBody!.RemainingPaymentAmount);
+        Assert.Equal(secondInvoicePartialAmount, firstApplyBody.Payment!.RemainingAmount);
+
+        var secondApplyResponse = await client.PostAsJsonAsync($"/api/accounts-receivable/payments/{paymentId}/apply", new ApplyAccountsReceivablePaymentRequest
+        {
+            Applications =
+            [
+                new ApplyAccountsReceivablePaymentRowRequest
+                {
+                    AccountsReceivableInvoiceId = invoice2Id,
+                    AppliedAmount = secondInvoicePartialAmount
+                }
+            ]
+        });
+        Assert.Equal(HttpStatusCode.OK, secondApplyResponse.StatusCode);
+        var secondApplyBody = await secondApplyResponse.Content.ReadFromJsonAsync<ApplyAccountsReceivablePaymentResponse>();
+        Assert.NotNull(secondApplyBody?.Payment);
+        Assert.Equal(0m, secondApplyBody!.RemainingPaymentAmount);
+        Assert.Equal(0m, secondApplyBody.Payment!.RemainingAmount);
+        Assert.Equal(2, secondApplyBody.Payment.Applications.Count);
+
+        var getPaymentResponse = await client.GetAsync($"/api/accounts-receivable/payments/{paymentId}");
+        Assert.Equal(HttpStatusCode.OK, getPaymentResponse.StatusCode);
+        using (var paymentJson = await JsonDocument.ParseAsync(await getPaymentResponse.Content.ReadAsStreamAsync()))
+        {
+            Assert.Equal(paymentAmount, paymentJson.RootElement.GetProperty("amount").GetDecimal());
+            Assert.Equal(0m, paymentJson.RootElement.GetProperty("remainingAmount").GetDecimal());
+            Assert.Equal("FullyApplied", paymentJson.RootElement.GetProperty("operationalStatus").GetString());
+            Assert.Equal(2, paymentJson.RootElement.GetProperty("applications").GetArrayLength());
+        }
+
+        var getInvoice1Response = await client.GetAsync($"/api/accounts-receivable/invoices/{invoice1Id}");
+        Assert.Equal(HttpStatusCode.OK, getInvoice1Response.StatusCode);
+        using (var invoice1Json = await JsonDocument.ParseAsync(await getInvoice1Response.Content.ReadAsStreamAsync()))
+        {
+            Assert.Equal("Paid", invoice1Json.RootElement.GetProperty("status").GetString());
+            Assert.Equal(0m, invoice1Json.RootElement.GetProperty("outstandingBalance").GetDecimal());
+        }
+
+        var getInvoice2Response = await client.GetAsync($"/api/accounts-receivable/invoices/{invoice2Id}");
+        Assert.Equal(HttpStatusCode.OK, getInvoice2Response.StatusCode);
+        using var invoice2Json = await JsonDocument.ParseAsync(await getInvoice2Response.Content.ReadAsStreamAsync());
+        Assert.Equal("PartiallyPaid", invoice2Json.RootElement.GetProperty("status").GetString());
+        Assert.Equal(secondInvoicePartialAmount, invoice2Json.RootElement.GetProperty("paidTotal").GetDecimal());
+    }
+
+    [Fact]
+    public async Task CreateAccountsReceivablePayment_RejectsExplicitReceiverMismatchAgainstContextInvoice()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        var seed = await factory.SeedStandardFiscalMasterDataAsync();
+        var secondReceiverId = await factory.SeedFiscalReceiverAsync("CCC010101CCC", "Receiver Two");
+
+        var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-AR-RECV-MISMATCH-1001", seed.ReceiverId, "SKU-1", "UUID-AR-RECV-MISMATCH-1001");
+        var invoice = await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId);
+        var invoiceId = invoice!.AccountsReceivableInvoice!.Id;
+
+        int paymentsBefore;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+            paymentsBefore = await dbContext.AccountsReceivablePayments.CountAsync();
+        }
+
+        var createPaymentResponse = await client.PostAsJsonAsync("/api/accounts-receivable/payments", new CreateAccountsReceivablePaymentRequest
+        {
+            AccountsReceivableInvoiceId = invoiceId,
+            PaymentDateUtc = DateTime.UtcNow,
+            PaymentFormSat = "03",
+            Amount = 116m,
+            Reference = "PAY-RECV-MISMATCH-1",
+            ReceivedFromFiscalReceiverId = secondReceiverId
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, createPaymentResponse.StatusCode);
+        var createPaymentBody = await createPaymentResponse.Content.ReadFromJsonAsync<CreateAccountsReceivablePaymentResponse>();
+        Assert.NotNull(createPaymentBody);
+        Assert.False(createPaymentBody!.IsSuccess);
+        Assert.Equal("ValidationFailed", createPaymentBody.Outcome);
+        Assert.Null(createPaymentBody.Payment);
+        Assert.Contains("must match the contextual accounts receivable invoice receiver", createPaymentBody.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+            var paymentsAfter = await dbContext.AccountsReceivablePayments.CountAsync();
+            Assert.Equal(paymentsBefore, paymentsAfter);
+        }
     }
 
     [Fact]
@@ -1940,6 +2420,90 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
+    public async Task RepBaseDocuments_UnifiedList_RepeatedGet_DoesNotMutatePersistedOperationalState()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-REP-NO-WRITE-UNI-1001", uuid: "UUID-REP-NO-WRITE-UNI-1001");
+        await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId);
+
+        var seededState = new InternalRepBaseDocumentState
+        {
+            FiscalDocumentId = fiscalDocumentId,
+            LastEligibilityEvaluatedAtUtc = new DateTime(2026, 4, 1, 8, 0, 0, DateTimeKind.Utc),
+            LastEligibilityStatus = "Stale",
+            LastPrimaryReasonCode = "STALE_CODE",
+            LastPrimaryReasonMessage = "stale message",
+            RepPendingFlag = false,
+            LastRepIssuedAtUtc = new DateTime(2026, 4, 1, 9, 0, 0, DateTimeKind.Utc),
+            RepCount = 7,
+            TotalPaidApplied = 12m,
+            CreatedAtUtc = new DateTime(2026, 4, 1, 7, 0, 0, DateTimeKind.Utc),
+            UpdatedAtUtc = new DateTime(2026, 4, 1, 10, 0, 0, DateTimeKind.Utc)
+        };
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+            dbContext.InternalRepBaseDocumentStates.Add(seededState);
+            await dbContext.SaveChangesAsync();
+        }
+
+        var firstResponse = await client.GetAsync("/api/payment-complements/base-documents?page=1&pageSize=25&sourceType=Internal&query=UUID-REP-NO-WRITE-UNI-1001");
+        Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
+        using var firstJson = await JsonDocument.ParseAsync(await firstResponse.Content.ReadAsStreamAsync());
+        var firstItem = firstJson.RootElement.GetProperty("items").EnumerateArray().Single(x => x.GetProperty("fiscalDocumentId").GetInt64() == fiscalDocumentId);
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+            var persistedAfterFirst = await dbContext.InternalRepBaseDocumentStates.SingleAsync(x => x.FiscalDocumentId == fiscalDocumentId);
+            Assert.Equal(1, await dbContext.InternalRepBaseDocumentStates.CountAsync());
+            Assert.Equal(seededState.LastEligibilityEvaluatedAtUtc, persistedAfterFirst.LastEligibilityEvaluatedAtUtc);
+            Assert.Equal(seededState.LastEligibilityStatus, persistedAfterFirst.LastEligibilityStatus);
+            Assert.Equal(seededState.LastPrimaryReasonCode, persistedAfterFirst.LastPrimaryReasonCode);
+            Assert.Equal(seededState.LastPrimaryReasonMessage, persistedAfterFirst.LastPrimaryReasonMessage);
+            Assert.Equal(seededState.RepPendingFlag, persistedAfterFirst.RepPendingFlag);
+            Assert.Equal(seededState.LastRepIssuedAtUtc, persistedAfterFirst.LastRepIssuedAtUtc);
+            Assert.Equal(seededState.RepCount, persistedAfterFirst.RepCount);
+            Assert.Equal(seededState.TotalPaidApplied, persistedAfterFirst.TotalPaidApplied);
+            Assert.Equal(seededState.CreatedAtUtc, persistedAfterFirst.CreatedAtUtc);
+            Assert.Equal(seededState.UpdatedAtUtc, persistedAfterFirst.UpdatedAtUtc);
+        }
+
+        var secondResponse = await client.GetAsync("/api/payment-complements/base-documents?page=1&pageSize=25&sourceType=Internal&query=UUID-REP-NO-WRITE-UNI-1001");
+        Assert.Equal(HttpStatusCode.OK, secondResponse.StatusCode);
+        using var secondJson = await JsonDocument.ParseAsync(await secondResponse.Content.ReadAsStreamAsync());
+        var secondItem = secondJson.RootElement.GetProperty("items").EnumerateArray().Single(x => x.GetProperty("fiscalDocumentId").GetInt64() == fiscalDocumentId);
+
+        Assert.Equal(firstItem.GetProperty("sourceType").GetString(), secondItem.GetProperty("sourceType").GetString());
+        Assert.Equal(firstItem.GetProperty("operationalStatus").GetString(), secondItem.GetProperty("operationalStatus").GetString());
+        Assert.Equal(firstItem.GetProperty("nextRecommendedAction").GetString(), secondItem.GetProperty("nextRecommendedAction").GetString());
+        Assert.Equal(firstItem.GetProperty("primaryReasonCode").GetString(), secondItem.GetProperty("primaryReasonCode").GetString());
+        Assert.Equal(firstItem.GetProperty("primaryReasonMessage").GetString(), secondItem.GetProperty("primaryReasonMessage").GetString());
+        Assert.Equal(firstItem.GetProperty("isEligible").GetBoolean(), secondItem.GetProperty("isEligible").GetBoolean());
+        Assert.Equal(firstItem.GetProperty("isBlocked").GetBoolean(), secondItem.GetProperty("isBlocked").GetBoolean());
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+            var persistedAfterSecond = await dbContext.InternalRepBaseDocumentStates.SingleAsync(x => x.FiscalDocumentId == fiscalDocumentId);
+            Assert.Equal(1, await dbContext.InternalRepBaseDocumentStates.CountAsync());
+            Assert.Equal(seededState.LastEligibilityEvaluatedAtUtc, persistedAfterSecond.LastEligibilityEvaluatedAtUtc);
+            Assert.Equal(seededState.LastEligibilityStatus, persistedAfterSecond.LastEligibilityStatus);
+            Assert.Equal(seededState.LastPrimaryReasonCode, persistedAfterSecond.LastPrimaryReasonCode);
+            Assert.Equal(seededState.LastPrimaryReasonMessage, persistedAfterSecond.LastPrimaryReasonMessage);
+            Assert.Equal(seededState.RepPendingFlag, persistedAfterSecond.RepPendingFlag);
+            Assert.Equal(seededState.LastRepIssuedAtUtc, persistedAfterSecond.LastRepIssuedAtUtc);
+            Assert.Equal(seededState.RepCount, persistedAfterSecond.RepCount);
+            Assert.Equal(seededState.TotalPaidApplied, persistedAfterSecond.TotalPaidApplied);
+            Assert.Equal(seededState.CreatedAtUtc, persistedAfterSecond.CreatedAtUtc);
+            Assert.Equal(seededState.UpdatedAtUtc, persistedAfterSecond.UpdatedAtUtc);
+        }
+    }
+
+    [Fact]
     public async Task InternalRepBaseDocuments_List_FiltersByOperationalAlertSeverityAndAction_AndReturnsSummaryCounts()
     {
         await using var factory = new MvpApiFactory();
@@ -2120,6 +2684,97 @@ public class MvpLifecycleApiTests
         Assert.Equal("Stamped", issuedRep.GetProperty("status").GetString());
         Assert.Equal("UUID-PC-DETAIL-1", issuedRep.GetProperty("uuid").GetString());
         Assert.Equal("FacturaloPlus", issuedRep.GetProperty("providerName").GetString());
+    }
+
+    [Fact]
+    public async Task InternalRepBaseDocuments_Detail_RepeatedGet_DoesNotMutatePersistedOperationalState()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-REP-NO-WRITE-DETAIL-1001", uuid: "UUID-REP-NO-WRITE-DETAIL-1001");
+        await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId);
+
+        var seededState = new InternalRepBaseDocumentState
+        {
+            FiscalDocumentId = fiscalDocumentId,
+            LastEligibilityEvaluatedAtUtc = new DateTime(2026, 4, 2, 8, 0, 0, DateTimeKind.Utc),
+            LastEligibilityStatus = "Stale",
+            LastPrimaryReasonCode = "STALE_CODE",
+            LastPrimaryReasonMessage = "stale message",
+            RepPendingFlag = false,
+            LastRepIssuedAtUtc = new DateTime(2026, 4, 2, 9, 0, 0, DateTimeKind.Utc),
+            RepCount = 3,
+            TotalPaidApplied = 99m,
+            CreatedAtUtc = new DateTime(2026, 4, 2, 7, 0, 0, DateTimeKind.Utc),
+            UpdatedAtUtc = new DateTime(2026, 4, 2, 10, 0, 0, DateTimeKind.Utc)
+        };
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+            dbContext.InternalRepBaseDocumentStates.Add(seededState);
+            await dbContext.SaveChangesAsync();
+        }
+
+        var firstResponse = await client.GetAsync($"/api/payment-complements/base-documents/internal/{fiscalDocumentId}");
+        Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
+        using var firstJson = await JsonDocument.ParseAsync(await firstResponse.Content.ReadAsStreamAsync());
+        var firstSummary = firstJson.RootElement.GetProperty("summary");
+        var firstEligibility = firstSummary.GetProperty("eligibility");
+        var firstOperationalState = firstJson.RootElement.GetProperty("operationalState");
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+            var persistedAfterFirst = await dbContext.InternalRepBaseDocumentStates.SingleAsync(x => x.FiscalDocumentId == fiscalDocumentId);
+            Assert.Equal(1, await dbContext.InternalRepBaseDocumentStates.CountAsync());
+            Assert.Equal(seededState.LastEligibilityEvaluatedAtUtc, persistedAfterFirst.LastEligibilityEvaluatedAtUtc);
+            Assert.Equal(seededState.LastEligibilityStatus, persistedAfterFirst.LastEligibilityStatus);
+            Assert.Equal(seededState.LastPrimaryReasonCode, persistedAfterFirst.LastPrimaryReasonCode);
+            Assert.Equal(seededState.LastPrimaryReasonMessage, persistedAfterFirst.LastPrimaryReasonMessage);
+            Assert.Equal(seededState.RepPendingFlag, persistedAfterFirst.RepPendingFlag);
+            Assert.Equal(seededState.LastRepIssuedAtUtc, persistedAfterFirst.LastRepIssuedAtUtc);
+            Assert.Equal(seededState.RepCount, persistedAfterFirst.RepCount);
+            Assert.Equal(seededState.TotalPaidApplied, persistedAfterFirst.TotalPaidApplied);
+            Assert.Equal(seededState.CreatedAtUtc, persistedAfterFirst.CreatedAtUtc);
+            Assert.Equal(seededState.UpdatedAtUtc, persistedAfterFirst.UpdatedAtUtc);
+        }
+
+        var secondResponse = await client.GetAsync($"/api/payment-complements/base-documents/internal/{fiscalDocumentId}");
+        Assert.Equal(HttpStatusCode.OK, secondResponse.StatusCode);
+        using var secondJson = await JsonDocument.ParseAsync(await secondResponse.Content.ReadAsStreamAsync());
+        var secondSummary = secondJson.RootElement.GetProperty("summary");
+        var secondEligibility = secondSummary.GetProperty("eligibility");
+        var secondOperationalState = secondJson.RootElement.GetProperty("operationalState");
+
+        Assert.Equal(firstSummary.GetProperty("repOperationalStatus").GetString(), secondSummary.GetProperty("repOperationalStatus").GetString());
+        Assert.Equal(firstSummary.GetProperty("isEligible").GetBoolean(), secondSummary.GetProperty("isEligible").GetBoolean());
+        Assert.Equal(firstSummary.GetProperty("isBlocked").GetBoolean(), secondSummary.GetProperty("isBlocked").GetBoolean());
+        Assert.Equal(firstEligibility.GetProperty("primaryReasonCode").GetString(), secondEligibility.GetProperty("primaryReasonCode").GetString());
+        Assert.Equal(firstEligibility.GetProperty("primaryReasonMessage").GetString(), secondEligibility.GetProperty("primaryReasonMessage").GetString());
+        Assert.Equal(firstOperationalState.GetProperty("lastEligibilityStatus").GetString(), secondOperationalState.GetProperty("lastEligibilityStatus").GetString());
+        Assert.Equal(firstOperationalState.GetProperty("lastPrimaryReasonCode").GetString(), secondOperationalState.GetProperty("lastPrimaryReasonCode").GetString());
+        Assert.Equal(firstOperationalState.GetProperty("repPendingFlag").GetBoolean(), secondOperationalState.GetProperty("repPendingFlag").GetBoolean());
+        Assert.Equal(firstOperationalState.GetProperty("repCount").GetInt32(), secondOperationalState.GetProperty("repCount").GetInt32());
+        Assert.Equal(firstOperationalState.GetProperty("totalPaidApplied").GetDecimal(), secondOperationalState.GetProperty("totalPaidApplied").GetDecimal());
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+            var persistedAfterSecond = await dbContext.InternalRepBaseDocumentStates.SingleAsync(x => x.FiscalDocumentId == fiscalDocumentId);
+            Assert.Equal(1, await dbContext.InternalRepBaseDocumentStates.CountAsync());
+            Assert.Equal(seededState.LastEligibilityEvaluatedAtUtc, persistedAfterSecond.LastEligibilityEvaluatedAtUtc);
+            Assert.Equal(seededState.LastEligibilityStatus, persistedAfterSecond.LastEligibilityStatus);
+            Assert.Equal(seededState.LastPrimaryReasonCode, persistedAfterSecond.LastPrimaryReasonCode);
+            Assert.Equal(seededState.LastPrimaryReasonMessage, persistedAfterSecond.LastPrimaryReasonMessage);
+            Assert.Equal(seededState.RepPendingFlag, persistedAfterSecond.RepPendingFlag);
+            Assert.Equal(seededState.LastRepIssuedAtUtc, persistedAfterSecond.LastRepIssuedAtUtc);
+            Assert.Equal(seededState.RepCount, persistedAfterSecond.RepCount);
+            Assert.Equal(seededState.TotalPaidApplied, persistedAfterSecond.TotalPaidApplied);
+            Assert.Equal(seededState.CreatedAtUtc, persistedAfterSecond.CreatedAtUtc);
+            Assert.Equal(seededState.UpdatedAtUtc, persistedAfterSecond.UpdatedAtUtc);
+        }
     }
 
     [Fact]
@@ -3705,6 +4360,8 @@ public class MvpLifecycleApiTests
 internal sealed class MvpApiFactory : WebApplicationFactory<Program>, IAsyncDisposable
 {
     private readonly string _databaseName = $"mvp-api-tests-{Guid.NewGuid():N}";
+    private readonly IReadOnlyDictionary<string, string?> _configurationOverrides;
+    private readonly string _environmentName;
 
     public FakeLegacyOrderReader LegacyOrderReader { get; } = new();
     public FakeFiscalStampingGateway FiscalStampingGateway { get; } = new();
@@ -3713,16 +4370,24 @@ internal sealed class MvpApiFactory : WebApplicationFactory<Program>, IAsyncDisp
     public FakePaymentComplementStampingGateway PaymentComplementStampingGateway { get; } = new();
     public FakePaymentComplementCancellationGateway PaymentComplementCancellationGateway { get; } = new();
     public FakePaymentComplementStatusQueryGateway PaymentComplementStatusQueryGateway { get; } = new();
+    public FakeEmailSender EmailSender { get; } = new();
+    public FakeFiscalDocumentPdfRenderer FiscalDocumentPdfRenderer { get; } = new();
+
+    public MvpApiFactory(IReadOnlyDictionary<string, string?>? configurationOverrides = null, bool useTestingEnvironment = false)
+    {
+        _configurationOverrides = configurationOverrides ?? new Dictionary<string, string?>();
+        _environmentName = useTestingEnvironment ? "Testing" : "Development";
+    }
 
     protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
     {
-        builder.UseEnvironment("Development");
+        builder.UseEnvironment(_environmentName);
         builder.ConfigureAppConfiguration((_, config) =>
         {
-            config.AddInMemoryCollection(new Dictionary<string, string?>
+            var settings = new Dictionary<string, string?>
             {
                 ["LegacyRead:ConnectionString"] = "Server=localhost;Database=test;User ID=test;Password=test;",
-                ["BillingWrite:ConnectionString"] = "Server=localhost;Database=test;User ID=test;Password=test;",
+                ["ConnectionStrings:BillingWrite"] = "Server=localhost;Database=test;User ID=test;Password=test;",
                 ["FacturaloPlus:BaseUrl"] = "https://facturaloplus-placeholder.local/",
                 ["FacturaloPlus:StampPath"] = "/cfdi/stamp",
                 ["FacturaloPlus:PaymentComplementStampPath"] = "timbrarJSON3",
@@ -3744,7 +4409,14 @@ internal sealed class MvpApiFactory : WebApplicationFactory<Program>, IAsyncDisp
                 ["Auth:BootstrapAdmin:Username"] = "admin",
                 ["Auth:BootstrapAdmin:DisplayName"] = "Bootstrap Admin",
                 ["Auth:BootstrapAdmin:Password"] = "Admin123!"
-            });
+            };
+
+            foreach (var pair in _configurationOverrides)
+            {
+                settings[pair.Key] = pair.Value;
+            }
+
+            config.AddInMemoryCollection(settings);
         });
 
         builder.ConfigureServices(services =>
@@ -3762,6 +4434,8 @@ internal sealed class MvpApiFactory : WebApplicationFactory<Program>, IAsyncDisp
             services.RemoveAll<IPaymentComplementStampingGateway>();
             services.RemoveAll<IPaymentComplementCancellationGateway>();
             services.RemoveAll<IPaymentComplementStatusQueryGateway>();
+            services.RemoveAll<IEmailSender>();
+            services.RemoveAll<IFiscalDocumentPdfRenderer>();
 
             services.AddSingleton<ILegacyOrderReader>(LegacyOrderReader);
             services.AddSingleton<IFiscalStampingGateway>(FiscalStampingGateway);
@@ -3770,6 +4444,8 @@ internal sealed class MvpApiFactory : WebApplicationFactory<Program>, IAsyncDisp
             services.AddSingleton<IPaymentComplementStampingGateway>(PaymentComplementStampingGateway);
             services.AddSingleton<IPaymentComplementCancellationGateway>(PaymentComplementCancellationGateway);
             services.AddSingleton<IPaymentComplementStatusQueryGateway>(PaymentComplementStatusQueryGateway);
+            services.AddSingleton<IEmailSender>(EmailSender);
+            services.AddSingleton<IFiscalDocumentPdfRenderer>(FiscalDocumentPdfRenderer);
         });
     }
 
@@ -4051,6 +4727,8 @@ internal sealed class FakeLegacyOrderReader : ILegacyOrderReader
     {
         var filtered = SearchResults
             .Where(x => x.OrderDateUtc >= search.FromDateUtc && x.OrderDateUtc < search.ToDateUtcExclusive)
+            .Where(x => string.IsNullOrWhiteSpace(search.LegacyOrderId) || string.Equals(x.LegacyOrderId, search.LegacyOrderId, StringComparison.Ordinal))
+            .Where(x => string.IsNullOrWhiteSpace(search.CustomerQuery) || x.CustomerName.Contains(search.CustomerQuery, StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(x => x.OrderDateUtc)
             .ThenByDescending(x => x.LegacyOrderId)
             .ToArray();
@@ -4199,4 +4877,23 @@ internal sealed class FakePaymentComplementStatusQueryGateway : IPaymentCompleme
 
     public Task<PaymentComplementStatusQueryGatewayResult> QueryStatusAsync(PaymentComplementStatusQueryRequest request, CancellationToken cancellationToken = default)
         => Task.FromResult(ResponseFactory(request));
+}
+
+internal sealed class FakeEmailSender : IEmailSender
+{
+    public List<EmailMessage> SentMessages { get; } = [];
+
+    public Task SendAsync(EmailMessage message, CancellationToken cancellationToken = default)
+    {
+        SentMessages.Add(message);
+        return Task.CompletedTask;
+    }
+}
+
+internal sealed class FakeFiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
+{
+    public Task<byte[]> RenderAsync(FiscalDocument fiscalDocument, FiscalStamp fiscalStamp, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult("PDF-CONTENT"u8.ToArray());
+    }
 }

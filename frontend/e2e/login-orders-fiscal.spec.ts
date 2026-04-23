@@ -20,6 +20,8 @@ test('login then import order then create billing then open fiscal preparation',
   await expect(page.getByRole('button', { name: 'BBB010101BBB Receiver One Código postal 02000' })).toBeVisible();
   await page.getByRole('button', { name: 'BBB010101BBB Receiver One Código postal 02000' }).click();
   await expect(page.getByText('Receptor seleccionado')).toBeVisible();
+  await page.locator('select[name="paymentMethodSat"]').selectOption('PPD');
+  await expect(page.getByRole('button', { name: 'Preparar documento fiscal' })).toBeEnabled();
   await page.getByRole('button', { name: 'Preparar documento fiscal' }).click();
   await expect(page.getByText('Documento fiscal #40')).toBeVisible();
 });

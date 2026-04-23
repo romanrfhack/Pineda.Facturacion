@@ -35,6 +35,21 @@ public sealed class ExternalRepBaseDocumentRepository : IExternalRepBaseDocument
             .FirstOrDefaultAsync(x => x.Uuid == uuid, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<ExternalRepBaseDocument>> GetByIdsAsync(
+        IReadOnlyCollection<long> ids,
+        CancellationToken cancellationToken = default)
+    {
+        if (ids.Count == 0)
+        {
+            return [];
+        }
+
+        return await _dbContext.ExternalRepBaseDocuments
+            .AsNoTracking()
+            .Where(x => ids.Contains(x.Id))
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<ExternalRepBaseDocument>> SearchAsync(
         SearchExternalRepBaseDocumentsDataFilter filter,
         CancellationToken cancellationToken = default)
@@ -134,18 +149,23 @@ public sealed class ExternalRepBaseDocumentRepository : IExternalRepBaseDocument
             var paymentIds = paymentRows
                 .Select(x => x.PaymentId)
                 .Distinct()
-                .ToArray();
-            var paymentIdSet = paymentIds.ToHashSet();
+                .ToList();
+            var hasPayments = paymentIds.Count > 0;
 
-            var appliedTotalsByPayment = paymentIdSet.Count == 0
+            var appliedTotalsByPayment = !hasPayments
                 ? new Dictionary<long, decimal>()
-                : (await _dbContext.AccountsReceivablePaymentApplications.AsNoTracking()
-                    .ToListAsync(cancellationToken))
-                    .Where(x => paymentIdSet.Contains(x.AccountsReceivablePaymentId))
+                : await _dbContext.AccountsReceivablePaymentApplications
+                    .AsNoTracking()
+                    .Where(x => paymentIds.Contains(x.AccountsReceivablePaymentId))
                     .GroupBy(x => x.AccountsReceivablePaymentId)
-                    .ToDictionary(x => x.Key, x => x.Sum(y => y.AppliedAmount));
+                    .Select(x => new
+                    {
+                        PaymentId = x.Key,
+                        AppliedTotal = x.Sum(y => y.AppliedAmount)
+                    })
+                    .ToDictionaryAsync(x => x.PaymentId, x => x.AppliedTotal, cancellationToken);
 
-            var paymentComplementsByPayment = paymentIdSet.Count == 0
+            var paymentComplementsByPayment = !hasPayments
                 ? new Dictionary<long, ComplementLink>()
                 : (await (
                     from document in _dbContext.PaymentComplementDocuments.AsNoTracking()

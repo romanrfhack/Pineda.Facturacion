@@ -33,13 +33,15 @@ public static class AuthEndpoints
 
     private static async Task<Results<Ok<LoginResponse>, BadRequest<LoginResponse>, UnauthorizedHttpResult>> LoginAsync(
         LoginRequest request,
+        HttpContext httpContext,
         LoginService service,
         CancellationToken cancellationToken)
     {
         var result = await service.ExecuteAsync(new LoginCommand
         {
             Username = request.Username,
-            Password = request.Password
+            Password = request.Password,
+            ClientIpAddress = httpContext.Connection.RemoteIpAddress?.ToString()
         }, cancellationToken);
 
         var response = new LoginResponse

@@ -1,23 +1,40 @@
-import { ChangeDetectionStrategy, Component, OnChanges, inject, input, output, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  OnChanges,
+  OnDestroy,
+  inject,
+  input,
+  output,
+  signal,
+} from '@angular/core';
+import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
-import { ProductFiscalProfile, SatProductServiceSearchItem, UpsertProductFiscalProfileRequest } from '../models/catalogs.models';
+import {
+  ProductFiscalProfile,
+  ProductFiscalProfileRecoverySuggestion,
+  SatProductServiceSearchItem,
+  UpsertProductFiscalProfileRequest,
+} from '../models/catalogs.models';
 import { SatProductServicesApiService } from '../infrastructure/sat-product-services-api.service';
 
 @Component({
   selector: 'app-product-fiscal-profile-form',
-  imports: [FormsModule],
+  imports: [DecimalPipe, FormsModule],
   template: `
     <form class="form-grid" (ngSubmit)="submitForm()">
-      <label>
-        <span>Código interno</span>
-        <input [(ngModel)]="draft.internalCode" name="internalCode" required />
-      </label>
+      @if (showIdentityFields()) {
+        <label>
+          <span>Código interno</span>
+          <input [(ngModel)]="draft.internalCode" name="internalCode" required />
+        </label>
 
-      <label>
-        <span>Descripción</span>
-        <input [(ngModel)]="draft.description" name="description" required />
-      </label>
+        <label>
+          <span>Descripción</span>
+          <input [(ngModel)]="draft.description" name="description" required />
+        </label>
+      }
 
       <section class="sat-search-card">
         <div class="sat-search-header">
@@ -37,11 +54,48 @@ import { SatProductServicesApiService } from '../infrastructure/sat-product-serv
               </button>
             }
 
-            <button type="button" class="secondary small" (click)="useGenericFallback()" [disabled]="readOnly() || submitting()">
-              Usar 01010101 explícitamente
-            </button>
+            @if (allowExplicitGeneric()) {
+              <button type="button" class="secondary small" (click)="useGenericFallback()" [disabled]="readOnly() || submitting()">
+                Usar 01010101 explícitamente
+              </button>
+            }
           </div>
         </div>
+
+        @if (recoverySuggestions().length) {
+          <section class="recovery-suggestions">
+            <div>
+              <span class="label-title">Sugerencias determinísticas</span>
+              <small class="helper">
+                Sólo se preseleccionan automáticamente opciones exactas o históricas. Las coincidencias por descripción requieren confirmación explícita.
+              </small>
+            </div>
+
+            <ul>
+              @for (suggestion of recoverySuggestions(); track suggestion.satProductServiceCode + '-' + suggestion.source) {
+                <li>
+                  <button
+                    type="button"
+                    class="suggestion-button"
+                    (click)="applyRecoverySuggestion(suggestion)"
+                    [disabled]="readOnly() || submitting()"
+                  >
+                    <strong>{{ suggestion.satProductServiceCode }}</strong>
+                    <span>{{ suggestion.satProductServiceDescription || 'Sin descripción resuelta' }}</span>
+                    <small>
+                      {{ suggestion.reason }}
+                      · score {{ suggestion.score | number:'1.2-2' }}
+                      · fuente {{ suggestion.source }}
+                      @if (suggestion.requiresExplicitConfirmation) {
+                        · requiere confirmación
+                      }
+                    </small>
+                  </button>
+                </li>
+              }
+            </ul>
+          </section>
+        }
 
         @if (!manualSatEntry()) {
           <label>
@@ -53,12 +107,15 @@ import { SatProductServicesApiService } from '../infrastructure/sat-product-serv
               autocomplete="off"
               placeholder="Ej. 40161513 o filtro de aceite"
             />
+            <small class="helper">Busca con al menos 3 caracteres. La consulta se dispara con un debounce corto.</small>
           </label>
 
           @if (showSatProductSuggestions()) {
             <section class="suggestions" aria-label="Sugerencias SAT de producto o servicio">
               @if (searchingSatProductServices()) {
                 <p class="helper">Buscando catálogo SAT...</p>
+              } @else if (satProductSearchQuery().trim().length > 0 && satProductSearchQuery().trim().length < minSearchChars) {
+                <p class="helper">Captura al menos {{ minSearchChars }} caracteres para consultar el catálogo SAT local.</p>
               } @else if (satProductSearchError()) {
                 <p class="error">{{ satProductSearchError() }}</p>
               } @else if (!satProductServiceResults().length) {
@@ -68,9 +125,14 @@ import { SatProductServicesApiService } from '../infrastructure/sat-product-serv
                   @for (option of satProductServiceResults(); track option.code) {
                     <li>
                       <button type="button" class="suggestion-button" (click)="selectSatProductService(option)">
-                        <strong>{{ option.code }}</strong>
+                            <strong>{{ option.code }}</strong>
                         <span>{{ option.description }}</span>
-                        <small>Coincidencia {{ option.matchKind }}</small>
+                        <small>
+                          Coincidencia {{ option.matchKind }}
+                          @if (option.score != null) {
+                            · score {{ option.score | number:'1.2-2' }}
+                          }
+                        </small>
                       </button>
                     </li>
                   }
@@ -107,7 +169,9 @@ import { SatProductServicesApiService } from '../infrastructure/sat-product-serv
           <p class="warning">Modo manual activo. Usa esta opción solo cuando no puedas resolver el código con la búsqueda asistida.</p>
         }
 
-        <p class="helper">El código genérico 01010101 ya no se asigna automáticamente; debes elegirlo de forma explícita.</p>
+        @if (allowExplicitGeneric()) {
+          <p class="helper">El código genérico 01010101 ya no se asigna automáticamente; debes elegirlo de forma explícita.</p>
+        }
         @if (satProductValidationMessage()) {
           <p class="error">{{ satProductValidationMessage() }}</p>
         }
@@ -129,14 +193,16 @@ import { SatProductServicesApiService } from '../infrastructure/sat-product-serv
       </label>
 
       <label>
-        <span>Texto de unidad predeterminado</span>
+        <span>{{ unitTextLabel() }}</span>
         <input [(ngModel)]="draft.defaultUnitText" name="defaultUnitText" />
       </label>
 
-      <label class="checkbox">
-        <input [(ngModel)]="draft.isActive" name="isActive" type="checkbox" />
-        <span>Activo</span>
-      </label>
+      @if (showActiveField()) {
+        <label class="checkbox">
+          <input [(ngModel)]="draft.isActive" name="isActive" type="checkbox" />
+          <span>Activo</span>
+        </label>
+      }
 
       @if (errorMessage()) {
         <p class="error">{{ errorMessage() }}</p>
@@ -156,6 +222,8 @@ import { SatProductServicesApiService } from '../infrastructure/sat-product-serv
     .label-title { display:block; font-weight:600; }
     .suggestions { border:1px solid #d8d1c2; border-radius:0.8rem; background:#fff; padding:0.5rem; }
     .suggestions ul { list-style:none; margin:0; padding:0; display:grid; gap:0.35rem; }
+    .recovery-suggestions { display:grid; gap:0.75rem; border:1px solid #e6dcc7; border-radius:0.85rem; background:#fffdf8; padding:0.85rem; }
+    .recovery-suggestions ul { list-style:none; margin:0; padding:0; display:grid; gap:0.35rem; }
     .suggestion-button { width:100%; text-align:left; border:1px solid #ece5d7; border-radius:0.75rem; background:#fff; color:#182533; padding:0.75rem; display:grid; gap:0.2rem; }
     .selected-sat-product { margin:0; display:grid; gap:0.15rem; color:#243240; }
     .warning { margin:0; color:#8a5a00; }
@@ -170,15 +238,21 @@ import { SatProductServicesApiService } from '../infrastructure/sat-product-serv
   `],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class ProductFiscalProfileFormComponent implements OnChanges {
+export class ProductFiscalProfileFormComponent implements OnChanges, OnDestroy {
+  private static readonly searchDebounceMs = 350;
   private readonly satProductServicesApi = inject(SatProductServicesApiService);
 
   readonly profile = input<ProductFiscalProfile | null>(null);
   readonly initialValue = input<UpsertProductFiscalProfileRequest | null>(null);
+  readonly recoverySuggestions = input<ProductFiscalProfileRecoverySuggestion[]>([]);
   readonly submitLabel = input('Guardar perfil fiscal de producto');
   readonly readOnly = input(false);
   readonly submitting = input(false);
   readonly errorMessage = input<string | null>(null);
+  readonly allowExplicitGeneric = input(true);
+  readonly showIdentityFields = input(true);
+  readonly showActiveField = input(true);
+  readonly unitTextLabel = input('Texto de unidad predeterminado');
   readonly submitted = output<UpsertProductFiscalProfileRequest>();
 
   protected draft: UpsertProductFiscalProfileRequest = emptyProductProfile();
@@ -190,8 +264,15 @@ export class ProductFiscalProfileFormComponent implements OnChanges {
   protected readonly manualSatEntry = signal(false);
   protected readonly selectedSatProductService = signal<SatProductServiceSearchItem | null>(null);
   protected readonly satProductValidationMessage = signal<string | null>(null);
+  protected readonly minSearchChars = 3;
   private lastProfileSignature: string | null = null;
   private lastInitialValueSignature: string | null = null;
+  private satProductSearchDebounceHandle: ReturnType<typeof setTimeout> | null = null;
+  private satProductSearchToken = 0;
+
+  ngOnDestroy(): void {
+    this.clearSatProductSearchDebounce();
+  }
 
   ngOnChanges(): void {
     const profile = this.profile();
@@ -204,6 +285,7 @@ export class ProductFiscalProfileFormComponent implements OnChanges {
 
     this.lastProfileSignature = profileSignature;
     this.lastInitialValueSignature = initialValueSignature;
+    this.clearSatProductSearchDebounce();
     this.draft = profile
       ? {
           internalCode: profile.internalCode,
@@ -250,10 +332,12 @@ export class ProductFiscalProfileFormComponent implements OnChanges {
     });
   }
 
-  protected async onSatProductSearchChange(value: string): Promise<void> {
+  protected onSatProductSearchChange(value: string): void {
     this.satProductSearchQuery.set(value);
     this.satProductSearchError.set(null);
     this.selectedSatProductService.set(null);
+    this.clearSatProductSearchDebounce();
+    this.satProductSearchToken += 1;
     this.draft = {
       ...this.draft,
       satProductServiceCode: ''
@@ -261,27 +345,42 @@ export class ProductFiscalProfileFormComponent implements OnChanges {
     this.syncSatProductValidation(false);
 
     const query = value.trim();
-    if (query.length < 2) {
+    if (query.length < this.minSearchChars) {
+      this.searchingSatProductServices.set(false);
       this.satProductServiceResults.set([]);
-      this.showSatProductSuggestions.set(false);
+      this.showSatProductSuggestions.set(query.length > 0);
       return;
     }
 
-    this.searchingSatProductServices.set(true);
     this.showSatProductSuggestions.set(true);
+    const searchToken = this.satProductSearchToken;
+    this.satProductSearchDebounceHandle = setTimeout(async () => {
+      this.searchingSatProductServices.set(true);
 
-    try {
-      const results = await firstValueFrom(this.satProductServicesApi.search(query, 8));
-      this.satProductServiceResults.set(results);
-    } catch {
-      this.satProductServiceResults.set([]);
-      this.satProductSearchError.set('No fue posible consultar el catálogo SAT local.');
-    } finally {
-      this.searchingSatProductServices.set(false);
-    }
+      try {
+        const results = await firstValueFrom(this.satProductServicesApi.searchBestEffort(query, 12));
+        if (searchToken !== this.satProductSearchToken) {
+          return;
+        }
+
+        this.satProductServiceResults.set(results);
+      } catch {
+        if (searchToken !== this.satProductSearchToken) {
+          return;
+        }
+
+        this.satProductServiceResults.set([]);
+        this.satProductSearchError.set('No fue posible consultar el catálogo SAT local.');
+      } finally {
+        if (searchToken === this.satProductSearchToken) {
+          this.searchingSatProductServices.set(false);
+        }
+      }
+    }, ProductFiscalProfileFormComponent.searchDebounceMs);
   }
 
   protected selectSatProductService(option: SatProductServiceSearchItem): void {
+    this.clearSatProductSearchDebounce();
     this.draft = {
       ...this.draft,
       satProductServiceCode: option.code
@@ -294,7 +393,29 @@ export class ProductFiscalProfileFormComponent implements OnChanges {
     this.syncSatProductValidation(false);
   }
 
+  protected applyRecoverySuggestion(suggestion: ProductFiscalProfileRecoverySuggestion): void {
+    this.draft = {
+      ...this.draft,
+      satProductServiceCode: suggestion.satProductServiceCode,
+      satUnitCode: suggestion.satUnitCode,
+      taxObjectCode: suggestion.taxObjectCode,
+      vatRate: suggestion.vatRate,
+      defaultUnitText: suggestion.defaultUnitText || suggestion.satUnitDescription || this.draft.defaultUnitText,
+    };
+    this.selectSatProductService({
+      code: suggestion.satProductServiceCode,
+      description: suggestion.satProductServiceDescription || 'Sugerencia aplicada',
+      displayText: buildDisplayText(
+        suggestion.satProductServiceCode,
+        suggestion.satProductServiceDescription || undefined,
+      ),
+      matchKind: suggestion.matchKind,
+      score: suggestion.score,
+    });
+  }
+
   protected enableManualSatEntry(): void {
+    this.clearSatProductSearchDebounce();
     this.manualSatEntry.set(true);
     this.showSatProductSuggestions.set(false);
   }
@@ -330,6 +451,19 @@ export class ProductFiscalProfileFormComponent implements OnChanges {
     const code = this.draft.satProductServiceCode.trim();
     if (!code) {
       return null;
+    }
+
+    const recoverySuggestion = this.recoverySuggestions().find(
+      (suggestion) => suggestion.satProductServiceCode === code,
+    );
+    if (recoverySuggestion) {
+      return {
+        code,
+        description: recoverySuggestion.satProductServiceDescription || 'Código SAT sugerido',
+        displayText: buildDisplayText(code, recoverySuggestion.satProductServiceDescription || undefined),
+        matchKind: recoverySuggestion.matchKind,
+        score: recoverySuggestion.score,
+      };
     }
 
     if (code === '01010101') {
@@ -368,6 +502,13 @@ export class ProductFiscalProfileFormComponent implements OnChanges {
       this.satProductValidationMessage.set('Debes seleccionar o capturar un producto/servicio SAT antes de guardar.');
     }
   }
+
+  private clearSatProductSearchDebounce(): void {
+    if (this.satProductSearchDebounceHandle) {
+      clearTimeout(this.satProductSearchDebounceHandle);
+      this.satProductSearchDebounceHandle = null;
+    }
+  }
 }
 
 function emptyProductProfile(): UpsertProductFiscalProfileRequest {
@@ -381,4 +522,8 @@ function emptyProductProfile(): UpsertProductFiscalProfileRequest {
     defaultUnitText: '',
     isActive: true
   };
+}
+
+function buildDisplayText(code: string, description?: string): string {
+  return description?.trim() ? `${code} — ${description.trim()}` : code;
 }

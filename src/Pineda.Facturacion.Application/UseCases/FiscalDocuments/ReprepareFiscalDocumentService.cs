@@ -83,7 +83,8 @@ public sealed class ReprepareFiscalDocumentService
             };
         }
 
-        if (billingDocument.Status != BillingDocumentStatus.Draft)
+        var mutationLockReason = BillingDocumentMutationPolicy.GetMutationLockReason(billingDocument, fiscalDocument);
+        if (mutationLockReason is not null)
         {
             return new ReprepareFiscalDocumentResult
             {
@@ -92,7 +93,7 @@ public sealed class ReprepareFiscalDocumentService
                 FiscalDocumentId = fiscalDocument.Id,
                 BillingDocumentId = billingDocument.Id,
                 FiscalDocumentStatus = fiscalDocument.Status,
-                ErrorMessage = $"Billing document '{billingDocument.Id}' is in protected state '{billingDocument.Status}'."
+                ErrorMessage = mutationLockReason
             };
         }
 

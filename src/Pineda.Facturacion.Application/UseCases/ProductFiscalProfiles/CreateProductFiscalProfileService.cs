@@ -8,11 +8,33 @@ public class CreateProductFiscalProfileService
 {
     private readonly IProductFiscalProfileRepository _productFiscalProfileRepository;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly ProductFiscalProfileSatCatalogValidation _satCatalogValidation;
 
     public CreateProductFiscalProfileService(IProductFiscalProfileRepository productFiscalProfileRepository, IUnitOfWork unitOfWork)
+        : this(productFiscalProfileRepository, unitOfWork, new ProductFiscalProfileSatCatalogValidation())
+    {
+    }
+
+    public CreateProductFiscalProfileService(
+        IProductFiscalProfileRepository productFiscalProfileRepository,
+        IUnitOfWork unitOfWork,
+        ISatProductServiceCatalogRepository satProductServiceCatalogRepository,
+        ISatClaveUnidadRepository satClaveUnidadRepository)
+        : this(
+            productFiscalProfileRepository,
+            unitOfWork,
+            new ProductFiscalProfileSatCatalogValidation(satProductServiceCatalogRepository, satClaveUnidadRepository))
+    {
+    }
+
+    private CreateProductFiscalProfileService(
+        IProductFiscalProfileRepository productFiscalProfileRepository,
+        IUnitOfWork unitOfWork,
+        ProductFiscalProfileSatCatalogValidation satCatalogValidation)
     {
         _productFiscalProfileRepository = productFiscalProfileRepository;
         _unitOfWork = unitOfWork;
+        _satCatalogValidation = satCatalogValidation;
     }
 
     public async Task<CreateProductFiscalProfileResult> ExecuteAsync(CreateProductFiscalProfileCommand command, CancellationToken cancellationToken = default)
@@ -25,6 +47,21 @@ public class CreateProductFiscalProfileService
                 Outcome = CreateProductFiscalProfileOutcome.ValidationFailed,
                 IsSuccess = false,
                 ErrorMessage = validationError
+            };
+        }
+
+        var satCatalogValidationError = await _satCatalogValidation.ValidateAsync(
+            command.SatProductServiceCode,
+            command.SatUnitCode,
+            command.TaxObjectCode,
+            cancellationToken);
+        if (satCatalogValidationError is not null)
+        {
+            return new CreateProductFiscalProfileResult
+            {
+                Outcome = CreateProductFiscalProfileOutcome.ValidationFailed,
+                IsSuccess = false,
+                ErrorMessage = satCatalogValidationError
             };
         }
 

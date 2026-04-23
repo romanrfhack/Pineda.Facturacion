@@ -330,7 +330,9 @@ public static class ProductFiscalProfilesEndpoints
             Source = item.Source,
             Confidence = item.Confidence,
             Score = item.Score,
-            IsActive = item.IsActive
+            IsActive = item.IsActive,
+            Reason = item.Reason,
+            RequiresExplicitConfirmation = item.RequiresExplicitConfirmation
         };
     }
 
@@ -435,5 +437,9 @@ public static class ProductFiscalProfilesEndpoints
         public decimal Score { get; init; }
 
         public bool IsActive { get; init; }
+
+        public string Reason { get; init; } = string.Empty;
+
+        public bool RequiresExplicitConfirmation { get; init; }
     }
 }

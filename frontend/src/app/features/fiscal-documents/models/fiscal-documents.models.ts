@@ -1,3 +1,5 @@
+import { ProductFiscalProfileRecoverySuggestion } from '../../catalogs/models/catalogs.models';
+
 export interface IssuerProfileResponse {
   id: number;
   legalName: string;
@@ -61,6 +63,18 @@ export interface BillingDocumentAssociatedOrderResponse {
   customerName: string;
   total: number;
   isPrimary: boolean;
+}
+
+export interface CancelBillingDocumentResponse {
+  outcome: string;
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  billingDocumentId: number;
+  billingDocumentStatus?: string | null;
+  fiscalDocumentId?: number | null;
+  fiscalDocumentStatus?: string | null;
+  releasedOrderLinkCount: number;
+  releasedPendingAssignmentCount: number;
 }
 
 export interface BillingDocumentRemovedItemTraceResponse {
@@ -183,6 +197,29 @@ export interface PrepareFiscalDocumentResponse {
   billingDocumentId: number;
   fiscalDocumentId?: number | null;
   status?: string | null;
+  missingProductFiscalProfile?: MissingProductFiscalProfileResponse | null;
+}
+
+export interface MissingProductFiscalProfileResponse {
+  billingDocumentItemId?: number | null;
+  lineNumber?: number | null;
+  internalCode?: string | null;
+  description: string;
+  existingProfileStatus: 'Active' | 'Inactive' | 'None' | string;
+  existingProductFiscalProfileId?: number | null;
+  canUseExplicitGeneric: boolean;
+  prefill: MissingProductFiscalProfilePrefillResponse;
+  suggestions?: ProductFiscalProfileRecoverySuggestion[] | null;
+}
+
+export interface MissingProductFiscalProfilePrefillResponse {
+  satProductServiceCode: string;
+  satUnitCode: string;
+  taxObjectCode: string;
+  vatRate: number;
+  defaultUnitText?: string | null;
+  isActive: boolean;
+  requiresExplicitProductServiceConfirmation: boolean;
 }
 
 export interface UpdateBillingDocumentOrderAssociationResponse {
@@ -365,6 +402,24 @@ export interface ReprepareFiscalDocumentResponse {
   fiscalDocumentId: number;
   billingDocumentId?: number | null;
   fiscalDocumentStatus?: string | null;
+}
+
+export interface UpdateFiscalDocumentItemFiscalProfileRequest {
+  satProductServiceCode: string;
+  satUnitCode: string;
+  taxObjectCode: string;
+  vatRate: number;
+  unitText?: string | null;
+}
+
+export interface UpdateFiscalDocumentItemFiscalProfileResponse {
+  outcome: string;
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  fiscalDocumentId: number;
+  fiscalDocumentItemId: number;
+  fiscalDocumentStatus?: string | null;
+  item?: FiscalDocumentItemResponse | null;
 }
 
 export interface SyncFiscalDocumentSpecialFieldsResponse {

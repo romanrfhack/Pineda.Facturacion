@@ -19,6 +19,7 @@ import {
   CancelFiscalDocumentRequest,
   FiscalCancellationResponse,
   FiscalDocumentResponse,
+  FiscalDocumentItemResponse,
   FiscalDocumentEmailDraftResponse,
   FiscalReceiverSearchResponse,
   FiscalStampResponse,
@@ -187,6 +188,16 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
                   (click)="openExistingFiscalDocument(currentBillingDocument)"
                 >
                   Abrir documento fiscal existente
+                </button>
+              }
+              @if (permissionService.canCancelFiscal()) {
+                <button
+                  type="button"
+                  class="danger"
+                  (click)="openCancelBillingDocumentDialog()"
+                  [disabled]="loadingOperation() || !canCancelCurrentBillingDocument()"
+                >
+                  Cancelar documento
                 </button>
               }
               <button type="button" class="secondary" (click)="clearBillingDocumentSelection()">
@@ -508,13 +519,19 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
         }
       </section>
 
-      @if (!fiscalDocument() && billingDocumentContext()) {
+      @if (!fiscalDocument() && billingDocumentContext(); as currentBillingDocument) {
         <section class="card">
           <h3>Preparar documento fiscal</h3>
           <p class="helper">
             Id de documento de facturación: <strong>{{ billingDocumentId() }}</strong>
           </p>
 
+          @if (currentBillingDocument.status === 'Cancelled') {
+            <p class="helper">
+              El documento está cancelado. Su composición permanece visible como histórico, pero ya
+              no puede prepararse ni editarse.
+            </p>
+          } @else {
           <form class="form-grid" (ngSubmit)="prepare()">
             <section class="receiver-selector">
               <label>
@@ -727,9 +744,16 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
                     >Falta el perfil fiscal del producto {{ missingProduct.internalCode }}.</strong
                   >
                   <span>Producto interno: {{ missingProduct.description }}.</span>
-                  <span>Debes darlo de alta para continuar.</span>
+                  @if (missingProduct.existingProfileStatus === 'Inactive') {
+                    <span>Ya existe un perfil maestro inactivo para este código. Puedes actualizarlo y reactivarlo para continuar.</span>
+                  } @else {
+                    <span>Debes darlo de alta para continuar.</span>
+                  }
                   @if (missingProduct.lineNumber) {
                     <span>Línea {{ missingProduct.lineNumber }} del documento de facturación.</span>
+                  }
+                  @if (missingProduct.suggestions.length) {
+                    <span>Hay sugerencias determinísticas disponibles. Las coincidencias por descripción requieren confirmación explícita.</span>
                   }
                 </div>
 
@@ -757,10 +781,18 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
 
               @if (showMissingProductProfileForm()) {
                 <section class="card nested-card">
-                  <h4>Alta de perfil fiscal de producto</h4>
+                  <h4>
+                    {{
+                      missingProduct.existingProfileStatus === 'Inactive'
+                        ? 'Reactivar perfil fiscal de producto'
+                        : 'Alta de perfil fiscal de producto'
+                    }}
+                  </h4>
                   <app-product-fiscal-profile-form
                     [initialValue]="missingProduct.draft"
-                    [submitLabel]="'Guardar y reintentar'"
+                    [recoverySuggestions]="missingProduct.suggestions"
+                    [allowExplicitGeneric]="missingProduct.canUseExplicitGeneric"
+                    [submitLabel]="resolveMissingProductSubmitLabel(missingProduct)"
                     [submitting]="savingMissingProductProfile()"
                     [errorMessage]="missingProductProfileError()"
                     (submitted)="saveMissingProductProfile($event)"
@@ -768,6 +800,7 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
                 </section>
               }
             </section>
+          }
           }
         </section>
       } @else if (!fiscalDocument()) {
@@ -782,6 +815,61 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
 
       @if (fiscalDocument(); as currentDocument) {
         <app-fiscal-document-card [document]="currentDocument" />
+
+        @if (currentDocument.items.length) {
+          <section class="card">
+            <div class="associated-orders-header">
+              <div>
+                <p class="selected-title">Perfil fiscal por línea</p>
+                <strong>{{ currentDocument.items.length }} línea(s) con snapshot fiscal persistido</strong>
+                <span class="helper">
+                  Este ajuste solo modifica el snapshot fiscal de este documento. No actualiza el
+                  perfil maestro del producto.
+                </span>
+              </div>
+            </div>
+
+            <div class="included-items-list">
+              @for (item of currentDocument.items; track item.id) {
+                <article class="included-item-card">
+                  <div>
+                    <strong>Línea {{ item.lineNumber }} · {{ item.internalCode }}</strong>
+                    <span>{{ item.description }}</span>
+                    <small>
+                      SAT {{ item.satProductServiceCode }} · Unidad {{ item.satUnitCode }} ·
+                      ObjImp {{ item.taxObjectCode }} · IVA {{ item.vatRate }} · Texto unidad
+                      {{ item.unitText || 'N/D' }}
+                    </small>
+                  </div>
+                  <div class="context-actions">
+                    @if (canEditCurrentFiscalItemProfile()) {
+                      <button
+                        type="button"
+                        class="secondary"
+                        (click)="openFiscalItemProfileDialog(item)"
+                        [disabled]="savingFiscalItemProfile()"
+                      >
+                        {{
+                          savingFiscalItemProfile() &&
+                          selectedFiscalDocumentItemForProfileEdit()?.id === item.id
+                            ? 'Guardando...'
+                            : 'Editar perfil fiscal'
+                        }}
+                      </button>
+                    }
+                  </div>
+                </article>
+              }
+            </div>
+
+            @if (permissionService.canStampFiscal() && !canEditCurrentFiscalItemProfile()) {
+              <p class="helper">
+                La edición del perfil fiscal por línea queda bloqueada cuando el CFDI ya no es
+                editable antes del timbrado.
+              </p>
+            }
+          </section>
+        }
 
         @if (canSyncCurrentFiscalDocument()) {
           @if (selectedReceiver(); as currentReceiver) {
@@ -1225,6 +1313,20 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
         (cancelled)="closeCancelConfirmationDialog()"
       />
 
+      <app-confirmation-modal
+        [open]="showBillingCancelConfirmationDialog()"
+        eyebrow="Cancelación interna"
+        title="Cancelar documento de facturación"
+        [message]="billingCancellationConfirmationMessage()"
+        confirmLabel="Sí, cancelar documento"
+        cancelLabel="No, volver"
+        busyConfirmLabel="Cancelando..."
+        tone="danger"
+        [busy]="loadingOperation()"
+        (confirmed)="confirmBillingCancellation()"
+        (cancelled)="closeCancelBillingDocumentDialog()"
+      />
+
       @if (showRemoveBillingItemDialog()) {
         <section class="modal-backdrop" (click)="closeRemoveBillingItemDialog()">
           <section class="modal-card" (click)="$event.stopPropagation()">
@@ -1352,6 +1454,55 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
               [errorMessage]="receiverCreateError()"
               (submitted)="saveReceiver($event)"
             />
+          </section>
+        </section>
+      }
+
+      @if (showFiscalItemProfileDialog()) {
+        <section class="modal-backdrop" (click)="closeFiscalItemProfileDialog()">
+          <section class="modal-card" (click)="$event.stopPropagation()">
+            <header class="modal-header">
+              <div>
+                <p class="selected-title">Documento fiscal</p>
+                <h3>Editar perfil fiscal de la línea</h3>
+              </div>
+              <button
+                type="button"
+                class="secondary"
+                (click)="closeFiscalItemProfileDialog()"
+                [disabled]="savingFiscalItemProfile()"
+              >
+                Cerrar
+              </button>
+            </header>
+
+            @if (selectedFiscalDocumentItemForProfileEdit(); as selectedItem) {
+              <p class="helper">
+                Estás editando solo el snapshot fiscal de la línea {{ selectedItem.lineNumber }} del
+                documento #{{ fiscalDocument()?.id }}. Este cambio no actualizará el perfil maestro
+                del producto {{ selectedItem.internalCode }}.
+              </p>
+
+              <section class="card nested-card">
+                <strong>{{ selectedItem.internalCode }} · {{ selectedItem.description }}</strong>
+                <span class="helper">
+                  Actual: SAT {{ selectedItem.satProductServiceCode }} · Unidad
+                  {{ selectedItem.satUnitCode }} · ObjImp {{ selectedItem.taxObjectCode }} · IVA
+                  {{ selectedItem.vatRate }}
+                </span>
+              </section>
+
+              <app-product-fiscal-profile-form
+                [initialValue]="selectedFiscalItemProfileDraft()"
+                [submitLabel]="'Guardar override de esta línea'"
+                [submitting]="savingFiscalItemProfile()"
+                [errorMessage]="fiscalItemProfileError()"
+                [showIdentityFields]="false"
+                [showActiveField]="false"
+                [unitTextLabel]="'Texto de unidad en esta línea'"
+                (submitted)="saveFiscalItemProfile($event)"
+              />
+            }
           </section>
         </section>
       }
@@ -1805,9 +1956,13 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected readonly lastOperationMessage = signal<string | null>(null);
   protected readonly showCancelDialog = signal(false);
   protected readonly showCancelConfirmationDialog = signal(false);
+  protected readonly showBillingCancelConfirmationDialog = signal(false);
   protected readonly showRemoveBillingItemDialog = signal(false);
+  protected readonly showFiscalItemProfileDialog = signal(false);
   protected readonly selectedBillingItemForRemoval =
     signal<BillingDocumentLookupItemResponse | null>(null);
+  protected readonly selectedFiscalDocumentItemForProfileEdit =
+    signal<FiscalDocumentItemResponse | null>(null);
   protected readonly showStampDetail = signal(false);
   protected readonly showStampXmlPanel = signal(false);
   protected readonly loadingStampXml = signal(false);
@@ -1823,6 +1978,26 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected readonly pendingAutomaticEmailStatus = signal<'missing' | 'invalid' | 'failed' | null>(
     null,
   );
+  protected readonly savingFiscalItemProfile = signal(false);
+  protected readonly fiscalItemProfileError = signal<string | null>(null);
+  protected readonly selectedFiscalItemProfileDraft =
+    computed<UpsertProductFiscalProfileRequest | null>(() => {
+      const item = this.selectedFiscalDocumentItemForProfileEdit();
+      if (!item) {
+        return null;
+      }
+
+      return {
+        internalCode: item.internalCode,
+        description: item.description,
+        satProductServiceCode: item.satProductServiceCode,
+        satUnitCode: item.satUnitCode,
+        taxObjectCode: item.taxObjectCode,
+        vatRate: item.vatRate,
+        defaultUnitText: item.unitText ?? '',
+        isActive: true,
+      };
+    });
   protected readonly cancellationConfirmationMessage = computed(() => {
     if (this.canLocalDiscardCurrentFiscalDocument()) {
       const fiscalDocument = this.fiscalDocument();
@@ -1833,6 +2008,16 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
 
     const request = this.buildCancellationRequest();
     return request ? buildCancellationConfirmationMessage(request) : '';
+  });
+  protected readonly billingCancellationConfirmationMessage = computed(() => {
+    const billingDocument = this.billingDocumentContext();
+    if (!billingDocument) {
+      return '';
+    }
+
+    return this.fiscalDocument()
+      ? `¿Confirmas cancelar el documento #${billingDocument.billingDocumentId}? Se liberarán las asociaciones operativas, el snapshot fiscal no timbrado se descartará automáticamente y el documento quedará sólo como histórico no editable.`
+      : `¿Confirmas cancelar el documento #${billingDocument.billingDocumentId}? Se liberarán las asociaciones operativas y el documento quedará sólo como histórico no editable.`;
   });
   protected readonly searchingReceivers = signal(false);
   protected readonly receiverSearchError = signal<string | null>(null);
@@ -1924,9 +2109,6 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected readonly activeReceiverSpecialFields = computed(() =>
     this.specialFieldDrafts().filter((field) => field.isActive),
   );
-  protected readonly isCreditSaleCheckboxDisabled = computed(
-    () => this.normalizedPaymentMethodSat() !== 'PPD',
-  );
   private receiverSearchTimer: number | null = null;
 
   constructor() {
@@ -1996,6 +2178,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
 
   protected canPrepareFiscalDocument(): boolean {
     return (
+      this.currentBillingDocumentIsDraft() &&
       !this.loadingPrepare() &&
       !this.savingMissingProductProfile() &&
       !!this.selectedReceiverId &&
@@ -2021,7 +2204,6 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
 
   protected onCreditSaleChange(value: boolean): void {
     this.isCreditSale = value;
-    this.paymentMethodSat = value ? 'PPD' : 'PUE';
     this.syncPaymentMethodDependencies(true);
     this.paymentConditionEditedByUser = false;
     this.applySuggestedPaymentCondition();
@@ -2032,6 +2214,10 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     if (this.isCreditSale) {
       this.applySuggestedPaymentCondition();
     }
+  }
+
+  protected isCreditSaleCheckboxDisabled(): boolean {
+    return this.normalizedPaymentMethodSat() !== 'PPD';
   }
 
   protected openCancelDialog(): void {
@@ -2084,6 +2270,16 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     this.showRemoveBillingItemDialog.set(true);
   }
 
+  protected openFiscalItemProfileDialog(item: FiscalDocumentItemResponse): void {
+    if (!this.canEditCurrentFiscalItemProfile() || this.savingFiscalItemProfile()) {
+      return;
+    }
+
+    this.selectedFiscalDocumentItemForProfileEdit.set(item);
+    this.fiscalItemProfileError.set(null);
+    this.showFiscalItemProfileDialog.set(true);
+  }
+
   protected closeRemoveBillingItemDialog(): void {
     if (this.loadingBillingDocumentComposition()) {
       return;
@@ -2091,6 +2287,14 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
 
     this.showRemoveBillingItemDialog.set(false);
     this.selectedBillingItemForRemoval.set(null);
+  }
+
+  protected closeFiscalItemProfileDialog(): void {
+    if (this.savingFiscalItemProfile()) {
+      return;
+    }
+
+    this.resetFiscalItemProfileDialogState();
   }
 
   protected onCancellationReasonChange(value: string): void {
@@ -2240,10 +2444,16 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     this.cancellation.set(null);
     this.pendingAutomaticEmailStatus.set(null);
     this.fiscalDocumentId.set(null);
+    this.resetFiscalItemProfileDialogState();
+    this.showBillingCancelConfirmationDialog.set(false);
     await this.router.navigate(['/app/fiscal-documents'], { queryParams: {} });
   }
 
   protected canEditCurrentBillingComposition(): boolean {
+    if (!this.currentBillingDocumentIsDraft()) {
+      return false;
+    }
+
     const fiscalDocument = this.fiscalDocument();
     if (!fiscalDocument) {
       return true;
@@ -2262,6 +2472,10 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   }
 
   protected canReprepareCurrentFiscalDocument(): boolean {
+    if (!this.currentBillingDocumentIsDraft()) {
+      return false;
+    }
+
     const fiscalDocument = this.fiscalDocument();
     if (!fiscalDocument || this.hasPersistedStampedUuid()) {
       return false;
@@ -2275,12 +2489,79 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     );
   }
 
+  protected canEditCurrentFiscalItemProfile(): boolean {
+    return this.permissionService.canStampFiscal() && this.canReprepareCurrentFiscalDocument();
+  }
+
   protected cancelActionLabel(): string {
     return this.canLocalDiscardCurrentFiscalDocument() ? 'Descartar borrador' : 'Cancelar';
   }
 
   protected shouldExplainStampEvidenceAsHistory(): boolean {
     return !!this.stampEvidence() && !this.hasPersistedStampedUuid();
+  }
+
+  protected canCancelCurrentBillingDocument(): boolean {
+    if (!this.currentBillingDocumentIsDraft()) {
+      return false;
+    }
+
+    const fiscalDocument = this.fiscalDocument();
+    if (!fiscalDocument) {
+      return true;
+    }
+
+    if (this.hasPersistedStampedUuid() || fiscalDocument.status === 'Stamped') {
+      return false;
+    }
+
+    return (
+      fiscalDocument.status === 'Draft' ||
+      fiscalDocument.status === 'ReadyForStamping' ||
+      fiscalDocument.status === 'StampingRejected' ||
+      fiscalDocument.status === 'DiscardedUnstamped'
+    );
+  }
+
+  protected openCancelBillingDocumentDialog(): void {
+    if (!this.canCancelCurrentBillingDocument() || this.loadingOperation()) {
+      return;
+    }
+
+    this.showBillingCancelConfirmationDialog.set(true);
+  }
+
+  protected closeCancelBillingDocumentDialog(): void {
+    this.showBillingCancelConfirmationDialog.set(false);
+  }
+
+  protected async confirmBillingCancellation(): Promise<void> {
+    const billingDocumentId = this.billingDocumentId();
+    if (
+      !billingDocumentId ||
+      !this.showBillingCancelConfirmationDialog() ||
+      !this.canCancelCurrentBillingDocument()
+    ) {
+      return;
+    }
+
+    await this.runOperation(async () => {
+      const response = await firstValueFrom(this.api.cancelBillingDocument(billingDocumentId));
+      this.lastOperationMessage.set(
+        response.errorMessage ||
+          this.buildBillingCancellationMessage(
+            response.releasedOrderLinkCount,
+            response.releasedPendingAssignmentCount,
+          ),
+      );
+      this.showBillingCancelConfirmationDialog.set(false);
+      this.resetFiscalContextAfterBillingCancellation();
+      await this.loadBillingDocumentContext(response.billingDocumentId, true);
+      this.feedbackService.show(
+        response.isSuccess ? 'success' : 'error',
+        response.errorMessage || 'Documento de facturación cancelado correctamente.',
+      );
+    });
   }
 
   protected async addLegacyOrderToBillingDocument(): Promise<void> {
@@ -2721,7 +3002,12 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected async saveMissingProductProfile(
     request: UpsertProductFiscalProfileRequest,
   ): Promise<void> {
-    if (!this.permissionService.canWriteMasterData() || this.savingMissingProductProfile()) {
+    const missingProfile = this.missingProductFiscalProfile();
+    if (
+      !this.permissionService.canWriteMasterData()
+      || this.savingMissingProductProfile()
+      || !missingProfile
+    ) {
       return;
     }
 
@@ -2729,11 +3015,18 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     this.missingProductProfileError.set(null);
 
     try {
-      await firstValueFrom(this.productFiscalProfilesApi.create(request));
-      this.feedbackService.show(
-        'success',
-        `Perfil fiscal del producto ${request.internalCode} creado.`,
-      );
+      if (missingProfile.existingProductFiscalProfileId) {
+        await firstValueFrom(
+          this.productFiscalProfilesApi.update(
+            missingProfile.existingProductFiscalProfileId,
+            request,
+          ),
+        );
+      } else {
+        await firstValueFrom(this.productFiscalProfilesApi.create(request));
+      }
+
+      this.feedbackService.show('success', this.buildMissingProductProfileSavedMessage(missingProfile, request));
       const pendingRequest = this.pendingPrepareRequest();
       this.closeMissingProductProfileForm();
       if (pendingRequest) {
@@ -2742,10 +3035,66 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     } catch (error) {
       this.showMissingProductProfileForm.set(true);
       this.missingProductProfileError.set(
-        extractApiErrorMessage(error, 'No fue posible crear el perfil fiscal del producto.'),
+        extractApiErrorMessage(
+          error,
+          missingProfile.existingProductFiscalProfileId
+            ? 'No fue posible actualizar o reactivar el perfil fiscal del producto.'
+            : 'No fue posible crear el perfil fiscal del producto.',
+        ),
       );
     } finally {
       this.savingMissingProductProfile.set(false);
+    }
+  }
+
+  protected async saveFiscalItemProfile(
+    request: UpsertProductFiscalProfileRequest,
+  ): Promise<void> {
+    const selectedItem = this.selectedFiscalDocumentItemForProfileEdit();
+    if (
+      !selectedItem
+      || !this.canEditCurrentFiscalItemProfile()
+      || this.savingFiscalItemProfile()
+    ) {
+      return;
+    }
+
+    this.savingFiscalItemProfile.set(true);
+    this.fiscalItemProfileError.set(null);
+
+    try {
+      const response = await firstValueFrom(
+        this.api.updateFiscalDocumentItemFiscalProfile(selectedItem.id, {
+          satProductServiceCode: request.satProductServiceCode,
+          satUnitCode: request.satUnitCode,
+          taxObjectCode: request.taxObjectCode,
+          vatRate: request.vatRate,
+          unitText: request.defaultUnitText?.trim() || null,
+        }),
+      );
+
+      if (response.item) {
+        this.applyUpdatedFiscalDocumentItem(response.item);
+      }
+
+      this.resetFiscalItemProfileDialogState();
+      this.lastOperationMessage.set(
+        'Se actualizó el perfil fiscal solo para esta línea del documento actual.',
+      );
+      this.feedbackService.show(
+        'success',
+        'Perfil fiscal de la línea actualizado correctamente.',
+      );
+    } catch (error) {
+      this.showFiscalItemProfileDialog.set(true);
+      this.fiscalItemProfileError.set(
+        extractApiErrorMessage(
+          error,
+          'No fue posible actualizar el perfil fiscal de esta línea.',
+        ),
+      );
+    } finally {
+      this.savingFiscalItemProfile.set(false);
     }
   }
 
@@ -2784,7 +3133,9 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
         this.showMissingProductProfileForm.set(true);
         this.feedbackService.show(
           'warning',
-          `Falta el perfil fiscal del producto ${missingProfile.internalCode}. Debes darlo de alta para continuar.`,
+          missingProfile.existingProfileStatus === 'Inactive'
+            ? `El perfil fiscal del producto ${missingProfile.internalCode} existe pero está inactivo. Debes reactivarlo o actualizarlo para continuar.`
+            : `Falta el perfil fiscal del producto ${missingProfile.internalCode}. Debes darlo de alta para continuar.`,
         );
         return;
       }
@@ -3127,9 +3478,6 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       const catalog = await firstValueFrom(this.fiscalReceiversApi.getSatCatalog());
       this.paymentMethodCatalog.set(catalog.paymentMethods ?? []);
       this.paymentFormCatalog.set(catalog.paymentForms ?? []);
-      if (!this.paymentMethodSat) {
-        this.paymentMethodSat = this.isCreditSale ? 'PPD' : 'PUE';
-      }
       this.syncPaymentMethodDependencies(false);
       this.syncCreditSaleWithPaymentMethod();
       this.applySuggestedPaymentCondition();
@@ -3150,6 +3498,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     this.closeEmailComposer();
     this.pendingAutomaticEmailStatus.set(null);
     this.closeRemoveBillingItemDialog();
+    this.resetFiscalItemProfileDialogState();
     const document = await firstValueFrom(this.api.getFiscalDocumentById(fiscalDocumentId));
     this.fiscalDocument.set(document);
     await this.loadReceiverForFiscalDocument(document);
@@ -3176,6 +3525,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       this.clearMissingProductFiscalProfileState();
       this.closeEmailComposer();
       this.closeRemoveBillingItemDialog();
+      this.resetFiscalItemProfileDialogState();
       this.billingDocumentContext.set(billingDocument);
       this.selectedPendingBillingRemovalIds.set([]);
       this.billingDocumentId.set(billingDocument.billingDocumentId);
@@ -3213,6 +3563,20 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     if (billingDocumentId) {
       await this.loadBillingDocumentContext(billingDocumentId);
     }
+  }
+
+  private applyUpdatedFiscalDocumentItem(item: FiscalDocumentItemResponse): void {
+    const fiscalDocument = this.fiscalDocument();
+    if (!fiscalDocument) {
+      return;
+    }
+
+    this.fiscalDocument.set({
+      ...fiscalDocument,
+      items: fiscalDocument.items.map((currentItem) =>
+        currentItem.id === item.id ? item : currentItem,
+      ),
+    });
   }
 
   private async loadPendingBillingItems(): Promise<void> {
@@ -3270,6 +3634,29 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     );
 
     return codeMatch?.description?.trim() || null;
+  }
+
+  protected resolveMissingProductSubmitLabel(
+    missingProduct: MissingProductFiscalProfileContext,
+  ): string {
+    return missingProduct.existingProfileStatus === 'Inactive'
+      ? 'Reactivar y reintentar'
+      : 'Guardar y reintentar';
+  }
+
+  private buildMissingProductProfileSavedMessage(
+    missingProduct: MissingProductFiscalProfileContext,
+    request: UpsertProductFiscalProfileRequest,
+  ): string {
+    if (missingProduct.existingProfileStatus === 'Inactive') {
+      return `Perfil fiscal del producto ${request.internalCode} reactivado y actualizado.`;
+    }
+
+    if (missingProduct.existingProductFiscalProfileId) {
+      return `Perfil fiscal del producto ${request.internalCode} actualizado.`;
+    }
+
+    return `Perfil fiscal del producto ${request.internalCode} creado.`;
   }
 
   private async loadStamp(fiscalDocumentId: number, notifyOnMissing = false): Promise<void> {
@@ -3403,12 +3790,16 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
 
   protected canStampCurrentFiscalDocument(): boolean {
     const status = this.fiscalDocument()?.status;
-    return !this.hasPersistedStampedUuid() && (status === 'ReadyForStamping' || status === 'StampingRejected');
+    return this.currentBillingDocumentIsDraft()
+      && !this.hasPersistedStampedUuid()
+      && (status === 'ReadyForStamping' || status === 'StampingRejected');
   }
 
   protected canSyncCurrentFiscalDocument(): boolean {
     const status = this.fiscalDocument()?.status;
-    return !this.hasPersistedStampedUuid() && (status === 'ReadyForStamping' || status === 'StampingRejected');
+    return this.currentBillingDocumentIsDraft()
+      && !this.hasPersistedStampedUuid()
+      && (status === 'ReadyForStamping' || status === 'StampingRejected');
   }
 
   protected stampActionLabel(): string {
@@ -3468,6 +3859,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected canLocalDiscardCurrentFiscalDocument(): boolean {
     const status = this.fiscalDocument()?.status;
     return (
+      this.currentBillingDocumentIsDraft() &&
       !this.hasPersistedStampedUuid() &&
       (status === 'Draft' || status === 'ReadyForStamping' || status === 'StampingRejected')
     );
@@ -3478,8 +3870,45 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     return status === 'Stamped' || status === 'CancellationRejected';
   }
 
+  private currentBillingDocumentIsDraft(): boolean {
+    return this.billingDocumentContext()?.status === 'Draft';
+  }
+
   private hasPersistedStampedUuid(): boolean {
     return !!this.stampEvidence()?.uuid;
+  }
+
+  private resetFiscalContextAfterBillingCancellation(): void {
+    this.fiscalDocument.set(null);
+    this.stampEvidence.set(null);
+    this.cancellation.set(null);
+    this.pendingAutomaticEmailStatus.set(null);
+    this.fiscalDocumentId.set(null);
+    this.resetFiscalItemProfileDialogState();
+    this.showCancelDialog.set(false);
+    this.showCancelConfirmationDialog.set(false);
+  }
+
+  private resetFiscalItemProfileDialogState(): void {
+    this.showFiscalItemProfileDialog.set(false);
+    this.selectedFiscalDocumentItemForProfileEdit.set(null);
+    this.fiscalItemProfileError.set(null);
+  }
+
+  private buildBillingCancellationMessage(
+    releasedOrderLinkCount: number,
+    releasedPendingAssignmentCount: number,
+  ): string {
+    const releasedOrdersMessage =
+      releasedOrderLinkCount > 0
+        ? `${releasedOrderLinkCount} vínculo(s) operativo(s) liberado(s)`
+        : 'sin vínculos operativos pendientes por liberar';
+    const releasedAssignmentsMessage =
+      releasedPendingAssignmentCount > 0
+        ? `${releasedPendingAssignmentCount} asignación(es) PendingBilling liberada(s)`
+        : 'sin asignaciones PendingBilling activas';
+
+    return `Documento de facturación cancelado. ${releasedOrdersMessage}; ${releasedAssignmentsMessage}.`;
   }
 
   private buildCancellationFeedbackMessage(

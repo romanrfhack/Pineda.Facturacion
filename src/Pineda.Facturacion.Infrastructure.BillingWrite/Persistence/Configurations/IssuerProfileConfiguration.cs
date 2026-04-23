@@ -6,6 +6,10 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Configurati
 
 public class IssuerProfileConfiguration : IEntityTypeConfiguration<IssuerProfile>
 {
+    public const string ActiveSingletonShadowPropertyName = "ActiveSingletonKey";
+    public const string ActiveSingletonColumnName = "active_singleton_key";
+    public const string ActiveSingletonIndexName = "ux_issuer_profile_active_singleton_key";
+
     public void Configure(EntityTypeBuilder<IssuerProfile> builder)
     {
         builder.ToTable("issuer_profile");
@@ -99,6 +103,14 @@ public class IssuerProfileConfiguration : IEntityTypeConfiguration<IssuerProfile
         builder.Property(x => x.IsActive)
             .HasColumnName("is_active")
             .IsRequired();
+
+        builder.Property<int?>(ActiveSingletonShadowPropertyName)
+            .HasColumnName(ActiveSingletonColumnName)
+            .HasComputedColumnSql("CASE WHEN is_active THEN 1 ELSE NULL END", stored: true);
+
+        builder.HasIndex(ActiveSingletonShadowPropertyName)
+            .IsUnique()
+            .HasDatabaseName(ActiveSingletonIndexName);
 
         builder.Property(x => x.CreatedAtUtc)
             .HasColumnName("created_at_utc")

@@ -1,0 +1,2 @@
+[Service]
+EnvironmentFile=/etc/facturas-dev/facturas-dev-api.env

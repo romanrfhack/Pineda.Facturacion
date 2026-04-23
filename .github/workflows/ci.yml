@@ -55,6 +55,14 @@ jobs:
       ConnectionStrings__DefaultConnection: Server=localhost;Database=facturas_test;User=root;Password=Strong_Passw0rd_2026!;
     steps:
       - uses: actions/checkout@v4
+      - name: Guard versioned runtime config
+        shell: bash
+        run: |
+          set -euo pipefail
+          if rg -n 'Root123!|User ID=root|CHANGE_ME_MIN_32_CHARACTERS_FOR_PRODUCTION_USE|SANDBOX_ONLY_|CHANGE_ME_DEV_ONLY|CHANGE_ME_NON_PRODUCTION_ONLY' src/Pineda.Facturacion.Api/appsettings*.json; then
+            echo "ERROR: versioned runtime config still contains forbidden secrets/defaults."
+            exit 1
+          fi
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
@@ -76,6 +84,14 @@ jobs:
           DOTNET_ENVIRONMENT: Development
           ASPNETCORE_ENVIRONMENT: Development
         run: dotnet test -c Release Pineda.Facturacion.slnx
+
+      - name: MySQL-backed integration subset
+        env:
+          DOTNET_ENVIRONMENT: Development
+          ASPNETCORE_ENVIRONMENT: Development
+          PINEDA_FACTURACION_RUN_MYSQL_TESTS: "true"
+          PINEDA_FACTURACION_MYSQL_TEST_CONNECTION: Server=127.0.0.1;Port=3306;User ID=root;Password=Strong_Passw0rd_2026!;AllowPublicKeyRetrieval=True;SslMode=None;
+        run: dotnet test -c Release tests/Pineda.Facturacion.IntegrationTests/Pineda.Facturacion.IntegrationTests.csproj --filter "Category=MySqlIntegration" --no-build
 
   frontend_tests:
     needs: changes

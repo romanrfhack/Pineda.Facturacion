@@ -48,10 +48,12 @@ public static class ServiceCollectionExtensions
         }
 
         services.AddSingleton<IContentHashGenerator, Sha256ContentHashGenerator>();
+        services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IFiscalReceiverSatCatalogProvider, FiscalReceiverSatCatalogProvider>();
         services.AddSingleton<SatProductServiceCatalogSeedSource>();
         services.AddSingleton<ISatCatalogDescriptionProvider, SatCatalogDescriptionProvider>();
         services.AddSingleton<IExcelWorksheetReader, ClosedXmlWorksheetReader>();
+        services.AddSingleton<ILoginAttemptThrottleService, InMemoryLoginAttemptThrottleService>();
         services.AddScoped<IFiscalDocumentPdfRenderer, FiscalDocumentPdfRenderer>();
         services.AddSingleton<IIssuerProfileLogoStorage, IssuerProfileLogoStorage>();
         services.AddSingleton<IEmailSender, SmtpEmailSender>();
