@@ -1,5 +1,6 @@
 using System.Data.Common;
 using Microsoft.Extensions.Hosting;
+using Pineda.Facturacion.Infrastructure.BillingWrite.Options;
 
 namespace Pineda.Facturacion.Api.OperationalHardening;
 
@@ -31,8 +32,8 @@ internal static class RuntimeSafetyValidator
         }
 
         ValidateConnectionString(
-            configuration.GetConnectionString("BillingWrite"),
-            "ConnectionStrings:BillingWrite",
+            BillingWriteConnectionStringResolver.Resolve(configuration, allowDesignTimeFallback: false),
+            "ConnectionStrings:BillingWrite or BillingWrite:ConnectionString",
             disallowRootUser: false);
 
         ValidateConnectionString(
