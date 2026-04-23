@@ -19,204 +19,217 @@ describe('AccountsReceivablePageComponent', () => {
     createPayment: vi.fn(),
     applyPayment: vi.fn(),
     getInvoiceByFiscalDocumentId: vi.fn(),
-    searchPayments: vi.fn().mockReturnValue(of({ items: [] }))
+    searchPayments: vi.fn().mockReturnValue(of({ items: [] })),
   };
 
   beforeEach(() => {
     queryParams$.next(convertToParamMap({ invoiceId: '2', paymentId: '6' }));
-    api.getReceiverWorkspace.mockReturnValue(of({
-      fiscalReceiverId: 77,
-      rfc: 'AAA010101AAA',
-      legalName: 'Receiver',
-      summary: {
-        pendingBalanceTotal: 2722,
-        overdueBalanceTotal: 0,
-        currentBalanceTotal: 2722,
-        openInvoicesCount: 2,
-        overdueInvoicesCount: 0,
-        paymentsCount: 1,
-        paymentsWithUnappliedAmountCount: 1,
-        paymentsPendingRepCount: 1,
-        nextFollowUpAtUtc: null,
+    api.getReceiverWorkspace.mockReturnValue(
+      of({
+        fiscalReceiverId: 77,
+        rfc: 'AAA010101AAA',
+        legalName: 'Receiver',
+        summary: {
+          pendingBalanceTotal: 2722,
+          overdueBalanceTotal: 0,
+          currentBalanceTotal: 2722,
+          openInvoicesCount: 2,
+          overdueInvoicesCount: 0,
+          paymentsCount: 1,
+          paymentsWithUnappliedAmountCount: 1,
+          paymentsPendingRepCount: 1,
+          nextFollowUpAtUtc: null,
+          hasPendingCommitment: false,
+          pendingCommitmentsCount: 0,
+          recentNotesCount: 0,
+          paymentsReadyToPrepareRepCount: 0,
+          paymentsPreparedRepCount: 0,
+          paymentsStampedRepCount: 0,
+        },
+        invoices: [],
+        payments: [],
+        pendingCommitments: [],
+        recentNotes: [],
+      }),
+    );
+    api.getInvoiceById.mockReturnValue(
+      of({
+        id: 2,
+        billingDocumentId: 1,
+        fiscalDocumentId: 31809,
+        fiscalStampId: 1,
+        fiscalReceiverId: 77,
+        receiverRfc: 'AAA010101AAA',
+        receiverLegalName: 'Receiver',
+        fiscalSeries: 'A',
+        fiscalFolio: '31809',
+        fiscalUuid: 'UUID-2',
+        status: 'Open',
+        paymentMethodSat: 'PPD',
+        paymentFormSatInitial: '99',
+        isCreditSale: true,
+        creditDays: 15,
+        issuedAtUtc: '2026-04-01T00:00:00Z',
+        dueAtUtc: '2026-04-15T00:00:00Z',
+        currencyCode: 'MXN',
+        total: 1722,
+        paidTotal: 0,
+        outstandingBalance: 1722,
+        createdAtUtc: '2026-04-01T00:00:00Z',
+        updatedAtUtc: '2026-04-01T00:00:00Z',
+        agingBucket: 'Current',
         hasPendingCommitment: false,
-        pendingCommitmentsCount: 0,
-        recentNotesCount: 0,
-        paymentsReadyToPrepareRepCount: 0,
-        paymentsPreparedRepCount: 0,
-        paymentsStampedRepCount: 0
-      },
-      invoices: [],
-      payments: [],
-      pendingCommitments: [],
-      recentNotes: []
-    }));
-    api.getInvoiceById.mockReturnValue(of({
-      id: 2,
-      billingDocumentId: 1,
-      fiscalDocumentId: 31809,
-      fiscalStampId: 1,
-      fiscalReceiverId: 77,
-      receiverRfc: 'AAA010101AAA',
-      receiverLegalName: 'Receiver',
-      fiscalSeries: 'A',
-      fiscalFolio: '31809',
-      fiscalUuid: 'UUID-2',
-      status: 'Open',
-      paymentMethodSat: 'PPD',
-      paymentFormSatInitial: '99',
-      isCreditSale: true,
-      creditDays: 15,
-      issuedAtUtc: '2026-04-01T00:00:00Z',
-      dueAtUtc: '2026-04-15T00:00:00Z',
-      currencyCode: 'MXN',
-      total: 1722,
-      paidTotal: 0,
-      outstandingBalance: 1722,
-      createdAtUtc: '2026-04-01T00:00:00Z',
-      updatedAtUtc: '2026-04-01T00:00:00Z',
-      agingBucket: 'Current',
-      hasPendingCommitment: false,
-      nextCommitmentDateUtc: null,
-      nextFollowUpAtUtc: null,
-      followUpPending: false,
-      collectionCommitments: [],
-      collectionNotes: [],
-      relatedPayments: [],
-      relatedPaymentComplements: [],
-      timeline: [],
-      applications: []
-    }));
-    api.getPaymentById.mockReturnValue(of({
-      id: 6,
-      paymentDateUtc: '2026-04-03T00:00:00Z',
-      paymentFormSat: '03',
-      currencyCode: 'MXN',
-      amount: 5000,
-      appliedTotal: 1722,
-      remainingAmount: 3278,
-      customerCreditBalanceAmount: 0,
-      reference: 'DEP-1',
-      notes: null,
-      receivedFromFiscalReceiverId: 77,
-      operationalStatus: 'PartiallyApplied',
-      repStatus: 'PendingApplications',
-      readyToPrepareRep: false,
-      repBlockReason: 'Unapplied payment remainder must be explicitly assigned before preparing REP.',
-      unappliedDisposition: 'PendingAllocation',
-      repDocumentStatus: null,
-      repReservedAmount: 0,
-      repFiscalizedAmount: 0,
-      applicationsCount: 1,
-      linkedFiscalDocumentId: 31809,
-      createdAtUtc: '2026-04-03T00:00:00Z',
-      updatedAtUtc: '2026-04-03T00:00:00Z',
-      applications: []
-    }));
-    api.setPaymentUnappliedDisposition.mockReturnValue(of({
-      outcome: 'Updated',
-      isSuccess: true,
-      accountsReceivablePaymentId: 6
-    }));
-    api.searchPortfolio.mockReturnValue(of({
-      items: [
-        {
-          accountsReceivableInvoiceId: 2,
-          fiscalDocumentId: 31809,
-          fiscalReceiverId: 77,
-          receiverRfc: 'AAA010101AAA',
-          receiverLegalName: 'Receiver',
-          fiscalSeries: 'A',
-          fiscalFolio: '31809',
-          fiscalUuid: 'UUID-2',
-          total: 1722,
-          paidTotal: 0,
-          outstandingBalance: 1722,
-          issuedAtUtc: '2026-04-01T00:00:00Z',
-          dueAtUtc: '2026-04-15T00:00:00Z',
-          status: 'Open',
-          daysPastDue: 0,
-          agingBucket: 'Current',
-          hasPendingCommitment: false,
-          nextCommitmentDateUtc: null,
-          nextFollowUpAtUtc: null,
-          followUpPending: false
-        },
-        {
-          accountsReceivableInvoiceId: 3,
-          fiscalDocumentId: 31810,
-          fiscalReceiverId: 77,
-          receiverRfc: 'AAA010101AAA',
-          receiverLegalName: 'Receiver',
-          fiscalSeries: 'A',
-          fiscalFolio: '31810',
-          fiscalUuid: 'UUID-3',
-          total: 1000,
-          paidTotal: 0,
-          outstandingBalance: 1000,
-          issuedAtUtc: '2026-04-02T00:00:00Z',
-          dueAtUtc: '2026-04-16T00:00:00Z',
-          status: 'Open',
-          daysPastDue: 0,
-          agingBucket: 'Current',
-          hasPendingCommitment: false,
-          nextCommitmentDateUtc: null,
-          nextFollowUpAtUtc: null,
-          followUpPending: false
-        },
-        {
-          accountsReceivableInvoiceId: 4,
-          fiscalDocumentId: 31811,
-          fiscalReceiverId: 88,
-          receiverRfc: 'BBB010101BBB',
-          receiverLegalName: 'Other',
-          fiscalSeries: 'B',
-          fiscalFolio: '31811',
-          fiscalUuid: 'UUID-4',
-          total: 500,
-          paidTotal: 0,
-          outstandingBalance: 500,
-          issuedAtUtc: '2026-04-02T00:00:00Z',
-          dueAtUtc: '2026-04-16T00:00:00Z',
-          status: 'Open',
-          daysPastDue: 0,
-          agingBucket: 'Current',
-          hasPendingCommitment: false,
-          nextCommitmentDateUtc: null,
-          nextFollowUpAtUtc: null,
-          followUpPending: false
-        }
-      ]
-    }));
-    api.createPayment.mockReturnValue(of({
-      outcome: 'Created',
-      isSuccess: true,
-      payment: {
+        nextCommitmentDateUtc: null,
+        nextFollowUpAtUtc: null,
+        followUpPending: false,
+        collectionCommitments: [],
+        collectionNotes: [],
+        relatedPayments: [],
+        relatedPaymentComplements: [],
+        timeline: [],
+        applications: [],
+      }),
+    );
+    api.getPaymentById.mockReturnValue(
+      of({
         id: 6,
         paymentDateUtc: '2026-04-03T00:00:00Z',
         paymentFormSat: '03',
         currencyCode: 'MXN',
         amount: 5000,
-        appliedTotal: 0,
-        remainingAmount: 5000,
+        appliedTotal: 1722,
+        remainingAmount: 3278,
         customerCreditBalanceAmount: 0,
         reference: 'DEP-1',
         notes: null,
         receivedFromFiscalReceiverId: 77,
-        operationalStatus: 'CapturedUnapplied',
-        repStatus: 'NoApplications',
+        operationalStatus: 'PartiallyApplied',
+        repStatus: 'PendingApplications',
         readyToPrepareRep: false,
-        repBlockReason: null,
+        repBlockReason:
+          'Unapplied payment remainder must be explicitly assigned before preparing REP.',
         unappliedDisposition: 'PendingAllocation',
         repDocumentStatus: null,
         repReservedAmount: 0,
         repFiscalizedAmount: 0,
-        applicationsCount: 0,
+        applicationsCount: 1,
         linkedFiscalDocumentId: 31809,
         createdAtUtc: '2026-04-03T00:00:00Z',
         updatedAtUtc: '2026-04-03T00:00:00Z',
-        applications: []
-      }
-    }));
+        applications: [],
+      }),
+    );
+    api.setPaymentUnappliedDisposition.mockReturnValue(
+      of({
+        outcome: 'Updated',
+        isSuccess: true,
+        accountsReceivablePaymentId: 6,
+      }),
+    );
+    api.searchPortfolio.mockReturnValue(
+      of({
+        items: [
+          {
+            accountsReceivableInvoiceId: 2,
+            fiscalDocumentId: 31809,
+            fiscalReceiverId: 77,
+            receiverRfc: 'AAA010101AAA',
+            receiverLegalName: 'Receiver',
+            fiscalSeries: 'A',
+            fiscalFolio: '31809',
+            fiscalUuid: 'UUID-2',
+            total: 1722,
+            paidTotal: 0,
+            outstandingBalance: 1722,
+            issuedAtUtc: '2026-04-01T00:00:00Z',
+            dueAtUtc: '2026-04-15T00:00:00Z',
+            status: 'Open',
+            daysPastDue: 0,
+            agingBucket: 'Current',
+            hasPendingCommitment: false,
+            nextCommitmentDateUtc: null,
+            nextFollowUpAtUtc: null,
+            followUpPending: false,
+          },
+          {
+            accountsReceivableInvoiceId: 3,
+            fiscalDocumentId: 31810,
+            fiscalReceiverId: 77,
+            receiverRfc: 'AAA010101AAA',
+            receiverLegalName: 'Receiver',
+            fiscalSeries: 'A',
+            fiscalFolio: '31810',
+            fiscalUuid: 'UUID-3',
+            total: 1000,
+            paidTotal: 0,
+            outstandingBalance: 1000,
+            issuedAtUtc: '2026-04-02T00:00:00Z',
+            dueAtUtc: '2026-04-16T00:00:00Z',
+            status: 'Open',
+            daysPastDue: 0,
+            agingBucket: 'Current',
+            hasPendingCommitment: false,
+            nextCommitmentDateUtc: null,
+            nextFollowUpAtUtc: null,
+            followUpPending: false,
+          },
+          {
+            accountsReceivableInvoiceId: 4,
+            fiscalDocumentId: 31811,
+            fiscalReceiverId: 88,
+            receiverRfc: 'BBB010101BBB',
+            receiverLegalName: 'Other',
+            fiscalSeries: 'B',
+            fiscalFolio: '31811',
+            fiscalUuid: 'UUID-4',
+            total: 500,
+            paidTotal: 0,
+            outstandingBalance: 500,
+            issuedAtUtc: '2026-04-02T00:00:00Z',
+            dueAtUtc: '2026-04-16T00:00:00Z',
+            status: 'Open',
+            daysPastDue: 0,
+            agingBucket: 'Current',
+            hasPendingCommitment: false,
+            nextCommitmentDateUtc: null,
+            nextFollowUpAtUtc: null,
+            followUpPending: false,
+          },
+        ],
+      }),
+    );
+    api.createPayment.mockReturnValue(
+      of({
+        outcome: 'Created',
+        isSuccess: true,
+        payment: {
+          id: 6,
+          paymentDateUtc: '2026-04-03T00:00:00Z',
+          paymentFormSat: '03',
+          currencyCode: 'MXN',
+          amount: 5000,
+          appliedTotal: 0,
+          remainingAmount: 5000,
+          customerCreditBalanceAmount: 0,
+          reference: 'DEP-1',
+          notes: null,
+          receivedFromFiscalReceiverId: 77,
+          operationalStatus: 'CapturedUnapplied',
+          repStatus: 'NoApplications',
+          readyToPrepareRep: false,
+          repBlockReason: null,
+          unappliedDisposition: 'PendingAllocation',
+          repDocumentStatus: null,
+          repReservedAmount: 0,
+          repFiscalizedAmount: 0,
+          applicationsCount: 0,
+          linkedFiscalDocumentId: 31809,
+          createdAtUtc: '2026-04-03T00:00:00Z',
+          updatedAtUtc: '2026-04-03T00:00:00Z',
+          applications: [],
+        },
+      }),
+    );
 
     TestBed.configureTestingModule({
       imports: [AccountsReceivablePageComponent],
@@ -227,25 +240,30 @@ describe('AccountsReceivablePageComponent', () => {
           provide: FiscalReceiversApiService,
           useValue: {
             search: vi.fn().mockReturnValue(of([])),
-            getSatCatalog: vi.fn().mockReturnValue(of({
-              regimenFiscal: [],
-              usoCfdi: [],
-              byRegimenFiscal: [],
-              paymentMethods: [],
-              paymentForms: []
-            }))
-          }
+            getSatCatalog: vi.fn().mockReturnValue(
+              of({
+                regimenFiscal: [],
+                usoCfdi: [],
+                byRegimenFiscal: [],
+                paymentMethods: [],
+                paymentForms: [],
+              }),
+            ),
+          },
         },
         { provide: FeedbackService, useValue: { show: vi.fn() } },
         {
           provide: PermissionService,
-          useValue: { canManagePayments: () => true }
+          useValue: { canManagePayments: () => true },
         },
         {
           provide: ActivatedRoute,
-          useValue: { queryParamMap: queryParams$.asObservable(), snapshot: { queryParamMap: convertToParamMap({}) } }
-        }
-      ]
+          useValue: {
+            queryParamMap: queryParams$.asObservable(),
+            snapshot: { queryParamMap: convertToParamMap({}) },
+          },
+        },
+      ],
     });
   });
 
@@ -257,58 +275,68 @@ describe('AccountsReceivablePageComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(api.searchPortfolio).toHaveBeenCalledWith({ fiscalReceiverId: 77, hasPendingBalance: true });
+    expect(api.searchPortfolio).toHaveBeenCalledWith({
+      fiscalReceiverId: 77,
+      hasPendingBalance: true,
+    });
   });
 
   it('uses the payment receiver to load eligible remainder invoices when opening payment detail without invoice context', async () => {
     queryParams$.next(convertToParamMap({ paymentId: '6' }));
     api.getInvoiceById.mockClear();
     api.searchPortfolio.mockClear();
-    api.getPaymentById.mockReset().mockReturnValue(of({
-      id: 6,
-      paymentDateUtc: '2026-04-03T00:00:00Z',
-      paymentFormSat: '03',
-      currencyCode: 'MXN',
-      amount: 5000,
-      appliedTotal: 1722,
-      remainingAmount: 3278,
-      customerCreditBalanceAmount: 0,
-      reference: 'DEP-1',
-      notes: null,
-      receivedFromFiscalReceiverId: 77,
-      operationalStatus: 'PartiallyApplied',
-      repStatus: 'PendingApplications',
-      readyToPrepareRep: false,
-      repBlockReason: 'Unapplied payment remainder must be explicitly assigned before preparing REP.',
-      unappliedDisposition: 'PendingAllocation',
-      repDocumentStatus: null,
-      repReservedAmount: 0,
-      repFiscalizedAmount: 0,
-      applicationsCount: 1,
-      linkedFiscalDocumentId: 31809,
-      createdAtUtc: '2026-04-03T00:00:00Z',
-      updatedAtUtc: '2026-04-03T00:00:00Z',
-      applications: [
-        {
-          id: 900,
-          accountsReceivablePaymentId: 6,
-          accountsReceivableInvoiceId: 2,
-          applicationSequence: 1,
-          appliedAmount: 1722,
-          previousBalance: 1722,
-          newBalance: 0,
-          createdAtUtc: '2026-04-03T00:00:00Z'
-        }
-      ]
-    }));
+    api.getPaymentById.mockReset().mockReturnValue(
+      of({
+        id: 6,
+        paymentDateUtc: '2026-04-03T00:00:00Z',
+        paymentFormSat: '03',
+        currencyCode: 'MXN',
+        amount: 5000,
+        appliedTotal: 1722,
+        remainingAmount: 3278,
+        customerCreditBalanceAmount: 0,
+        reference: 'DEP-1',
+        notes: null,
+        receivedFromFiscalReceiverId: 77,
+        operationalStatus: 'PartiallyApplied',
+        repStatus: 'PendingApplications',
+        readyToPrepareRep: false,
+        repBlockReason:
+          'Unapplied payment remainder must be explicitly assigned before preparing REP.',
+        unappliedDisposition: 'PendingAllocation',
+        repDocumentStatus: null,
+        repReservedAmount: 0,
+        repFiscalizedAmount: 0,
+        applicationsCount: 1,
+        linkedFiscalDocumentId: 31809,
+        createdAtUtc: '2026-04-03T00:00:00Z',
+        updatedAtUtc: '2026-04-03T00:00:00Z',
+        applications: [
+          {
+            id: 900,
+            accountsReceivablePaymentId: 6,
+            accountsReceivableInvoiceId: 2,
+            applicationSequence: 1,
+            appliedAmount: 1722,
+            previousBalance: 1722,
+            newBalance: 0,
+            createdAtUtc: '2026-04-03T00:00:00Z',
+          },
+        ],
+      }),
+    );
 
     const fixture = TestBed.createComponent(AccountsReceivablePageComponent);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(api.searchPortfolio).toHaveBeenCalledWith({ fiscalReceiverId: 77, hasPendingBalance: true });
+    expect(api.searchPortfolio).toHaveBeenCalledWith({
+      fiscalReceiverId: 77,
+      hasPendingBalance: true,
+    });
     expect(api.getInvoiceById).not.toHaveBeenCalled();
+    expect(fixture.nativeElement.textContent).not.toContain('Crear pago');
     expect(fixture.nativeElement.textContent).not.toContain('Aplicar pago a esta cuenta');
   });
 
@@ -322,65 +350,72 @@ describe('AccountsReceivablePageComponent', () => {
 
     expect(fixture.nativeElement.textContent).toContain('Remanente no aplicado');
     expect(fixture.nativeElement.textContent).toContain('Conservar como saldo a favor del cliente');
-    expect(fixture.nativeElement.textContent).toContain('Complemento de pago bloqueado temporalmente');
+    expect(fixture.nativeElement.textContent).toContain(
+      'Complemento de pago bloqueado temporalmente',
+    );
   });
 
   it('confirms customer credit balance and refreshes the payment detail', async () => {
     queryParams$.next(convertToParamMap({ invoiceId: '2', paymentId: '6' }));
     api.getPaymentById
       .mockReset()
-      .mockReturnValueOnce(of({
-        id: 6,
-        paymentDateUtc: '2026-04-03T00:00:00Z',
-        paymentFormSat: '03',
-        currencyCode: 'MXN',
-        amount: 2250,
-        appliedTotal: 2241,
-        remainingAmount: 9,
-        customerCreditBalanceAmount: 0,
-        reference: 'DEP-1',
-        notes: null,
-        receivedFromFiscalReceiverId: 77,
-        operationalStatus: 'PartiallyApplied',
-        repStatus: 'PendingApplications',
-        readyToPrepareRep: false,
-        repBlockReason: 'Unapplied payment remainder must be explicitly assigned before preparing REP.',
-        unappliedDisposition: 'PendingAllocation',
-        repDocumentStatus: null,
-        repReservedAmount: 0,
-        repFiscalizedAmount: 0,
-        applicationsCount: 1,
-        linkedFiscalDocumentId: 31809,
-        createdAtUtc: '2026-04-03T00:00:00Z',
-        updatedAtUtc: '2026-04-03T00:00:00Z',
-        applications: []
-      }))
-      .mockReturnValueOnce(of({
-        id: 6,
-        paymentDateUtc: '2026-04-03T00:00:00Z',
-        paymentFormSat: '03',
-        currencyCode: 'MXN',
-        amount: 2250,
-        appliedTotal: 2241,
-        remainingAmount: 9,
-        customerCreditBalanceAmount: 9,
-        reference: 'DEP-1',
-        notes: null,
-        receivedFromFiscalReceiverId: 77,
-        operationalStatus: 'PartiallyApplied',
-        repStatus: 'ReadyToPrepare',
-        readyToPrepareRep: true,
-        repBlockReason: null,
-        unappliedDisposition: 'CustomerCreditBalance',
-        repDocumentStatus: null,
-        repReservedAmount: 0,
-        repFiscalizedAmount: 0,
-        applicationsCount: 1,
-        linkedFiscalDocumentId: 31809,
-        createdAtUtc: '2026-04-03T00:00:00Z',
-        updatedAtUtc: '2026-04-03T00:00:00Z',
-        applications: []
-      }));
+      .mockReturnValueOnce(
+        of({
+          id: 6,
+          paymentDateUtc: '2026-04-03T00:00:00Z',
+          paymentFormSat: '03',
+          currencyCode: 'MXN',
+          amount: 2250,
+          appliedTotal: 2241,
+          remainingAmount: 9,
+          customerCreditBalanceAmount: 0,
+          reference: 'DEP-1',
+          notes: null,
+          receivedFromFiscalReceiverId: 77,
+          operationalStatus: 'PartiallyApplied',
+          repStatus: 'PendingApplications',
+          readyToPrepareRep: false,
+          repBlockReason:
+            'Unapplied payment remainder must be explicitly assigned before preparing REP.',
+          unappliedDisposition: 'PendingAllocation',
+          repDocumentStatus: null,
+          repReservedAmount: 0,
+          repFiscalizedAmount: 0,
+          applicationsCount: 1,
+          linkedFiscalDocumentId: 31809,
+          createdAtUtc: '2026-04-03T00:00:00Z',
+          updatedAtUtc: '2026-04-03T00:00:00Z',
+          applications: [],
+        }),
+      )
+      .mockReturnValueOnce(
+        of({
+          id: 6,
+          paymentDateUtc: '2026-04-03T00:00:00Z',
+          paymentFormSat: '03',
+          currencyCode: 'MXN',
+          amount: 2250,
+          appliedTotal: 2241,
+          remainingAmount: 9,
+          customerCreditBalanceAmount: 9,
+          reference: 'DEP-1',
+          notes: null,
+          receivedFromFiscalReceiverId: 77,
+          operationalStatus: 'PartiallyApplied',
+          repStatus: 'ReadyToPrepare',
+          readyToPrepareRep: true,
+          repBlockReason: null,
+          unappliedDisposition: 'CustomerCreditBalance',
+          repDocumentStatus: null,
+          repReservedAmount: 0,
+          repFiscalizedAmount: 0,
+          applicationsCount: 1,
+          linkedFiscalDocumentId: 31809,
+          createdAtUtc: '2026-04-03T00:00:00Z',
+          updatedAtUtc: '2026-04-03T00:00:00Z',
+          applications: [],
+        }),
+      );
 
     const fixture = TestBed.createComponent(AccountsReceivablePageComponent);
     fixture.detectChanges();
@@ -391,58 +426,14 @@ describe('AccountsReceivablePageComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(api.setPaymentUnappliedDisposition).toHaveBeenCalledWith(6, { unappliedDisposition: 'CustomerCreditBalance' });
+    expect(api.setPaymentUnappliedDisposition).toHaveBeenCalledWith(6, {
+      unappliedDisposition: 'CustomerCreditBalance',
+    });
     expect(api.getPaymentById).toHaveBeenCalledTimes(2);
     expect(fixture.nativeElement.textContent).toContain('Saldo a favor confirmado');
-    expect(fixture.nativeElement.textContent).not.toContain('Conservar como saldo a favor del cliente');
-  });
-
-  it('sends the current receiver id when creating a payment from invoice detail', async () => {
-    queryParams$.next(convertToParamMap({ invoiceId: '2' }));
-
-    const fixture = TestBed.createComponent(AccountsReceivablePageComponent);
-    fixture.detectChanges();
-    await fixture.whenStable();
-
-    await fixture.componentInstance['createPayment']({
-      paymentDateUtc: '2026-04-03T10:00',
-      paymentFormSat: '03',
-      amount: 1722,
-      reference: 'DEP-1',
-      notes: null
-    });
-
-    expect(api.createPayment).toHaveBeenCalledWith(expect.objectContaining({
-      accountsReceivableInvoiceId: 2,
-      receivedFromFiscalReceiverId: 77
-    }));
-  });
-
-  it('creates the payment even when the captured amount exceeds the current operational outstanding balance', async () => {
-    queryParams$.next(convertToParamMap({ invoiceId: '2' }));
-
-    const feedback = TestBed.inject(FeedbackService) as unknown as { show: ReturnType<typeof vi.fn> };
-    api.createPayment.mockClear();
-    feedback.show.mockClear();
-    const fixture = TestBed.createComponent(AccountsReceivablePageComponent);
-    fixture.detectChanges();
-    await fixture.whenStable();
-
-    await fixture.componentInstance['createPayment']({
-      paymentDateUtc: '2026-04-03T10:00',
-      paymentFormSat: '03',
-      amount: 1722.01,
-      reference: 'DEP-ERR',
-      notes: null
-    });
-
-    expect(api.createPayment).toHaveBeenCalledWith(expect.objectContaining({
-      accountsReceivableInvoiceId: 2,
-      receivedFromFiscalReceiverId: 77,
-      amount: 1722.01
-    }));
-    expect(feedback.show).toHaveBeenCalledWith('success', 'Pago registrado.');
-    expect(feedback.show).not.toHaveBeenCalledWith('error', expect.stringContaining('excede el saldo pendiente'));
+    expect(fixture.nativeElement.textContent).not.toContain(
+      'Conservar como saldo a favor del cliente',
+    );
   });
 
   it('loads the receiver workspace when fiscalReceiverId is present in query params', async () => {
@@ -457,5 +448,73 @@ describe('AccountsReceivablePageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Workspace del receptor');
     expect(fixture.nativeElement.textContent).toContain('Receiver');
     expect(fixture.nativeElement.textContent).toContain('AAA010101AAA');
+  });
+
+  it('shows Nuevo pago next to the empty workspace state when there are no payments', async () => {
+    queryParams$.next(convertToParamMap({ fiscalReceiverId: '77' }));
+
+    const fixture = TestBed.createComponent(AccountsReceivablePageComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('No hay pagos asociados a este receptor.');
+    expect(fixture.nativeElement.textContent).toContain('Nuevo pago');
+  });
+
+  it('keeps Ver detalle and also shows Nuevo pago when the workspace already has payments', async () => {
+    queryParams$.next(convertToParamMap({ fiscalReceiverId: '77' }));
+    api.getReceiverWorkspace.mockReturnValueOnce(
+      of({
+        fiscalReceiverId: 77,
+        rfc: 'AAA010101AAA',
+        legalName: 'Receiver',
+        summary: {
+          pendingBalanceTotal: 2722,
+          overdueBalanceTotal: 0,
+          currentBalanceTotal: 2722,
+          openInvoicesCount: 2,
+          overdueInvoicesCount: 0,
+          paymentsCount: 1,
+          paymentsWithUnappliedAmountCount: 1,
+          paymentsPendingRepCount: 1,
+          nextFollowUpAtUtc: null,
+          hasPendingCommitment: false,
+          pendingCommitmentsCount: 0,
+          recentNotesCount: 0,
+          paymentsReadyToPrepareRepCount: 0,
+          paymentsPreparedRepCount: 0,
+          paymentsStampedRepCount: 0,
+        },
+        invoices: [],
+        payments: [
+          {
+            paymentId: 6,
+            receivedAtUtc: '2026-04-03T00:00:00Z',
+            paymentFormSat: '03',
+            amount: 5000,
+            appliedAmount: 1722,
+            unappliedAmount: 3278,
+            operationalStatus: 'PartiallyApplied',
+            repStatus: 'PendingApplications',
+            repReservedAmount: 0,
+            repFiscalizedAmount: 0,
+            applicationsCount: 1,
+            linkedFiscalDocumentId: 31809,
+            reference: 'DEP-1',
+          },
+        ],
+        pendingCommitments: [],
+        recentNotes: [],
+      }),
+    );
+
+    const fixture = TestBed.createComponent(AccountsReceivablePageComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Ver detalle');
+    expect(fixture.nativeElement.textContent).toContain('Nuevo pago');
   });
 });
