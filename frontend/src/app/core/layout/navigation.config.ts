@@ -12,7 +12,7 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
     label: 'Órdenes',
     iconText: 'OR',
     route: '/app/orders',
-    roles: [AppRole.Admin, AppRole.FiscalSupervisor, AppRole.FiscalOperator, AppRole.Auditor]
+    roles: [AppRole.Admin, AppRole.FiscalSupervisor, AppRole.FiscalOperator]
   },
   {
     label: 'Documentos fiscales',

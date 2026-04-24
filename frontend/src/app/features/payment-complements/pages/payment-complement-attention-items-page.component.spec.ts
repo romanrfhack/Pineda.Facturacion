@@ -11,11 +11,11 @@ describe('PaymentComplementAttentionItemsPageComponent', () => {
         {
           provide: PaymentComplementsApiService,
           useValue: {
-            searchAttentionItems: vi.fn().mockReturnValue(of({
-              page: 1,
+            searchAttentionItems: vi.fn((filters: { page: number }) => of({
+              page: filters.page,
               pageSize: 25,
-              totalCount: 2,
-              totalPages: 1,
+              totalCount: 26,
+              totalPages: 2,
               summaryCounts: {
                 infoCount: 0,
                 warningCount: 1,
@@ -243,8 +243,67 @@ describe('PaymentComplementAttentionItemsPageComponent', () => {
     await fixture.componentInstance['applyFilters']();
 
     expect(api.searchAttentionItems).toHaveBeenLastCalledWith(expect.objectContaining({
+      page: 1,
       sourceType: 'External',
       alertCode: 'SatValidationUnavailable'
+    }));
+  });
+
+  it('loads page 2 preserving attention filters', async () => {
+    const fixture = await configure();
+    const api = TestBed.inject(PaymentComplementsApiService) as unknown as { searchAttentionItems: ReturnType<typeof vi.fn> };
+
+    fixture.componentInstance['severityFilter'] = 'warning';
+    await fixture.componentInstance['goToPage'](2);
+    fixture.detectChanges();
+
+    expect(api.searchAttentionItems).toHaveBeenLastCalledWith(expect.objectContaining({
+      page: 2,
+      severity: 'warning'
+    }));
+    expect(fixture.nativeElement.textContent).toContain('Página 2 de 2');
+  });
+
+  it('disables previous pagination on the first page', async () => {
+    const fixture = await configure();
+    const buttons = Array.from(fixture.nativeElement.querySelectorAll('.pagination button')) as HTMLButtonElement[];
+
+    expect(buttons.find((button) => button.textContent?.includes('Anterior'))?.disabled).toBe(true);
+    expect(buttons.find((button) => button.textContent?.includes('Siguiente'))?.disabled).toBe(false);
+  });
+
+  it('disables next pagination on the last page', async () => {
+    const fixture = await configure();
+
+    await fixture.componentInstance['goToPage'](2);
+    fixture.detectChanges();
+
+    const buttons = Array.from(fixture.nativeElement.querySelectorAll('.pagination button')) as HTMLButtonElement[];
+    expect(buttons.find((button) => button.textContent?.includes('Anterior'))?.disabled).toBe(false);
+    expect(buttons.find((button) => button.textContent?.includes('Siguiente'))?.disabled).toBe(true);
+  });
+
+  it('hides pagination controls when there is a single page', async () => {
+    const fixture = await configure();
+
+    fixture.componentInstance['totalPages'].set(1);
+    fixture.componentInstance['page'].set(1);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('.pagination')).toBeNull();
+  });
+
+  it('resets to page 1 when attention filters change', async () => {
+    const fixture = await configure();
+    const api = TestBed.inject(PaymentComplementsApiService) as unknown as { searchAttentionItems: ReturnType<typeof vi.fn> };
+
+    await fixture.componentInstance['goToPage'](2);
+    fixture.componentInstance['query'] = 'UUID-EXT-901';
+    await fixture.componentInstance['applyFilters']();
+
+    expect(api.searchAttentionItems).toHaveBeenLastCalledWith(expect.objectContaining({
+      page: 1,
+      query: 'UUID-EXT-901'
     }));
   });
 

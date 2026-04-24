@@ -566,4 +566,34 @@ describe('PaymentComplementsApiService', () => {
     });
     httpTesting.verify();
   });
+
+  it('searches rep attention items with pagination and filters', () => {
+    const service = TestBed.inject(PaymentComplementsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.searchAttentionItems({
+      page: 2,
+      pageSize: 25,
+      fromDate: '2026-04-01',
+      toDate: '2026-04-30',
+      receiverRfc: 'BBB010101BBB',
+      query: 'UUID-ATT-1',
+      sourceType: 'External',
+      alertCode: 'SatValidationUnavailable',
+      severity: 'warning',
+      nextRecommendedAction: 'RefreshRepStatus'
+    }).subscribe();
+
+    const req = httpTesting.expectOne('/api/payment-complements/attention-items?page=2&pageSize=25&fromDate=2026-04-01&toDate=2026-04-30&receiverRfc=BBB010101BBB&query=UUID-ATT-1&sourceType=External&alertCode=SatValidationUnavailable&severity=warning&nextRecommendedAction=RefreshRepStatus');
+    expect(req.request.method).toBe('GET');
+    req.flush({
+      page: 2,
+      pageSize: 25,
+      totalCount: 26,
+      totalPages: 2,
+      items: [],
+      summaryCounts: { infoCount: 0, warningCount: 0, errorCount: 0, criticalCount: 0, blockedCount: 0, alertCounts: [], nextRecommendedActionCounts: [], quickViewCounts: [] }
+    });
+    httpTesting.verify();
+  });
 });

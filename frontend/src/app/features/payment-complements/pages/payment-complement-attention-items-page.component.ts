@@ -91,7 +91,10 @@ import {
         } @else if (!items().length) {
           <p class="helper">No hay documentos REP que requieran atención con los filtros actuales.</p>
         } @else {
-          <p class="helper">Mostrando {{ items().length }} de {{ totalCount() }} documentos que requieren atención.</p>
+          <div class="toolbar">
+            <p class="helper">Mostrando {{ items().length }} de {{ totalCount() }} documentos que requieren atención.</p>
+            <span class="helper">Página {{ page() }} de {{ totalPages() || 1 }}</span>
+          </div>
 
           <div class="table-wrap">
             <table>
@@ -139,6 +142,14 @@ import {
               </tbody>
             </table>
           </div>
+
+          @if (totalPages() > 1) {
+            <div class="pagination">
+              <button type="button" class="secondary" (click)="goToPage(page() - 1)" [disabled]="page() <= 1 || loading()">Anterior</button>
+              <span>Página {{ page() }} de {{ totalPages() }}</span>
+              <button type="button" class="secondary" (click)="goToPage(page() + 1)" [disabled]="page() >= totalPages() || loading()">Siguiente</button>
+            </div>
+          }
         }
       </section>
 
@@ -232,7 +243,8 @@ import {
     button { border:none; border-radius:0.8rem; padding:0.75rem 1rem; background:#182533; color:#fff; cursor:pointer; }
     button.secondary { background:#d8c49b; color:#182533; }
     button.small { padding:0.5rem 0.75rem; font-size:0.9rem; }
-    .actions, .summary-strip { display:flex; gap:0.75rem; flex-wrap:wrap; align-items:center; }
+    .actions, .summary-strip, .toolbar, .pagination { display:flex; gap:0.75rem; flex-wrap:wrap; align-items:center; }
+    .toolbar, .pagination { justify-content:space-between; }
     .summary-chip { display:inline-flex; align-items:center; padding:0.25rem 0.65rem; border-radius:999px; font-size:0.8rem; font-weight:700; }
     .summary-chip.critical { background:#fdeaea; color:#8a1f1f; }
     .summary-chip.error { background:#fde8e8; color:#8a1f1f; }
@@ -274,9 +286,12 @@ export class PaymentComplementAttentionItemsPageComponent {
   private readonly api = inject(PaymentComplementsApiService);
 
   protected readonly items = signal<RepAttentionItemResponse[]>([]);
+  protected readonly page = signal(1);
+  protected readonly pageSize = signal(PAGE_SIZE);
   protected readonly loading = signal(false);
   protected readonly errorMessage = signal<string | null>(null);
   protected readonly totalCount = signal(0);
+  protected readonly totalPages = signal(0);
   protected readonly summaryCounts = signal<RepOperationalSummaryCountsResponse>(createEmptySummaryCounts());
   protected readonly showDetailModal = signal(false);
   protected readonly loadingDetail = signal(false);
@@ -306,17 +321,31 @@ export class PaymentComplementAttentionItemsPageComponent {
   protected readonly getDisplayLabel = getDisplayLabel;
 
   constructor() {
-    void this.applyFilters();
+    void this.load();
   }
 
   protected async applyFilters(): Promise<void> {
+    this.page.set(1);
+    await this.load();
+  }
+
+  protected async goToPage(page: number): Promise<void> {
+    if (page < 1 || page > this.totalPages() || page === this.page()) {
+      return;
+    }
+
+    this.page.set(page);
+    await this.load();
+  }
+
+  private async load(): Promise<void> {
     this.loading.set(true);
     this.errorMessage.set(null);
 
     try {
       const response = await firstValueFrom(this.api.searchAttentionItems({
-        page: 1,
-        pageSize: 25,
+        page: this.page(),
+        pageSize: this.pageSize(),
         fromDate: this.fromDate || null,
         toDate: this.toDate || null,
         receiverRfc: this.receiverRfc || null,
@@ -327,13 +356,24 @@ export class PaymentComplementAttentionItemsPageComponent {
         nextRecommendedAction: this.nextRecommendedActionFilter || null
       }));
 
+      if (response.totalPages > 0 && response.page > response.totalPages) {
+        this.page.set(response.totalPages);
+        await this.load();
+        return;
+      }
+
       this.items.set(response.items);
       this.totalCount.set(response.totalCount);
+      this.totalPages.set(response.totalPages);
+      this.page.set(response.totalPages === 0 ? 1 : response.page);
+      this.pageSize.set(response.pageSize);
       this.summaryCounts.set(response.summaryCounts ?? createEmptySummaryCounts());
     } catch (error) {
       this.errorMessage.set(extractApiErrorMessage(error, 'No fue posible consultar los documentos REP que requieren atención.'));
       this.items.set([]);
       this.totalCount.set(0);
+      this.totalPages.set(0);
+      this.page.set(1);
       this.summaryCounts.set(createEmptySummaryCounts());
     } finally {
       this.loading.set(false);
@@ -349,7 +389,8 @@ export class PaymentComplementAttentionItemsPageComponent {
     this.alertCodeFilter = '';
     this.severityFilter = '';
     this.nextRecommendedActionFilter = '';
-    void this.applyFilters();
+    this.page.set(1);
+    void this.load();
   }
 
   protected async openDetail(item: RepAttentionItemResponse): Promise<void> {
@@ -413,3 +454,5 @@ function createEmptySummaryCounts(): RepOperationalSummaryCountsResponse {
     quickViewCounts: []
   };
 }
+
+const PAGE_SIZE = 25;

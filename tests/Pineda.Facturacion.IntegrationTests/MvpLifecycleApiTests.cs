@@ -3217,6 +3217,56 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
+    public async Task ExternalRepBaseDocuments_ImportXml_RejectsInvalidUploads_BeforeXmlProcessing()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        factory.FiscalStatusQueryGateway.ResponseFactory = _ => throw new InvalidOperationException("SAT validation should not run for rejected uploads.");
+
+        await AssertRejectedUploadAsync([], "empty.xml", "application/xml", "InvalidXml");
+        await AssertRejectedUploadAsync(new byte[(1 * 1024 * 1024) + 1], "large.xml", "application/xml", "FileTooLarge");
+        await AssertRejectedUploadAsync(Encoding.UTF8.GetBytes(CreateExternalRepXmlContent()), "external.txt", "application/xml", "InvalidFileType");
+        await AssertRejectedUploadAsync(Encoding.UTF8.GetBytes(CreateExternalRepXmlContent()), "external.xml", "application/json", "InvalidFileType");
+
+        async Task AssertRejectedUploadAsync(byte[] fileBytes, string fileName, string contentType, string expectedReasonCode)
+        {
+            using var content = new MultipartFormDataContent();
+            var file = new ByteArrayContent(fileBytes);
+            file.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+            content.Add(file, "file", fileName);
+
+            var response = await client.PostAsync("/api/payment-complements/external-base-documents/import-xml", content);
+
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            using var json = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+            Assert.Equal("Rejected", json.RootElement.GetProperty("outcome").GetString());
+            Assert.Equal(expectedReasonCode, json.RootElement.GetProperty("reasonCode").GetString());
+        }
+    }
+
+    [Fact]
+    public async Task ExternalRepBaseDocuments_ImportXml_RejectsMultipartRequestWithoutFile()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        factory.FiscalStatusQueryGateway.ResponseFactory = _ => throw new InvalidOperationException("SAT validation should not run for rejected uploads.");
+
+        using var content = new MultipartFormDataContent();
+        content.Add(new StringContent("manual"), "source");
+
+        var response = await client.PostAsync("/api/payment-complements/external-base-documents/import-xml", content);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var json = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+        Assert.Equal("Rejected", json.RootElement.GetProperty("outcome").GetString());
+        Assert.Equal("Rejected", json.RootElement.GetProperty("validationStatus").GetString());
+        Assert.Equal("InvalidXml", json.RootElement.GetProperty("reasonCode").GetString());
+        Assert.Equal("El archivo XML es obligatorio.", json.RootElement.GetProperty("reasonMessage").GetString());
+    }
+
+    [Fact]
     public async Task ExternalRepBaseDocuments_List_ReturnsImportedExternalDocuments()
     {
         await using var factory = new MvpApiFactory();

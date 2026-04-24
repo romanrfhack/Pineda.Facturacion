@@ -123,7 +123,10 @@ import {
         } @else if (!items().length) {
           <p class="helper">No se encontraron CFDI externos importados con los filtros actuales.</p>
         } @else {
-          <p class="helper">Mostrando {{ items().length }} de {{ totalCount() }} CFDI externos.</p>
+          <div class="toolbar">
+            <p class="helper">Mostrando {{ items().length }} de {{ totalCount() }} CFDI externos.</p>
+            <span class="helper">Página {{ page() }} de {{ totalPages() || 1 }}</span>
+          </div>
 
           <div class="bulk-toolbar">
             <label class="selection-toggle">
@@ -134,7 +137,7 @@ import {
             <button type="button" [disabled]="bulkRefreshing() || !selectedCount()" (click)="refreshSelectedDocuments()">
               {{ bulkRefreshing() ? 'Refrescando...' : 'Refrescar seleccionados' }}
             </button>
-            <button type="button" class="secondary" [disabled]="bulkRefreshing() || !items().length" (click)="refreshFilteredDocuments()">
+            <button type="button" class="secondary" [disabled]="bulkRefreshing() || !canRefreshFilteredDocuments()" (click)="refreshFilteredDocuments()">
               {{ bulkRefreshing() ? 'Refrescando...' : 'Refrescar filtrados' }}
             </button>
             @if (bulkRefreshResult()) {
@@ -146,6 +149,10 @@ import {
 
           @if (bulkRefreshError()) {
             <p class="error">{{ bulkRefreshError() }}</p>
+          }
+
+          @if (isFilteredBulkOverLimit()) {
+            <p class="helper warning">Refrescar filtrados aplica al conjunto filtrado completo y el backend procesa máximo 50 documentos. Ajusta filtros para habilitar esta acción.</p>
           }
 
           @if (bulkRefreshResult(); as result) {
@@ -249,6 +256,14 @@ import {
               </tbody>
             </table>
           </div>
+
+          @if (totalPages() > 1) {
+            <div class="pagination">
+              <button type="button" class="secondary" (click)="goToPage(page() - 1)" [disabled]="page() <= 1 || loading()">Anterior</button>
+              <span>Página {{ page() }} de {{ totalPages() }}</span>
+              <button type="button" class="secondary" (click)="goToPage(page() + 1)" [disabled]="page() >= totalPages() || loading()">Siguiente</button>
+            </div>
+          }
         }
       </section>
 
@@ -504,6 +519,7 @@ import {
     .inset-card { border-style:dashed; }
     .eyebrow { margin:0; text-transform:uppercase; letter-spacing:0.12em; font-size:0.72rem; color:#8a6a32; }
     .helper { margin:0; color:#5f6b76; }
+    .warning { color:#8a5a00; }
     .filters, .payment-form { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:0.85rem; }
     .filters label, .payment-form label { display:grid; gap:0.35rem; }
     .filters .wide, .payment-form .wide { grid-column:1 / -1; }
@@ -511,7 +527,8 @@ import {
     button { border:none; border-radius:0.8rem; padding:0.75rem 1rem; background:#182533; color:#fff; cursor:pointer; }
     button.secondary { background:#d8c49b; color:#182533; }
     button.small { padding:0.5rem 0.75rem; font-size:0.9rem; }
-    .actions, .modal-actions, .quick-filters, .bulk-toolbar { display:flex; gap:0.75rem; flex-wrap:wrap; align-items:center; }
+    .actions, .modal-actions, .quick-filters, .bulk-toolbar, .toolbar, .pagination { display:flex; gap:0.75rem; flex-wrap:wrap; align-items:center; }
+    .toolbar, .pagination { justify-content:space-between; }
     .selection-toggle { display:inline-flex; align-items:center; gap:0.5rem; }
     .table-wrap { overflow:auto; }
     table { width:100%; border-collapse:collapse; min-width:1180px; }
@@ -567,6 +584,8 @@ export class PaymentComplementExternalBaseDocumentsPageComponent {
 
   protected readonly items = signal<ExternalRepBaseDocumentItemResponse[]>([]);
   protected readonly selectedIds = signal<number[]>([]);
+  protected readonly page = signal(1);
+  protected readonly pageSize = signal(PAGE_SIZE);
   protected readonly loading = signal(false);
   protected readonly errorMessage = signal<string | null>(null);
   protected readonly totalCount = signal(0);
@@ -611,17 +630,31 @@ export class PaymentComplementExternalBaseDocumentsPageComponent {
   protected paymentNotes = '';
 
   constructor() {
-    void this.applyFilters();
+    void this.load();
   }
 
   protected async applyFilters(): Promise<void> {
+    this.page.set(1);
+    await this.load();
+  }
+
+  protected async goToPage(page: number): Promise<void> {
+    if (page < 1 || page > this.totalPages() || page === this.page()) {
+      return;
+    }
+
+    this.page.set(page);
+    await this.load();
+  }
+
+  private async load(): Promise<void> {
     this.loading.set(true);
     this.errorMessage.set(null);
 
     try {
       const response = await firstValueFrom(this.api.searchExternalBaseDocuments({
-        page: 1,
-        pageSize: 25,
+        page: this.page(),
+        pageSize: this.pageSize(),
         fromDate: this.fromDate || null,
         toDate: this.toDate || null,
         receiverRfc: this.receiverRfc || null,
@@ -635,17 +668,27 @@ export class PaymentComplementExternalBaseDocumentsPageComponent {
         quickView: this.quickViewFilter || null
       }));
 
+      if (response.totalPages > 0 && response.page > response.totalPages) {
+        this.page.set(response.totalPages);
+        await this.load();
+        return;
+      }
+
       this.items.set(response.items);
       this.selectedIds.set([]);
       this.summaryCounts.set(response.summaryCounts ?? createEmptySummaryCounts());
       this.totalCount.set(response.totalCount);
       this.totalPages.set(response.totalPages);
+      this.page.set(response.totalPages === 0 ? 1 : response.page);
+      this.pageSize.set(response.pageSize);
     } catch (error) {
       this.errorMessage.set(extractApiErrorMessage(error, 'No fue posible consultar los CFDI externos importados.'));
       this.items.set([]);
+      this.selectedIds.set([]);
       this.summaryCounts.set(createEmptySummaryCounts());
       this.totalCount.set(0);
       this.totalPages.set(0);
+      this.page.set(1);
     } finally {
       this.loading.set(false);
     }
@@ -663,7 +706,8 @@ export class PaymentComplementExternalBaseDocumentsPageComponent {
     this.severityFilter = '';
     this.nextRecommendedActionFilter = '';
     this.quickViewFilter = '';
-    void this.applyFilters();
+    this.page.set(1);
+    void this.load();
   }
 
   protected async openDetail(externalRepBaseDocumentId: number): Promise<void> {
@@ -723,7 +767,7 @@ export class PaymentComplementExternalBaseDocumentsPageComponent {
       this.showRegisterPaymentForm.set(false);
       this.operationMessage.set(`Pago registrado y aplicado. Pago #${response.accountsReceivablePaymentId ?? 'n/a'}.`);
       await this.loadDetail(detail.summary.externalRepBaseDocumentId);
-      await this.applyFilters();
+      await this.load();
     } catch (error) {
       this.operationError.set(extractApiErrorMessage(error, 'No fue posible registrar el pago sobre el CFDI externo.'));
     } finally {
@@ -750,7 +794,7 @@ export class PaymentComplementExternalBaseDocumentsPageComponent {
         ? 'El REP ya estaba preparado para este CFDI externo.'
         : 'REP preparado correctamente para el CFDI externo.');
       await this.loadDetail(detail.summary.externalRepBaseDocumentId);
-      await this.applyFilters();
+      await this.load();
     } catch (error) {
       this.operationError.set(extractApiErrorMessage(error, 'No fue posible preparar el REP del CFDI externo.'));
     } finally {
@@ -777,7 +821,7 @@ export class PaymentComplementExternalBaseDocumentsPageComponent {
         ? 'El REP externo ya estaba timbrado.'
         : `REP timbrado correctamente${response.stampUuid ? ` (${response.stampUuid})` : ''}.`);
       await this.loadDetail(detail.summary.externalRepBaseDocumentId);
-      await this.applyFilters();
+      await this.load();
     } catch (error) {
       this.operationError.set(extractApiErrorMessage(error, 'No fue posible timbrar el REP del CFDI externo.'));
     } finally {
@@ -802,7 +846,7 @@ export class PaymentComplementExternalBaseDocumentsPageComponent {
       ));
       this.operationMessage.set(`REP actualizado${response.lastKnownExternalStatus ? ` (${response.lastKnownExternalStatus})` : ''}.`);
       await this.loadDetail(detail.summary.externalRepBaseDocumentId);
-      await this.applyFilters();
+      await this.load();
     } catch (error) {
       this.operationError.set(extractApiErrorMessage(error, 'No fue posible refrescar el estatus del REP externo.'));
     } finally {
@@ -831,7 +875,7 @@ export class PaymentComplementExternalBaseDocumentsPageComponent {
       ));
       this.operationMessage.set(`REP cancelado${response.cancellationStatus ? ` (${getDisplayLabel(response.cancellationStatus)})` : ''}.`);
       await this.loadDetail(detail.summary.externalRepBaseDocumentId);
-      await this.applyFilters();
+      await this.load();
     } catch (error) {
       this.operationError.set(extractApiErrorMessage(error, 'No fue posible cancelar el REP externo.'));
     } finally {
@@ -901,7 +945,8 @@ export class PaymentComplementExternalBaseDocumentsPageComponent {
 
   protected async applyQuickView(quickView: string): Promise<void> {
     this.quickViewFilter = this.quickViewFilter === quickView ? '' : quickView;
-    await this.applyFilters();
+    this.page.set(1);
+    await this.load();
   }
 
   protected clearOperationalFilters(): void {
@@ -909,7 +954,8 @@ export class PaymentComplementExternalBaseDocumentsPageComponent {
     this.severityFilter = '';
     this.nextRecommendedActionFilter = '';
     this.quickViewFilter = '';
-    void this.applyFilters();
+    this.page.set(1);
+    void this.load();
   }
 
   protected countForQuickView(code: string): number {
@@ -965,11 +1011,19 @@ export class PaymentComplementExternalBaseDocumentsPageComponent {
   }
 
   protected async refreshFilteredDocuments(): Promise<void> {
-    if (!this.items().length) {
+    if (!this.canRefreshFilteredDocuments()) {
       return;
     }
 
     await this.executeBulkRefresh('Filtered');
+  }
+
+  protected canRefreshFilteredDocuments(): boolean {
+    return this.items().length > 0 && !this.isFilteredBulkOverLimit();
+  }
+
+  protected isFilteredBulkOverLimit(): boolean {
+    return this.totalCount() > BULK_REFRESH_MAX_DOCUMENTS;
   }
 
   private async loadDetail(externalRepBaseDocumentId: number): Promise<void> {
@@ -994,7 +1048,9 @@ export class PaymentComplementExternalBaseDocumentsPageComponent {
     try {
       const result = await firstValueFrom(this.api.bulkRefreshExternalBaseDocuments({
         mode,
-        documents: this.selectedIds().map((sourceId) => ({ sourceType: 'External', sourceId })),
+        ...(mode === 'Selected'
+          ? { documents: this.selectedIds().map((sourceId) => ({ sourceType: 'External', sourceId })) }
+          : {}),
         fromDate: this.fromDate || null,
         toDate: this.toDate || null,
         receiverRfc: this.receiverRfc || null,
@@ -1017,7 +1073,7 @@ export class PaymentComplementExternalBaseDocumentsPageComponent {
         await this.loadDetail(detail.summary.externalRepBaseDocumentId);
       }
 
-      await this.applyFilters();
+      await this.load();
       this.operationMessage.set(`Refresh masivo externo ejecutado: ${result.refreshedCount} actualizados, ${result.noChangesCount} sin cambios, ${result.blockedCount} bloqueados, ${result.failedCount} fallidos.`);
     } catch (error) {
       this.bulkRefreshError.set(extractApiErrorMessage(error, 'No fue posible ejecutar el refresh masivo externo.'));
@@ -1080,3 +1136,5 @@ const REP_OPERATIONAL_SEVERITY_OPTIONS = ['info', 'warning', 'error', 'critical'
 const REP_OPERATIONAL_SEVERITY_PRIORITY = ['critical', 'error', 'warning', 'info'];
 const REP_RECOMMENDED_ACTION_OPTIONS = ['RegisterPayment', 'PrepareRep', 'StampRep', 'RefreshRepStatus', 'CancelRep', 'ViewDetail', 'Blocked', 'NoAction'];
 const REP_QUICK_VIEW_OPTIONS = ['PendingStamp', 'WithError', 'Blocked', 'AppliedPaymentWithoutStampedRep', 'PendingRefresh', 'Stamped'];
+const PAGE_SIZE = 25;
+const BULK_REFRESH_MAX_DOCUMENTS = 50;

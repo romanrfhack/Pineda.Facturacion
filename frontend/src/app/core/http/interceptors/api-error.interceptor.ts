@@ -1,22 +1,18 @@
 import { HttpErrorResponse, HttpInterceptorFn } from '@angular/common/http';
 import { inject } from '@angular/core';
-import { Router } from '@angular/router';
 import { catchError, throwError } from 'rxjs';
 import { FeedbackService } from '../../ui/feedback.service';
-import { TokenStorageService } from '../../auth/token-storage.service';
+import { SessionService } from '../../auth/session.service';
 import { buildApiUrl } from '../../config/api-url';
 
 export const apiErrorInterceptor: HttpInterceptorFn = (req, next) => {
-  const router = inject(Router);
   const feedbackService = inject(FeedbackService);
-  const tokenStorage = inject(TokenStorageService);
+  const sessionService = inject(SessionService);
 
   return next(req).pipe(
     catchError((error: HttpErrorResponse) => {
-      if (error.status === 401 && req.url !== buildApiUrl('/auth/login')) {
-        tokenStorage.clear();
-        feedbackService.show('warning', 'Tu sesión ya no es válida. Inicia sesión nuevamente.');
-        void router.navigate(['/login']);
+      if (error.status === 401 && !isLoginRequest(req.url)) {
+        void sessionService.handleUnauthorized();
       } else if (error.status === 403) {
         feedbackService.show('error', 'Tu usuario está autenticado, pero no tiene permisos para realizar esta acción.');
       } else if (error.status >= 500) {
@@ -27,3 +23,8 @@ export const apiErrorInterceptor: HttpInterceptorFn = (req, next) => {
     })
   );
 };
+
+function isLoginRequest(url: string): boolean {
+  const loginUrl = buildApiUrl('/auth/login');
+  return url === loginUrl || url.endsWith(loginUrl);
+}

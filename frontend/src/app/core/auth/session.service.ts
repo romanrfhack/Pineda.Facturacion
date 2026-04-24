@@ -21,6 +21,7 @@ export class SessionService {
   private readonly tokenStorage = inject(TokenStorageService);
   private readonly router = inject(Router);
   private readonly feedbackService = inject(FeedbackService);
+  private loginNavigationInProgress = false;
 
   readonly currentUser = signal<CurrentUser>(ANONYMOUS_USER);
   readonly token = signal<string | null>(this.tokenStorage.getToken());
@@ -32,11 +33,16 @@ export class SessionService {
 
   getDefaultAppRoute(): string {
     const roles = this.roles();
+
+    if (roles.some((role) => role === AppRole.Admin || role === AppRole.FiscalSupervisor || role === AppRole.FiscalOperator)) {
+      return '/app/orders';
+    }
+
     if (roles.includes(AppRole.Auditor)) {
       return '/app/audit';
     }
 
-    return '/app/orders';
+    return '/login';
   }
 
   async restoreSession(): Promise<void> {
@@ -55,7 +61,7 @@ export class SessionService {
         roles: (currentUser.roles ?? []) as AppRole[]
       });
     } catch {
-      this.clearSession(false);
+      this.clearSession();
     } finally {
       this.initializing.set(false);
     }
@@ -91,22 +97,42 @@ export class SessionService {
   }
 
   async logout(redirect = true): Promise<void> {
-    this.clearSession(redirect);
+    this.clearSession();
+
+    if (redirect) {
+      await this.navigateToLogin();
+    }
   }
 
   async handleUnauthorized(message = 'Tu sesión ya no es válida. Inicia sesión nuevamente.'): Promise<void> {
-    this.feedbackService.show('warning', message);
-    this.clearSession(true);
+    const hadSessionState = Boolean(this.token() || this.tokenStorage.getToken() || this.currentUser().isAuthenticated);
+
+    this.clearSession();
+
+    if (hadSessionState) {
+      this.feedbackService.show('warning', message);
+    }
+
+    await this.navigateToLogin();
   }
 
-  private clearSession(redirect: boolean): void {
+  private clearSession(): void {
     this.tokenStorage.clear();
     this.token.set(null);
     this.currentUser.set(ANONYMOUS_USER);
     this.initializing.set(false);
+  }
 
-    if (redirect) {
-      void this.router.navigate(['/login']);
+  private async navigateToLogin(): Promise<void> {
+    if (this.router.url?.startsWith('/login') || this.loginNavigationInProgress) {
+      return;
+    }
+
+    this.loginNavigationInProgress = true;
+    try {
+      await Promise.resolve(this.router.navigate(['/login']));
+    } finally {
+      this.loginNavigationInProgress = false;
     }
   }
 }

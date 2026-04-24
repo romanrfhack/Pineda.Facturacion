@@ -10,6 +10,8 @@ namespace Pineda.Facturacion.Api.Endpoints;
 
 public static class PaymentComplementsEndpoints
 {
+    private const long ExternalRepBaseDocumentXmlMaxBytes = 1 * 1024 * 1024;
+
     public static IEndpointRouteBuilder MapPaymentComplementsEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -1370,26 +1372,21 @@ public static class PaymentComplementsEndpoints
         IAuditService auditService,
         CancellationToken cancellationToken)
     {
-        if (file is null)
+        var earlyRejection = ValidateExternalRepBaseDocumentXmlUpload(file);
+        if (earlyRejection is not null)
         {
-            return TypedResults.BadRequest(new ExternalRepBaseDocumentImportResponse
-            {
-                Outcome = ImportExternalRepBaseDocumentFromXmlOutcome.Rejected.ToString(),
-                IsSuccess = false,
-                ValidationStatus = "Rejected",
-                ReasonCode = ExternalRepBaseDocumentImportReasonCode.InvalidXml.ToString(),
-                ReasonMessage = "El archivo XML es obligatorio."
-            });
+            return TypedResults.BadRequest(earlyRejection);
         }
 
-        await using var stream = file.OpenReadStream();
+        var validFile = file!;
+        await using var stream = validFile.OpenReadStream();
         using var buffer = new MemoryStream();
         await stream.CopyToAsync(buffer, cancellationToken);
 
         var result = await service.ExecuteAsync(
             new ImportExternalRepBaseDocumentFromXmlCommand
             {
-                SourceFileName = file.FileName,
+                SourceFileName = validFile.FileName,
                 FileContent = buffer.ToArray()
             },
             cancellationToken);
@@ -1419,7 +1416,7 @@ public static class PaymentComplementsEndpoints
             "ExternalRepBaseDocument",
             result.ExternalRepBaseDocumentId?.ToString(),
             result.Outcome.ToString(),
-            new { file.FileName, file.Length, file.ContentType },
+            new { validFile.FileName, validFile.Length, validFile.ContentType },
             new { result.ExternalRepBaseDocumentId, result.Uuid, result.ReasonCode, result.ValidationStatus, result.IsDuplicate },
             result.ErrorMessage ?? result.ReasonMessage,
             cancellationToken);
@@ -1430,6 +1427,76 @@ public static class PaymentComplementsEndpoints
             ImportExternalRepBaseDocumentFromXmlOutcome.Blocked => TypedResults.Ok(response),
             ImportExternalRepBaseDocumentFromXmlOutcome.Duplicate => TypedResults.Conflict(response),
             _ => TypedResults.BadRequest(response)
+        };
+    }
+
+    private static ExternalRepBaseDocumentImportResponse? ValidateExternalRepBaseDocumentXmlUpload(IFormFile? file)
+    {
+        if (file is null)
+        {
+            return CreateExternalRepBaseDocumentImportRejection(
+                ExternalRepBaseDocumentImportReasonCode.InvalidXml,
+                "El archivo XML es obligatorio.");
+        }
+
+        if (file.Length <= 0)
+        {
+            return CreateExternalRepBaseDocumentImportRejection(
+                ExternalRepBaseDocumentImportReasonCode.InvalidXml,
+                "El archivo XML no puede estar vacío.");
+        }
+
+        if (file.Length > ExternalRepBaseDocumentXmlMaxBytes)
+        {
+            return CreateExternalRepBaseDocumentImportRejection(
+                ExternalRepBaseDocumentImportReasonCode.FileTooLarge,
+                "El archivo XML excede el tamaño máximo permitido de 1 MB.");
+        }
+
+        if (!string.Equals(Path.GetExtension(file.FileName), ".xml", StringComparison.OrdinalIgnoreCase))
+        {
+            return CreateExternalRepBaseDocumentImportRejection(
+                ExternalRepBaseDocumentImportReasonCode.InvalidFileType,
+                "Solo se admiten archivos con extensión .xml.");
+        }
+
+        if (!IsAllowedExternalRepBaseDocumentXmlContentType(file.ContentType))
+        {
+            return CreateExternalRepBaseDocumentImportRejection(
+                ExternalRepBaseDocumentImportReasonCode.InvalidFileType,
+                "El tipo de contenido del archivo no corresponde a XML.");
+        }
+
+        return null;
+    }
+
+    private static bool IsAllowedExternalRepBaseDocumentXmlContentType(string? contentType)
+    {
+        if (string.IsNullOrWhiteSpace(contentType))
+        {
+            return true;
+        }
+
+        var normalizedContentType = contentType.Split(';', 2)[0].Trim();
+        return normalizedContentType.Equals("application/xml", StringComparison.OrdinalIgnoreCase)
+            || normalizedContentType.Equals("text/xml", StringComparison.OrdinalIgnoreCase)
+            || normalizedContentType.Equals("application/octet-stream", StringComparison.OrdinalIgnoreCase)
+            || normalizedContentType.Equals("binary/octet-stream", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static ExternalRepBaseDocumentImportResponse CreateExternalRepBaseDocumentImportRejection(
+        ExternalRepBaseDocumentImportReasonCode reasonCode,
+        string reasonMessage)
+    {
+        return new ExternalRepBaseDocumentImportResponse
+        {
+            Outcome = ImportExternalRepBaseDocumentFromXmlOutcome.Rejected.ToString(),
+            IsSuccess = false,
+            ValidationStatus = "Rejected",
+            ReasonCode = reasonCode.ToString(),
+            ReasonMessage = reasonMessage,
+            ErrorMessage = reasonMessage,
+            IsDuplicate = false
         };
     }
 
