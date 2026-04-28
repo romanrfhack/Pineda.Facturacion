@@ -551,23 +551,26 @@ public class PrepareFiscalDocumentService
         ProductFiscalProfile? existingProfile = null;
         var existingProfileStatus = PrepareFiscalDocumentExistingProductFiscalProfileStatus.None;
         SuggestSatAssignmentForLegacyItemResult? suggestionResult = null;
+        ProductFiscalAssignment? effectiveAssignment = null;
+        var suppressHistoricalCandidates = false;
 
         if (!string.IsNullOrWhiteSpace(normalizedInternalCode))
         {
+            effectiveAssignment = await _productFiscalProfileRepository.GetEffectiveAssignmentAsync(
+                normalizedInternalCode,
+                asOfUtc,
+                cancellationToken);
+            suppressHistoricalCandidates = ProductFiscalAssignmentConventions.IsUnresolvedForSatSuggestion(effectiveAssignment);
             existingProfile = await _productFiscalProfileRepository.GetByInternalCodeAsync(normalizedInternalCode, cancellationToken);
-            existingProfileStatus = existingProfile switch
-            {
-                null => PrepareFiscalDocumentExistingProductFiscalProfileStatus.None,
-                { IsActive: true } => PrepareFiscalDocumentExistingProductFiscalProfileStatus.Active,
-                _ => PrepareFiscalDocumentExistingProductFiscalProfileStatus.Inactive
-            };
+            existingProfileStatus = ResolveExistingProductFiscalProfileStatus(existingProfile, effectiveAssignment);
 
             suggestionResult = await _suggestSatAssignmentForLegacyItemService.ExecuteAsync(new SuggestSatAssignmentForLegacyItemCommand
             {
                 InternalCode = normalizedInternalCode,
                 Description = billingDocumentItem.Description,
                 BillingDocumentItemSatProductServiceCode = billingDocumentItem.SatProductServiceCode,
-                BillingDocumentItemSatUnitCode = billingDocumentItem.SatUnitCode
+                BillingDocumentItemSatUnitCode = billingDocumentItem.SatUnitCode,
+                SuppressHistoricalCandidates = suppressHistoricalCandidates
             }, cancellationToken);
         }
 
@@ -595,6 +598,7 @@ public class PrepareFiscalDocumentService
             Prefill = BuildMissingProductFiscalProfilePrefill(
                 billingDocumentItem,
                 existingProfile,
+                existingProfileStatus,
                 suggestionResult,
                 autoPrefillSuggestion),
             Suggestions = suggestions
@@ -659,10 +663,13 @@ public class PrepareFiscalDocumentService
     private static PrepareFiscalDocumentMissingProductFiscalProfilePrefill BuildMissingProductFiscalProfilePrefill(
         BillingDocumentItem billingDocumentItem,
         ProductFiscalProfile? existingProfile,
+        PrepareFiscalDocumentExistingProductFiscalProfileStatus existingProfileStatus,
         SuggestSatAssignmentForLegacyItemResult? suggestionResult,
         PrepareFiscalDocumentMissingProductFiscalProfileSuggestion? autoPrefillSuggestion)
     {
-        if (existingProfile is not null)
+        if (existingProfile is not null
+            && existingProfileStatus is PrepareFiscalDocumentExistingProductFiscalProfileStatus.Active
+                or PrepareFiscalDocumentExistingProductFiscalProfileStatus.Inactive)
         {
             return new PrepareFiscalDocumentMissingProductFiscalProfilePrefill
             {
@@ -723,7 +730,29 @@ public class PrepareFiscalDocumentService
             return $"Product fiscal profile for item line '{missingProductFiscalProfile.LineNumber}' and internal code '{missingProductFiscalProfile.InternalCode}' exists but is inactive.";
         }
 
+        if (missingProductFiscalProfile.ExistingProfileStatus == PrepareFiscalDocumentExistingProductFiscalProfileStatus.PendingReview)
+        {
+            return $"Product fiscal profile for item line '{missingProductFiscalProfile.LineNumber}' and internal code '{missingProductFiscalProfile.InternalCode}' is pending SAT review.";
+        }
+
         return $"No active product fiscal profile exists for item line '{missingProductFiscalProfile.LineNumber}' and internal code '{missingProductFiscalProfile.InternalCode}'.";
+    }
+
+    private static PrepareFiscalDocumentExistingProductFiscalProfileStatus ResolveExistingProductFiscalProfileStatus(
+        ProductFiscalProfile? existingProfile,
+        ProductFiscalAssignment? effectiveAssignment)
+    {
+        if (ProductFiscalAssignmentConventions.IsUnresolvedForSatSuggestion(effectiveAssignment))
+        {
+            return PrepareFiscalDocumentExistingProductFiscalProfileStatus.PendingReview;
+        }
+
+        return existingProfile switch
+        {
+            null => PrepareFiscalDocumentExistingProductFiscalProfileStatus.None,
+            { IsActive: true } => PrepareFiscalDocumentExistingProductFiscalProfileStatus.Active,
+            _ => PrepareFiscalDocumentExistingProductFiscalProfileStatus.Inactive
+        };
     }
 
     private static string? NormalizeOptionalCode(string? value)

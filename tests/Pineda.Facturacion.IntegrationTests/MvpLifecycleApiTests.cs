@@ -24,6 +24,7 @@ using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Contracts.Pac;
 using Pineda.Facturacion.Application.Models.Legacy;
 using Pineda.Facturacion.Application.Security;
+using Pineda.Facturacion.Application.UseCases.ProductFiscalProfiles;
 using Pineda.Facturacion.Domain.Entities;
 using Pineda.Facturacion.Domain.Enums;
 using Pineda.Facturacion.Infrastructure.BillingWrite.Persistence;
@@ -307,6 +308,101 @@ public class MvpLifecycleApiTests
         Assert.NotNull(profile);
         Assert.Equal("40161513", profile!.SatProductServiceCode);
         Assert.Equal("H87", profile.SatUnitCode);
+    }
+
+    [Fact]
+    public async Task LegacySuggestions_SuppressesHistoricalGenericProfile_WhenAssignmentIsLegacyPendingReset()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        var now = DateTime.UtcNow;
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+            if (!await db.SatProductServiceCatalogEntries.AnyAsync(x => x.Code == "40161505"))
+            {
+                db.SatProductServiceCatalogEntries.Add(new SatProductServiceCatalogEntry
+                {
+                    Code = "40161505",
+                    Description = "Filtro de aire",
+                    NormalizedDescription = "FILTRO DE AIRE",
+                    KeywordsNormalized = "FILTRO AIRE MOTOR",
+                    IsActive = true,
+                    SourceVersion = "4.0",
+                    CreatedAtUtc = now,
+                    UpdatedAtUtc = now
+                });
+            }
+
+            if (!await db.SatClaveUnidades.AnyAsync(x => x.Code == "H87"))
+            {
+                db.SatClaveUnidades.Add(new SatClaveUnidad
+                {
+                    Code = "H87",
+                    Description = "Pieza",
+                    NormalizedDescription = "PIEZA",
+                    Symbol = "PZA",
+                    Notes = "Unidad de pieza",
+                    IsActive = true,
+                    SourceVersion = "4.0",
+                    CreatedAtUtc = now,
+                    UpdatedAtUtc = now
+                });
+            }
+            db.ProductFiscalProfiles.Add(new ProductFiscalProfile
+            {
+                Id = 9001,
+                InternalCode = "SKU-LEGACY-PENDING-IT-1",
+                Description = "Filtro legado",
+                NormalizedDescription = "FILTRO LEGADO",
+                SatProductServiceCode = ProductFiscalAssignmentConventions.GenericSatProductServiceCode,
+                SatUnitCode = "H87",
+                TaxObjectCode = "02",
+                VatRate = 0.16m,
+                DefaultUnitText = "PIEZA",
+                IsActive = true,
+                CreatedAtUtc = now.AddDays(-10),
+                UpdatedAtUtc = now.AddDays(-10)
+            });
+            db.ProductFiscalAssignments.Add(new ProductFiscalAssignment
+            {
+                Id = 9002,
+                InternalCode = "SKU-LEGACY-PENDING-IT-1",
+                SatProductServiceCode = ProductFiscalAssignmentConventions.GenericSatProductServiceCode,
+                SatUnitCode = "H87",
+                TaxObjectCode = "02",
+                VatRate = 0.16m,
+                DefaultUnitText = "PIEZA",
+                Source = ProductFiscalAssignmentConventions.BackfillSource,
+                Confidence = 0.5000m,
+                ReviewStatus = ProductFiscalAssignmentConventions.PendingReviewStatus,
+                ReviewReason = ProductFiscalAssignmentConventions.LegacyGenericResetReviewReason,
+                ValidFromUtc = now.AddDays(-2),
+                ValidToUtc = null,
+                CreatedAtUtc = now.AddDays(-2),
+                UpdatedAtUtc = now.AddDays(-2)
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await client.PostAsJsonAsync("/api/fiscal/product-fiscal-profiles/legacy-suggestions", new ProductFiscalProfilesEndpoints.SuggestLegacyItemSatAssignmentRequest
+        {
+            InternalCode = "SKU-LEGACY-PENDING-IT-1",
+            Description = "Filtro de aire premium",
+            UnitName = "Pieza"
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<ProductFiscalProfilesEndpoints.LegacySatAssignmentSuggestionResponse>();
+        Assert.NotNull(body);
+        Assert.Equal("40161505", body!.SuggestedProductService!.Code);
+        Assert.Equal("catalog_search", body.SuggestedProductService.Source);
+        Assert.DoesNotContain(
+            body.ProductServiceCandidates,
+            x => string.Equals(x.Code, ProductFiscalAssignmentConventions.GenericSatProductServiceCode, StringComparison.Ordinal)
+                || string.Equals(x.Source, "product_fiscal_profile_current", StringComparison.Ordinal)
+                || string.Equals(x.Source, ProductFiscalAssignmentConventions.BackfillSource, StringComparison.Ordinal));
     }
 
     [Fact]

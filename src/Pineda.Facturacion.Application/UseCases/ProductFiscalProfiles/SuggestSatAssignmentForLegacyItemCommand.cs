@@ -15,4 +15,6 @@ public sealed class SuggestSatAssignmentForLegacyItemCommand
     public string? ImportedSatProductServiceCode { get; init; }
 
     public string? ImportedSatUnitCode { get; init; }
+
+    public bool SuppressHistoricalCandidates { get; init; }
 }

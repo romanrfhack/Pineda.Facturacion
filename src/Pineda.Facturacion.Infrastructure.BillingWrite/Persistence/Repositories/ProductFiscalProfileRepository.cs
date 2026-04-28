@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
+using Pineda.Facturacion.Application.UseCases.ProductFiscalProfiles;
 using Pineda.Facturacion.Domain.Entities;
 
 namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Repositories;
@@ -46,6 +47,11 @@ public class ProductFiscalProfileRepository : IProductFiscalProfileRepository
 
         if (assignment is not null)
         {
+            if (ProductFiscalAssignmentConventions.IsUnresolvedForSatSuggestion(assignment))
+            {
+                return null;
+            }
+
             return new ProductFiscalProfile
             {
                 InternalCode = assignment.InternalCode,
