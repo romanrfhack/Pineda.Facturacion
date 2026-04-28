@@ -2,9 +2,9 @@ namespace Pineda.Facturacion.Application.UseCases.Orders;
 
 public sealed class SearchLegacyOrdersFilter
 {
-    public DateTime FromDateUtc { get; init; }
+    public DateTime? FromDateUtc { get; init; }
 
-    public DateTime ToDateUtcExclusive { get; init; }
+    public DateTime? ToDateUtcExclusive { get; init; }
 
     public string? LegacyOrderId { get; init; }
 

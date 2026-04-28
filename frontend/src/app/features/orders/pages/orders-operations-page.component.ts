@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { ActivatedRoute, ParamMap, Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { CurrencyPipe, DatePipe } from '@angular/common';
 import { firstValueFrom } from 'rxjs';
@@ -22,7 +22,8 @@ import { StatusBadgeComponent } from '../../../shared/components/status-badge.co
 import { extractImportLegacyOrderConflict, ImportLegacyOrderConflictViewModel } from '../application/import-legacy-order-conflict';
 import { adaptImportLegacyOrderPreview, ImportLegacyOrderPreviewViewModel } from '../application/import-legacy-order-preview';
 
-type QuickRange = 'today' | 'yesterday' | 'last7' | 'custom';
+type QuickRange = '' | 'today' | 'yesterday' | 'last7' | 'custom';
+type PresetQuickRange = Exclude<QuickRange, '' | 'custom'>;
 
 @Component({
   selector: 'app-orders-operations-page',
@@ -49,6 +50,7 @@ type QuickRange = 'today' | 'yesterday' | 'last7' | 'custom';
           <label>
             <span>Rango rápido</span>
             <select [ngModel]="quickRange()" name="quickRange" (ngModelChange)="setQuickRange($event)">
+              <option value="">Sin filtro de periodo</option>
               <option value="today">Hoy</option>
               <option value="yesterday">Ayer</option>
               <option value="last7">Últimos 7 días</option>
@@ -171,7 +173,7 @@ type QuickRange = 'today' | 'yesterday' | 'last7' | 'custom';
             </div>
           </div>
         } @else if (ordersPage()) {
-          <p class="helper">No se encontraron órdenes en el rango seleccionado.</p>
+          <p class="helper">No se encontraron órdenes con los filtros actuales.</p>
         }
       </section>
 
@@ -478,12 +480,13 @@ export class OrdersOperationsPageComponent implements OnInit {
 
   private readonly ordersApi = inject(OrdersApiService);
   private readonly feedbackService = inject(FeedbackService);
+  private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
   protected legacyOrderId = '';
   protected documentType = 'I';
   protected readonly today = signal(getTodayDateString());
-  protected readonly quickRange = signal<QuickRange>('today');
+  protected readonly quickRange = signal<QuickRange>('');
   protected readonly fromDate = signal('');
   protected readonly toDate = signal('');
   protected readonly legacyOrderIdFilter = signal('');
@@ -522,13 +525,19 @@ export class OrdersOperationsPageComponent implements OnInit {
       ?? null);
 
   ngOnInit(): void {
-    this.applyQuickRange('today');
+    this.hydrateFiltersFromQueryParams(this.route.snapshot.queryParamMap);
     void this.searchOrders(1);
   }
 
   protected setQuickRange(range: QuickRange): void {
     this.quickRange.set(range);
     this.ordersError.set(null);
+
+    if (range === '') {
+      this.clearDateRange();
+      void this.searchOrders(1);
+      return;
+    }
 
     if (range === 'custom') {
       this.ordersPage.set(null);
@@ -666,8 +675,8 @@ export class OrdersOperationsPageComponent implements OnInit {
 
     try {
       const response = await firstValueFrom(this.ordersApi.searchLegacyOrders({
-        fromDate: range.fromDate,
-        toDate: range.toDate,
+        ...(range.fromDate ? { fromDate: range.fromDate } : {}),
+        ...(range.toDate ? { toDate: range.toDate } : {}),
         legacyOrderId: this.legacyOrderIdFilter(),
         customerQuery: this.customerQuery(),
         page,
@@ -891,7 +900,32 @@ export class OrdersOperationsPageComponent implements OnInit {
     });
   }
 
-  private applyQuickRange(range: Exclude<QuickRange, 'custom'>): void {
+  private hydrateFiltersFromQueryParams(params: ParamMap): void {
+    const quickRange = normalizeQuickRangeParam(params.get('quickRange'));
+    const fromDate = normalizeDateInput(params.get('fromDate'));
+    const toDate = normalizeDateInput(params.get('toDate'));
+
+    this.setLegacyOrderIdFilter(params.get('legacyOrderId'));
+    this.customerQuery.set(params.get('customerQuery')?.trim() ?? '');
+
+    if (quickRange === 'custom' || (!quickRange && (fromDate || toDate))) {
+      this.quickRange.set('custom');
+      this.fromDate.set(fromDate);
+      this.toDate.set(toDate);
+      return;
+    }
+
+    if (quickRange) {
+      this.quickRange.set(quickRange);
+      this.applyQuickRange(quickRange);
+      return;
+    }
+
+    this.quickRange.set('');
+    this.clearDateRange();
+  }
+
+  private applyQuickRange(range: PresetQuickRange): void {
     const today = parseDateInput(this.today());
 
     switch (range) {
@@ -911,6 +945,11 @@ export class OrdersOperationsPageComponent implements OnInit {
         this.toDate.set(this.today());
         break;
     }
+  }
+
+  private clearDateRange(): void {
+    this.fromDate.set('');
+    this.toDate.set('');
   }
 
   private async openBillingDocument(billingDocumentId?: number | null): Promise<void> {
@@ -988,7 +1027,16 @@ function validateCustomRange(fromDate: string, toDate: string, today: string): s
   return null;
 }
 
-function resolveRange(range: QuickRange, fromDate: string, toDate: string, today: string): { fromDate: string; toDate: string } | null {
+function resolveRange(
+  range: QuickRange,
+  fromDate: string,
+  toDate: string,
+  today: string
+): { fromDate?: string; toDate?: string } | null {
+  if (range === '') {
+    return {};
+  }
+
   if (range === 'custom') {
     return validateCustomRange(fromDate, toDate, today) ? null : { fromDate, toDate };
   }
@@ -1034,4 +1082,22 @@ function addDays(value: Date, days: number): Date {
 function parseDateInput(value: string): Date {
   const [year, month, day] = value.split('-').map(Number);
   return new Date(year, month - 1, day);
+}
+
+function normalizeQuickRangeParam(value: string | null): QuickRange | null {
+  switch (value) {
+    case '':
+    case 'today':
+    case 'yesterday':
+    case 'last7':
+    case 'custom':
+      return value;
+    default:
+      return null;
+  }
+}
+
+function normalizeDateInput(value: string | null): string {
+  const normalized = value?.trim() ?? '';
+  return /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : '';
 }

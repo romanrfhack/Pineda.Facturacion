@@ -63,7 +63,7 @@ public class MvpLifecycleApiTests
         var importResponse = await client.PostAsync("/api/orders/LEG-3001/import", null);
         Assert.Equal(HttpStatusCode.OK, importResponse.StatusCode);
 
-        var searchResponse = await client.GetAsync("/api/orders/legacy?fromDate=2026-03-23&toDate=2026-03-23&page=1&pageSize=10");
+        var searchResponse = await client.GetAsync("/api/orders/legacy?page=1&pageSize=10");
         Assert.Equal(HttpStatusCode.OK, searchResponse.StatusCode);
 
         var body = await searchResponse.Content.ReadFromJsonAsync<OrdersEndpoints.SearchLegacyOrdersResponse>();
@@ -75,6 +75,42 @@ public class MvpLifecycleApiTests
         Assert.True(body.Items[0].OrderDateUtc >= body.Items[1].OrderDateUtc);
         Assert.True(body.Items.Single(x => x.LegacyOrderId == "LEG-3001").IsImported);
         Assert.False(body.Items.Single(x => x.LegacyOrderId == "LEG-3002").IsImported);
+    }
+
+    [Fact]
+    public async Task SearchLegacyOrders_Filters_ByDateRange_WhenDatesAreProvided()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        factory.LegacyOrderReader.SearchResults =
+        [
+            new LegacyOrderListItemReadModel
+            {
+                LegacyOrderId = "LEG-4001",
+                OrderDateUtc = new DateTime(2026, 03, 23, 12, 0, 0, DateTimeKind.Utc),
+                CustomerName = "Cliente Hoy",
+                Total = 116m,
+                LegacyOrderType = "F"
+            },
+            new LegacyOrderListItemReadModel
+            {
+                LegacyOrderId = "LEG-4002",
+                OrderDateUtc = new DateTime(2026, 03, 22, 12, 0, 0, DateTimeKind.Utc),
+                CustomerName = "Cliente Ayer",
+                Total = 232m,
+                LegacyOrderType = "F"
+            }
+        ];
+
+        var response = await client.GetAsync("/api/orders/legacy?fromDate=2026-03-23&toDate=2026-03-23&page=1&pageSize=10");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var body = await response.Content.ReadFromJsonAsync<OrdersEndpoints.SearchLegacyOrdersResponse>();
+        Assert.NotNull(body);
+        Assert.True(body!.IsSuccess);
+        Assert.Single(body.Items);
+        Assert.Equal("LEG-4001", body.Items[0].LegacyOrderId);
     }
 
     [Fact]
@@ -90,6 +126,36 @@ public class MvpLifecycleApiTests
         Assert.NotNull(body);
         Assert.False(body!.IsSuccess);
         Assert.Contains("fecha inicial", body.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SearchLegacyOrders_ReturnsBadRequest_WhenOnlyFromDateIsProvided()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        var response = await client.GetAsync("/api/orders/legacy?fromDate=2026-03-23&page=1&pageSize=10");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        var body = await response.Content.ReadFromJsonAsync<OrdersEndpoints.SearchLegacyOrdersResponse>();
+        Assert.NotNull(body);
+        Assert.False(body!.IsSuccess);
+        Assert.Contains("deben enviarse juntas", body.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SearchLegacyOrders_ReturnsBadRequest_WhenOnlyToDateIsProvided()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        var response = await client.GetAsync("/api/orders/legacy?toDate=2026-03-23&page=1&pageSize=10");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        var body = await response.Content.ReadFromJsonAsync<OrdersEndpoints.SearchLegacyOrdersResponse>();
+        Assert.NotNull(body);
+        Assert.False(body!.IsSuccess);
+        Assert.Contains("deben enviarse juntas", body.ErrorMessage, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -126,7 +192,7 @@ public class MvpLifecycleApiTests
             }
         ];
 
-        var response = await client.GetAsync("/api/orders/legacy?fromDate=2026-03-23&toDate=2026-03-23&legacyOrderId=1175479&customerQuery=Cliente%20Exacto&page=1&pageSize=10");
+        var response = await client.GetAsync("/api/orders/legacy?legacyOrderId=1175479&customerQuery=Cliente%20Exacto&page=1&pageSize=10");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var body = await response.Content.ReadFromJsonAsync<OrdersEndpoints.SearchLegacyOrdersResponse>();
@@ -4872,7 +4938,8 @@ internal sealed class FakeLegacyOrderReader : ILegacyOrderReader
     public Task<LegacyOrderPageReadModel> SearchAsync(LegacyOrderSearchReadModel search, CancellationToken cancellationToken = default)
     {
         var filtered = SearchResults
-            .Where(x => x.OrderDateUtc >= search.FromDateUtc && x.OrderDateUtc < search.ToDateUtcExclusive)
+            .Where(x => !search.FromDateUtc.HasValue || x.OrderDateUtc >= search.FromDateUtc.Value)
+            .Where(x => !search.ToDateUtcExclusive.HasValue || x.OrderDateUtc < search.ToDateUtcExclusive.Value)
             .Where(x => string.IsNullOrWhiteSpace(search.LegacyOrderId) || string.Equals(x.LegacyOrderId, search.LegacyOrderId, StringComparison.Ordinal))
             .Where(x => string.IsNullOrWhiteSpace(search.CustomerQuery) || x.CustomerName.Contains(search.CustomerQuery, StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(x => x.OrderDateUtc)

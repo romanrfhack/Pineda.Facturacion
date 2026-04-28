@@ -23,8 +23,8 @@ public static class OrdersEndpoints
 
         group.MapGet("/legacy", SearchLegacyOrdersAsync)
             .WithName("SearchLegacyOrders")
-            .WithSummary("Search legacy orders by date range")
-            .WithDescription("Queries legacy orders in read-only mode using a bounded date range and paged results.")
+            .WithSummary("Search legacy orders with optional date range")
+            .WithDescription("Queries legacy orders in read-only mode with optional date filters and paged results.")
             .Produces<SearchLegacyOrdersResponse>(StatusCodes.Status200OK)
             .Produces<SearchLegacyOrdersResponse>(StatusCodes.Status400BadRequest);
 
@@ -73,18 +73,18 @@ public static class OrdersEndpoints
         SearchLegacyOrdersService service,
         CancellationToken cancellationToken)
     {
-        if (fromDate is null || toDate is null)
+        if (fromDate.HasValue != toDate.HasValue)
         {
-            return TypedResults.BadRequest(CreateValidationFailure("La fecha inicial y la fecha final son obligatorias."));
+            return TypedResults.BadRequest(CreateValidationFailure("La fecha inicial y la fecha final deben enviarse juntas."));
         }
 
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        if (fromDate > toDate)
+        if (fromDate.HasValue && toDate.HasValue && fromDate.Value > toDate.Value)
         {
             return TypedResults.BadRequest(CreateValidationFailure("La fecha inicial no puede ser mayor que la fecha final."));
         }
 
-        if (toDate > today)
+        if (toDate.HasValue && toDate.Value > today)
         {
             return TypedResults.BadRequest(CreateValidationFailure("La fecha final no puede ser mayor al día actual."));
         }
@@ -105,8 +105,8 @@ public static class OrdersEndpoints
         var result = await service.ExecuteAsync(
             new SearchLegacyOrdersFilter
             {
-                FromDateUtc = fromDate.Value.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
-                ToDateUtcExclusive = toDate.Value.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
+                FromDateUtc = fromDate?.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
+                ToDateUtcExclusive = toDate?.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
                 LegacyOrderId = legacyOrderId,
                 CustomerQuery = customerQuery,
                 Page = normalizedPage,

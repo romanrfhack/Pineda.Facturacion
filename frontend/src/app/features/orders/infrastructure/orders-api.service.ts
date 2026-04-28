@@ -20,11 +20,17 @@ export class OrdersApiService {
 
   searchLegacyOrders(request: SearchLegacyOrdersRequest): Observable<SearchLegacyOrdersResponse> {
     const params: Record<string, string | number> = {
-      fromDate: request.fromDate,
-      toDate: request.toDate,
       page: request.page,
       pageSize: request.pageSize
     };
+
+    if (request.fromDate) {
+      params['fromDate'] = request.fromDate;
+    }
+
+    if (request.toDate) {
+      params['toDate'] = request.toDate;
+    }
 
     if (request.legacyOrderId?.trim()) {
       params['legacyOrderId'] = request.legacyOrderId.trim();

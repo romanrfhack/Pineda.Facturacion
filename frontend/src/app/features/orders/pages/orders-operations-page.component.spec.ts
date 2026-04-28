@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { HttpErrorResponse } from '@angular/common/http';
 import { OrdersOperationsPageComponent } from './orders-operations-page.component';
@@ -194,8 +194,20 @@ describe('OrdersOperationsPageComponent', () => {
     };
   }
 
-  async function configure(apiOverrides?: Partial<ReturnType<typeof createApi>>) {
-    const api = { ...createApi(), ...apiOverrides };
+  type OrdersApiMock = ReturnType<typeof createApi>;
+  type OrdersApiOverrides = Partial<OrdersApiMock>;
+  type ConfigureOptions = {
+    apiOverrides?: OrdersApiOverrides;
+    queryParams?: Record<string, string>;
+  };
+
+  async function configure(
+    options?: OrdersApiOverrides | ConfigureOptions
+  ) {
+    const normalizedOptions: ConfigureOptions = isConfigureOptions(options)
+      ? options
+      : { apiOverrides: options };
+    const api = { ...createApi(), ...normalizedOptions.apiOverrides };
     const feedback = { show: vi.fn() };
     const router = { navigate: vi.fn().mockResolvedValue(true) };
 
@@ -205,7 +217,14 @@ describe('OrdersOperationsPageComponent', () => {
         { provide: OrdersApiService, useValue: api },
         { provide: FeedbackService, useValue: feedback },
         { provide: Router, useValue: router },
-        { provide: ActivatedRoute, useValue: {} }
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            snapshot: {
+              queryParamMap: convertToParamMap(normalizedOptions.queryParams ?? {})
+            }
+          }
+        }
       ]
     }).compileComponents();
 
@@ -216,8 +235,27 @@ describe('OrdersOperationsPageComponent', () => {
     return { fixture, api, feedback, router };
   }
 
-  it('loads today orders on init', async () => {
-    const { api } = await configure();
+  function isConfigureOptions(value: OrdersApiOverrides | ConfigureOptions | undefined): value is ConfigureOptions {
+    return !!value && ('apiOverrides' in value || 'queryParams' in value);
+  }
+
+  it('loads orders without a default period filter on init', async () => {
+    const { fixture, api } = await configure();
+    expect(fixture.componentInstance['quickRange']()).toBe('');
+    expect(api.searchLegacyOrders).toHaveBeenCalledWith({
+      legacyOrderId: '',
+      customerQuery: '',
+      page: 1,
+      pageSize: 10
+    });
+  });
+
+  it('hydrates an explicit quick range from the URL', async () => {
+    const { fixture, api } = await configure({
+      queryParams: { quickRange: 'today' }
+    });
+
+    expect(fixture.componentInstance['quickRange']()).toBe('today');
     expect(api.searchLegacyOrders).toHaveBeenCalledWith({
       fromDate: '2026-03-23',
       toDate: '2026-03-23',
@@ -228,6 +266,53 @@ describe('OrdersOperationsPageComponent', () => {
     });
   });
 
+  it('hydrates explicit date params from the URL as a custom range', async () => {
+    const { fixture, api } = await configure({
+      queryParams: {
+        fromDate: '2026-03-20',
+        toDate: '2026-03-21'
+      }
+    });
+
+    expect(fixture.componentInstance['quickRange']()).toBe('custom');
+    expect(api.searchLegacyOrders).toHaveBeenCalledWith({
+      fromDate: '2026-03-20',
+      toDate: '2026-03-21',
+      legacyOrderId: '',
+      customerQuery: '',
+      page: 1,
+      pageSize: 10
+    });
+  });
+
+  it('does not trigger a search when only fromDate is present in query params', async () => {
+    const { fixture, api } = await configure({
+      queryParams: {
+        fromDate: '2026-03-20'
+      }
+    });
+
+    expect(fixture.componentInstance['quickRange']()).toBe('custom');
+    expect(fixture.componentInstance['fromDate']()).toBe('2026-03-20');
+    expect(fixture.componentInstance['toDate']()).toBe('');
+    expect(api.searchLegacyOrders).not.toHaveBeenCalled();
+    expect(fixture.nativeElement.textContent).toContain('Captura una fecha inicial y una fecha final válidas.');
+  });
+
+  it('does not trigger a search when only toDate is present in query params', async () => {
+    const { fixture, api } = await configure({
+      queryParams: {
+        toDate: '2026-03-21'
+      }
+    });
+
+    expect(fixture.componentInstance['quickRange']()).toBe('custom');
+    expect(fixture.componentInstance['fromDate']()).toBe('');
+    expect(fixture.componentInstance['toDate']()).toBe('2026-03-21');
+    expect(api.searchLegacyOrders).not.toHaveBeenCalled();
+    expect(fixture.nativeElement.textContent).toContain('Captura una fecha inicial y una fecha final válidas.');
+  });
+
   it('applies customer filter to the legacy orders search without importing automatically', async () => {
     const { fixture, api } = await configure();
 
@@ -235,8 +320,6 @@ describe('OrdersOperationsPageComponent', () => {
     await fixture.componentInstance['searchCurrentRange']();
 
     expect(api.searchLegacyOrders).toHaveBeenLastCalledWith({
-      fromDate: '2026-03-23',
-      toDate: '2026-03-23',
       legacyOrderId: '',
       customerQuery: 'Cliente Uno',
       page: 1,
@@ -252,14 +335,58 @@ describe('OrdersOperationsPageComponent', () => {
     await fixture.componentInstance['searchCurrentRange']();
 
     expect(api.searchLegacyOrders).toHaveBeenLastCalledWith({
-      fromDate: '2026-03-23',
-      toDate: '2026-03-23',
       legacyOrderId: '1175479',
       customerQuery: '',
       page: 1,
       pageSize: 10
     });
     expect(api.importLegacyOrder).toHaveBeenCalledTimes(0);
+  });
+
+  it('applies today only when selected explicitly', async () => {
+    const { fixture, api } = await configure();
+
+    fixture.componentInstance['setQuickRange']('today');
+
+    expect(api.searchLegacyOrders).toHaveBeenLastCalledWith({
+      fromDate: '2026-03-23',
+      toDate: '2026-03-23',
+      legacyOrderId: '',
+      customerQuery: '',
+      page: 1,
+      pageSize: 10
+    });
+  });
+
+  it('applies the last 7 days when another quick range is selected', async () => {
+    const { fixture, api } = await configure();
+
+    fixture.componentInstance['setQuickRange']('last7');
+
+    expect(api.searchLegacyOrders).toHaveBeenLastCalledWith({
+      fromDate: '2026-03-17',
+      toDate: '2026-03-23',
+      legacyOrderId: '',
+      customerQuery: '',
+      page: 1,
+      pageSize: 10
+    });
+  });
+
+  it('clears date filters when the quick range returns to neutral and preserves other filters', async () => {
+    const { fixture, api } = await configure();
+
+    fixture.componentInstance['setLegacyOrderIdFilter']('117-5479');
+    fixture.componentInstance['customerQuery'].set('Cliente Uno');
+    fixture.componentInstance['setQuickRange']('today');
+    fixture.componentInstance['setQuickRange']('');
+
+    expect(api.searchLegacyOrders).toHaveBeenLastCalledWith({
+      legacyOrderId: '1175479',
+      customerQuery: 'Cliente Uno',
+      page: 1,
+      pageSize: 10
+    });
   });
 
   it('shows custom range validation and avoids invalid search', async () => {

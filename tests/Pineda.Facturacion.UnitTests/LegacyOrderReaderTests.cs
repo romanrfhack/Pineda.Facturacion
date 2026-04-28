@@ -138,6 +138,26 @@ public class LegacyOrderReaderTests
     }
 
     [Fact]
+    public void BuildSearchSql_Allows_Omitting_Date_Filters()
+    {
+        var schema = CreateResolvedSchema(
+            ordersTableName: "Pedidos",
+            customersTableName: "Clientes",
+            orderItemsTableName: "PedidosDet",
+            articlesTableName: "Articulos",
+            articleNamesTableName: "NombresArticulos",
+            orderDateColumnName: "FechaPedido");
+
+        var countSql = LegacyOrderReader.BuildCountSql(schema);
+        var listSql = LegacyOrderReader.BuildListSql(schema);
+
+        Assert.Contains("(@fromDateUtc IS NULL OR p.`FechaPedido` >= @fromDateUtc)", countSql, StringComparison.Ordinal);
+        Assert.Contains("(@toDateUtcExclusive IS NULL OR p.`FechaPedido` < @toDateUtcExclusive)", countSql, StringComparison.Ordinal);
+        Assert.Contains("(@fromDateUtc IS NULL OR p.`FechaPedido` >= @fromDateUtc)", listSql, StringComparison.Ordinal);
+        Assert.Contains("(@toDateUtcExclusive IS NULL OR p.`FechaPedido` < @toDateUtcExclusive)", listSql, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void LegacySchemaResolver_Column_Error_Includes_Diagnostics()
     {
         var exception = Assert.Throws<InvalidOperationException>(() => LegacySchemaResolver.SelectResolvedColumnName(
