@@ -57,6 +57,86 @@ public class RepBaseDocumentServicesTests
     }
 
     [Fact]
+    public void EligibilityRule_DoesNotBlock_WhenFiscalTotalDiffersFromOperationalArOnlyByRounding_For416Case()
+    {
+        var evaluation = InternalRepBaseDocumentEligibilityRule.Evaluate(CreateSnapshot(
+            total: 415.999998m,
+            accountsReceivableTotal: 416.000000m,
+            paidTotal: 0m,
+            outstandingBalance: 416.000000m));
+
+        Assert.True(evaluation.IsEligible);
+        Assert.False(evaluation.IsBlocked);
+        Assert.Equal("EligibleInternalRep", evaluation.PrimaryReasonCode);
+    }
+
+    [Fact]
+    public void EligibilityRule_DoesNotBlock_WhenFiscalTotalDiffersFromOperationalArOnlyByRounding_For737Case()
+    {
+        var evaluation = InternalRepBaseDocumentEligibilityRule.Evaluate(CreateSnapshot(
+            total: 736.999999m,
+            accountsReceivableTotal: 737.000000m,
+            paidTotal: 0m,
+            outstandingBalance: 737.000000m));
+
+        Assert.True(evaluation.IsEligible);
+        Assert.False(evaluation.IsBlocked);
+        Assert.Equal("EligibleInternalRep", evaluation.PrimaryReasonCode);
+    }
+
+    [Fact]
+    public void EligibilityRule_Blocks_WhenNormalizedDifferenceExceedsMoneyTolerance()
+    {
+        var evaluation = InternalRepBaseDocumentEligibilityRule.Evaluate(CreateSnapshot(
+            total: 416.02m,
+            accountsReceivableTotal: 416.00m,
+            paidTotal: 0m,
+            outstandingBalance: 416.00m));
+
+        Assert.False(evaluation.IsEligible);
+        Assert.True(evaluation.IsBlocked);
+        Assert.Equal("OperationalBalanceInconsistent", evaluation.PrimaryReasonCode);
+    }
+
+    [Fact]
+    public void EligibilityRule_Blocks_WhenPaidTotalIsNegative()
+    {
+        var evaluation = InternalRepBaseDocumentEligibilityRule.Evaluate(CreateSnapshot(
+            paidTotal: -0.01m,
+            outstandingBalance: 116.01m));
+
+        Assert.False(evaluation.IsEligible);
+        Assert.True(evaluation.IsBlocked);
+        Assert.Equal("OperationalBalanceInconsistent", evaluation.PrimaryReasonCode);
+    }
+
+    [Fact]
+    public void EligibilityRule_Blocks_WhenOutstandingBalanceIsNegative()
+    {
+        var evaluation = InternalRepBaseDocumentEligibilityRule.Evaluate(CreateSnapshot(
+            paidTotal: 116.01m,
+            outstandingBalance: -0.01m));
+
+        Assert.False(evaluation.IsEligible);
+        Assert.True(evaluation.IsBlocked);
+        Assert.Equal("OperationalBalanceInconsistent", evaluation.PrimaryReasonCode);
+    }
+
+    [Fact]
+    public void EligibilityRule_Blocks_WhenPaidAndOutstandingDoNotReconcileToOperationalTotal()
+    {
+        var evaluation = InternalRepBaseDocumentEligibilityRule.Evaluate(CreateSnapshot(
+            total: 116.00m,
+            accountsReceivableTotal: 116.00m,
+            paidTotal: 30.00m,
+            outstandingBalance: 85.98m));
+
+        Assert.False(evaluation.IsEligible);
+        Assert.True(evaluation.IsBlocked);
+        Assert.Equal("OperationalBalanceInconsistent", evaluation.PrimaryReasonCode);
+    }
+
+    [Fact]
     public async Task SearchService_FiltersByEligibilityAndQuery()
     {
         var repository = new FakeRepBaseDocumentRepository
@@ -217,6 +297,8 @@ public class RepBaseDocumentServicesTests
         string paymentMethodSat = "PPD",
         string paymentFormSat = "99",
         bool hasPersistedUuid = true,
+        decimal total = 116m,
+        decimal? accountsReceivableTotal = 116m,
         decimal paidTotal = 50m,
         decimal outstandingBalance = 66m)
     {
@@ -230,7 +312,8 @@ public class RepBaseDocumentServicesTests
             HasPersistedUuid = hasPersistedUuid,
             HasAccountsReceivableInvoice = true,
             AccountsReceivableStatus = "PartiallyPaid",
-            Total = 116m,
+            AccountsReceivableTotal = accountsReceivableTotal,
+            Total = total,
             PaidTotal = paidTotal,
             OutstandingBalance = outstandingBalance
         };

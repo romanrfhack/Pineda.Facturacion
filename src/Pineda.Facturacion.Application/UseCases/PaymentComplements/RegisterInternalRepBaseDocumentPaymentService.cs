@@ -76,6 +76,7 @@ public sealed class RegisterInternalRepBaseDocumentPaymentService
             HasPersistedUuid = !string.IsNullOrWhiteSpace(fiscalStamp?.Uuid),
             HasAccountsReceivableInvoice = accountsReceivableInvoice is not null,
             AccountsReceivableStatus = accountsReceivableInvoice?.Status.ToString(),
+            AccountsReceivableTotal = accountsReceivableInvoice?.Total,
             Total = fiscalDocument.Total,
             PaidTotal = accountsReceivableInvoice?.PaidTotal ?? 0m,
             OutstandingBalance = accountsReceivableInvoice?.OutstandingBalance ?? 0m

@@ -22,4 +22,23 @@ public static class CfdiMonetaryRules
         var currencyScale = ResolveCurrencyScale(currencyCode);
         return RoundMonetary(left, currencyScale) == RoundMonetary(right, currencyScale);
     }
+
+    public static decimal ResolveCurrencyTolerance(string? currencyCode)
+    {
+        var currencyScale = ResolveCurrencyScale(currencyCode);
+        var tolerance = 1m;
+        for (var index = 0; index < currencyScale; index++)
+        {
+            tolerance /= 10m;
+        }
+
+        return tolerance;
+    }
+
+    public static bool AreEquivalentWithinCurrencyTolerance(decimal left, decimal right, string? currencyCode)
+    {
+        var normalizedLeft = RoundMonetary(left, currencyCode);
+        var normalizedRight = RoundMonetary(right, currencyCode);
+        return Math.Abs(normalizedLeft - normalizedRight) <= ResolveCurrencyTolerance(currencyCode);
+    }
 }

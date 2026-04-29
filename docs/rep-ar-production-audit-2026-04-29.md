@@ -1803,6 +1803,70 @@ Si la correccion aprobada para `262` o para otros casos elegibles implica backfi
    - `fiscal_document.total`
    - cancelaciones
 
+#### Query sugerida para validar `262` despues del backfill
+
+```sql
+SELECT
+    fd.id AS fiscal_document_id,
+    fd.billing_document_id,
+    fs.id AS fiscal_stamp_id,
+    fs.uuid,
+    fd.status AS fiscal_status_id,
+    fs.status AS fiscal_stamp_status_id,
+    fd.payment_method_sat,
+    fd.payment_form_sat,
+    fd.is_credit_sale,
+    fd.credit_days,
+    fd.currency_code,
+    fd.total AS fiscal_total_raw,
+    ROUND(fd.total, 2) AS fiscal_total_2dp,
+    ari.id AS accounts_receivable_invoice_id,
+    ari.status AS ar_status_id,
+    ari.total AS ar_total,
+    ari.paid_total,
+    ari.outstanding_balance,
+    ari.issued_at_utc,
+    ari.due_at_utc,
+    CHAR_LENGTH(fs.xml_content) AS fiscal_stamp_xml_length
+FROM fiscal_document fd
+LEFT JOIN fiscal_stamp fs
+    ON fs.fiscal_document_id = fd.id
+LEFT JOIN accounts_receivable_invoice ari
+    ON ari.fiscal_document_id = fd.id
+WHERE fd.id = 262;
+```
+
+#### Query sugerida para asegurar que `262` sigue sin REP ni aplicaciones despues del backfill inicial
+
+```sql
+SELECT
+    fd.id AS fiscal_document_id,
+    COALESCE(rep.rep_count, 0) AS payment_complement_related_count,
+    COALESCE(app.application_count, 0) AS payment_application_count
+FROM fiscal_document fd
+LEFT JOIN (
+    SELECT
+        rd.fiscal_document_id,
+        COUNT(*) AS rep_count
+    FROM payment_complement_related_document rd
+    WHERE rd.fiscal_document_id = 262
+    GROUP BY rd.fiscal_document_id
+) rep
+    ON rep.fiscal_document_id = fd.id
+LEFT JOIN (
+    SELECT
+        ari.fiscal_document_id,
+        COUNT(*) AS application_count
+    FROM accounts_receivable_invoice ari
+    INNER JOIN accounts_receivable_payment_application arpa
+        ON arpa.accounts_receivable_invoice_id = ari.id
+    WHERE ari.fiscal_document_id = 262
+    GROUP BY ari.fiscal_document_id
+) app
+    ON app.fiscal_document_id = fd.id
+WHERE fd.id = 262;
+```
+
 ### Si se corrige la comparacion de precision para `768/539`
 
 1. Dejan de aparecer como `OperationalBalanceInconsistent` si no habia anomalia real.
@@ -1812,6 +1876,92 @@ Si la correccion aprobada para `262` o para otros casos elegibles implica backfi
    - `ROUND(ari.total - ari.paid_total, 2)`
    - `ROUND(ari.outstanding_balance, 2)`
 3. Ningun otro documento legitimo queda habilitado por error.
+
+#### Query sugerida para comparar regla antigua vs regla nueva en `539` y `768`
+
+```sql
+SELECT
+    fd.id AS fiscal_document_id,
+    fs.uuid,
+    fd.total AS fiscal_total_raw,
+    ROUND(fd.total, 2) AS fiscal_total_2dp,
+    ari.total AS ar_total,
+    ari.paid_total,
+    ari.outstanding_balance,
+    ROUND(ari.total - ari.paid_total, 2) AS ar_expected_outstanding_2dp,
+    CASE
+        WHEN ari.paid_total < 0
+            OR ari.outstanding_balance < 0
+            OR ari.paid_total > fd.total
+            OR ari.outstanding_balance > fd.total
+        THEN 1 ELSE 0
+    END AS would_block_old_rule,
+    CASE
+        WHEN ari.paid_total < 0 THEN 1
+        WHEN ari.outstanding_balance < 0 THEN 1
+        WHEN ari.total < 0 THEN 1
+        WHEN ROUND(ari.paid_total, 2) > ROUND(fd.total, 2) + 0.01 THEN 1
+        WHEN ROUND(ari.outstanding_balance, 2) > ROUND(fd.total, 2) + 0.01 THEN 1
+        WHEN ABS(ROUND(ari.total, 2) - ROUND(fd.total, 2)) > 0.01 THEN 1
+        WHEN ABS((ROUND(ari.paid_total, 2) + ROUND(ari.outstanding_balance, 2)) - ROUND(fd.total, 2)) > 0.01 THEN 1
+        WHEN ABS((ROUND(ari.paid_total, 2) + ROUND(ari.outstanding_balance, 2)) - ROUND(ari.total, 2)) > 0.01 THEN 1
+        ELSE 0
+    END AS would_block_new_rule
+FROM fiscal_document fd
+INNER JOIN fiscal_stamp fs
+    ON fs.fiscal_document_id = fd.id
+INNER JOIN accounts_receivable_invoice ari
+    ON ari.fiscal_document_id = fd.id
+WHERE fd.id IN (539, 768)
+ORDER BY fd.id;
+```
+
+#### Validacion funcional posterior al deploy
+
+Estas dos comprobaciones ya no son solo SQL; requieren reproducir la bandeja REP:
+
+1. `GET /api/payment-complements/attention-items?page=1&pageSize=25&receiverRfc=PSC9603298Z8`
+   - `262` no debe salir con `AccountsReceivableMissing` una vez insertada la AR.
+   - `539` y `768` ya no deben salir con `OperationalBalanceInconsistent` si su unico problema era precision.
+2. `GET /api/accounts-receivable/portfolio?...`
+   - `262` debe aparecer en el portafolio AR despues del backfill.
+
+## Implementacion aplicada en codigo
+
+### Fix REP / precision monetaria
+
+- `src/Pineda.Facturacion.Application/Common/CfdiMonetaryRules.cs`
+- `src/Pineda.Facturacion.Application/UseCases/PaymentComplements/InternalRepBaseDocumentEligibilityRule.cs`
+- `src/Pineda.Facturacion.Application/UseCases/PaymentComplements/InternalRepBaseDocumentEligibilitySnapshot.cs`
+- `src/Pineda.Facturacion.Application/UseCases/PaymentComplements/InternalRepBaseDocumentSummaryReadModel.cs`
+- `src/Pineda.Facturacion.Application/UseCases/PaymentComplements/SearchInternalRepBaseDocumentsService.cs`
+- `src/Pineda.Facturacion.Application/UseCases/PaymentComplements/RegisterInternalRepBaseDocumentPaymentService.cs`
+- `src/Pineda.Facturacion.Infrastructure.BillingWrite/Persistence/Repositories/RepBaseDocumentRepository.cs`
+
+La regla actualizada deja de comparar `paid_total` y `outstanding_balance` contra `fiscal_document.total` crudo y pasa a:
+
+1. Normalizar `fiscal_document.total`, `accounts_receivable_invoice.total`, `paid_total` y `outstanding_balance` a precision monetaria de la moneda.
+2. Aplicar tolerancia monetaria por moneda (`MXN = 0.01`).
+3. Seguir bloqueando negativos, excesos sobre el total normalizado y descuadres reales entre `paid_total + outstanding_balance` vs total operativo.
+
+### Comando operativo de backfill seguro
+
+- `src/Pineda.Facturacion.Api/OperationalHardening/MissingAccountsReceivableBackfillCli.cs`
+- `src/Pineda.Facturacion.Infrastructure.BillingWrite/Operations/AccountsReceivable/BackfillMissingAccountsReceivableInvoicesService.cs`
+- `src/Pineda.Facturacion.Api/Program.cs`
+- `src/Pineda.Facturacion.Infrastructure.BillingWrite/DependencyInjection/ServiceCollectionExtensions.cs`
+
+Caracteristicas implementadas:
+
+1. `dryRun` por default.
+2. Lista explicita de `--fiscal-document-ids`.
+3. `--expected-database-name` obligatorio para `--commit`.
+4. `--requested-by` obligatorio para `--commit`.
+5. `--batch-id` opcional para correlacion y futura reversibilidad manual.
+6. Guard de produccion con `ALLOW_PROD_MISSING_AR_BACKFILL=true`.
+7. Reutiliza `CreateAccountsReceivableInvoiceFromFiscalDocumentService` para la insercion real.
+8. No toca `fiscal_document`, `fiscal_stamp`, `uuid`, `xml_content`, timbrado ni cancelaciones.
+9. Escribe `audit_event` solo en `commit`, con `correlation_id = batch_id` y snapshot de prechecks.
 
 ## Riesgos
 

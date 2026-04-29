@@ -279,6 +279,7 @@ public sealed class RepBaseDocumentRepository : IRepBaseDocumentRepository
                 PaymentMethodSat = fiscalDocument.PaymentMethodSat,
                 PaymentFormSat = fiscalDocument.PaymentFormSat,
                 CurrencyCode = fiscalDocument.CurrencyCode,
+                AccountsReceivableTotal = invoice != null ? invoice.Total : null,
                 Total = fiscalDocument.Total,
                 PaidTotal = invoice != null ? invoice.PaidTotal : 0m,
                 OutstandingBalance = invoice != null ? invoice.OutstandingBalance : 0m,
