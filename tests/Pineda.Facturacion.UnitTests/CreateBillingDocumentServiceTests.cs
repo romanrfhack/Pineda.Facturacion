@@ -129,7 +129,7 @@ public class CreateBillingDocumentServiceTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_PreservesHistoricalBillingDocumentLink_WhenLegacyImportRecordAlreadyHasOne()
+    public async Task ExecuteAsync_ReassignsOperationalBillingDocumentLink_WhenLegacyImportRecordAlreadyHasHistoricalDocument()
     {
         var salesOrder = CreateSalesOrder();
         var importRecord = new LegacyImportRecord
@@ -198,6 +198,7 @@ public class CreateBillingDocumentServiceTests
             salesOrderSnapshotRepository,
             billingDocumentRepository,
             legacyImportRecordRepository,
+            new FakeOperationalOrderMutationScopeFactory(),
             unitOfWork);
     }
 
@@ -303,5 +304,22 @@ public class CreateBillingDocumentServiceTests
             SaveChangesCallCount++;
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class FakeOperationalOrderMutationScopeFactory : IOperationalOrderMutationScopeFactory
+    {
+        public Task<IOperationalOrderMutationScope> BeginAsync(
+            IReadOnlyCollection<string> lockKeys,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<IOperationalOrderMutationScope>(new FakeOperationalOrderMutationScope());
+        }
+    }
+
+    private sealed class FakeOperationalOrderMutationScope : IOperationalOrderMutationScope
+    {
+        public Task CommitAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }

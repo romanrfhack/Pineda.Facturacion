@@ -127,7 +127,10 @@ import {
         } @else if (!items().length) {
           <p class="helper">No se encontraron documentos base REP con los filtros actuales.</p>
         } @else {
-          <p class="helper">Mostrando {{ items().length }} de {{ totalCount() }} documentos base.</p>
+          <div class="toolbar">
+            <p class="helper">Mostrando {{ items().length }} de {{ totalCount() }} documentos base.</p>
+            <span class="helper">Página {{ page() }} de {{ totalPages() || 1 }}</span>
+          </div>
 
           <div class="bulk-toolbar">
             <label class="selection-toggle">
@@ -138,7 +141,7 @@ import {
             <button type="button" [disabled]="bulkRefreshing() || !selectedCount()" (click)="refreshSelectedDocuments()">
               {{ bulkRefreshing() ? 'Refrescando...' : 'Refrescar seleccionados' }}
             </button>
-            <button type="button" class="secondary" [disabled]="bulkRefreshing() || !items().length" (click)="refreshFilteredDocuments()">
+            <button type="button" class="secondary" [disabled]="bulkRefreshing() || !canRefreshFilteredDocuments()" (click)="refreshFilteredDocuments()">
               {{ bulkRefreshing() ? 'Refrescando...' : 'Refrescar filtrados' }}
             </button>
             @if (bulkRefreshResult()) {
@@ -150,6 +153,10 @@ import {
 
           @if (bulkRefreshError()) {
             <p class="error">{{ bulkRefreshError() }}</p>
+          }
+
+          @if (isFilteredBulkOverLimit()) {
+            <p class="helper warning">Refrescar filtrados aplica al conjunto filtrado completo y el backend procesa máximo 50 documentos. Ajusta filtros para habilitar esta acción.</p>
           }
 
           @if (bulkRefreshResult(); as result) {
@@ -253,6 +260,14 @@ import {
               </tbody>
             </table>
           </div>
+
+          @if (totalPages() > 1) {
+            <div class="pagination">
+              <button type="button" class="secondary" (click)="goToPage(page() - 1)" [disabled]="page() <= 1 || loading()">Anterior</button>
+              <span>Página {{ page() }} de {{ totalPages() }}</span>
+              <button type="button" class="secondary" (click)="goToPage(page() + 1)" [disabled]="page() >= totalPages() || loading()">Siguiente</button>
+            </div>
+          }
         }
       </section>
 
@@ -359,6 +374,7 @@ import {
     .card { border:1px solid #d8d1c2; border-radius:1rem; background:#fff; padding:1rem; display:grid; gap:1rem; }
     .eyebrow { margin:0; text-transform:uppercase; letter-spacing:0.12em; font-size:0.72rem; color:#8a6a32; }
     .helper { margin:0; color:#5f6b76; }
+    .warning { color:#8a5a00; }
     .filters { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:0.85rem; }
     .filters label { display:grid; gap:0.35rem; }
     .filters .wide { grid-column:1 / -1; }
@@ -366,7 +382,8 @@ import {
     button { border:none; border-radius:0.8rem; padding:0.75rem 1rem; background:#182533; color:#fff; cursor:pointer; }
     button.secondary { background:#d8c49b; color:#182533; }
     button.small { padding:0.5rem 0.75rem; font-size:0.9rem; }
-    .actions, .bulk-toolbar { display:flex; gap:0.75rem; flex-wrap:wrap; align-items:center; }
+    .actions, .bulk-toolbar, .toolbar, .pagination { display:flex; gap:0.75rem; flex-wrap:wrap; align-items:center; }
+    .toolbar, .pagination { justify-content:space-between; }
     .selection-toggle { display:inline-flex; align-items:center; gap:0.5rem; }
     .table-wrap { overflow:auto; }
     table { width:100%; border-collapse:collapse; min-width:1120px; }
@@ -412,9 +429,12 @@ export class PaymentComplementUnifiedBaseDocumentsPageComponent {
 
   protected readonly items = signal<RepBaseDocumentItemResponse[]>([]);
   protected readonly selectedKeys = signal<string[]>([]);
+  protected readonly page = signal(1);
+  protected readonly pageSize = signal(PAGE_SIZE);
   protected readonly loading = signal(false);
   protected readonly errorMessage = signal<string | null>(null);
   protected readonly totalCount = signal(0);
+  protected readonly totalPages = signal(0);
   protected readonly summaryCounts = signal<RepOperationalSummaryCountsResponse>(createEmptySummaryCounts());
   protected readonly bulkRefreshing = signal(false);
   protected readonly bulkRefreshError = signal<string | null>(null);
@@ -444,17 +464,31 @@ export class PaymentComplementUnifiedBaseDocumentsPageComponent {
   protected readonly quickViewOptions = REP_QUICK_VIEW_OPTIONS;
 
   constructor() {
-    void this.applyFilters();
+    void this.load();
   }
 
   protected async applyFilters(): Promise<void> {
+    this.page.set(1);
+    await this.load();
+  }
+
+  protected async goToPage(page: number): Promise<void> {
+    if (page < 1 || page > this.totalPages() || page === this.page()) {
+      return;
+    }
+
+    this.page.set(page);
+    await this.load();
+  }
+
+  private async load(): Promise<void> {
     this.loading.set(true);
     this.errorMessage.set(null);
 
     try {
       const response = await firstValueFrom(this.api.searchBaseDocuments({
-        page: 1,
-        pageSize: 25,
+        page: this.page(),
+        pageSize: this.pageSize(),
         fromDate: this.fromDate || null,
         toDate: this.toDate || null,
         receiverRfc: this.receiverRfc || null,
@@ -469,15 +503,27 @@ export class PaymentComplementUnifiedBaseDocumentsPageComponent {
         quickView: this.quickViewFilter || null
       }));
 
+      if (response.totalPages > 0 && response.page > response.totalPages) {
+        this.page.set(response.totalPages);
+        await this.load();
+        return;
+      }
+
       this.items.set(response.items);
       this.selectedKeys.set([]);
       this.summaryCounts.set(response.summaryCounts ?? createEmptySummaryCounts());
       this.totalCount.set(response.totalCount);
+      this.totalPages.set(response.totalPages);
+      this.page.set(response.totalPages === 0 ? 1 : response.page);
+      this.pageSize.set(response.pageSize);
     } catch (error) {
       this.errorMessage.set(extractApiErrorMessage(error, 'No fue posible consultar la bandeja REP unificada.'));
       this.items.set([]);
+      this.selectedKeys.set([]);
       this.summaryCounts.set(createEmptySummaryCounts());
       this.totalCount.set(0);
+      this.totalPages.set(0);
+      this.page.set(1);
     } finally {
       this.loading.set(false);
     }
@@ -496,7 +542,8 @@ export class PaymentComplementUnifiedBaseDocumentsPageComponent {
     this.severityFilter = '';
     this.nextRecommendedActionFilter = '';
     this.quickViewFilter = '';
-    void this.applyFilters();
+    this.page.set(1);
+    void this.load();
   }
 
   protected async openDetail(item: RepBaseDocumentItemResponse): Promise<void> {
@@ -563,7 +610,8 @@ export class PaymentComplementUnifiedBaseDocumentsPageComponent {
 
   protected async applyQuickView(quickView: string): Promise<void> {
     this.quickViewFilter = this.quickViewFilter === quickView ? '' : quickView;
-    await this.applyFilters();
+    this.page.set(1);
+    await this.load();
   }
 
   protected clearOperationalFilters(): void {
@@ -571,7 +619,8 @@ export class PaymentComplementUnifiedBaseDocumentsPageComponent {
     this.severityFilter = '';
     this.nextRecommendedActionFilter = '';
     this.quickViewFilter = '';
-    void this.applyFilters();
+    this.page.set(1);
+    void this.load();
   }
 
   protected countForQuickView(code: string): number {
@@ -629,11 +678,19 @@ export class PaymentComplementUnifiedBaseDocumentsPageComponent {
   }
 
   protected async refreshFilteredDocuments(): Promise<void> {
-    if (!this.items().length) {
+    if (!this.canRefreshFilteredDocuments()) {
       return;
     }
 
     await this.executeBulkRefresh('Filtered');
+  }
+
+  protected canRefreshFilteredDocuments(): boolean {
+    return this.items().length > 0 && !this.isFilteredBulkOverLimit();
+  }
+
+  protected isFilteredBulkOverLimit(): boolean {
+    return this.totalCount() > BULK_REFRESH_MAX_DOCUMENTS;
   }
 
   private buildSelectionKey(sourceType: string, sourceId: number): string {
@@ -647,9 +704,13 @@ export class PaymentComplementUnifiedBaseDocumentsPageComponent {
     try {
       const result = await firstValueFrom(this.api.bulkRefreshBaseDocuments({
         mode,
-        documents: this.items()
-          .filter((item) => this.selectedKeys().includes(this.buildSelectionKey(item.sourceType, item.sourceId)))
-          .map((item) => ({ sourceType: item.sourceType, sourceId: item.sourceId })),
+        ...(mode === 'Selected'
+          ? {
+              documents: this.items()
+                .filter((item) => this.selectedKeys().includes(this.buildSelectionKey(item.sourceType, item.sourceId)))
+                .map((item) => ({ sourceType: item.sourceType, sourceId: item.sourceId }))
+            }
+          : {}),
         fromDate: this.fromDate || null,
         toDate: this.toDate || null,
         receiverRfc: this.receiverRfc || null,
@@ -672,7 +733,7 @@ export class PaymentComplementUnifiedBaseDocumentsPageComponent {
         await this.openDetail(selected);
       }
 
-      await this.applyFilters();
+      await this.load();
     } catch (error) {
       this.bulkRefreshError.set(extractApiErrorMessage(error, 'No fue posible ejecutar el refresh masivo unificado.'));
     } finally {
@@ -734,3 +795,5 @@ const REP_OPERATIONAL_SEVERITY_OPTIONS = ['info', 'warning', 'error', 'critical'
 const REP_OPERATIONAL_SEVERITY_PRIORITY = ['critical', 'error', 'warning', 'info'];
 const REP_RECOMMENDED_ACTION_OPTIONS = ['RegisterPayment', 'PrepareRep', 'StampRep', 'RefreshRepStatus', 'CancelRep', 'ViewDetail', 'Blocked', 'NoAction'];
 const REP_QUICK_VIEW_OPTIONS = ['PendingStamp', 'WithError', 'Blocked', 'AppliedPaymentWithoutStampedRep', 'PendingRefresh', 'Stamped'];
+const PAGE_SIZE = 25;
+const BULK_REFRESH_MAX_DOCUMENTS = 50;

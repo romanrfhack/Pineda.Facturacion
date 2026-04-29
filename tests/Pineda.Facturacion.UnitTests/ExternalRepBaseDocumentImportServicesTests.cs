@@ -43,6 +43,21 @@ public class ExternalRepBaseDocumentImportServicesTests
     }
 
     [Fact]
+    public async Task ImportExternalRepBaseDocumentFromXml_Rejects_EmptyXml()
+    {
+        var service = CreateService(new FakeExternalRepBaseDocumentRepository(), new FakeFiscalStatusQueryGateway());
+
+        var result = await service.ExecuteAsync(new ImportExternalRepBaseDocumentFromXmlCommand
+        {
+            SourceFileName = "empty.xml",
+            FileContent = []
+        });
+
+        Assert.Equal(ImportExternalRepBaseDocumentFromXmlOutcome.Rejected, result.Outcome);
+        Assert.Equal("InvalidXml", result.ReasonCode);
+    }
+
+    [Fact]
     public async Task ImportExternalRepBaseDocumentFromXml_Rejects_InvalidXml()
     {
         var service = CreateService(new FakeExternalRepBaseDocumentRepository(), new FakeFiscalStatusQueryGateway());

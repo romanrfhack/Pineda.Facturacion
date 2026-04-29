@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
+using Pineda.Facturacion.Application.Common;
 using Pineda.Facturacion.Domain.Entities;
+using Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Configurations;
 
 namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence;
 
@@ -77,6 +79,10 @@ public class BillingDbContext : DbContext, IUnitOfWork
 
     public DbSet<ProductFiscalAssignment> ProductFiscalAssignments => Set<ProductFiscalAssignment>();
 
+    public DbSet<ProductFiscalReviewCleanupBatch> ProductFiscalReviewCleanupBatches => Set<ProductFiscalReviewCleanupBatch>();
+
+    public DbSet<ProductFiscalReviewCleanupEntry> ProductFiscalReviewCleanupEntries => Set<ProductFiscalReviewCleanupEntry>();
+
     public DbSet<SatProductServiceCatalogEntry> SatProductServiceCatalogEntries => Set<SatProductServiceCatalogEntry>();
 
     public DbSet<SatClaveUnidad> SatClaveUnidades => Set<SatClaveUnidad>();
@@ -101,6 +107,41 @@ public class BillingDbContext : DbContext, IUnitOfWork
 
     async Task IUnitOfWork.SaveChangesAsync(CancellationToken cancellationToken)
     {
-        await SaveChangesAsync(cancellationToken);
+        try
+        {
+            await SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException exception) when (IsLegacyImportBillingDocumentConflict(exception))
+        {
+            throw new OperationalOrderConflictException(
+                "One or more selected legacy orders are already associated with another operational billing document.");
+        }
+        catch (DbUpdateException exception) when (IsActiveSalesOrderOperationalConflict(exception))
+        {
+            throw new OperationalOrderConflictException(
+                "The selected sales order is already associated with another operational billing document.");
+        }
+    }
+
+    private static bool IsLegacyImportBillingDocumentConflict(DbUpdateConcurrencyException exception)
+    {
+        return exception.Entries.Any(entry => entry.Entity is LegacyImportRecord);
+    }
+
+    private static bool IsActiveSalesOrderOperationalConflict(DbUpdateException exception)
+    {
+        Exception? current = exception;
+        while (current is not null)
+        {
+            if (!string.IsNullOrWhiteSpace(current.Message)
+                && current.Message.Contains(BillingDocumentConfiguration.ActiveSalesOrderSingletonIndexName, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            current = current.InnerException;
+        }
+
+        return false;
     }
 }

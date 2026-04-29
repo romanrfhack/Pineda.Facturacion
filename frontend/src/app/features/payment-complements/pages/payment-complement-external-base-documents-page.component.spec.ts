@@ -20,11 +20,11 @@ describe('PaymentComplementExternalBaseDocumentsPageComponent', () => {
               reasonMessage: 'Factura importada',
               isDuplicate: false
             })),
-            searchExternalBaseDocuments: vi.fn().mockReturnValue(of({
-              page: 1,
+            searchExternalBaseDocuments: vi.fn((filters: { page: number }) => of({
+              page: filters.page,
               pageSize: 25,
-              totalCount: 1,
-              totalPages: 1,
+              totalCount: 26,
+              totalPages: 2,
               summaryCounts: {
                 infoCount: 1,
                 warningCount: 0,
@@ -283,8 +283,71 @@ describe('PaymentComplementExternalBaseDocumentsPageComponent', () => {
     await fixture.componentInstance['applyQuickView']('Stamped');
 
     expect(api.searchExternalBaseDocuments).toHaveBeenLastCalledWith(expect.objectContaining({
+      page: 1,
       quickView: 'Stamped'
     }));
+  });
+
+  it('loads page 2 preserving filters and clears local selection', async () => {
+    const fixture = await configure();
+    const api = TestBed.inject(PaymentComplementsApiService) as unknown as { searchExternalBaseDocuments: ReturnType<typeof vi.fn> };
+
+    fixture.componentInstance['receiverRfc'] = 'BBB010101BBB';
+    fixture.componentInstance['toggleSelection'](123, true);
+    await fixture.componentInstance['goToPage'](2);
+    fixture.detectChanges();
+
+    expect(api.searchExternalBaseDocuments).toHaveBeenLastCalledWith(expect.objectContaining({
+      page: 2,
+      receiverRfc: 'BBB010101BBB'
+    }));
+    expect(fixture.componentInstance['selectedCount']()).toBe(0);
+    expect(fixture.nativeElement.textContent).toContain('Página 2 de 2');
+  });
+
+  it('disables previous pagination on the first page', async () => {
+    const fixture = await configure();
+    const buttons = Array.from(fixture.nativeElement.querySelectorAll('.pagination button')) as HTMLButtonElement[];
+
+    expect(buttons.find((button) => button.textContent?.includes('Anterior'))?.disabled).toBe(true);
+    expect(buttons.find((button) => button.textContent?.includes('Siguiente'))?.disabled).toBe(false);
+  });
+
+  it('disables next pagination on the last page', async () => {
+    const fixture = await configure();
+
+    await fixture.componentInstance['goToPage'](2);
+    fixture.detectChanges();
+
+    const buttons = Array.from(fixture.nativeElement.querySelectorAll('.pagination button')) as HTMLButtonElement[];
+    expect(buttons.find((button) => button.textContent?.includes('Anterior'))?.disabled).toBe(false);
+    expect(buttons.find((button) => button.textContent?.includes('Siguiente'))?.disabled).toBe(true);
+  });
+
+  it('hides pagination controls when there is a single page', async () => {
+    const fixture = await configure();
+
+    fixture.componentInstance['totalPages'].set(1);
+    fixture.componentInstance['page'].set(1);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('.pagination')).toBeNull();
+  });
+
+  it('resets to page 1 and clears selection when filters change', async () => {
+    const fixture = await configure();
+    const api = TestBed.inject(PaymentComplementsApiService) as unknown as { searchExternalBaseDocuments: ReturnType<typeof vi.fn> };
+
+    await fixture.componentInstance['goToPage'](2);
+    fixture.componentInstance['toggleSelection'](123, true);
+    fixture.componentInstance['query'] = 'UUID-EXT-123';
+    await fixture.componentInstance['applyFilters']();
+
+    expect(api.searchExternalBaseDocuments).toHaveBeenLastCalledWith(expect.objectContaining({
+      page: 1,
+      query: 'UUID-EXT-123'
+    }));
+    expect(fixture.componentInstance['selectedCount']()).toBe(0);
   });
 
   it('opens external detail context', async () => {
@@ -346,5 +409,19 @@ describe('PaymentComplementExternalBaseDocumentsPageComponent', () => {
       documents: [{ sourceType: 'External', sourceId: 123 }]
     }));
     expect(fixture.nativeElement.textContent).toContain('Resultado del refresh masivo');
+  });
+
+  it('executes filtered bulk refresh without selected document ids', async () => {
+    const fixture = await configure();
+    const api = TestBed.inject(PaymentComplementsApiService) as unknown as Record<string, ReturnType<typeof vi.fn>>;
+
+    fixture.componentInstance['toggleSelection'](123, true);
+    await fixture.componentInstance['refreshFilteredDocuments']();
+
+    expect(api['bulkRefreshExternalBaseDocuments']).toHaveBeenCalledWith(expect.objectContaining({
+      mode: 'Filtered'
+    }));
+    const calls = api['bulkRefreshExternalBaseDocuments'].mock.calls;
+    expect(calls[calls.length - 1][0]).not.toHaveProperty('documents');
   });
 });

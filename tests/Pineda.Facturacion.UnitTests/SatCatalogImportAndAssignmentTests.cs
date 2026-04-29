@@ -252,6 +252,108 @@ public sealed class SatCatalogImportAndAssignmentTests
     }
 
     [Fact]
+    public async Task SuggestSatAssignmentForLegacyItem_IgnoresHistoricalCandidates_WhenSuppressed()
+    {
+        await using var dbContext = CreateDbContext();
+        await ImportSampleCatalogAsync(dbContext);
+
+        var productCatalogRepository = new SatProductServiceCatalogRepository(dbContext);
+        var unitRepository = new SatClaveUnidadRepository(dbContext);
+        var suggestionService = new SuggestSatAssignmentForLegacyItemService(
+            new ProductFiscalProfileRepository(dbContext),
+            productCatalogRepository,
+            unitRepository,
+            new SearchSatProductServicesService(productCatalogRepository),
+            new SearchSatClaveUnidadService(unitRepository));
+
+        var result = await suggestionService.ExecuteAsync(new SuggestSatAssignmentForLegacyItemCommand
+        {
+            InternalCode = "SKU-LEG-10",
+            Description = "Filtro de aire premium",
+            BillingDocumentItemSatProductServiceCode = "40161513",
+            BillingDocumentItemSatUnitCode = "H87",
+            SuppressHistoricalCandidates = true
+        });
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("40161505", result.SuggestedProductService!.Code);
+        Assert.Equal("catalog_search", result.SuggestedProductService.Source);
+        Assert.DoesNotContain(
+            result.ProductServiceCandidates,
+            x => string.Equals(x.Source, "billing_document_item", StringComparison.Ordinal)
+                || string.Equals(x.Source, "product_fiscal_profile_current", StringComparison.Ordinal)
+                || string.Equals(x.Source, "product_fiscal_assignment_current", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task SuggestSatAssignmentForLegacyItem_AutoSuppressesHistoricalCandidates_WhenEffectiveAssignmentIsLegacyPendingReset()
+    {
+        await using var dbContext = CreateDbContext();
+        await ImportSampleCatalogAsync(dbContext);
+        var now = DateTime.UtcNow;
+
+        dbContext.ProductFiscalProfiles.Add(new ProductFiscalProfile
+        {
+            InternalCode = "SKU-LEG-11",
+            Description = "Filtro legado",
+            NormalizedDescription = "FILTRO LEGADO",
+            SatProductServiceCode = ProductFiscalAssignmentConventions.GenericSatProductServiceCode,
+            SatUnitCode = "H87",
+            TaxObjectCode = "02",
+            VatRate = 0.16m,
+            DefaultUnitText = "PIEZA",
+            IsActive = true,
+            CreatedAtUtc = now.AddDays(-10),
+            UpdatedAtUtc = now.AddDays(-10)
+        });
+        dbContext.ProductFiscalAssignments.Add(new ProductFiscalAssignment
+        {
+            InternalCode = "SKU-LEG-11",
+            SatProductServiceCode = ProductFiscalAssignmentConventions.GenericSatProductServiceCode,
+            SatUnitCode = "H87",
+            TaxObjectCode = "02",
+            VatRate = 0.16m,
+            DefaultUnitText = "PIEZA",
+            Source = ProductFiscalAssignmentConventions.BackfillSource,
+            Confidence = 0.5000m,
+            ReviewStatus = ProductFiscalAssignmentConventions.PendingReviewStatus,
+            ReviewReason = ProductFiscalAssignmentConventions.LegacyGenericResetReviewReason,
+            ValidFromUtc = now.AddDays(-2),
+            ValidToUtc = null,
+            CreatedAtUtc = now.AddDays(-2),
+            UpdatedAtUtc = now.AddDays(-2)
+        });
+        await dbContext.SaveChangesAsync();
+
+        var productCatalogRepository = new SatProductServiceCatalogRepository(dbContext);
+        var unitRepository = new SatClaveUnidadRepository(dbContext);
+        var suggestionService = new SuggestSatAssignmentForLegacyItemService(
+            new ProductFiscalProfileRepository(dbContext),
+            productCatalogRepository,
+            unitRepository,
+            new SearchSatProductServicesService(productCatalogRepository),
+            new SearchSatClaveUnidadService(unitRepository));
+
+        var result = await suggestionService.ExecuteAsync(new SuggestSatAssignmentForLegacyItemCommand
+        {
+            InternalCode = "SKU-LEG-11",
+            Description = "Filtro de aire premium",
+            BillingDocumentItemSatProductServiceCode = ProductFiscalAssignmentConventions.GenericSatProductServiceCode,
+            BillingDocumentItemSatUnitCode = "H87"
+        });
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("40161505", result.SuggestedProductService!.Code);
+        Assert.Equal("catalog_search", result.SuggestedProductService.Source);
+        Assert.DoesNotContain(
+            result.ProductServiceCandidates,
+            x => string.Equals(x.Source, "billing_document_item", StringComparison.Ordinal)
+                || string.Equals(x.Source, "product_fiscal_profile_current", StringComparison.Ordinal)
+                || string.Equals(x.Source, ProductFiscalAssignmentConventions.BackfillSource, StringComparison.Ordinal)
+                || string.Equals(x.Code, ProductFiscalAssignmentConventions.GenericSatProductServiceCode, StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task ProductFiscalProfileRepository_PrefersEffectiveAssignment_WhenMasterProfileIsInactive()
     {
         await using var dbContext = CreateDbContext();
@@ -297,6 +399,97 @@ public sealed class SatCatalogImportAndAssignmentTests
         Assert.Equal("40161513", result.SatProductServiceCode);
         Assert.Equal("H87", result.SatUnitCode);
         Assert.Equal("PIEZA", result.DefaultUnitText);
+    }
+
+    [Fact]
+    public async Task ProductFiscalProfileRepository_ReturnsNull_WhenEffectiveAssignmentIsLegacyPendingReset()
+    {
+        await using var dbContext = CreateDbContext();
+        var now = DateTime.UtcNow;
+
+        dbContext.ProductFiscalProfiles.Add(new ProductFiscalProfile
+        {
+            InternalCode = "SKU-PENDING-1",
+            Description = "Filtro legado",
+            NormalizedDescription = "FILTRO LEGADO",
+            SatProductServiceCode = ProductFiscalAssignmentConventions.GenericSatProductServiceCode,
+            SatUnitCode = "H87",
+            TaxObjectCode = "02",
+            VatRate = 0.16m,
+            DefaultUnitText = "PIEZA",
+            IsActive = true,
+            CreatedAtUtc = now.AddDays(-10),
+            UpdatedAtUtc = now.AddDays(-10)
+        });
+        dbContext.ProductFiscalAssignments.Add(new ProductFiscalAssignment
+        {
+            InternalCode = "SKU-PENDING-1",
+            SatProductServiceCode = ProductFiscalAssignmentConventions.GenericSatProductServiceCode,
+            SatUnitCode = "H87",
+            TaxObjectCode = "02",
+            VatRate = 0.16m,
+            DefaultUnitText = "PIEZA",
+            Source = ProductFiscalAssignmentConventions.BackfillSource,
+            Confidence = 0.5000m,
+            ReviewStatus = ProductFiscalAssignmentConventions.PendingReviewStatus,
+            ReviewReason = ProductFiscalAssignmentConventions.LegacyGenericResetReviewReason,
+            ValidFromUtc = now.AddDays(-2),
+            ValidToUtc = null,
+            CreatedAtUtc = now.AddDays(-2),
+            UpdatedAtUtc = now.AddDays(-2)
+        });
+        await dbContext.SaveChangesAsync();
+
+        var repository = new ProductFiscalProfileRepository(dbContext);
+        var result = await repository.GetEffectiveByInternalCodeAsync("SKU-PENDING-1", now);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task ProductFiscalProfileRepository_ReturnsEffectiveAssignment_WhenPendingReviewReasonIsNotLegacyReset()
+    {
+        await using var dbContext = CreateDbContext();
+        var now = DateTime.UtcNow;
+
+        dbContext.ProductFiscalProfiles.Add(new ProductFiscalProfile
+        {
+            InternalCode = "SKU-PENDING-2",
+            Description = "Filtro legado",
+            NormalizedDescription = "FILTRO LEGADO",
+            SatProductServiceCode = "40161513",
+            SatUnitCode = "H87",
+            TaxObjectCode = "02",
+            VatRate = 0.16m,
+            DefaultUnitText = "PIEZA",
+            IsActive = true,
+            CreatedAtUtc = now.AddDays(-10),
+            UpdatedAtUtc = now.AddDays(-10)
+        });
+        dbContext.ProductFiscalAssignments.Add(new ProductFiscalAssignment
+        {
+            InternalCode = "SKU-PENDING-2",
+            SatProductServiceCode = "40161513",
+            SatUnitCode = "H87",
+            TaxObjectCode = "02",
+            VatRate = 0.16m,
+            DefaultUnitText = "PIEZA",
+            Source = ProductFiscalAssignmentConventions.BackfillSource,
+            Confidence = 0.5000m,
+            ReviewStatus = ProductFiscalAssignmentConventions.PendingReviewStatus,
+            ReviewReason = "manual_followup",
+            ValidFromUtc = now.AddDays(-2),
+            ValidToUtc = null,
+            CreatedAtUtc = now.AddDays(-2),
+            UpdatedAtUtc = now.AddDays(-2)
+        });
+        await dbContext.SaveChangesAsync();
+
+        var repository = new ProductFiscalProfileRepository(dbContext);
+        var result = await repository.GetEffectiveByInternalCodeAsync("SKU-PENDING-2", now);
+
+        Assert.NotNull(result);
+        Assert.Equal("40161513", result!.SatProductServiceCode);
     }
 
     [Fact]

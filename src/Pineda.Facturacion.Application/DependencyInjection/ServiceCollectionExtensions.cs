@@ -30,6 +30,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<LegacyImportRevisionRecorder>();
         services.AddScoped<ListLegacyImportRevisionsService>();
         services.AddScoped<SearchLegacyOrdersService>();
+        services.AddScoped<CreateBulkBillingDocumentService>();
         services.AddScoped<ListAuditEventsService>();
         services.AddScoped<LoginService>();
         services.AddScoped<GetCurrentUserService>();

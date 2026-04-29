@@ -46,4 +46,56 @@ describe('OrdersApiService', () => {
     expect(req.request.method).toBe('GET');
     httpTesting.verify();
   });
+
+  it('omits date params when the period filter is neutral', () => {
+    const service = TestBed.inject(OrdersApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.searchLegacyOrders({
+      legacyOrderId: '1175479',
+      customerQuery: 'Cliente Uno',
+      page: 1,
+      pageSize: 10
+    }).subscribe();
+
+    const req = httpTesting.expectOne((request) =>
+      request.url === '/api/orders/legacy'
+      && request.params.get('fromDate') === null
+      && request.params.get('toDate') === null
+      && request.params.get('legacyOrderId') === '1175479'
+      && request.params.get('customerQuery') === 'Cliente Uno'
+      && request.params.get('page') === '1'
+      && request.params.get('pageSize') === '10');
+
+    expect(req.request.method).toBe('GET');
+    httpTesting.verify();
+  });
+
+  it('posts the bulk billing creation request with explicit ids or filters', () => {
+    const service = TestBed.inject(OrdersApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.createBulkBillingDocument({
+      documentType: 'I',
+      selectionMode: 'Filtered',
+      filters: {
+        fromDate: '2026-03-23',
+        toDate: '2026-03-23',
+        customerQuery: 'Cliente Uno'
+      }
+    }).subscribe();
+
+    const req = httpTesting.expectOne('/api/orders/billing-documents');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({
+      documentType: 'I',
+      selectionMode: 'Filtered',
+      filters: {
+        fromDate: '2026-03-23',
+        toDate: '2026-03-23',
+        customerQuery: 'Cliente Uno'
+      }
+    });
+    httpTesting.verify();
+  });
 });

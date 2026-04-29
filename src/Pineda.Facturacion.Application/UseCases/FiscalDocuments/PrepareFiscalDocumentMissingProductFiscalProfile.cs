@@ -4,7 +4,8 @@ public enum PrepareFiscalDocumentExistingProductFiscalProfileStatus
 {
     None = 0,
     Active = 1,
-    Inactive = 2
+    Inactive = 2,
+    PendingReview = 3
 }
 
 public sealed class PrepareFiscalDocumentMissingProductFiscalProfile

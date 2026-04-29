@@ -174,5 +174,18 @@ Acceptance criteria:
 - Receiver and product fiscal data must be stored locally, not inferred live on demand.
 - Secrets, API keys, certificates, and passwords must be externalized and documented with placeholders only.
 
+## Technical debt pending
+
+### AUD-07 - Persistent login throttle
+- Current login throttle state lives in process memory.
+- It does not survive restarts and is not consistent across multiple API instances.
+- The recommended fix requires a shared persistent store; the most realistic option in this repo is a dedicated database table.
+- The implementation likely requires converting `ILoginAttemptThrottleService` to an async contract.
+- This must be handled in a separate sprint; the current sprint intentionally does not change throttle persistence or contracts.
+
+### Frontend - CSS budget warnings
+- `npm run build` currently succeeds with non-blocking component-style budget warnings in the REP frontend slice.
+- These warnings are accepted temporarily for this mini-sprint closure and should be handled in a later cleanup pass without relaxing Angular budgets in this sprint.
+
 ## Current next priority
 Run real sandbox smoke tests with the new install/bootstrap support, then extend the completed MVP toward richer attempt history, multi-currency, and advance-payment scenarios without bypassing persisted fiscal evidence.

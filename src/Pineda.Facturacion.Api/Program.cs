@@ -13,6 +13,7 @@ using Pineda.Facturacion.Application.DependencyInjection;
 using Pineda.Facturacion.Api.Endpoints;
 using Pineda.Facturacion.Infrastructure.DependencyInjection;
 using Pineda.Facturacion.Infrastructure.BillingWrite.DependencyInjection;
+using Pineda.Facturacion.Infrastructure.BillingWrite.Operations.ProductFiscalProfiles;
 using Pineda.Facturacion.Infrastructure.FacturaloPlus.DependencyInjection;
 using Pineda.Facturacion.Infrastructure.LegacyRead.DependencyInjection;
 using Pineda.Facturacion.Infrastructure.Options;
@@ -141,6 +142,46 @@ if (args.Contains("seed-initial-production-users", StringComparer.OrdinalIgnoreC
     Console.WriteLine($"Assigned Admin role: {FormatList(result.AssignedAdminRoleUsers)}");
     Console.WriteLine($"Skipped existing users: {FormatList(result.SkippedExistingUsers)}");
     return;
+}
+
+if (args.Contains(LegacyGenericSatResetCli.ResetCommandName, StringComparer.OrdinalIgnoreCase))
+{
+    try
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        var command = LegacyGenericSatResetCli.ParseReset(args);
+        var service = scope.ServiceProvider.GetRequiredService<ResetLegacyGenericSatAssignmentsService>();
+        var result = await service.ExecuteAsync(command);
+        LegacyGenericSatResetCli.WriteResetResult(result, app.Environment.EnvironmentName);
+        Environment.ExitCode = result.IsSuccess ? 0 : 1;
+        return;
+    }
+    catch (Exception exception)
+    {
+        Console.Error.WriteLine(exception.Message);
+        Environment.ExitCode = 1;
+        return;
+    }
+}
+
+if (args.Contains(LegacyGenericSatResetCli.RollbackCommandName, StringComparer.OrdinalIgnoreCase))
+{
+    try
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        var command = LegacyGenericSatResetCli.ParseRollback(args);
+        var service = scope.ServiceProvider.GetRequiredService<RollbackLegacyGenericSatAssignmentsService>();
+        var result = await service.ExecuteAsync(command);
+        LegacyGenericSatResetCli.WriteRollbackResult(result, app.Environment.EnvironmentName);
+        Environment.ExitCode = result.IsSuccess ? 0 : 1;
+        return;
+    }
+    catch (Exception exception)
+    {
+        Console.Error.WriteLine(exception.Message);
+        Environment.ExitCode = 1;
+        return;
+    }
 }
 
 var enableSwagger = app.Configuration.GetValue<bool?>("OpenApi:EnableSwagger") ?? IsSwaggerEnabledByEnvironment(app.Environment);

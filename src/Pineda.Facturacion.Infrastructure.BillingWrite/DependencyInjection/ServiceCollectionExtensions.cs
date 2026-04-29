@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
+using Pineda.Facturacion.Infrastructure.BillingWrite.Operations.ProductFiscalProfiles;
 using Pineda.Facturacion.Infrastructure.BillingWrite.Options;
 using Pineda.Facturacion.Infrastructure.BillingWrite.Persistence;
 using Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Repositories;
@@ -68,6 +69,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ISatCatalogImportRepository, SatCatalogImportRepository>();
         services.AddScoped<IFiscalReceiverImportRepository, FiscalReceiverImportRepository>();
         services.AddScoped<IProductFiscalProfileImportRepository, ProductFiscalProfileImportRepository>();
+        services.AddScoped<IOperationalOrderMutationScopeFactory, OperationalOrderMutationScopeFactory>();
+        services.AddScoped<ResetLegacyGenericSatAssignmentsService>();
+        services.AddScoped<RollbackLegacyGenericSatAssignmentsService>();
         services.AddScoped<IUnitOfWork>(serviceProvider => serviceProvider.GetRequiredService<BillingDbContext>());
 
         return services;

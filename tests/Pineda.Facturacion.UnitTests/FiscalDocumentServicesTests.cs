@@ -1,9 +1,15 @@
+using Microsoft.EntityFrameworkCore;
 using Pineda.Facturacion.Application.Abstractions.Documents;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.UseCases.FiscalDocuments;
+using Pineda.Facturacion.Application.UseCases.ProductFiscalProfiles;
+using Pineda.Facturacion.Application.UseCases.SatClaveUnidad;
+using Pineda.Facturacion.Application.UseCases.SatProductServices;
 using Pineda.Facturacion.Api.Endpoints;
 using Pineda.Facturacion.Domain.Entities;
 using Pineda.Facturacion.Domain.Enums;
+using Pineda.Facturacion.Infrastructure.BillingWrite.Persistence;
+using Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Repositories;
 
 namespace Pineda.Facturacion.UnitTests;
 
@@ -191,6 +197,186 @@ public class FiscalDocumentServicesTests
         Assert.Contains(
             result.MissingProductFiscalProfile.Suggestions,
             x => x.Source == "product_fiscal_profile_current" && x.SatProductServiceCode == "10101504");
+    }
+
+    [Fact]
+    public async Task PrepareFiscalDocument_ReturnsPendingReviewContext_AndDoesNotAutoprefillGenericCode()
+    {
+        var billingDocument = CreateBillingDocument();
+        billingDocument.Items[0].SatProductServiceCode = ProductFiscalAssignmentConventions.GenericSatProductServiceCode;
+        billingDocument.Items[0].SatUnitCode = "H87";
+
+        var genericProfile = CreateProductFiscalProfile();
+        genericProfile.SatProductServiceCode = ProductFiscalAssignmentConventions.GenericSatProductServiceCode;
+        genericProfile.DefaultUnitText = "PIEZA";
+
+        var service = new PrepareFiscalDocumentService(
+            new FakeBillingDocumentRepository { BillingDocumentById = billingDocument },
+            new FakeFiscalDocumentRepository(),
+            new FakeIssuerProfileRepository { Active = CreateIssuerProfile() },
+            new FakeFiscalReceiverRepository { ExistingById = CreateReceiver() },
+            new FakeProductFiscalProfileRepository
+            {
+                ExistingByCode = genericProfile,
+                EffectiveAssignmentByCode = new ProductFiscalAssignment
+                {
+                    Id = 44,
+                    InternalCode = "SKU-1",
+                    SatProductServiceCode = ProductFiscalAssignmentConventions.GenericSatProductServiceCode,
+                    SatUnitCode = "H87",
+                    TaxObjectCode = "02",
+                    VatRate = 0.16m,
+                    DefaultUnitText = "PIEZA",
+                    Source = ProductFiscalAssignmentConventions.BackfillSource,
+                    Confidence = 0.5000m,
+                    ReviewStatus = ProductFiscalAssignmentConventions.PendingReviewStatus,
+                    ReviewReason = ProductFiscalAssignmentConventions.LegacyGenericResetReviewReason,
+                    ValidFromUtc = DateTime.UtcNow.AddDays(-1),
+                    CreatedAtUtc = DateTime.UtcNow.AddDays(-1),
+                    UpdatedAtUtc = DateTime.UtcNow.AddDays(-1)
+                }
+            },
+            new FakeSatCatalogDescriptionProvider(),
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new PrepareFiscalDocumentCommand
+        {
+            BillingDocumentId = billingDocument.Id,
+            FiscalReceiverId = 11,
+            PaymentMethodSat = "PUE",
+            PaymentFormSat = "03",
+            PaymentCondition = "Contado"
+        });
+
+        Assert.Equal(PrepareFiscalDocumentOutcome.MissingProductFiscalProfile, result.Outcome);
+        Assert.Contains("pending SAT review", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.NotNull(result.MissingProductFiscalProfile);
+        Assert.Equal(PrepareFiscalDocumentExistingProductFiscalProfileStatus.PendingReview, result.MissingProductFiscalProfile!.ExistingProfileStatus);
+        Assert.Equal(21, result.MissingProductFiscalProfile.ExistingProductFiscalProfileId);
+        Assert.Equal(string.Empty, result.MissingProductFiscalProfile.Prefill.SatProductServiceCode);
+        Assert.Equal("H87", result.MissingProductFiscalProfile.Prefill.SatUnitCode);
+        Assert.True(result.MissingProductFiscalProfile.Prefill.RequiresExplicitProductServiceConfirmation);
+        Assert.DoesNotContain(
+            result.MissingProductFiscalProfile.Suggestions,
+            x => string.Equals(x.Source, "billing_document_item", StringComparison.Ordinal)
+                || string.Equals(x.Source, "product_fiscal_profile_current", StringComparison.Ordinal)
+                || string.Equals(x.SatProductServiceCode, ProductFiscalAssignmentConventions.GenericSatProductServiceCode, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task PrepareFiscalDocument_UsesRealSuggestionService_ToSuppressHistoricalGenericHints_ForLegacyPendingReset()
+    {
+        var options = new DbContextOptionsBuilder<BillingDbContext>()
+            .UseInMemoryDatabase($"prepare-fiscal-pending-legacy-{Guid.NewGuid():N}")
+            .Options;
+        await using var dbContext = new BillingDbContext(options);
+        var now = DateTime.UtcNow;
+
+        dbContext.SatProductServiceCatalogEntries.Add(new SatProductServiceCatalogEntry
+        {
+            Code = "40161505",
+            Description = "Filtro de aire",
+            NormalizedDescription = "FILTRO DE AIRE",
+            KeywordsNormalized = "FILTRO AIRE MOTOR",
+            IsActive = true,
+            SourceVersion = "4.0",
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now
+        });
+        dbContext.SatClaveUnidades.Add(new SatClaveUnidad
+        {
+            Code = "H87",
+            Description = "Pieza",
+            NormalizedDescription = "PIEZA",
+            Symbol = "PZA",
+            Notes = "Unidad de pieza",
+            IsActive = true,
+            SourceVersion = "4.0",
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now
+        });
+        dbContext.ProductFiscalProfiles.Add(new ProductFiscalProfile
+        {
+            Id = 99,
+            InternalCode = "SKU-LEG-REAL",
+            Description = "Filtro legado",
+            NormalizedDescription = "FILTRO LEGADO",
+            SatProductServiceCode = ProductFiscalAssignmentConventions.GenericSatProductServiceCode,
+            SatUnitCode = "H87",
+            TaxObjectCode = "02",
+            VatRate = 0.16m,
+            DefaultUnitText = "PIEZA",
+            IsActive = true,
+            CreatedAtUtc = now.AddDays(-10),
+            UpdatedAtUtc = now.AddDays(-10)
+        });
+        dbContext.ProductFiscalAssignments.Add(new ProductFiscalAssignment
+        {
+            Id = 100,
+            InternalCode = "SKU-LEG-REAL",
+            SatProductServiceCode = ProductFiscalAssignmentConventions.GenericSatProductServiceCode,
+            SatUnitCode = "H87",
+            TaxObjectCode = "02",
+            VatRate = 0.16m,
+            DefaultUnitText = "PIEZA",
+            Source = ProductFiscalAssignmentConventions.BackfillSource,
+            Confidence = 0.5000m,
+            ReviewStatus = ProductFiscalAssignmentConventions.PendingReviewStatus,
+            ReviewReason = ProductFiscalAssignmentConventions.LegacyGenericResetReviewReason,
+            ValidFromUtc = now.AddDays(-2),
+            ValidToUtc = null,
+            CreatedAtUtc = now.AddDays(-2),
+            UpdatedAtUtc = now.AddDays(-2)
+        });
+        await dbContext.SaveChangesAsync();
+
+        var billingDocument = CreateBillingDocument();
+        billingDocument.Items[0].Sku = "SKU-LEG-REAL";
+        billingDocument.Items[0].ProductInternalCode = "SKU-LEG-REAL";
+        billingDocument.Items[0].Description = "Filtro de aire premium";
+        billingDocument.Items[0].SatProductServiceCode = ProductFiscalAssignmentConventions.GenericSatProductServiceCode;
+        billingDocument.Items[0].SatUnitCode = "H87";
+
+        var productFiscalProfileRepository = new ProductFiscalProfileRepository(dbContext);
+        var satProductServiceCatalogRepository = new SatProductServiceCatalogRepository(dbContext);
+        var satClaveUnidadRepository = new SatClaveUnidadRepository(dbContext);
+        var suggestionService = new SuggestSatAssignmentForLegacyItemService(
+            productFiscalProfileRepository,
+            satProductServiceCatalogRepository,
+            satClaveUnidadRepository,
+            new SearchSatProductServicesService(satProductServiceCatalogRepository),
+            new SearchSatClaveUnidadService(satClaveUnidadRepository));
+
+        var service = new PrepareFiscalDocumentService(
+            new FakeBillingDocumentRepository { BillingDocumentById = billingDocument },
+            new FakeFiscalDocumentRepository(),
+            new FakeIssuerProfileRepository { Active = CreateIssuerProfile() },
+            new FakeFiscalReceiverRepository { ExistingById = CreateReceiver() },
+            productFiscalProfileRepository,
+            new FakeSatCatalogDescriptionProvider(),
+            suggestionService,
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new PrepareFiscalDocumentCommand
+        {
+            BillingDocumentId = billingDocument.Id,
+            FiscalReceiverId = 11,
+            PaymentMethodSat = "PUE",
+            PaymentFormSat = "03",
+            PaymentCondition = "Contado"
+        });
+
+        Assert.Equal(PrepareFiscalDocumentOutcome.MissingProductFiscalProfile, result.Outcome);
+        Assert.NotNull(result.MissingProductFiscalProfile);
+        Assert.Equal(PrepareFiscalDocumentExistingProductFiscalProfileStatus.PendingReview, result.MissingProductFiscalProfile!.ExistingProfileStatus);
+        Assert.Equal(string.Empty, result.MissingProductFiscalProfile.Prefill.SatProductServiceCode);
+        Assert.Equal("40161505", result.MissingProductFiscalProfile.Suggestions[0].SatProductServiceCode);
+        Assert.DoesNotContain(
+            result.MissingProductFiscalProfile.Suggestions,
+            x => string.Equals(x.Source, "billing_document_item", StringComparison.Ordinal)
+                || string.Equals(x.Source, "product_fiscal_profile_current", StringComparison.Ordinal)
+                || string.Equals(x.Source, ProductFiscalAssignmentConventions.BackfillSource, StringComparison.Ordinal)
+                || string.Equals(x.SatProductServiceCode, ProductFiscalAssignmentConventions.GenericSatProductServiceCode, StringComparison.Ordinal));
     }
 
     [Fact]
@@ -1390,6 +1576,7 @@ public class FiscalDocumentServicesTests
     {
         public ProductFiscalProfile? ExistingByCode { get; set; }
         public ProductFiscalProfile? EffectiveByCode { get; set; }
+        public ProductFiscalAssignment? EffectiveAssignmentByCode { get; set; }
 
         public Task<IReadOnlyList<ProductFiscalProfile>> SearchAsync(string query, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<ProductFiscalProfile>>([]);
@@ -1401,7 +1588,38 @@ public class FiscalDocumentServicesTests
             string normalizedInternalCode,
             DateTime asOfUtc,
             CancellationToken cancellationToken = default)
-            => Task.FromResult(EffectiveByCode?.InternalCode == normalizedInternalCode ? EffectiveByCode : ExistingByCode);
+        {
+            var assignment = EffectiveAssignmentByCode?.InternalCode == normalizedInternalCode
+                ? EffectiveAssignmentByCode
+                : null;
+
+            if (ProductFiscalAssignmentConventions.IsUnresolvedForSatSuggestion(assignment))
+            {
+                return Task.FromResult<ProductFiscalProfile?>(null);
+            }
+
+            if (assignment is not null)
+            {
+                return Task.FromResult<ProductFiscalProfile?>(new ProductFiscalProfile
+                {
+                    InternalCode = assignment.InternalCode,
+                    SatProductServiceCode = assignment.SatProductServiceCode,
+                    SatUnitCode = assignment.SatUnitCode,
+                    TaxObjectCode = assignment.TaxObjectCode,
+                    VatRate = assignment.VatRate,
+                    DefaultUnitText = assignment.DefaultUnitText,
+                    IsActive = true
+                });
+            }
+
+            return Task.FromResult(EffectiveByCode?.InternalCode == normalizedInternalCode ? EffectiveByCode : ExistingByCode);
+        }
+
+        public Task<ProductFiscalAssignment?> GetEffectiveAssignmentAsync(
+            string normalizedInternalCode,
+            DateTime asOfUtc,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(EffectiveAssignmentByCode?.InternalCode == normalizedInternalCode ? EffectiveAssignmentByCode : null);
 
         public Task<ProductFiscalProfile?> GetByIdAsync(long productFiscalProfileId, CancellationToken cancellationToken = default)
             => Task.FromResult<ProductFiscalProfile?>(null);

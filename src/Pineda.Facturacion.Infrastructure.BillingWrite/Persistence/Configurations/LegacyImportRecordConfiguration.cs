@@ -60,6 +60,7 @@ public class LegacyImportRecordConfiguration : IEntityTypeConfiguration<LegacyIm
 
         builder.Property(x => x.BillingDocumentId)
             .HasColumnName("billing_document_id")
+            .IsConcurrencyToken()
             .IsRequired(false);
 
         builder.Property(x => x.ErrorMessage)

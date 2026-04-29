@@ -338,6 +338,22 @@ public class AuthApiTests
     }
 
     [Fact]
+    public async Task BulkBillingDocumentEndpoint_RejectsAnonymousAccess()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = factory.CreateClient();
+
+        var response = await client.PostAsJsonAsync("/api/orders/billing-documents", new OrdersEndpoints.CreateBulkBillingDocumentRequest
+        {
+            DocumentType = "I",
+            SelectionMode = "Explicit",
+            LegacyOrderIds = ["SEC-BULK-1001"]
+        });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
     public async Task FiscalOperator_CannotCancelInvoice()
     {
         await using var factory = new MvpApiFactory();
@@ -351,6 +367,23 @@ public class AuthApiTests
         var response = await operatorClient.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/cancel", new FiscalDocumentsEndpoints.CancelFiscalDocumentRequest
         {
             CancellationReasonCode = "02"
+        });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Auditor_CannotCreateBulkBillingDocuments()
+    {
+        await using var factory = new MvpApiFactory();
+        await factory.SeedUserAsync("auditor-bulk", "Secret123!", true, AppRoleNames.Auditor);
+        var client = await factory.CreateAuthenticatedClientAsync("auditor-bulk", "Secret123!");
+
+        var response = await client.PostAsJsonAsync("/api/orders/billing-documents", new OrdersEndpoints.CreateBulkBillingDocumentRequest
+        {
+            DocumentType = "I",
+            SelectionMode = "Explicit",
+            LegacyOrderIds = ["SEC-BULK-2001"]
         });
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);

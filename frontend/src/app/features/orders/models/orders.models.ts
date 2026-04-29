@@ -65,8 +65,8 @@ export interface LegacyOrderListItem {
 }
 
 export interface SearchLegacyOrdersRequest {
-  fromDate: string;
-  toDate: string;
+  fromDate?: string | null;
+  toDate?: string | null;
   legacyOrderId?: string | null;
   customerQuery?: string | null;
   page: number;
@@ -94,6 +94,43 @@ export interface CreateBillingDocumentResponse {
   salesOrderId: number;
   billingDocumentId?: number | null;
   billingDocumentStatus?: string | null;
+}
+
+export type BulkBillingDocumentSelectionMode = 'Explicit' | 'Filtered';
+
+export interface CreateBulkBillingDocumentFiltersRequest {
+  fromDate?: string | null;
+  toDate?: string | null;
+  legacyOrderId?: string | null;
+  customerQuery?: string | null;
+}
+
+export interface CreateBulkBillingDocumentRequest {
+  documentType: string;
+  selectionMode: BulkBillingDocumentSelectionMode;
+  legacyOrderIds?: string[] | null;
+  filters?: CreateBulkBillingDocumentFiltersRequest | null;
+}
+
+export interface CreateBulkBillingDocumentOrderError {
+  legacyOrderId: string;
+  customerName?: string | null;
+  errorCode?: string | null;
+  errorMessage: string;
+}
+
+export interface CreateBulkBillingDocumentResponse {
+  outcome: string;
+  isSuccess: boolean;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+  billingDocumentId?: number | null;
+  billingDocumentStatus?: string | null;
+  selectedOrderCount: number;
+  importedOrderCount: number;
+  associatedOrderCount: number;
+  legacyOrderIds: string[];
+  orderErrors: CreateBulkBillingDocumentOrderError[];
 }
 
 export interface ImportLegacyOrderPreviewResponse {

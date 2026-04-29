@@ -27,7 +27,13 @@ class SessionServiceStub {
 }
 
 class PermissionServiceStub {
-  hasAnyRole = vi.fn().mockReturnValue(true);
+  private roles = new Set<AppRole>([AppRole.Admin]);
+
+  hasAnyRole = vi.fn((roles: AppRole[]) => roles.some((role) => this.roles.has(role)));
+
+  setRoles(roles: AppRole[]): void {
+    this.roles = new Set(roles);
+  }
 }
 
 describe('AppShellComponent', () => {
@@ -116,6 +122,22 @@ describe('AppShellComponent', () => {
 
     const firstLink = fixture.debugElement.query(By.css('nav a')).nativeElement as HTMLAnchorElement;
     expect(firstLink.title).toContain('Órdenes');
+  });
+
+  it('does not show the orders navigation item for auditors', async () => {
+    const permissions = TestBed.inject(PermissionService) as unknown as PermissionServiceStub;
+    permissions.setRoles([AppRole.Auditor]);
+    setViewportWidth(1280);
+    await router.navigateByUrl('/app/accounts-receivable');
+
+    const fixture = TestBed.createComponent(AppShellComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).not.toContain('Órdenes');
+    expect(text).toContain('Auditoría');
   });
 
   function clickButton(fixture: ReturnType<typeof TestBed.createComponent<AppShellComponent>>, ariaLabel: string): void {

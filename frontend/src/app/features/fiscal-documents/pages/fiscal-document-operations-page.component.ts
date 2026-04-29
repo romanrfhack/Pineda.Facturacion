@@ -746,6 +746,8 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
                   <span>Producto interno: {{ missingProduct.description }}.</span>
                   @if (missingProduct.existingProfileStatus === 'Inactive') {
                     <span>Ya existe un perfil maestro inactivo para este código. Puedes actualizarlo y reactivarlo para continuar.</span>
+                  } @else if (missingProduct.existingProfileStatus === 'PendingReview') {
+                    <span>Ya existe un perfil maestro para este código, pero quedó marcado como pendiente de revisión SAT. Debes confirmar una clave SAT oficial para continuar.</span>
                   } @else {
                     <span>Debes darlo de alta para continuar.</span>
                   }
@@ -785,6 +787,8 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
                     {{
                       missingProduct.existingProfileStatus === 'Inactive'
                         ? 'Reactivar perfil fiscal de producto'
+                        : missingProduct.existingProfileStatus === 'PendingReview'
+                          ? 'Actualizar perfil fiscal pendiente de revisión'
                         : 'Alta de perfil fiscal de producto'
                     }}
                   </h4>
@@ -3135,6 +3139,8 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
           'warning',
           missingProfile.existingProfileStatus === 'Inactive'
             ? `El perfil fiscal del producto ${missingProfile.internalCode} existe pero está inactivo. Debes reactivarlo o actualizarlo para continuar.`
+            : missingProfile.existingProfileStatus === 'PendingReview'
+              ? `El perfil fiscal del producto ${missingProfile.internalCode} quedó pendiente de revisión SAT. Debes confirmar una clave SAT oficial para continuar.`
             : `Falta el perfil fiscal del producto ${missingProfile.internalCode}. Debes darlo de alta para continuar.`,
         );
         return;

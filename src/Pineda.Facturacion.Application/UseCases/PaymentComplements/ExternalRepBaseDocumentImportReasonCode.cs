@@ -13,5 +13,7 @@ public enum ExternalRepBaseDocumentImportReasonCode
     DuplicateExternalInvoice = 8,
     CancelledExternalInvoice = 9,
     ValidationUnavailable = 10,
-    InvalidTotals = 11
+    InvalidTotals = 11,
+    FileTooLarge = 12,
+    InvalidFileType = 13
 }

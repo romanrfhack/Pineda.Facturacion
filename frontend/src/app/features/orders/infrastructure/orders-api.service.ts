@@ -5,6 +5,8 @@ import { buildApiUrl } from '../../../core/config/api-url';
 import {
   CreateBillingDocumentRequest,
   CreateBillingDocumentResponse,
+  CreateBulkBillingDocumentRequest,
+  CreateBulkBillingDocumentResponse,
   ImportLegacyOrderPreviewResponse,
   ImportLegacyOrderRevisionHistoryResponse,
   ImportLegacyOrderResponse,
@@ -20,11 +22,17 @@ export class OrdersApiService {
 
   searchLegacyOrders(request: SearchLegacyOrdersRequest): Observable<SearchLegacyOrdersResponse> {
     const params: Record<string, string | number> = {
-      fromDate: request.fromDate,
-      toDate: request.toDate,
       page: request.page,
       pageSize: request.pageSize
     };
+
+    if (request.fromDate) {
+      params['fromDate'] = request.fromDate;
+    }
+
+    if (request.toDate) {
+      params['toDate'] = request.toDate;
+    }
 
     if (request.legacyOrderId?.trim()) {
       params['legacyOrderId'] = request.legacyOrderId.trim();
@@ -57,5 +65,9 @@ export class OrdersApiService {
 
   createBillingDocument(salesOrderId: number, request: CreateBillingDocumentRequest): Observable<CreateBillingDocumentResponse> {
     return this.http.post<CreateBillingDocumentResponse>(buildApiUrl(`/sales-orders/${salesOrderId}/billing-documents`), request);
+  }
+
+  createBulkBillingDocument(request: CreateBulkBillingDocumentRequest): Observable<CreateBulkBillingDocumentResponse> {
+    return this.http.post<CreateBulkBillingDocumentResponse>(buildApiUrl('/orders/billing-documents'), request);
   }
 }

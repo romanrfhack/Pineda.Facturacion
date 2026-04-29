@@ -1,7 +1,9 @@
+import { inject } from '@angular/core';
 import { Routes } from '@angular/router';
 import { authGuard } from './core/auth/auth.guard';
 import { roleGuard } from './core/auth/role.guard';
 import { AppRole } from './core/auth/models';
+import { SessionService } from './core/auth/session.service';
 
 export const routes: Routes = [
   {
@@ -21,7 +23,7 @@ export const routes: Routes = [
       {
         path: '',
         pathMatch: 'full',
-        redirectTo: 'orders'
+        redirectTo: () => inject(SessionService).getDefaultAppRoute()
       },
       {
         path: 'orders',

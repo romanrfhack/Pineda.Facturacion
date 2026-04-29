@@ -143,6 +143,7 @@ public sealed class BillingDocumentCancellationServicesTests
             new FakeBillingDocumentItemRemovalRepository(),
             new FakeBillingDocumentPendingItemAssignmentRepository(),
             new FakeLegacyImportRecordRepository(primaryImportRecord, targetImportRecord),
+            new FakeOperationalOrderMutationScopeFactory(),
             new FakeProductFiscalProfileRepository(),
             new FakeSalesOrderSnapshotRepository(primarySalesOrder, targetSalesOrder),
             new FakeUnitOfWork());
@@ -564,5 +565,22 @@ public sealed class BillingDocumentCancellationServicesTests
             SaveChangesCallCount++;
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class FakeOperationalOrderMutationScopeFactory : IOperationalOrderMutationScopeFactory
+    {
+        public Task<IOperationalOrderMutationScope> BeginAsync(
+            IReadOnlyCollection<string> lockKeys,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<IOperationalOrderMutationScope>(new FakeOperationalOrderMutationScope());
+        }
+    }
+
+    private sealed class FakeOperationalOrderMutationScope : IOperationalOrderMutationScope
+    {
+        public Task CommitAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }

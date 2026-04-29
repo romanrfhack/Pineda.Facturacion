@@ -23,10 +23,18 @@ public static class OrdersEndpoints
 
         group.MapGet("/legacy", SearchLegacyOrdersAsync)
             .WithName("SearchLegacyOrders")
-            .WithSummary("Search legacy orders by date range")
-            .WithDescription("Queries legacy orders in read-only mode using a bounded date range and paged results.")
+            .WithSummary("Search legacy orders with optional date range")
+            .WithDescription("Queries legacy orders in read-only mode with optional date filters and paged results.")
             .Produces<SearchLegacyOrdersResponse>(StatusCodes.Status200OK)
             .Produces<SearchLegacyOrdersResponse>(StatusCodes.Status400BadRequest);
+
+        group.MapPost("/billing-documents", CreateBulkBillingDocumentAsync)
+            .WithName("CreateBulkBillingDocumentFromLegacyOrders")
+            .WithSummary("Create one billing document from multiple legacy orders")
+            .WithDescription("Resolves a legacy-order selection by explicit ids or current filters, reuses the existing import and order-association flows, and creates one draft billing document when all selected orders are compatible.")
+            .Produces<CreateBulkBillingDocumentResponse>(StatusCodes.Status200OK)
+            .Produces<CreateBulkBillingDocumentResponse>(StatusCodes.Status400BadRequest)
+            .Produces<CreateBulkBillingDocumentResponse>(StatusCodes.Status409Conflict);
 
         group.MapPost("/{legacyOrderId}/import", ImportOrderAsync)
             .WithName("ImportLegacyOrder")
@@ -73,18 +81,18 @@ public static class OrdersEndpoints
         SearchLegacyOrdersService service,
         CancellationToken cancellationToken)
     {
-        if (fromDate is null || toDate is null)
+        if (fromDate.HasValue != toDate.HasValue)
         {
-            return TypedResults.BadRequest(CreateValidationFailure("La fecha inicial y la fecha final son obligatorias."));
+            return TypedResults.BadRequest(CreateValidationFailure("La fecha inicial y la fecha final deben enviarse juntas."));
         }
 
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        if (fromDate > toDate)
+        if (fromDate.HasValue && toDate.HasValue && fromDate.Value > toDate.Value)
         {
             return TypedResults.BadRequest(CreateValidationFailure("La fecha inicial no puede ser mayor que la fecha final."));
         }
 
-        if (toDate > today)
+        if (toDate.HasValue && toDate.Value > today)
         {
             return TypedResults.BadRequest(CreateValidationFailure("La fecha final no puede ser mayor al día actual."));
         }
@@ -105,8 +113,8 @@ public static class OrdersEndpoints
         var result = await service.ExecuteAsync(
             new SearchLegacyOrdersFilter
             {
-                FromDateUtc = fromDate.Value.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
-                ToDateUtcExclusive = toDate.Value.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
+                FromDateUtc = fromDate?.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
+                ToDateUtcExclusive = toDate?.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
                 LegacyOrderId = legacyOrderId,
                 CustomerQuery = customerQuery,
                 Page = normalizedPage,
@@ -137,6 +145,91 @@ public static class OrdersEndpoints
                 ImportStatus = item.ImportStatus
             }).ToArray()
         });
+    }
+
+    private static async Task<Results<Ok<CreateBulkBillingDocumentResponse>, BadRequest<CreateBulkBillingDocumentResponse>, Conflict<CreateBulkBillingDocumentResponse>>> CreateBulkBillingDocumentAsync(
+        CreateBulkBillingDocumentRequest request,
+        CreateBulkBillingDocumentService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        if (!Enum.TryParse<BulkBillingDocumentSelectionMode>(request.SelectionMode, true, out var selectionMode))
+        {
+            return TypedResults.BadRequest(new CreateBulkBillingDocumentResponse
+            {
+                Outcome = CreateBulkBillingDocumentOutcome.ValidationFailed.ToString(),
+                IsSuccess = false,
+                ErrorCode = "SelectionModeNotSupported",
+                ErrorMessage = $"Selection mode '{request.SelectionMode}' is not supported.",
+                LegacyOrderIds = request.LegacyOrderIds
+            });
+        }
+
+        var result = await service.ExecuteAsync(
+            new CreateBulkBillingDocumentCommand
+            {
+                DocumentType = request.DocumentType,
+                SelectionMode = selectionMode,
+                LegacyOrderIds = request.LegacyOrderIds,
+                Filters = MapBulkFilters(request.Filters)
+            },
+            cancellationToken);
+
+        var response = new CreateBulkBillingDocumentResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorCode = result.ErrorCode,
+            ErrorMessage = result.ErrorMessage,
+            BillingDocumentId = result.BillingDocumentId,
+            BillingDocumentStatus = result.BillingDocumentStatus?.ToString(),
+            SelectedOrderCount = result.SelectedOrderCount,
+            ImportedOrderCount = result.ImportedOrderCount,
+            AssociatedOrderCount = result.AssociatedOrderCount,
+            LegacyOrderIds = result.LegacyOrderIds,
+            OrderErrors = result.OrderErrors
+                .Select(error => new CreateBulkBillingDocumentOrderErrorResponse
+                {
+                    LegacyOrderId = error.LegacyOrderId,
+                    CustomerName = error.CustomerName,
+                    ErrorCode = error.ErrorCode,
+                    ErrorMessage = error.ErrorMessage
+                })
+                .ToArray()
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "BillingDocument.CreateBulk",
+            "BillingDocument",
+            result.BillingDocumentId?.ToString() ?? "bulk-selection",
+            result.Outcome.ToString(),
+            new
+            {
+                request.DocumentType,
+                request.SelectionMode,
+                request.LegacyOrderIds,
+                request.Filters
+            },
+            new
+            {
+                result.BillingDocumentId,
+                result.BillingDocumentStatus,
+                result.SelectedOrderCount,
+                result.ImportedOrderCount,
+                result.AssociatedOrderCount,
+                result.LegacyOrderIds,
+                result.OrderErrors
+            },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            CreateBulkBillingDocumentOutcome.Created => TypedResults.Ok(response),
+            CreateBulkBillingDocumentOutcome.Conflict => TypedResults.Conflict(response),
+            _ => TypedResults.BadRequest(response)
+        };
     }
 
     private static async Task<Results<Ok<ImportLegacyOrderResponse>, NotFound<ImportLegacyOrderResponse>, Conflict<ImportLegacyOrderResponse>>> ImportOrderAsync(
@@ -463,6 +556,24 @@ public static class OrdersEndpoints
         };
     }
 
+    private static SearchLegacyOrdersFilter? MapBulkFilters(CreateBulkBillingDocumentFiltersRequest? filters)
+    {
+        if (filters is null)
+        {
+            return null;
+        }
+
+        return new SearchLegacyOrdersFilter
+        {
+            FromDateUtc = filters.FromDate?.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
+            ToDateUtcExclusive = filters.ToDate?.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
+            LegacyOrderId = filters.LegacyOrderId,
+            CustomerQuery = filters.CustomerQuery,
+            Page = 1,
+            PageSize = 10
+        };
+    }
+
     public sealed class SearchLegacyOrdersResponse
     {
         public bool IsSuccess { get; init; }
@@ -505,6 +616,64 @@ public static class OrdersEndpoints
         public string? FiscalDocumentStatus { get; init; }
 
         public string? ImportStatus { get; init; }
+    }
+
+    public sealed class CreateBulkBillingDocumentRequest
+    {
+        public string DocumentType { get; init; } = string.Empty;
+
+        public string SelectionMode { get; init; } = string.Empty;
+
+        public IReadOnlyList<string> LegacyOrderIds { get; init; } = [];
+
+        public CreateBulkBillingDocumentFiltersRequest? Filters { get; init; }
+    }
+
+    public sealed class CreateBulkBillingDocumentFiltersRequest
+    {
+        public DateOnly? FromDate { get; init; }
+
+        public DateOnly? ToDate { get; init; }
+
+        public string? LegacyOrderId { get; init; }
+
+        public string? CustomerQuery { get; init; }
+    }
+
+    public sealed class CreateBulkBillingDocumentResponse
+    {
+        public string Outcome { get; init; } = string.Empty;
+
+        public bool IsSuccess { get; init; }
+
+        public string? ErrorCode { get; init; }
+
+        public string? ErrorMessage { get; init; }
+
+        public long? BillingDocumentId { get; init; }
+
+        public string? BillingDocumentStatus { get; init; }
+
+        public int SelectedOrderCount { get; init; }
+
+        public int ImportedOrderCount { get; init; }
+
+        public int AssociatedOrderCount { get; init; }
+
+        public IReadOnlyList<string> LegacyOrderIds { get; init; } = [];
+
+        public IReadOnlyList<CreateBulkBillingDocumentOrderErrorResponse> OrderErrors { get; init; } = [];
+    }
+
+    public sealed class CreateBulkBillingDocumentOrderErrorResponse
+    {
+        public string LegacyOrderId { get; init; } = string.Empty;
+
+        public string? CustomerName { get; init; }
+
+        public string? ErrorCode { get; init; }
+
+        public string ErrorMessage { get; init; } = string.Empty;
     }
 
     public sealed class ImportLegacyOrderPreviewResponse

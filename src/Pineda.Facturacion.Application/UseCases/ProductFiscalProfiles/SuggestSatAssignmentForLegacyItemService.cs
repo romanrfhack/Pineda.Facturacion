@@ -44,16 +44,18 @@ public sealed class SuggestSatAssignmentForLegacyItemService
         var internalCode = FiscalMasterDataNormalization.NormalizeRequiredCode(command.InternalCode);
         var existingProfile = await _productFiscalProfileRepository.GetByInternalCodeAsync(internalCode, cancellationToken);
         var effectiveAssignment = await _productFiscalProfileRepository.GetEffectiveAssignmentAsync(internalCode, DateTime.UtcNow, cancellationToken);
+        var suppressHistoricalCandidates = command.SuppressHistoricalCandidates
+            || ProductFiscalAssignmentConventions.IsUnresolvedForSatSuggestion(effectiveAssignment);
 
         var productCandidates = new List<SatAssignmentSuggestionItem>();
         var productCodes = new HashSet<string>(StringComparer.Ordinal);
         var unitCandidates = new List<SatAssignmentSuggestionItem>();
         var unitCodes = new HashSet<string>(StringComparer.Ordinal);
 
-        await TryAddCurrentAssignmentCandidatesAsync(productCandidates, productCodes, unitCandidates, unitCodes, effectiveAssignment, cancellationToken);
-        await TryAddCurrentProfileCandidatesAsync(productCandidates, productCodes, unitCandidates, unitCodes, existingProfile, cancellationToken);
-        await TryAddBillingDocumentItemCandidatesAsync(productCandidates, productCodes, unitCandidates, unitCodes, command, cancellationToken);
-        await TryAddImportedSnapshotCandidatesAsync(productCandidates, productCodes, unitCandidates, unitCodes, command, cancellationToken);
+        await TryAddCurrentAssignmentCandidatesAsync(productCandidates, productCodes, unitCandidates, unitCodes, effectiveAssignment, suppressHistoricalCandidates, cancellationToken);
+        await TryAddCurrentProfileCandidatesAsync(productCandidates, productCodes, unitCandidates, unitCodes, existingProfile, suppressHistoricalCandidates, cancellationToken);
+        await TryAddBillingDocumentItemCandidatesAsync(productCandidates, productCodes, unitCandidates, unitCodes, command, suppressHistoricalCandidates, cancellationToken);
+        await TryAddImportedSnapshotCandidatesAsync(productCandidates, productCodes, unitCandidates, unitCodes, command, suppressHistoricalCandidates, cancellationToken);
         await TryAddSearchCandidatesAsync(productCandidates, productCodes, unitCandidates, unitCodes, command, cancellationToken);
 
         return new SuggestSatAssignmentForLegacyItemResult
@@ -74,9 +76,10 @@ public sealed class SuggestSatAssignmentForLegacyItemService
         List<SatAssignmentSuggestionItem> unitCandidates,
         HashSet<string> unitCodes,
         Domain.Entities.ProductFiscalAssignment? effectiveAssignment,
+        bool suppressHistoricalCandidates,
         CancellationToken cancellationToken)
     {
-        if (effectiveAssignment is null)
+        if (suppressHistoricalCandidates || effectiveAssignment is null)
         {
             return;
         }
@@ -119,9 +122,10 @@ public sealed class SuggestSatAssignmentForLegacyItemService
         List<SatAssignmentSuggestionItem> unitCandidates,
         HashSet<string> unitCodes,
         Domain.Entities.ProductFiscalProfile? existingProfile,
+        bool suppressHistoricalCandidates,
         CancellationToken cancellationToken)
     {
-        if (existingProfile is null)
+        if (suppressHistoricalCandidates || existingProfile is null)
         {
             return;
         }
@@ -168,8 +172,14 @@ public sealed class SuggestSatAssignmentForLegacyItemService
         List<SatAssignmentSuggestionItem> unitCandidates,
         HashSet<string> unitCodes,
         SuggestSatAssignmentForLegacyItemCommand command,
+        bool suppressHistoricalCandidates,
         CancellationToken cancellationToken)
     {
+        if (suppressHistoricalCandidates)
+        {
+            return;
+        }
+
         var itemProductCode = NormalizeOptionalCode(command.BillingDocumentItemSatProductServiceCode);
         if (!string.IsNullOrWhiteSpace(itemProductCode))
         {
@@ -221,8 +231,14 @@ public sealed class SuggestSatAssignmentForLegacyItemService
         List<SatAssignmentSuggestionItem> unitCandidates,
         HashSet<string> unitCodes,
         SuggestSatAssignmentForLegacyItemCommand command,
+        bool suppressHistoricalCandidates,
         CancellationToken cancellationToken)
     {
+        if (suppressHistoricalCandidates)
+        {
+            return;
+        }
+
         var importedProductCode = NormalizeOptionalCode(command.ImportedSatProductServiceCode);
         if (!string.IsNullOrWhiteSpace(importedProductCode))
         {

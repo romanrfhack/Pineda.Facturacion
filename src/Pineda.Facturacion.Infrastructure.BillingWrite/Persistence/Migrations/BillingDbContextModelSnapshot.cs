@@ -312,8 +312,8 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
                     b.Property<int>("FailedLoginAttemptCount")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int")
-                        .HasColumnName("failed_login_attempt_count")
-                        .HasDefaultValue(0);
+                        .HasDefaultValue(0)
+                        .HasColumnName("failed_login_attempt_count");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("tinyint(1)")
@@ -483,6 +483,12 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
 
+                    b.Property<long?>("ActiveSalesOrderId")
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("bigint")
+                        .HasColumnName("active_sales_order_id")
+                        .HasComputedColumnSql("CASE WHEN `status` <> 5 THEN `sales_order_id` ELSE NULL END", true);
+
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("datetime(6)")
                         .HasColumnName("created_at_utc");
@@ -567,6 +573,10 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
                         .HasColumnName("updated_at_utc");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ActiveSalesOrderId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_billing_document_active_sales_order");
 
                     b.HasIndex("SalesOrderId");
 
@@ -2460,6 +2470,7 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
 
                     b.Property<long?>("BillingDocumentId")
+                        .IsConcurrencyToken()
                         .HasColumnType("bigint")
                         .HasColumnName("billing_document_id");
 
@@ -3636,6 +3647,270 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
                     b.ToTable("product_fiscal_profile_import_row", (string)null);
                 });
 
+            modelBuilder.Entity("Pineda.Facturacion.Domain.Entities.ProductFiscalReviewCleanupBatch", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("AlreadyPendingCount")
+                        .HasColumnType("int")
+                        .HasColumnName("already_pending_count");
+
+                    b.Property<string>("CleanupBatchId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)")
+                        .HasColumnName("cleanup_batch_id");
+
+                    b.Property<DateTime?>("CommittedAtUtc")
+                        .HasColumnType("datetime(6)")
+                        .HasColumnName("committed_at_utc");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime(6)")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<string>("DatabaseName")
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar(200)")
+                        .HasColumnName("database_name");
+
+                    b.Property<int>("DuplicateOpenAssignmentCount")
+                        .HasColumnType("int")
+                        .HasColumnName("duplicate_open_assignment_count");
+
+                    b.Property<int>("EligibleCount")
+                        .HasColumnType("int")
+                        .HasColumnName("eligible_count");
+
+                    b.Property<string>("EnvironmentName")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)")
+                        .HasColumnName("environment_name");
+
+                    b.Property<int>("EvaluatedCount")
+                        .HasColumnType("int")
+                        .HasColumnName("evaluated_count");
+
+                    b.Property<int>("ExcludedByHistoricalImportSourceCount")
+                        .HasColumnType("int")
+                        .HasColumnName("excluded_by_historical_import_source_count");
+
+                    b.Property<int>("ExcludedByHistoricalManualSourceCount")
+                        .HasColumnType("int")
+                        .HasColumnName("excluded_by_historical_manual_source_count");
+
+                    b.Property<int>("ExcludedByOpenImportSourceCount")
+                        .HasColumnType("int")
+                        .HasColumnName("excluded_by_open_import_source_count");
+
+                    b.Property<int>("ExcludedByOpenManualSourceCount")
+                        .HasColumnType("int")
+                        .HasColumnName("excluded_by_open_manual_source_count");
+
+                    b.Property<int>("ExcludedImportSourceCount")
+                        .HasColumnType("int")
+                        .HasColumnName("excluded_import_source_count");
+
+                    b.Property<int>("ExcludedManualAuditCount")
+                        .HasColumnType("int")
+                        .HasColumnName("excluded_manual_audit_count");
+
+                    b.Property<int>("ExcludedManualSourceCount")
+                        .HasColumnType("int")
+                        .HasColumnName("excluded_manual_source_count");
+
+                    b.Property<bool>("IsDryRun")
+                        .HasColumnType("tinyint(1)")
+                        .HasColumnName("is_dry_run");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("varchar(1000)")
+                        .HasColumnName("notes");
+
+                    b.Property<string>("OperationName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)")
+                        .HasColumnName("operation_name");
+
+                    b.Property<string>("RequestedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)")
+                        .HasColumnName("requested_by");
+
+                    b.Property<DateTime?>("RolledBackAtUtc")
+                        .HasColumnType("datetime(6)")
+                        .HasColumnName("rolled_back_at_utc");
+
+                    b.Property<int>("SkippedCount")
+                        .HasColumnType("int")
+                        .HasColumnName("skipped_count");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)")
+                        .HasColumnName("status");
+
+                    b.Property<int>("UpdatedCount")
+                        .HasColumnType("int")
+                        .HasColumnName("updated_count");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CleanupBatchId")
+                        .IsUnique();
+
+                    b.HasIndex("OperationName", "Status");
+
+                    b.ToTable("product_fiscal_review_cleanup_batch", (string)null);
+                });
+
+            modelBuilder.Entity("Pineda.Facturacion.Domain.Entities.ProductFiscalReviewCleanupEntry", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("BillingDocumentItemHintsSnapshotJson")
+                        .HasColumnType("longtext")
+                        .HasColumnName("billing_document_item_hints_snapshot_json");
+
+                    b.Property<long>("CleanupBatchRecordId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("cleanup_batch_record_id");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime(6)")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<string>("InternalCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)")
+                        .HasColumnName("internal_code");
+
+                    b.Property<decimal?>("NewConfidence")
+                        .HasPrecision(5, 4)
+                        .HasColumnType("decimal(5,4)")
+                        .HasColumnName("new_confidence");
+
+                    b.Property<string>("NewReviewReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)")
+                        .HasColumnName("new_review_reason");
+
+                    b.Property<string>("NewReviewStatus")
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)")
+                        .HasColumnName("new_review_status");
+
+                    b.Property<string>("NewSource")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)")
+                        .HasColumnName("new_source");
+
+                    b.Property<DateTime?>("NewUpdatedAtUtc")
+                        .HasColumnType("datetime(6)")
+                        .HasColumnName("new_updated_at_utc");
+
+                    b.Property<DateTime?>("NewValidFromUtc")
+                        .HasColumnType("datetime(6)")
+                        .HasColumnName("new_valid_from_utc");
+
+                    b.Property<DateTime?>("NewValidToUtc")
+                        .HasColumnType("datetime(6)")
+                        .HasColumnName("new_valid_to_utc");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)")
+                        .HasColumnName("outcome");
+
+                    b.Property<decimal?>("PreviousConfidence")
+                        .HasPrecision(5, 4)
+                        .HasColumnType("decimal(5,4)")
+                        .HasColumnName("previous_confidence");
+
+                    b.Property<string>("PreviousReviewReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)")
+                        .HasColumnName("previous_review_reason");
+
+                    b.Property<string>("PreviousReviewStatus")
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)")
+                        .HasColumnName("previous_review_status");
+
+                    b.Property<string>("PreviousSource")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)")
+                        .HasColumnName("previous_source");
+
+                    b.Property<DateTime?>("PreviousUpdatedAtUtc")
+                        .HasColumnType("datetime(6)")
+                        .HasColumnName("previous_updated_at_utc");
+
+                    b.Property<DateTime?>("PreviousValidFromUtc")
+                        .HasColumnType("datetime(6)")
+                        .HasColumnName("previous_valid_from_utc");
+
+                    b.Property<DateTime?>("PreviousValidToUtc")
+                        .HasColumnType("datetime(6)")
+                        .HasColumnName("previous_valid_to_utc");
+
+                    b.Property<string>("ProductFiscalAssignmentAfterJson")
+                        .HasColumnType("longtext")
+                        .HasColumnName("product_fiscal_assignment_after_json");
+
+                    b.Property<string>("ProductFiscalAssignmentBeforeJson")
+                        .HasColumnType("longtext")
+                        .HasColumnName("product_fiscal_assignment_before_json");
+
+                    b.Property<long?>("ProductFiscalAssignmentId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("product_fiscal_assignment_id");
+
+                    b.Property<long?>("ProductFiscalProfileId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("product_fiscal_profile_id");
+
+                    b.Property<string>("ProductFiscalProfileSnapshotJson")
+                        .HasColumnType("longtext")
+                        .HasColumnName("product_fiscal_profile_snapshot_json");
+
+                    b.Property<string>("RelatedAuditEventsSnapshotJson")
+                        .HasColumnType("longtext")
+                        .HasColumnName("related_audit_events_snapshot_json");
+
+                    b.Property<string>("SkipReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)")
+                        .HasColumnName("skip_reason");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CleanupBatchRecordId");
+
+                    b.HasIndex("ProductFiscalAssignmentId");
+
+                    b.HasIndex("CleanupBatchRecordId", "InternalCode");
+
+                    b.ToTable("product_fiscal_review_cleanup_entry", (string)null);
+                });
+
             modelBuilder.Entity("Pineda.Facturacion.Domain.Entities.SalesOrder", b =>
                 {
                     b.Property<long>("Id")
@@ -4393,6 +4668,15 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
                     b.HasOne("Pineda.Facturacion.Domain.Entities.ProductFiscalProfileImportBatch", null)
                         .WithMany("Rows")
                         .HasForeignKey("BatchId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Pineda.Facturacion.Domain.Entities.ProductFiscalReviewCleanupEntry", b =>
+                {
+                    b.HasOne("Pineda.Facturacion.Domain.Entities.ProductFiscalReviewCleanupBatch", null)
+                        .WithMany()
+                        .HasForeignKey("CleanupBatchRecordId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

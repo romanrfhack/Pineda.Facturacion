@@ -113,7 +113,18 @@ internal sealed class LegacySchemaResolver
         IReadOnlyList<string> matches,
         IReadOnlyList<string> availableTables)
     {
-        if (matches.Count == 0)
+        IReadOnlyList<string> effectiveMatches = matches;
+
+        if (effectiveMatches.Count == 0)
+        {
+            effectiveMatches = availableTables
+                .Where(tableName => string.Equals(tableName, logicalTableName, StringComparison.OrdinalIgnoreCase))
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(tableName => tableName, StringComparer.Ordinal)
+                .ToArray();
+        }
+
+        if (effectiveMatches.Count == 0)
         {
             throw new InvalidOperationException(
                 $"Legacy table resolution failed in schema '{schemaName}'. " +
@@ -121,20 +132,20 @@ internal sealed class LegacySchemaResolver
                 $"Available tables sample: {FormatSample(availableTables)}.");
         }
 
-        var exactMatch = matches.FirstOrDefault(match => string.Equals(match, logicalTableName, StringComparison.Ordinal));
+        var exactMatch = effectiveMatches.FirstOrDefault(match => string.Equals(match, logicalTableName, StringComparison.Ordinal));
         if (!string.IsNullOrWhiteSpace(exactMatch))
         {
             return exactMatch;
         }
 
-        if (matches.Count == 1)
+        if (effectiveMatches.Count == 1)
         {
-            return matches[0];
+            return effectiveMatches[0];
         }
 
         throw new InvalidOperationException(
             $"Legacy table resolution is ambiguous in schema '{schemaName}'. " +
-            $"Logical table '{logicalTableName}' matched multiple physical tables: {string.Join(", ", matches.Select(QuoteForMessage))}.");
+            $"Logical table '{logicalTableName}' matched multiple physical tables: {string.Join(", ", effectiveMatches.Select(QuoteForMessage))}.");
     }
 
     internal static string SelectResolvedColumnName(

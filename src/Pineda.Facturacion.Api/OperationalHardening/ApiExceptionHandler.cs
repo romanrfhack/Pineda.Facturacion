@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Pineda.Facturacion.Application.Common;
 using Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Configurations;
 
 namespace Pineda.Facturacion.Api.OperationalHardening;
@@ -73,6 +74,14 @@ internal sealed class ApiExceptionHandler : IExceptionHandler
                 StatusCodes.Status409Conflict,
                 "Conflict",
                 "Another active issuer profile already exists. Deactivate the current active issuer before activating a different one.");
+        }
+
+        if (exception is OperationalOrderConflictException operationalOrderConflictException)
+        {
+            return (
+                StatusCodes.Status409Conflict,
+                "Conflict",
+                operationalOrderConflictException.Message);
         }
 
         return (

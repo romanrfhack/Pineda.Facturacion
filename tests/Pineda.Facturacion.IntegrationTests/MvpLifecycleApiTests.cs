@@ -24,6 +24,7 @@ using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Contracts.Pac;
 using Pineda.Facturacion.Application.Models.Legacy;
 using Pineda.Facturacion.Application.Security;
+using Pineda.Facturacion.Application.UseCases.ProductFiscalProfiles;
 using Pineda.Facturacion.Domain.Entities;
 using Pineda.Facturacion.Domain.Enums;
 using Pineda.Facturacion.Infrastructure.BillingWrite.Persistence;
@@ -62,7 +63,7 @@ public class MvpLifecycleApiTests
         var importResponse = await client.PostAsync("/api/orders/LEG-3001/import", null);
         Assert.Equal(HttpStatusCode.OK, importResponse.StatusCode);
 
-        var searchResponse = await client.GetAsync("/api/orders/legacy?fromDate=2026-03-23&toDate=2026-03-23&page=1&pageSize=10");
+        var searchResponse = await client.GetAsync("/api/orders/legacy?page=1&pageSize=10");
         Assert.Equal(HttpStatusCode.OK, searchResponse.StatusCode);
 
         var body = await searchResponse.Content.ReadFromJsonAsync<OrdersEndpoints.SearchLegacyOrdersResponse>();
@@ -74,6 +75,42 @@ public class MvpLifecycleApiTests
         Assert.True(body.Items[0].OrderDateUtc >= body.Items[1].OrderDateUtc);
         Assert.True(body.Items.Single(x => x.LegacyOrderId == "LEG-3001").IsImported);
         Assert.False(body.Items.Single(x => x.LegacyOrderId == "LEG-3002").IsImported);
+    }
+
+    [Fact]
+    public async Task SearchLegacyOrders_Filters_ByDateRange_WhenDatesAreProvided()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        factory.LegacyOrderReader.SearchResults =
+        [
+            new LegacyOrderListItemReadModel
+            {
+                LegacyOrderId = "LEG-4001",
+                OrderDateUtc = new DateTime(2026, 03, 23, 12, 0, 0, DateTimeKind.Utc),
+                CustomerName = "Cliente Hoy",
+                Total = 116m,
+                LegacyOrderType = "F"
+            },
+            new LegacyOrderListItemReadModel
+            {
+                LegacyOrderId = "LEG-4002",
+                OrderDateUtc = new DateTime(2026, 03, 22, 12, 0, 0, DateTimeKind.Utc),
+                CustomerName = "Cliente Ayer",
+                Total = 232m,
+                LegacyOrderType = "F"
+            }
+        ];
+
+        var response = await client.GetAsync("/api/orders/legacy?fromDate=2026-03-23&toDate=2026-03-23&page=1&pageSize=10");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var body = await response.Content.ReadFromJsonAsync<OrdersEndpoints.SearchLegacyOrdersResponse>();
+        Assert.NotNull(body);
+        Assert.True(body!.IsSuccess);
+        Assert.Single(body.Items);
+        Assert.Equal("LEG-4001", body.Items[0].LegacyOrderId);
     }
 
     [Fact]
@@ -89,6 +126,36 @@ public class MvpLifecycleApiTests
         Assert.NotNull(body);
         Assert.False(body!.IsSuccess);
         Assert.Contains("fecha inicial", body.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SearchLegacyOrders_ReturnsBadRequest_WhenOnlyFromDateIsProvided()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        var response = await client.GetAsync("/api/orders/legacy?fromDate=2026-03-23&page=1&pageSize=10");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        var body = await response.Content.ReadFromJsonAsync<OrdersEndpoints.SearchLegacyOrdersResponse>();
+        Assert.NotNull(body);
+        Assert.False(body!.IsSuccess);
+        Assert.Contains("deben enviarse juntas", body.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SearchLegacyOrders_ReturnsBadRequest_WhenOnlyToDateIsProvided()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        var response = await client.GetAsync("/api/orders/legacy?toDate=2026-03-23&page=1&pageSize=10");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        var body = await response.Content.ReadFromJsonAsync<OrdersEndpoints.SearchLegacyOrdersResponse>();
+        Assert.NotNull(body);
+        Assert.False(body!.IsSuccess);
+        Assert.Contains("deben enviarse juntas", body.ErrorMessage, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -125,7 +192,7 @@ public class MvpLifecycleApiTests
             }
         ];
 
-        var response = await client.GetAsync("/api/orders/legacy?fromDate=2026-03-23&toDate=2026-03-23&legacyOrderId=1175479&customerQuery=Cliente%20Exacto&page=1&pageSize=10");
+        var response = await client.GetAsync("/api/orders/legacy?legacyOrderId=1175479&customerQuery=Cliente%20Exacto&page=1&pageSize=10");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var body = await response.Content.ReadFromJsonAsync<OrdersEndpoints.SearchLegacyOrdersResponse>();
@@ -307,6 +374,101 @@ public class MvpLifecycleApiTests
         Assert.NotNull(profile);
         Assert.Equal("40161513", profile!.SatProductServiceCode);
         Assert.Equal("H87", profile.SatUnitCode);
+    }
+
+    [Fact]
+    public async Task LegacySuggestions_SuppressesHistoricalGenericProfile_WhenAssignmentIsLegacyPendingReset()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        var now = DateTime.UtcNow;
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+            if (!await db.SatProductServiceCatalogEntries.AnyAsync(x => x.Code == "40161505"))
+            {
+                db.SatProductServiceCatalogEntries.Add(new SatProductServiceCatalogEntry
+                {
+                    Code = "40161505",
+                    Description = "Filtro de aire",
+                    NormalizedDescription = "FILTRO DE AIRE",
+                    KeywordsNormalized = "FILTRO AIRE MOTOR",
+                    IsActive = true,
+                    SourceVersion = "4.0",
+                    CreatedAtUtc = now,
+                    UpdatedAtUtc = now
+                });
+            }
+
+            if (!await db.SatClaveUnidades.AnyAsync(x => x.Code == "H87"))
+            {
+                db.SatClaveUnidades.Add(new SatClaveUnidad
+                {
+                    Code = "H87",
+                    Description = "Pieza",
+                    NormalizedDescription = "PIEZA",
+                    Symbol = "PZA",
+                    Notes = "Unidad de pieza",
+                    IsActive = true,
+                    SourceVersion = "4.0",
+                    CreatedAtUtc = now,
+                    UpdatedAtUtc = now
+                });
+            }
+            db.ProductFiscalProfiles.Add(new ProductFiscalProfile
+            {
+                Id = 9001,
+                InternalCode = "SKU-LEGACY-PENDING-IT-1",
+                Description = "Filtro legado",
+                NormalizedDescription = "FILTRO LEGADO",
+                SatProductServiceCode = ProductFiscalAssignmentConventions.GenericSatProductServiceCode,
+                SatUnitCode = "H87",
+                TaxObjectCode = "02",
+                VatRate = 0.16m,
+                DefaultUnitText = "PIEZA",
+                IsActive = true,
+                CreatedAtUtc = now.AddDays(-10),
+                UpdatedAtUtc = now.AddDays(-10)
+            });
+            db.ProductFiscalAssignments.Add(new ProductFiscalAssignment
+            {
+                Id = 9002,
+                InternalCode = "SKU-LEGACY-PENDING-IT-1",
+                SatProductServiceCode = ProductFiscalAssignmentConventions.GenericSatProductServiceCode,
+                SatUnitCode = "H87",
+                TaxObjectCode = "02",
+                VatRate = 0.16m,
+                DefaultUnitText = "PIEZA",
+                Source = ProductFiscalAssignmentConventions.BackfillSource,
+                Confidence = 0.5000m,
+                ReviewStatus = ProductFiscalAssignmentConventions.PendingReviewStatus,
+                ReviewReason = ProductFiscalAssignmentConventions.LegacyGenericResetReviewReason,
+                ValidFromUtc = now.AddDays(-2),
+                ValidToUtc = null,
+                CreatedAtUtc = now.AddDays(-2),
+                UpdatedAtUtc = now.AddDays(-2)
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await client.PostAsJsonAsync("/api/fiscal/product-fiscal-profiles/legacy-suggestions", new ProductFiscalProfilesEndpoints.SuggestLegacyItemSatAssignmentRequest
+        {
+            InternalCode = "SKU-LEGACY-PENDING-IT-1",
+            Description = "Filtro de aire premium",
+            UnitName = "Pieza"
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<ProductFiscalProfilesEndpoints.LegacySatAssignmentSuggestionResponse>();
+        Assert.NotNull(body);
+        Assert.Equal("40161505", body!.SuggestedProductService!.Code);
+        Assert.Equal("catalog_search", body.SuggestedProductService.Source);
+        Assert.DoesNotContain(
+            body.ProductServiceCandidates,
+            x => string.Equals(x.Code, ProductFiscalAssignmentConventions.GenericSatProductServiceCode, StringComparison.Ordinal)
+                || string.Equals(x.Source, "product_fiscal_profile_current", StringComparison.Ordinal)
+                || string.Equals(x.Source, ProductFiscalAssignmentConventions.BackfillSource, StringComparison.Ordinal));
     }
 
     [Fact]
@@ -925,6 +1087,295 @@ public class MvpLifecycleApiTests
         Assert.NotNull(fiscalAfterRemove);
         Assert.Equal(116m, fiscalAfterRemove!.Total);
         Assert.Single(fiscalAfterRemove.Items);
+    }
+
+    [Fact]
+    public async Task BulkBillingDocument_Creates_One_Draft_From_Explicit_LegacyOrders_And_Allows_Individual_Order_Removal()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        factory.LegacyOrderReader.Orders["LEG-BULK-1001"] = CreateLegacyOrder("LEG-BULK-1001", "SKU-1", 100m);
+        factory.LegacyOrderReader.Orders["LEG-BULK-1002"] = CreateLegacyOrder("LEG-BULK-1002", "SKU-1", 50m);
+
+        var response = await client.PostAsJsonAsync("/api/orders/billing-documents", new OrdersEndpoints.CreateBulkBillingDocumentRequest
+        {
+            DocumentType = "I",
+            SelectionMode = "Explicit",
+            LegacyOrderIds = ["LEG-BULK-1001", "LEG-BULK-1001", "LEG-BULK-1002"]
+        });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var body = await response.Content.ReadFromJsonAsync<OrdersEndpoints.CreateBulkBillingDocumentResponse>();
+        Assert.NotNull(body);
+        Assert.True(body!.IsSuccess);
+        Assert.NotNull(body.BillingDocumentId);
+        Assert.Equal(2, body.AssociatedOrderCount);
+
+        var lookup = await (await client.GetAsync($"/api/billing-documents/{body.BillingDocumentId}"))
+            .Content.ReadFromJsonAsync<BillingDocumentsEndpoints.BillingDocumentLookupResponse>();
+        Assert.NotNull(lookup);
+        Assert.Equal(2, lookup!.AssociatedOrders.Count);
+        Assert.Equal(174m, lookup.Total);
+
+        var orderToRemove = lookup.AssociatedOrders.Single(x => x.LegacyOrderId.StartsWith("LEG-BULK-1002", StringComparison.Ordinal));
+        var removeResponse = await client.DeleteAsync($"/api/billing-documents/{body.BillingDocumentId}/sales-orders/{orderToRemove.SalesOrderId}");
+        Assert.Equal(HttpStatusCode.OK, removeResponse.StatusCode);
+
+        var lookupAfterRemove = await (await client.GetAsync($"/api/billing-documents/{body.BillingDocumentId}"))
+            .Content.ReadFromJsonAsync<BillingDocumentsEndpoints.BillingDocumentLookupResponse>();
+        Assert.NotNull(lookupAfterRemove);
+        Assert.Single(lookupAfterRemove!.AssociatedOrders);
+        Assert.Equal(116m, lookupAfterRemove.Total);
+    }
+
+    [Fact]
+    public async Task BulkBillingDocument_Creates_One_Draft_From_Filtered_LegacyOrders()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        factory.LegacyOrderReader.Orders["LEG-FILTER-1001"] = CreateLegacyOrder("LEG-FILTER-1001", "SKU-1", 100m);
+        factory.LegacyOrderReader.Orders["LEG-FILTER-1002"] = CreateLegacyOrder("LEG-FILTER-1002", "SKU-1", 50m);
+        factory.LegacyOrderReader.SearchResults =
+        [
+            new LegacyOrderListItemReadModel
+            {
+                LegacyOrderId = "LEG-FILTER-1001",
+                OrderDateUtc = new DateTime(2026, 03, 23, 12, 0, 0, DateTimeKind.Utc),
+                CustomerName = "Receiver One",
+                Total = 116m,
+                LegacyOrderType = "F"
+            },
+            new LegacyOrderListItemReadModel
+            {
+                LegacyOrderId = "LEG-FILTER-1002",
+                OrderDateUtc = new DateTime(2026, 03, 23, 10, 0, 0, DateTimeKind.Utc),
+                CustomerName = "Receiver One",
+                Total = 58m,
+                LegacyOrderType = "F"
+            }
+        ];
+
+        var response = await client.PostAsJsonAsync("/api/orders/billing-documents", new OrdersEndpoints.CreateBulkBillingDocumentRequest
+        {
+            DocumentType = "I",
+            SelectionMode = "Filtered",
+            Filters = new OrdersEndpoints.CreateBulkBillingDocumentFiltersRequest
+            {
+                CustomerQuery = "Receiver One"
+            }
+        });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var body = await response.Content.ReadFromJsonAsync<OrdersEndpoints.CreateBulkBillingDocumentResponse>();
+        Assert.NotNull(body);
+        Assert.True(body!.IsSuccess);
+        Assert.Equal(2, body.SelectedOrderCount);
+        Assert.Equal(2, body.AssociatedOrderCount);
+    }
+
+    [Fact]
+    public async Task BulkBillingDocument_ReturnsBadRequest_WhenFilteredSelectionHasNoActiveFilters()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        var response = await client.PostAsJsonAsync("/api/orders/billing-documents", new OrdersEndpoints.CreateBulkBillingDocumentRequest
+        {
+            DocumentType = "I",
+            SelectionMode = "Filtered",
+            Filters = new OrdersEndpoints.CreateBulkBillingDocumentFiltersRequest()
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        var body = await response.Content.ReadFromJsonAsync<OrdersEndpoints.CreateBulkBillingDocumentResponse>();
+        Assert.NotNull(body);
+        Assert.False(body!.IsSuccess);
+        Assert.Contains("requires at least one active filter", body.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task BulkBillingDocument_ReturnsBadRequest_WhenOrdersBelongToDifferentCustomers()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        factory.LegacyOrderReader.Orders["LEG-BULK-2001"] = CreateLegacyOrder("LEG-BULK-2001", "SKU-1", 100m);
+        var secondOrder = CreateLegacyOrder("LEG-BULK-2002", "SKU-1", 50m);
+        secondOrder.CustomerLegacyId = "200";
+        secondOrder.CustomerName = "Receiver Two";
+        secondOrder.CustomerRfc = "CCC010101CCC";
+        factory.LegacyOrderReader.Orders["LEG-BULK-2002"] = secondOrder;
+
+        var response = await client.PostAsJsonAsync("/api/orders/billing-documents", new OrdersEndpoints.CreateBulkBillingDocumentRequest
+        {
+            DocumentType = "I",
+            SelectionMode = "Explicit",
+            LegacyOrderIds = ["LEG-BULK-2001", "LEG-BULK-2002"]
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        var body = await response.Content.ReadFromJsonAsync<OrdersEndpoints.CreateBulkBillingDocumentResponse>();
+        Assert.NotNull(body);
+        Assert.False(body!.IsSuccess);
+        Assert.Contains(body.OrderErrors, x => x.LegacyOrderId == "LEG-BULK-2002" && x.ErrorCode == "DifferentCustomer");
+    }
+
+    [Fact]
+    public async Task BulkBillingDocument_ReturnsBadRequest_WhenOrdersUseDifferentRfc()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        factory.LegacyOrderReader.Orders["LEG-BULK-RFC-1001"] = CreateLegacyOrder("LEG-BULK-RFC-1001", "SKU-1", 100m);
+        var secondOrder = CreateLegacyOrder("LEG-BULK-RFC-1002", "SKU-1", 50m);
+        secondOrder.CustomerRfc = "CCC010101CCC";
+        factory.LegacyOrderReader.Orders["LEG-BULK-RFC-1002"] = secondOrder;
+
+        var response = await client.PostAsJsonAsync("/api/orders/billing-documents", new OrdersEndpoints.CreateBulkBillingDocumentRequest
+        {
+            DocumentType = "I",
+            SelectionMode = "Explicit",
+            LegacyOrderIds = ["LEG-BULK-RFC-1001", "LEG-BULK-RFC-1002"]
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        var body = await response.Content.ReadFromJsonAsync<OrdersEndpoints.CreateBulkBillingDocumentResponse>();
+        Assert.NotNull(body);
+        Assert.Contains(body!.OrderErrors, x => x.LegacyOrderId == "LEG-BULK-RFC-1002" && x.ErrorCode == "DifferentCustomerRfc");
+    }
+
+    [Fact]
+    public async Task BulkBillingDocument_ReturnsBadRequest_WhenOrdersUseDifferentPaymentCondition()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        factory.LegacyOrderReader.Orders["LEG-BULK-PAY-1001"] = CreateLegacyOrder("LEG-BULK-PAY-1001", "SKU-1", 100m);
+        var secondOrder = CreateLegacyOrder("LEG-BULK-PAY-1002", "SKU-1", 50m);
+        secondOrder.PaymentCondition = "CONTADO";
+        factory.LegacyOrderReader.Orders["LEG-BULK-PAY-1002"] = secondOrder;
+
+        var response = await client.PostAsJsonAsync("/api/orders/billing-documents", new OrdersEndpoints.CreateBulkBillingDocumentRequest
+        {
+            DocumentType = "I",
+            SelectionMode = "Explicit",
+            LegacyOrderIds = ["LEG-BULK-PAY-1001", "LEG-BULK-PAY-1002"]
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        var body = await response.Content.ReadFromJsonAsync<OrdersEndpoints.CreateBulkBillingDocumentResponse>();
+        Assert.NotNull(body);
+        Assert.Contains(body!.OrderErrors, x => x.LegacyOrderId == "LEG-BULK-PAY-1002" && x.ErrorCode == "DifferentPaymentCondition");
+    }
+
+    [Fact]
+    public async Task BulkBillingDocument_ReturnsBadRequest_WhenOrdersUseDifferentCurrency()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        factory.LegacyOrderReader.Orders["LEG-BULK-CUR-1001"] = CreateLegacyOrder("LEG-BULK-CUR-1001", "SKU-1", 100m);
+        var secondOrder = CreateLegacyOrder("LEG-BULK-CUR-1002", "SKU-1", 50m);
+        secondOrder.CurrencyCode = "USD";
+        factory.LegacyOrderReader.Orders["LEG-BULK-CUR-1002"] = secondOrder;
+
+        var response = await client.PostAsJsonAsync("/api/orders/billing-documents", new OrdersEndpoints.CreateBulkBillingDocumentRequest
+        {
+            DocumentType = "I",
+            SelectionMode = "Explicit",
+            LegacyOrderIds = ["LEG-BULK-CUR-1001", "LEG-BULK-CUR-1002"]
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        var body = await response.Content.ReadFromJsonAsync<OrdersEndpoints.CreateBulkBillingDocumentResponse>();
+        Assert.NotNull(body);
+        Assert.Contains(body!.OrderErrors, x => x.LegacyOrderId == "LEG-BULK-CUR-1002" && x.ErrorCode == "DifferentCurrency");
+    }
+
+    [Fact]
+    public async Task BulkBillingDocument_ReturnsBadRequest_WhenSelectionExceedsMaxLimit()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        var legacyOrderIds = Enumerable.Range(1, 51)
+            .Select(index => $"LEG-BULK-LIMIT-{index:0000}")
+            .ToArray();
+
+        var response = await client.PostAsJsonAsync("/api/orders/billing-documents", new OrdersEndpoints.CreateBulkBillingDocumentRequest
+        {
+            DocumentType = "I",
+            SelectionMode = "Explicit",
+            LegacyOrderIds = legacyOrderIds
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        var body = await response.Content.ReadFromJsonAsync<OrdersEndpoints.CreateBulkBillingDocumentResponse>();
+        Assert.NotNull(body);
+        Assert.Equal("LegacyOrderSelectionTooLarge", body!.ErrorCode);
+    }
+
+    [Fact]
+    public async Task BulkBillingDocument_ReturnsConflict_WhenOneOrderIsAlreadyAssociated()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        factory.LegacyOrderReader.Orders["LEG-BULK-CONFLICT-1001"] = CreateLegacyOrder("LEG-BULK-CONFLICT-1001", "SKU-1", 100m);
+        factory.LegacyOrderReader.Orders["LEG-BULK-CONFLICT-1002"] = CreateLegacyOrder("LEG-BULK-CONFLICT-1002", "SKU-1", 50m);
+
+        var importedOrder = await (await client.PostAsync("/api/orders/LEG-BULK-CONFLICT-1001/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+        var existingBilling = await (await client.PostAsJsonAsync($"/api/sales-orders/{importedOrder!.SalesOrderId}/billing-documents", new SalesOrdersEndpoints.CreateBillingDocumentRequest
+        {
+            DocumentType = "I"
+        })).Content.ReadFromJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>();
+        Assert.NotNull(existingBilling);
+
+        var response = await client.PostAsJsonAsync("/api/orders/billing-documents", new OrdersEndpoints.CreateBulkBillingDocumentRequest
+        {
+            DocumentType = "I",
+            SelectionMode = "Explicit",
+            LegacyOrderIds = ["LEG-BULK-CONFLICT-1001", "LEG-BULK-CONFLICT-1002"]
+        });
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+
+        var body = await response.Content.ReadFromJsonAsync<OrdersEndpoints.CreateBulkBillingDocumentResponse>();
+        Assert.NotNull(body);
+        Assert.Equal("LegacyOrderAlreadyAssociated", body!.ErrorCode);
+        Assert.Contains(body.OrderErrors, x => x.LegacyOrderId == "LEG-BULK-CONFLICT-1001" && x.ErrorCode == "LegacyOrderAlreadyAssociated");
+    }
+
+    [Fact]
+    public async Task BillingDocument_AddSalesOrder_PreservesExistingCurrencyOnlyCompatibilityBehavior()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        factory.LegacyOrderReader.Orders["LEG-SHARED-1001"] = CreateLegacyOrder("LEG-SHARED-1001", "SKU-1", 100m);
+        var secondOrder = CreateLegacyOrder("LEG-SHARED-1002", "SKU-1", 50m);
+        secondOrder.CustomerLegacyId = "999";
+        secondOrder.CustomerName = "Otro Cliente";
+        factory.LegacyOrderReader.Orders["LEG-SHARED-1002"] = secondOrder;
+
+        var importOrder1 = await (await client.PostAsync("/api/orders/LEG-SHARED-1001/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+        var importOrder2 = await (await client.PostAsync("/api/orders/LEG-SHARED-1002/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+
+        var billingBody = await (await client.PostAsJsonAsync($"/api/sales-orders/{importOrder1!.SalesOrderId}/billing-documents", new SalesOrdersEndpoints.CreateBillingDocumentRequest
+        {
+            DocumentType = "I"
+        })).Content.ReadFromJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>();
+
+        var addResponse = await client.PostAsync($"/api/billing-documents/{billingBody!.BillingDocumentId}/sales-orders/{importOrder2!.SalesOrderId}", null);
+        Assert.Equal(HttpStatusCode.OK, addResponse.StatusCode);
+
+        var addBody = await addResponse.Content.ReadFromJsonAsync<BillingDocumentsEndpoints.UpdateBillingDocumentOrderAssociationResponse>();
+        Assert.NotNull(addBody);
+        Assert.True(addBody!.IsSuccess);
+        Assert.Equal(2, addBody.AssociatedOrderCount);
     }
 
     [Fact]
@@ -3217,6 +3668,56 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
+    public async Task ExternalRepBaseDocuments_ImportXml_RejectsInvalidUploads_BeforeXmlProcessing()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        factory.FiscalStatusQueryGateway.ResponseFactory = _ => throw new InvalidOperationException("SAT validation should not run for rejected uploads.");
+
+        await AssertRejectedUploadAsync([], "empty.xml", "application/xml", "InvalidXml");
+        await AssertRejectedUploadAsync(new byte[(1 * 1024 * 1024) + 1], "large.xml", "application/xml", "FileTooLarge");
+        await AssertRejectedUploadAsync(Encoding.UTF8.GetBytes(CreateExternalRepXmlContent()), "external.txt", "application/xml", "InvalidFileType");
+        await AssertRejectedUploadAsync(Encoding.UTF8.GetBytes(CreateExternalRepXmlContent()), "external.xml", "application/json", "InvalidFileType");
+
+        async Task AssertRejectedUploadAsync(byte[] fileBytes, string fileName, string contentType, string expectedReasonCode)
+        {
+            using var content = new MultipartFormDataContent();
+            var file = new ByteArrayContent(fileBytes);
+            file.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+            content.Add(file, "file", fileName);
+
+            var response = await client.PostAsync("/api/payment-complements/external-base-documents/import-xml", content);
+
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            using var json = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+            Assert.Equal("Rejected", json.RootElement.GetProperty("outcome").GetString());
+            Assert.Equal(expectedReasonCode, json.RootElement.GetProperty("reasonCode").GetString());
+        }
+    }
+
+    [Fact]
+    public async Task ExternalRepBaseDocuments_ImportXml_RejectsMultipartRequestWithoutFile()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        factory.FiscalStatusQueryGateway.ResponseFactory = _ => throw new InvalidOperationException("SAT validation should not run for rejected uploads.");
+
+        using var content = new MultipartFormDataContent();
+        content.Add(new StringContent("manual"), "source");
+
+        var response = await client.PostAsync("/api/payment-complements/external-base-documents/import-xml", content);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var json = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+        Assert.Equal("Rejected", json.RootElement.GetProperty("outcome").GetString());
+        Assert.Equal("Rejected", json.RootElement.GetProperty("validationStatus").GetString());
+        Assert.Equal("InvalidXml", json.RootElement.GetProperty("reasonCode").GetString());
+        Assert.Equal("El archivo XML es obligatorio.", json.RootElement.GetProperty("reasonMessage").GetString());
+    }
+
+    [Fact]
     public async Task ExternalRepBaseDocuments_List_ReturnsImportedExternalDocuments()
     {
         await using var factory = new MvpApiFactory();
@@ -4726,7 +5227,8 @@ internal sealed class FakeLegacyOrderReader : ILegacyOrderReader
     public Task<LegacyOrderPageReadModel> SearchAsync(LegacyOrderSearchReadModel search, CancellationToken cancellationToken = default)
     {
         var filtered = SearchResults
-            .Where(x => x.OrderDateUtc >= search.FromDateUtc && x.OrderDateUtc < search.ToDateUtcExclusive)
+            .Where(x => !search.FromDateUtc.HasValue || x.OrderDateUtc >= search.FromDateUtc.Value)
+            .Where(x => !search.ToDateUtcExclusive.HasValue || x.OrderDateUtc < search.ToDateUtcExclusive.Value)
             .Where(x => string.IsNullOrWhiteSpace(search.LegacyOrderId) || string.Equals(x.LegacyOrderId, search.LegacyOrderId, StringComparison.Ordinal))
             .Where(x => string.IsNullOrWhiteSpace(search.CustomerQuery) || x.CustomerName.Contains(search.CustomerQuery, StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(x => x.OrderDateUtc)
