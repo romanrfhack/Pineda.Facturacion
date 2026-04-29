@@ -85,6 +85,7 @@ const DISPLAY_LABELS: Record<string, string> = {
   info: 'Informativo',
   BlockedOperation: 'Operación bloqueada',
   CancelledBaseDocument: 'Documento base cancelado',
+  CancelledBaseDocumentOperationalInconsistency: 'Cancelado con inconsistencia operativa',
   ValidationBlocked: 'Validación bloqueada',
   SatValidationUnavailable: 'Validación SAT no confiable',
   UnsupportedCurrency: 'Moneda no soportada',

@@ -8,6 +8,7 @@ public static class RepOperationalAlertCode
     public const string RepCancellationRejected = nameof(RepCancellationRejected);
     public const string BlockedOperation = nameof(BlockedOperation);
     public const string CancelledBaseDocument = nameof(CancelledBaseDocument);
+    public const string CancelledBaseDocumentOperationalInconsistency = nameof(CancelledBaseDocumentOperationalInconsistency);
     public const string ValidationBlocked = nameof(ValidationBlocked);
     public const string SatValidationUnavailable = nameof(SatValidationUnavailable);
     public const string UnsupportedCurrency = nameof(UnsupportedCurrency);
@@ -22,6 +23,7 @@ public static class RepOperationalAlertCode
         RepCancellationRejected,
         BlockedOperation,
         CancelledBaseDocument,
+        CancelledBaseDocumentOperationalInconsistency,
         ValidationBlocked,
         SatValidationUnavailable,
         UnsupportedCurrency,

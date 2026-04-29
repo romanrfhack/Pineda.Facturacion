@@ -21,4 +21,6 @@ public sealed class SearchRepAttentionItemsFilter
     public string? Severity { get; init; }
 
     public string? NextRecommendedAction { get; init; }
+
+    public bool IncludeCancelledBaseDocuments { get; init; }
 }

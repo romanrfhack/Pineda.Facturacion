@@ -557,6 +557,7 @@ public class RepBaseDocumentSearchServicesTests
                 {
                     FiscalDocumentId = 880,
                     BillingDocumentId = 480,
+                    AccountsReceivableInvoiceId = 1880,
                     DocumentType = "I",
                     FiscalStatus = FiscalDocumentStatus.Cancelled.ToString(),
                     AccountsReceivableStatus = AccountsReceivableInvoiceStatus.Open.ToString(),
@@ -622,11 +623,164 @@ public class RepBaseDocumentSearchServicesTests
         Assert.Equal("Internal", result.Items[0].SourceType);
         Assert.Equal("critical", result.Items[0].AttentionSeverity);
         Assert.Equal("Blocked", result.Items[0].NextRecommendedAction);
+        Assert.Equal(RepOperationalAlertCode.CancelledBaseDocumentOperationalInconsistency, result.Items[0].PrimaryReasonCode);
         Assert.Contains(result.Items[0].AttentionAlerts, x => x.AlertCode == RepOperationalAlertCode.CancelledBaseDocument);
+        Assert.Contains(result.Items[0].AttentionAlerts, x => x.AlertCode == RepOperationalAlertCode.CancelledBaseDocumentOperationalInconsistency);
         Assert.Equal("External", result.Items[1].SourceType);
         Assert.Contains(result.Items[1].AttentionAlerts, x => x.AlertCode == RepOperationalAlertCode.SatValidationUnavailable);
         Assert.Equal(1, result.SummaryCounts.CriticalCount);
         Assert.Equal(1, result.SummaryCounts.WarningCount);
+    }
+
+    [Fact]
+    public async Task SearchRepAttentionItems_Excludes_SimpleCancelledBaseDocument_ByDefault()
+    {
+        var internalRepository = new FakeInternalRepository
+        {
+            Items =
+            [
+                new InternalRepBaseDocumentSummaryReadModel
+                {
+                    FiscalDocumentId = 882,
+                    BillingDocumentId = 482,
+                    DocumentType = "I",
+                    FiscalStatus = FiscalDocumentStatus.Cancelled.ToString(),
+                    Uuid = "UUID-INT-882",
+                    Series = "INT",
+                    Folio = "882",
+                    ReceiverRfc = "BBB010101BBB",
+                    ReceiverLegalName = "Cliente Cancelado",
+                    IssuedAtUtc = new DateTime(2026, 4, 1, 9, 0, 0, DateTimeKind.Utc),
+                    PaymentMethodSat = "PPD",
+                    PaymentFormSat = "99",
+                    CurrencyCode = "MXN",
+                    Total = 116m,
+                    PaidTotal = 0m,
+                    OutstandingBalance = 0m
+                }
+            ]
+        };
+
+        var service = new SearchRepAttentionItemsService(
+            internalRepository,
+            new FakeExternalRepository(),
+            new FakeIssuerProfileRepository());
+
+        var result = await service.ExecuteAsync(new SearchRepAttentionItemsFilter
+        {
+            Page = 1,
+            PageSize = 25
+        });
+
+        Assert.Empty(result.Items);
+        Assert.Equal(0, result.TotalCount);
+        Assert.Equal(0, result.SummaryCounts.CriticalCount);
+        Assert.Equal(0, result.SummaryCounts.BlockedCount);
+        Assert.Empty(result.SummaryCounts.AlertCounts);
+        Assert.Empty(result.SummaryCounts.QuickViewCounts);
+    }
+
+    [Fact]
+    public async Task SearchRepAttentionItems_Includes_SimpleCancelledBaseDocument_WhenExplicitlyRequested()
+    {
+        var internalRepository = new FakeInternalRepository
+        {
+            Items =
+            [
+                new InternalRepBaseDocumentSummaryReadModel
+                {
+                    FiscalDocumentId = 883,
+                    BillingDocumentId = 483,
+                    DocumentType = "I",
+                    FiscalStatus = FiscalDocumentStatus.Cancelled.ToString(),
+                    Uuid = "UUID-INT-883",
+                    Series = "INT",
+                    Folio = "883",
+                    ReceiverRfc = "BBB010101BBB",
+                    ReceiverLegalName = "Cliente Cancelado",
+                    IssuedAtUtc = new DateTime(2026, 4, 1, 9, 0, 0, DateTimeKind.Utc),
+                    PaymentMethodSat = "PPD",
+                    PaymentFormSat = "99",
+                    CurrencyCode = "MXN",
+                    Total = 116m,
+                    PaidTotal = 0m,
+                    OutstandingBalance = 0m
+                }
+            ]
+        };
+
+        var service = new SearchRepAttentionItemsService(
+            internalRepository,
+            new FakeExternalRepository(),
+            new FakeIssuerProfileRepository());
+
+        var result = await service.ExecuteAsync(new SearchRepAttentionItemsFilter
+        {
+            Page = 1,
+            PageSize = 25,
+            IncludeCancelledBaseDocuments = true
+        });
+
+        var item = Assert.Single(result.Items);
+        Assert.Equal("FiscalDocumentCancelled", item.PrimaryReasonCode);
+        Assert.Equal(["ViewDetail"], item.AvailableActions);
+        Assert.Equal("Blocked", item.NextRecommendedAction);
+        Assert.Single(item.AttentionAlerts);
+        Assert.Equal(RepOperationalAlertCode.CancelledBaseDocument, item.AttentionAlerts[0].AlertCode);
+        Assert.Equal(1, result.SummaryCounts.CriticalCount);
+        Assert.Equal(1, result.SummaryCounts.BlockedCount);
+    }
+
+    [Fact]
+    public async Task SearchRepAttentionItems_Includes_CancelledBaseDocument_WithActiveReceivableInconsistency_ByDefault()
+    {
+        var internalRepository = new FakeInternalRepository
+        {
+            Items =
+            [
+                new InternalRepBaseDocumentSummaryReadModel
+                {
+                    FiscalDocumentId = 884,
+                    BillingDocumentId = 484,
+                    AccountsReceivableInvoiceId = 1884,
+                    DocumentType = "I",
+                    FiscalStatus = FiscalDocumentStatus.Cancelled.ToString(),
+                    AccountsReceivableStatus = AccountsReceivableInvoiceStatus.Open.ToString(),
+                    Uuid = "UUID-INT-884",
+                    Series = "INT",
+                    Folio = "884",
+                    ReceiverRfc = "BBB010101BBB",
+                    ReceiverLegalName = "Cliente Cancelado Con CxC",
+                    IssuedAtUtc = new DateTime(2026, 4, 1, 9, 0, 0, DateTimeKind.Utc),
+                    PaymentMethodSat = "PPD",
+                    PaymentFormSat = "99",
+                    CurrencyCode = "MXN",
+                    AccountsReceivableTotal = 116m,
+                    Total = 116m,
+                    PaidTotal = 0m,
+                    OutstandingBalance = 116m
+                }
+            ]
+        };
+
+        var service = new SearchRepAttentionItemsService(
+            internalRepository,
+            new FakeExternalRepository(),
+            new FakeIssuerProfileRepository());
+
+        var result = await service.ExecuteAsync(new SearchRepAttentionItemsFilter
+        {
+            Page = 1,
+            PageSize = 25
+        });
+
+        var item = Assert.Single(result.Items);
+        Assert.Equal(RepOperationalAlertCode.CancelledBaseDocumentOperationalInconsistency, item.PrimaryReasonCode);
+        Assert.Contains(item.AttentionAlerts, x => x.AlertCode == RepOperationalAlertCode.CancelledBaseDocumentOperationalInconsistency);
+        Assert.DoesNotContain("PrepareRep", item.AvailableActions);
+        Assert.DoesNotContain("StampRep", item.AvailableActions);
+        Assert.Equal(1, result.SummaryCounts.CriticalCount);
+        Assert.Equal(1, result.SummaryCounts.BlockedCount);
     }
 
     [Fact]

@@ -145,6 +145,7 @@ export class PaymentComplementsApiService {
     setOptionalQuery(query, 'alertCode', filters.alertCode);
     setOptionalQuery(query, 'severity', filters.severity);
     setOptionalQuery(query, 'nextRecommendedAction', filters.nextRecommendedAction);
+    setOptionalBooleanQuery(query, 'includeCancelledBaseDocuments', filters.includeCancelledBaseDocuments);
 
     return this.http.get<RepAttentionItemsResponse>(buildApiUrl(`/payment-complements/attention-items?${query.toString()}`));
   }

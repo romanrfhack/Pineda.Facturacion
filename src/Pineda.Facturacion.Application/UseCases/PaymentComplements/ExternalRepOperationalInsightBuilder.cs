@@ -31,6 +31,14 @@ public static class ExternalRepOperationalInsightBuilder
         if (hasBlockedOperation)
         {
             alerts.Add(RepOperationalAlertCatalog.CreateBlockedAlert(evaluation.PrimaryReasonCode, evaluation.PrimaryReasonMessage));
+
+            var cancelledInconsistencyMessage = ResolveCancelledBaseDocumentOperationalInconsistencyMessage(summary, evaluation.PrimaryReasonCode);
+            if (!string.IsNullOrWhiteSpace(cancelledInconsistencyMessage))
+            {
+                alerts.Add(RepOperationalAlertCatalog.Create(
+                    RepOperationalAlertCode.CancelledBaseDocumentOperationalInconsistency,
+                    cancelledInconsistencyMessage));
+            }
         }
 
         if (hasAppliedPaymentsWithoutStampedRep)
@@ -78,6 +86,35 @@ public static class ExternalRepOperationalInsightBuilder
             AvailableActions = actions.ToList(),
             Alerts = alerts
         };
+    }
+
+    private static string? ResolveCancelledBaseDocumentOperationalInconsistencyMessage(
+        ExternalRepBaseDocumentSummaryReadModel summary,
+        string primaryReasonCode)
+    {
+        if (!RepOperationalAlertCatalog.IsCancelledBaseDocumentReason(primaryReasonCode))
+        {
+            return null;
+        }
+
+        if (summary.AccountsReceivableInvoiceId.HasValue
+            && !string.Equals(summary.AccountsReceivableStatus, "Cancelled", StringComparison.OrdinalIgnoreCase)
+            && summary.OutstandingBalance > 0m)
+        {
+            return "El CFDI externo está cancelado pero mantiene una cuenta por cobrar activa con saldo pendiente.";
+        }
+
+        if (summary.RegisteredPaymentCount > 0)
+        {
+            return "El CFDI externo está cancelado pero tiene pagos aplicados relacionados.";
+        }
+
+        if (summary.PaymentComplementCount > 0)
+        {
+            return "El CFDI externo está cancelado pero tiene documentos REP relacionados.";
+        }
+
+        return null;
     }
 
     private static string ResolveNextRecommendedAction(

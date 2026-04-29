@@ -581,10 +581,11 @@ describe('PaymentComplementsApiService', () => {
       sourceType: 'External',
       alertCode: 'SatValidationUnavailable',
       severity: 'warning',
-      nextRecommendedAction: 'RefreshRepStatus'
+      nextRecommendedAction: 'RefreshRepStatus',
+      includeCancelledBaseDocuments: true
     }).subscribe();
 
-    const req = httpTesting.expectOne('/api/payment-complements/attention-items?page=2&pageSize=25&fromDate=2026-04-01&toDate=2026-04-30&receiverRfc=BBB010101BBB&query=UUID-ATT-1&sourceType=External&alertCode=SatValidationUnavailable&severity=warning&nextRecommendedAction=RefreshRepStatus');
+    const req = httpTesting.expectOne('/api/payment-complements/attention-items?page=2&pageSize=25&fromDate=2026-04-01&toDate=2026-04-30&receiverRfc=BBB010101BBB&query=UUID-ATT-1&sourceType=External&alertCode=SatValidationUnavailable&severity=warning&nextRecommendedAction=RefreshRepStatus&includeCancelledBaseDocuments=true');
     expect(req.request.method).toBe('GET');
     req.flush({
       page: 2,
