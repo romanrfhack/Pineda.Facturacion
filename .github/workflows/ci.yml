@@ -121,9 +121,9 @@ jobs:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('frontend/package-lock.json') }}
 
-      - name: Install Playwright browsers
+      - name: Install Playwright Chromium
         working-directory: frontend
-        run: npx playwright install --with-deps
+        run: npx playwright install --with-deps chromium
 
       - name: E2E tests
         working-directory: frontend
