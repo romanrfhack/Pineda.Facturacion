@@ -1,0 +1,197 @@
+app-accounts-receivable-page .summary-card-value {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+app-accounts-receivable-page .detail-badges {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  flex-wrap: wrap;
+}
+
+app-accounts-receivable-page .summary-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+app-accounts-receivable-page .summary-card {
+  border: 1px solid #ece3d3;
+  border-radius: 0.85rem;
+  padding: 0.85rem;
+  background: #fffdf8;
+  display: grid;
+  gap: 0.35rem;
+}
+
+app-accounts-receivable-page .summary-card-action {
+  width: 100%;
+  text-align: left;
+  color: #182533;
+  background: #fffdf8;
+  border: 1px solid #ece3d3;
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+
+app-accounts-receivable-page .summary-card-action:hover {
+  background: #fbf7ef;
+}
+
+app-accounts-receivable-page .summary-card-action:focus-visible,
+app-accounts-receivable-page .badge-button:focus-visible {
+  outline: 2px solid #8a6a32;
+  outline-offset: 2px;
+}
+
+app-accounts-receivable-page .summary-card-action.is-active {
+  background: #f4f7fb;
+  border-color: #cbd7e3;
+  box-shadow: inset 0 0 0 1px #7a93aa;
+}
+
+app-accounts-receivable-page .summary-card-action[data-variant='danger'].is-active {
+  background: #fff7f5;
+  border-color: #f0c7c1;
+  box-shadow: inset 0 0 0 1px #d92d20;
+}
+
+app-accounts-receivable-page .badge-button {
+  border: none;
+  cursor: pointer;
+}
+
+app-accounts-receivable-page .badge-button.is-active {
+  box-shadow: inset 0 0 0 1px #d92d20;
+}
+
+app-accounts-receivable-page .collection-status-stack {
+  display: grid;
+  gap: 0.35rem;
+}
+
+app-accounts-receivable-page .empty-state-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+}
+
+app-accounts-receivable-page .lookup-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+  border-top: 1px solid #ece3d3;
+  padding-top: 0.75rem;
+}
+
+app-accounts-receivable-page .receiver-workspace-table tbody tr:hover td {
+  background: #fffdf8;
+}
+
+app-accounts-receivable-page .receiver-workspace-table .receiver-invoice-row.is-overdue td {
+  background: #fff7f5;
+}
+
+app-accounts-receivable-page
+  .receiver-workspace-table
+  .receiver-invoice-row.is-overdue
+  td:first-child {
+  box-shadow: inset 4px 0 0 #d92d20;
+}
+
+app-accounts-receivable-page .receiver-workspace-table .receiver-invoice-row.is-overdue:hover td {
+  background: #fff1ed;
+}
+
+app-accounts-receivable-page .workspace-split {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+app-accounts-receivable-page .link-stack {
+  display: grid;
+  gap: 0.5rem;
+}
+
+app-accounts-receivable-page .secondary-link {
+  background: #eef1f4;
+  color: #182533;
+}
+
+@media (max-width: 720px) {
+  app-accounts-receivable-page .empty-state-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  app-accounts-receivable-page .lookup-item {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  app-accounts-receivable-page .receiver-workspace-table thead {
+    display: none;
+  }
+
+  app-accounts-receivable-page .receiver-workspace-table,
+  app-accounts-receivable-page .receiver-workspace-table tbody,
+  app-accounts-receivable-page .receiver-workspace-table tr,
+  app-accounts-receivable-page .receiver-workspace-table td {
+    display: block;
+    width: 100%;
+  }
+
+  app-accounts-receivable-page .receiver-workspace-table tbody {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  app-accounts-receivable-page .receiver-workspace-table tr {
+    border: 1px solid #ece3d3;
+    border-radius: 0.9rem;
+    overflow: hidden;
+    background: #fff;
+  }
+
+  app-accounts-receivable-page .receiver-workspace-table td {
+    display: grid;
+    grid-template-columns: minmax(6rem, 7.25rem) minmax(0, 1fr);
+    gap: 0.5rem;
+    padding: 0.75rem;
+  }
+
+  app-accounts-receivable-page .receiver-workspace-table td:first-child {
+    border-top: none;
+  }
+
+  app-accounts-receivable-page .receiver-workspace-table td::before {
+    content: attr(data-label);
+    color: #5f6b76;
+    font-size: 0.78rem;
+    font-weight: 600;
+  }
+
+  app-accounts-receivable-page .receiver-workspace-table td[data-label='Acción'] a {
+    justify-self: start;
+  }
+
+  app-accounts-receivable-page .receiver-workspace-table .receiver-invoice-row.is-overdue {
+    background: #fff7f5;
+    box-shadow: inset 4px 0 0 #d92d20;
+  }
+
+  app-accounts-receivable-page .receiver-workspace-table .receiver-invoice-row.is-overdue td {
+    background: transparent;
+  }
+
+  app-accounts-receivable-page
+    .receiver-workspace-table
+    .receiver-invoice-row.is-overdue
+    td:first-child {
+    box-shadow: none;
+  }
+}

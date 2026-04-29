@@ -13,6 +13,7 @@ using Pineda.Facturacion.Application.DependencyInjection;
 using Pineda.Facturacion.Api.Endpoints;
 using Pineda.Facturacion.Infrastructure.DependencyInjection;
 using Pineda.Facturacion.Infrastructure.BillingWrite.DependencyInjection;
+using Pineda.Facturacion.Infrastructure.BillingWrite.Operations.AccountsReceivable;
 using Pineda.Facturacion.Infrastructure.BillingWrite.Operations.ProductFiscalProfiles;
 using Pineda.Facturacion.Infrastructure.FacturaloPlus.DependencyInjection;
 using Pineda.Facturacion.Infrastructure.LegacyRead.DependencyInjection;
@@ -173,6 +174,26 @@ if (args.Contains(LegacyGenericSatResetCli.RollbackCommandName, StringComparer.O
         var service = scope.ServiceProvider.GetRequiredService<RollbackLegacyGenericSatAssignmentsService>();
         var result = await service.ExecuteAsync(command);
         LegacyGenericSatResetCli.WriteRollbackResult(result, app.Environment.EnvironmentName);
+        Environment.ExitCode = result.IsSuccess ? 0 : 1;
+        return;
+    }
+    catch (Exception exception)
+    {
+        Console.Error.WriteLine(exception.Message);
+        Environment.ExitCode = 1;
+        return;
+    }
+}
+
+if (args.Contains(MissingAccountsReceivableBackfillCli.CommandName, StringComparer.OrdinalIgnoreCase))
+{
+    try
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        var command = MissingAccountsReceivableBackfillCli.Parse(args);
+        var service = scope.ServiceProvider.GetRequiredService<BackfillMissingAccountsReceivableInvoicesService>();
+        var result = await service.ExecuteAsync(command);
+        MissingAccountsReceivableBackfillCli.WriteResult(result, app.Environment.EnvironmentName);
         Environment.ExitCode = result.IsSuccess ? 0 : 1;
         return;
     }

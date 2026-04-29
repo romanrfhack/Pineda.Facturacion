@@ -29,6 +29,24 @@ import {
   StatusBadgeComponent,
   StatusBadgeTone,
 } from '../../../shared/components/status-badge.component';
+import { getDisplayLabel } from '../../../shared/ui/display-labels';
+import {
+  describeReceivableCollectionStatus,
+  filterReceivableInvoices,
+  formatReceivableCalendarDate,
+  RECEIVABLE_WORKSPACE_FILTERS,
+  ReceivableCollectionStatus,
+  ReceivableCollectionStatusDetail,
+  ReceivableInvoiceCollectionSummary,
+  ReceivableWorkspaceFilter,
+  sortReceivableInvoices,
+  summarizeReceivableInvoices,
+} from '../application/receivable-workspace-invoices';
+
+interface ReceiverWorkspaceInvoiceViewModel {
+  readonly invoice: AccountsReceivablePortfolioItemResponse;
+  readonly collection: ReceivableCollectionStatusDetail;
+}
 
 @Component({
   selector: 'app-accounts-receivable-page',
@@ -459,44 +477,113 @@ import {
               @if (workspace.summary.hasPendingCommitment) {
                 <span class="badge" data-status="PendingCommitment">Compromiso pendiente</span>
               }
-              @if (workspace.summary.overdueInvoicesCount > 0) {
-                <span class="badge" data-status="Overdue"
-                  >{{ workspace.summary.overdueInvoicesCount }} vencida(s)</span
+              @if (receiverWorkspaceInvoiceSummary().overdueInvoicesCount > 0) {
+                <button
+                  type="button"
+                  class="badge badge-button"
+                  data-status="Overdue"
+                  [class.is-active]="
+                    isReceiverWorkspaceFilterActive(receiverWorkspaceFilters.overdue)
+                  "
+                  [attr.aria-pressed]="
+                    isReceiverWorkspaceFilterActive(receiverWorkspaceFilters.overdue)
+                  "
+                  [attr.aria-label]="receiverWorkspaceOverdueFilterAriaLabel()"
+                  (click)="selectReceiverWorkspaceFilter(receiverWorkspaceFilters.overdue)"
                 >
+                  {{ receiverWorkspaceOverdueCountLabel() }}
+                </button>
               }
             </div>
           </div>
 
           <div class="summary-grid">
-            <article class="summary-card">
+            <button
+              type="button"
+              class="summary-card summary-card-action"
+              [class.is-active]="isReceiverWorkspaceFilterActive(receiverWorkspaceFilters.pending)"
+              data-variant="neutral"
+              [attr.aria-pressed]="
+                isReceiverWorkspaceFilterActive(receiverWorkspaceFilters.pending)
+              "
+              aria-label="Mostrar facturas con saldo pendiente"
+              (click)="selectReceiverWorkspaceFilter(receiverWorkspaceFilters.pending)"
+            >
               <strong>Saldo pendiente</strong>
-              <div>
-                {{ workspace.summary.pendingBalanceTotal | currency: 'MXN' : 'symbol' : '1.2-2' }}
+              <div class="summary-card-value">
+                {{
+                  receiverWorkspaceInvoiceSummary().pendingBalanceTotal
+                    | currency: 'MXN' : 'symbol' : '1.2-2'
+                }}
               </div>
-            </article>
-            <article class="summary-card">
+            </button>
+            <button
+              type="button"
+              class="summary-card summary-card-action"
+              [class.is-active]="isReceiverWorkspaceFilterActive(receiverWorkspaceFilters.overdue)"
+              data-variant="danger"
+              [attr.aria-pressed]="
+                isReceiverWorkspaceFilterActive(receiverWorkspaceFilters.overdue)
+              "
+              aria-label="Mostrar solo facturas vencidas"
+              (click)="selectReceiverWorkspaceFilter(receiverWorkspaceFilters.overdue)"
+            >
               <strong>Total vencido</strong>
-              <div>
-                {{ workspace.summary.overdueBalanceTotal | currency: 'MXN' : 'symbol' : '1.2-2' }}
+              <div class="summary-card-value">
+                {{
+                  receiverWorkspaceInvoiceSummary().overdueBalanceTotal
+                    | currency: 'MXN' : 'symbol' : '1.2-2'
+                }}
               </div>
-            </article>
-            <article class="summary-card">
+            </button>
+            <button
+              type="button"
+              class="summary-card summary-card-action"
+              [class.is-active]="
+                isReceiverWorkspaceFilterActive(receiverWorkspaceFilters.currentOrDueSoon)
+              "
+              data-variant="neutral"
+              [attr.aria-pressed]="
+                isReceiverWorkspaceFilterActive(receiverWorkspaceFilters.currentOrDueSoon)
+              "
+              aria-label="Mostrar facturas vigentes o por vencer"
+              (click)="selectReceiverWorkspaceFilter(receiverWorkspaceFilters.currentOrDueSoon)"
+            >
               <strong>Vigente / por vencer</strong>
-              <div>
-                {{ workspace.summary.currentBalanceTotal | currency: 'MXN' : 'symbol' : '1.2-2' }}
+              <div class="summary-card-value">
+                {{
+                  receiverWorkspaceInvoiceSummary().currentOrDueSoonBalanceTotal
+                    | currency: 'MXN' : 'symbol' : '1.2-2'
+                }}
               </div>
-            </article>
-            <article class="summary-card">
+            </button>
+            <button
+              type="button"
+              class="summary-card summary-card-action"
+              [class.is-active]="
+                isReceiverWorkspaceFilterActive(receiverWorkspaceFilters.openInvoices)
+              "
+              data-variant="neutral"
+              [attr.aria-pressed]="
+                isReceiverWorkspaceFilterActive(receiverWorkspaceFilters.openInvoices)
+              "
+              aria-label="Mostrar facturas abiertas"
+              (click)="selectReceiverWorkspaceFilter(receiverWorkspaceFilters.openInvoices)"
+            >
               <strong>Facturas abiertas</strong>
-              <div>{{ workspace.summary.openInvoicesCount }}</div>
-            </article>
+              <div class="summary-card-value">
+                {{ receiverWorkspaceInvoiceSummary().openInvoicesCount }}
+              </div>
+            </button>
             <article class="summary-card">
               <strong>Pagos con remanente</strong>
-              <div>{{ workspace.summary.paymentsWithUnappliedAmountCount }}</div>
+              <div class="summary-card-value">
+                {{ workspace.summary.paymentsWithUnappliedAmountCount }}
+              </div>
             </article>
             <article class="summary-card">
               <strong>Siguiente seguimiento</strong>
-              <div>
+              <div class="summary-card-value">
                 {{
                   workspace.summary.nextFollowUpAtUtc
                     ? (workspace.summary.nextFollowUpAtUtc | date: 'yyyy-MM-dd HH:mm')
@@ -509,14 +596,16 @@ import {
 
         <section class="card">
           <div class="section-head compact">
-            <h3>Facturas del receptor</h3>
-            <p class="helper">{{ workspace.invoices.length }} cuenta(s) abierta(s)</p>
+            <div>
+              <h3>Facturas del receptor</h3>
+              <p class="helper">{{ receiverWorkspaceInvoiceHelperText() }}</p>
+            </div>
           </div>
-          @if (!workspace.invoices.length) {
-            <p class="helper">No hay facturas abiertas para este receptor.</p>
+          @if (!receiverWorkspaceInvoiceRows().length) {
+            <p class="helper">{{ receiverWorkspaceInvoiceEmptyText() }}</p>
           } @else {
             <div class="table-wrap">
-              <table class="portfolio">
+              <table class="portfolio receiver-workspace-table">
                 <thead>
                   <tr>
                     <th>Factura</th>
@@ -530,36 +619,63 @@ import {
                   </tr>
                 </thead>
                 <tbody>
-                  @for (item of workspace.invoices; track item.accountsReceivableInvoiceId) {
-                    <tr>
-                      <td>
-                        <div>{{ formatFiscalLabel(item) }}</div>
-                        <div class="subtle">{{ item.fiscalUuid || 'UUID pendiente' }}</div>
-                        <div class="subtle">CxC #{{ item.accountsReceivableInvoiceId }}</div>
-                      </td>
-                      <td>{{ item.issuedAtUtc | date: 'yyyy-MM-dd' }}</td>
-                      <td>
-                        {{
-                          item.dueAtUtc ? (item.dueAtUtc | date: 'yyyy-MM-dd') : 'Sin vencimiento'
-                        }}
-                      </td>
-                      <td>{{ item.total | currency: 'MXN' : 'symbol' : '1.2-2' }}</td>
-                      <td>{{ item.paidTotal | currency: 'MXN' : 'symbol' : '1.2-2' }}</td>
-                      <td>{{ item.outstandingBalance | currency: 'MXN' : 'symbol' : '1.2-2' }}</td>
-                      <td>
-                        <span class="badge" [attr.data-status]="item.status">{{
-                          item.status
-                        }}</span>
+                  @for (
+                    item of receiverWorkspaceInvoiceRows();
+                    track item.invoice.accountsReceivableInvoiceId
+                  ) {
+                    <tr
+                      class="receiver-invoice-row"
+                      [class.is-overdue]="item.collection.status === 'overdue'"
+                      [attr.data-collection-status]="item.collection.status"
+                    >
+                      <td data-label="Factura">
+                        <div>{{ formatFiscalLabel(item.invoice) }}</div>
+                        <div class="subtle">{{ item.invoice.fiscalUuid || 'UUID pendiente' }}</div>
                         <div class="subtle">
-                          <span class="badge" [attr.data-status]="item.agingBucket">{{
-                            item.agingBucket
-                          }}</span>
+                          CxC #{{ item.invoice.accountsReceivableInvoiceId }}
                         </div>
                       </td>
-                      <td>
+                      <td data-label="Emisión">
+                        {{
+                          formatReceiverWorkspaceCalendarDate(item.invoice.issuedAtUtc, 'Sin fecha')
+                        }}
+                      </td>
+                      <td data-label="Vencimiento">
+                        {{
+                          formatReceiverWorkspaceCalendarDate(
+                            item.invoice.dueAtUtc,
+                            'Sin vencimiento'
+                          )
+                        }}
+                        @if (item.collection.dueDateHint) {
+                          <div class="subtle">{{ item.collection.dueDateHint }}</div>
+                        }
+                      </td>
+                      <td data-label="Total">
+                        {{ item.invoice.total | currency: 'MXN' : 'symbol' : '1.2-2' }}
+                      </td>
+                      <td data-label="Pagado">
+                        {{ item.invoice.paidTotal | currency: 'MXN' : 'symbol' : '1.2-2' }}
+                      </td>
+                      <td data-label="Saldo">
+                        {{ item.invoice.outstandingBalance | currency: 'MXN' : 'symbol' : '1.2-2' }}
+                      </td>
+                      <td data-label="Estatus">
+                        <div class="collection-status-stack">
+                          <app-status-badge
+                            [label]="item.collection.badgeLabel"
+                            [tone]="receiverWorkspaceCollectionTone(item.collection.status)"
+                          />
+                          <div class="subtle">
+                            Operativo:
+                            {{ receiverWorkspaceOperationalStatusLabel(item.invoice.status) }}
+                          </div>
+                        </div>
+                      </td>
+                      <td data-label="Acción">
                         <a
                           [routerLink]="['/app/accounts-receivable']"
-                          [queryParams]="{ invoiceId: item.accountsReceivableInvoiceId }"
+                          [queryParams]="{ invoiceId: item.invoice.accountsReceivableInvoiceId }"
                           >Ver detalle</a
                         >
                       </td>
@@ -1475,12 +1591,6 @@ import {
         background: #e5ebff;
         color: #324d8f;
       }
-      .detail-badges {
-        display: flex;
-        gap: 0.5rem;
-        margin-top: 0.75rem;
-        flex-wrap: wrap;
-      }
       .status-panel {
         margin-top: 1rem;
         border-radius: 0.9rem;
@@ -1509,12 +1619,6 @@ import {
       }
       .links {
         margin-top: 1rem;
-      }
-      .empty-state-actions {
-        display: flex;
-        justify-content: space-between;
-        gap: 1rem;
-        align-items: center;
       }
       textarea {
         border: 1px solid #d8d1c2;
@@ -1555,50 +1659,8 @@ import {
         gap: 0.75rem;
         margin-top: 1rem;
       }
-      .lookup-item {
-        display: flex;
-        justify-content: space-between;
-        gap: 1rem;
-        align-items: center;
-        border-top: 1px solid #ece3d3;
-        padding-top: 0.75rem;
-      }
-      .summary-grid {
-        display: grid;
-        gap: 0.75rem;
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      }
-      .summary-card {
-        border: 1px solid #ece3d3;
-        border-radius: 0.85rem;
-        padding: 0.85rem;
-        background: #fffdf8;
-        display: grid;
-        gap: 0.35rem;
-      }
-      .workspace-split {
-        display: grid;
-        gap: 1rem;
-        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-      }
-      .link-stack {
-        display: grid;
-        gap: 0.5rem;
-      }
-      .secondary-link {
-        background: #eef1f4;
-        color: #182533;
-      }
       @media (max-width: 720px) {
         .actions {
-          flex-direction: column;
-        }
-        .empty-state-actions {
-          flex-direction: column;
-          align-items: stretch;
-        }
-        .lookup-item {
-          align-items: stretch;
           flex-direction: column;
         }
       }
@@ -1639,12 +1701,88 @@ export class AccountsReceivablePageComponent {
   protected readonly receiverWorkspace = signal<AccountsReceivableReceiverWorkspaceResponse | null>(
     null,
   );
+  protected readonly receiverWorkspaceFilters = RECEIVABLE_WORKSPACE_FILTERS;
+  protected readonly receiverWorkspaceFilter = signal<ReceivableWorkspaceFilter>(
+    RECEIVABLE_WORKSPACE_FILTERS.openInvoices,
+  );
+  protected readonly receiverWorkspaceToday = signal(new Date());
   protected readonly receiverLookupResults = signal<FiscalReceiverSearchItem[]>([]);
   protected readonly portfolioItems = signal<AccountsReceivablePortfolioItemResponse[]>([]);
   protected readonly paymentItems = signal<AccountsReceivablePaymentSummaryItemResponse[]>([]);
   protected readonly eligibleReceiverInvoices = signal<AccountsReceivablePortfolioItemResponse[]>(
     [],
   );
+  protected readonly receiverWorkspaceInvoiceSummary = computed<ReceivableInvoiceCollectionSummary>(
+    () => {
+      const workspace = this.receiverWorkspace();
+      if (!workspace) {
+        return {
+          pendingBalanceTotal: 0,
+          overdueBalanceTotal: 0,
+          currentOrDueSoonBalanceTotal: 0,
+          openInvoicesCount: 0,
+          overdueInvoicesCount: 0,
+          currentOrDueSoonCount: 0,
+          paidInvoicesCount: 0,
+        };
+      }
+
+      return summarizeReceivableInvoices(workspace.invoices, this.receiverWorkspaceToday());
+    },
+  );
+  protected readonly receiverWorkspaceInvoiceRows = computed<ReceiverWorkspaceInvoiceViewModel[]>(
+    () => {
+      const workspace = this.receiverWorkspace();
+      if (!workspace) {
+        return [];
+      }
+
+      const today = this.receiverWorkspaceToday();
+
+      return sortReceivableInvoices(
+        filterReceivableInvoices(workspace.invoices, this.receiverWorkspaceFilter(), today),
+        today,
+      ).map((invoice) => ({
+        invoice,
+        collection: describeReceivableCollectionStatus(invoice, today),
+      }));
+    },
+  );
+  protected readonly receiverWorkspaceInvoiceHelperText = computed(() => {
+    const visibleCount = this.receiverWorkspaceInvoiceRows().length;
+    const openCount = this.receiverWorkspaceInvoiceSummary().openInvoicesCount;
+
+    switch (this.receiverWorkspaceFilter()) {
+      case RECEIVABLE_WORKSPACE_FILTERS.overdue:
+        return `Mostrando vencidas · ${visibleCount} de ${openCount}`;
+      case RECEIVABLE_WORKSPACE_FILTERS.currentOrDueSoon:
+        return `Mostrando vigentes / por vencer · ${visibleCount} de ${openCount}`;
+      case RECEIVABLE_WORKSPACE_FILTERS.pending:
+      case RECEIVABLE_WORKSPACE_FILTERS.openInvoices:
+      default:
+        return `${openCount} cuenta(s) abierta(s)`;
+    }
+  });
+  protected readonly receiverWorkspaceInvoiceEmptyText = computed(() => {
+    switch (this.receiverWorkspaceFilter()) {
+      case RECEIVABLE_WORKSPACE_FILTERS.overdue:
+        return 'No hay facturas vencidas para este receptor.';
+      case RECEIVABLE_WORKSPACE_FILTERS.currentOrDueSoon:
+        return 'No hay facturas vigentes o por vencer para este receptor.';
+      case RECEIVABLE_WORKSPACE_FILTERS.pending:
+      case RECEIVABLE_WORKSPACE_FILTERS.openInvoices:
+      default:
+        return 'No hay facturas abiertas para este receptor.';
+    }
+  });
+  protected readonly receiverWorkspaceOverdueCountLabel = computed(() => {
+    const count = this.receiverWorkspaceInvoiceSummary().overdueInvoicesCount;
+    return `${count} ${count === 1 ? 'vencida' : 'vencidas'}`;
+  });
+  protected readonly receiverWorkspaceOverdueFilterAriaLabel = computed(() => {
+    const count = this.receiverWorkspaceInvoiceSummary().overdueInvoicesCount;
+    return count === 1 ? 'Mostrar 1 factura vencida' : `Mostrar ${count} facturas vencidas`;
+  });
   protected readonly loading = signal(false);
   protected receiverLookupQuery = '';
   protected readonly filters = {
@@ -1749,6 +1887,40 @@ export class AccountsReceivablePageComponent {
     }
   }
 
+  protected selectReceiverWorkspaceFilter(filter: ReceivableWorkspaceFilter): void {
+    this.receiverWorkspaceFilter.set(filter);
+  }
+
+  protected isReceiverWorkspaceFilterActive(filter: ReceivableWorkspaceFilter): boolean {
+    return this.receiverWorkspaceFilter() === filter;
+  }
+
+  protected receiverWorkspaceCollectionTone(status: ReceivableCollectionStatus): StatusBadgeTone {
+    switch (status) {
+      case 'overdue':
+        return 'danger';
+      case 'dueToday':
+      case 'dueSoon':
+        return 'warning';
+      case 'paid':
+        return 'info';
+      case 'current':
+      default:
+        return 'neutral';
+    }
+  }
+
+  protected receiverWorkspaceOperationalStatusLabel(status: string): string {
+    return getDisplayLabel(status);
+  }
+
+  protected formatReceiverWorkspaceCalendarDate(
+    value: Date | string | null | undefined,
+    fallback: string,
+  ): string {
+    return formatReceivableCalendarDate(value, fallback);
+  }
+
   constructor() {
     this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => {
       const accountsReceivableInvoiceId = parseNumber(params.get('invoiceId'));
@@ -1786,6 +1958,8 @@ export class AccountsReceivablePageComponent {
         this.invoice.set(null);
         this.payment.set(null);
         this.eligibleReceiverInvoices.set([]);
+        this.receiverWorkspaceFilter.set(RECEIVABLE_WORKSPACE_FILTERS.openInvoices);
+        this.receiverWorkspaceToday.set(new Date());
         void this.loadReceiverWorkspace(receiverWorkspaceId);
         return;
       }

@@ -92,6 +92,7 @@ public sealed class SearchInternalRepBaseDocumentsService
             HasPersistedUuid = !string.IsNullOrWhiteSpace(source.Uuid),
             HasAccountsReceivableInvoice = source.AccountsReceivableInvoiceId.HasValue,
             AccountsReceivableStatus = source.AccountsReceivableStatus,
+            AccountsReceivableTotal = source.AccountsReceivableTotal,
             Total = source.Total,
             PaidTotal = source.PaidTotal,
             OutstandingBalance = source.OutstandingBalance

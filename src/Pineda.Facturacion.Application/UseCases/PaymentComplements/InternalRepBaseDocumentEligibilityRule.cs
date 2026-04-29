@@ -14,6 +14,20 @@ public static class InternalRepBaseDocumentEligibilityRule
         var paymentForm = Normalize(snapshot.PaymentFormSat);
         var currencyCode = Normalize(snapshot.CurrencyCode);
         var accountsReceivableStatus = Normalize(snapshot.AccountsReceivableStatus);
+        var normalizedFiscalTotal = CfdiMonetaryRules.RoundMonetary(snapshot.Total, snapshot.CurrencyCode);
+        var normalizedAccountsReceivableTotal = snapshot.AccountsReceivableTotal.HasValue
+            ? CfdiMonetaryRules.RoundMonetary(snapshot.AccountsReceivableTotal.Value, snapshot.CurrencyCode)
+            : normalizedFiscalTotal;
+        var normalizedPaidTotal = CfdiMonetaryRules.RoundMonetary(snapshot.PaidTotal, snapshot.CurrencyCode);
+        var normalizedOutstandingBalance = CfdiMonetaryRules.RoundMonetary(snapshot.OutstandingBalance, snapshot.CurrencyCode);
+        var moneyTolerance = CfdiMonetaryRules.ResolveCurrencyTolerance(snapshot.CurrencyCode);
+        var isOperationalBalanceConsistent = IsOperationalBalanceConsistent(
+            snapshot,
+            normalizedFiscalTotal,
+            normalizedAccountsReceivableTotal,
+            normalizedPaidTotal,
+            normalizedOutstandingBalance,
+            moneyTolerance);
         var secondarySignals = new List<InternalRepBaseDocumentEligibilitySignal>();
 
         AddSignal(secondarySignals, "DocumentTypeIncome", documentType == "I", "CFDI de ingreso requerido para REP.");
@@ -23,7 +37,7 @@ public static class InternalRepBaseDocumentEligibilityRule
         AddSignal(secondarySignals, "CurrencyMxn", currencyCode == "MXN", "Moneda MXN soportada en el flujo interno actual.");
         AddSignal(secondarySignals, "AccountsReceivablePresent", snapshot.HasAccountsReceivableInvoice, "Cuenta por cobrar operativa disponible.");
         AddSignal(secondarySignals, "OutstandingBalancePositive", snapshot.OutstandingBalance > 0m, "Saldo pendiente mayor a cero.");
-        AddSignal(secondarySignals, "OperationalBalanceConsistent", snapshot.PaidTotal >= 0m && snapshot.OutstandingBalance >= 0m && snapshot.PaidTotal <= snapshot.Total && snapshot.OutstandingBalance <= snapshot.Total, "Saldo operativo consistente.");
+        AddSignal(secondarySignals, "OperationalBalanceConsistent", isOperationalBalanceConsistent, "Saldo operativo consistente a precision monetaria.");
 
         if (documentType != "I")
         {
@@ -77,22 +91,22 @@ public static class InternalRepBaseDocumentEligibilityRule
             return Blocked("AccountsReceivableCancelled", "La cuenta por cobrar del CFDI está cancelada.", secondarySignals);
         }
 
-        if (snapshot.Total <= 0m)
+        if (normalizedFiscalTotal <= 0m)
         {
             return Blocked("InvalidDocumentTotal", "El CFDI tiene un total inválido para control REP.", secondarySignals);
         }
 
-        if (snapshot.PaidTotal < 0m || snapshot.OutstandingBalance < 0m || snapshot.PaidTotal > snapshot.Total || snapshot.OutstandingBalance > snapshot.Total)
+        if (!isOperationalBalanceConsistent)
         {
             return Blocked("OperationalBalanceInconsistent", "El saldo operativo del CFDI es inconsistente.", secondarySignals);
         }
 
-        if (snapshot.OutstandingBalance == 0m)
+        if (normalizedOutstandingBalance == 0m)
         {
             return Ineligible("NoOutstandingBalance", "El CFDI ya no tiene saldo pendiente.", secondarySignals);
         }
 
-        if (snapshot.OutstandingBalance < 0m)
+        if (normalizedOutstandingBalance < 0m)
         {
             return Blocked("OutstandingBalanceInvalid", "El CFDI tiene saldo pendiente inconsistente.", secondarySignals);
         }
@@ -156,5 +170,52 @@ public static class InternalRepBaseDocumentEligibilityRule
     private static string Normalize(string? value)
     {
         return FiscalMasterDataNormalization.NormalizeOptionalText(value)?.ToUpperInvariant() ?? string.Empty;
+    }
+
+    private static bool IsOperationalBalanceConsistent(
+        InternalRepBaseDocumentEligibilitySnapshot snapshot,
+        decimal normalizedFiscalTotal,
+        decimal normalizedAccountsReceivableTotal,
+        decimal normalizedPaidTotal,
+        decimal normalizedOutstandingBalance,
+        decimal moneyTolerance)
+    {
+        if (snapshot.PaidTotal < 0m || snapshot.OutstandingBalance < 0m)
+        {
+            return false;
+        }
+
+        if (snapshot.AccountsReceivableTotal.HasValue && snapshot.AccountsReceivableTotal.Value < 0m)
+        {
+            return false;
+        }
+
+        if (normalizedPaidTotal > normalizedFiscalTotal + moneyTolerance)
+        {
+            return false;
+        }
+
+        if (normalizedOutstandingBalance > normalizedFiscalTotal + moneyTolerance)
+        {
+            return false;
+        }
+
+        if (Math.Abs(normalizedAccountsReceivableTotal - normalizedFiscalTotal) > moneyTolerance)
+        {
+            return false;
+        }
+
+        var normalizedComponentSum = normalizedPaidTotal + normalizedOutstandingBalance;
+        if (Math.Abs(normalizedComponentSum - normalizedFiscalTotal) > moneyTolerance)
+        {
+            return false;
+        }
+
+        if (Math.Abs(normalizedComponentSum - normalizedAccountsReceivableTotal) > moneyTolerance)
+        {
+            return false;
+        }
+
+        return true;
     }
 }

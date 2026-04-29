@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
+using Pineda.Facturacion.Infrastructure.BillingWrite.Operations.AccountsReceivable;
 using Pineda.Facturacion.Infrastructure.BillingWrite.Operations.ProductFiscalProfiles;
 using Pineda.Facturacion.Infrastructure.BillingWrite.Options;
 using Pineda.Facturacion.Infrastructure.BillingWrite.Persistence;
@@ -70,6 +71,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IFiscalReceiverImportRepository, FiscalReceiverImportRepository>();
         services.AddScoped<IProductFiscalProfileImportRepository, ProductFiscalProfileImportRepository>();
         services.AddScoped<IOperationalOrderMutationScopeFactory, OperationalOrderMutationScopeFactory>();
+        services.AddScoped<BackfillMissingAccountsReceivableInvoicesService>();
         services.AddScoped<ResetLegacyGenericSatAssignmentsService>();
         services.AddScoped<RollbackLegacyGenericSatAssignmentsService>();
         services.AddScoped<IUnitOfWork>(serviceProvider => serviceProvider.GetRequiredService<BillingDbContext>());
