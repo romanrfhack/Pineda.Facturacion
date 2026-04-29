@@ -190,6 +190,17 @@ describe('OrdersOperationsPageComponent', () => {
         salesOrderId: 20,
         billingDocumentId: 30,
         billingDocumentStatus: 'Draft'
+      })),
+      createBulkBillingDocument: vi.fn().mockReturnValue(of({
+        outcome: 'Created',
+        isSuccess: true,
+        billingDocumentId: 30,
+        billingDocumentStatus: 'Draft',
+        selectedOrderCount: 1,
+        importedOrderCount: 1,
+        associatedOrderCount: 1,
+        legacyOrderIds: ['LEG-1001'],
+        orderErrors: []
       }))
     };
   }
@@ -248,6 +259,407 @@ describe('OrdersOperationsPageComponent', () => {
       page: 1,
       pageSize: 10
     });
+  });
+
+  it('starts without bulk selection or mass actions', async () => {
+    const { fixture } = await configure();
+
+    expect(fixture.componentInstance['selectedOrdersCount']()).toBe(0);
+    expect(fixture.nativeElement.textContent).not.toContain('Limpiar selección');
+  });
+
+  it('selects one eligible order and shows the bulk counter', async () => {
+    const { fixture } = await configure();
+    const order = fixture.componentInstance['ordersPage']()!.items[0];
+
+    fixture.componentInstance['toggleOrderSelection'](order, true);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['selectedOrdersCount']()).toBe(1);
+    expect(fixture.nativeElement.textContent).toContain('1 orden seleccionada');
+    expect(fixture.nativeElement.textContent).toContain('Crear documento de facturación');
+  });
+
+  it('selects only the eligible visible orders from the current page', async () => {
+    const { fixture } = await configure({
+      searchLegacyOrders: vi.fn().mockReturnValue(of({
+        isSuccess: true,
+        items: [
+          {
+            legacyOrderId: 'LEG-1001',
+            orderDateUtc: '2026-03-23T10:00:00Z',
+            customerName: 'Cliente Uno',
+            total: 116,
+            legacyOrderType: 'F',
+            isImported: false,
+            salesOrderId: null,
+            billingDocumentId: null,
+            billingDocumentStatus: null,
+            fiscalDocumentId: null,
+            fiscalDocumentStatus: null,
+            importStatus: null
+          },
+          {
+            legacyOrderId: 'LEG-1002',
+            orderDateUtc: '2026-03-23T09:00:00Z',
+            customerName: 'Cliente Uno',
+            total: 58,
+            legacyOrderType: 'F',
+            isImported: true,
+            salesOrderId: 22,
+            billingDocumentId: 44,
+            billingDocumentStatus: 'Draft',
+            fiscalDocumentId: null,
+            fiscalDocumentStatus: null,
+            importStatus: 'Imported'
+          }
+        ],
+        totalCount: 2,
+        totalPages: 1,
+        page: 1,
+        pageSize: 10
+      }))
+    });
+
+    fixture.componentInstance['toggleVisibleSelection'](true);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['selectedOrdersCount']()).toBe(1);
+    expect(fixture.nativeElement.textContent).toContain('Ya asociada al documento #44.');
+  });
+
+  it('offers selecting all filtered orders and sends the filter snapshot on confirmation', async () => {
+    const createBulkBillingDocument = vi.fn().mockReturnValue(of({
+      outcome: 'Created',
+      isSuccess: true,
+      billingDocumentId: 45,
+      billingDocumentStatus: 'Draft',
+      selectedOrderCount: 12,
+      importedOrderCount: 12,
+      associatedOrderCount: 12,
+      legacyOrderIds: ['LEG-1001', 'LEG-1002'],
+      orderErrors: []
+    }));
+    const { fixture, api, router, feedback } = await configure({
+      apiOverrides: {
+        searchLegacyOrders: vi.fn().mockReturnValue(of({
+          isSuccess: true,
+          items: [
+            {
+              legacyOrderId: 'LEG-1001',
+              orderDateUtc: '2026-03-23T10:00:00Z',
+              customerName: 'Cliente Uno',
+              total: 116,
+              legacyOrderType: 'F',
+              isImported: false,
+              salesOrderId: null,
+              billingDocumentId: null,
+              billingDocumentStatus: null,
+              fiscalDocumentId: null,
+              fiscalDocumentStatus: null,
+              importStatus: null
+            },
+            {
+              legacyOrderId: 'LEG-1002',
+              orderDateUtc: '2026-03-23T09:00:00Z',
+              customerName: 'Cliente Uno',
+              total: 58,
+              legacyOrderType: 'F',
+              isImported: false,
+              salesOrderId: null,
+              billingDocumentId: null,
+              billingDocumentStatus: null,
+              fiscalDocumentId: null,
+              fiscalDocumentStatus: null,
+              importStatus: null
+            }
+          ],
+          totalCount: 12,
+          totalPages: 2,
+          page: 1,
+          pageSize: 10
+        })),
+        createBulkBillingDocument
+      }
+    });
+
+    fixture.componentInstance['customerQuery'].set('Cliente Uno');
+    await fixture.componentInstance['searchCurrentRange']();
+    fixture.componentInstance['toggleVisibleSelection'](true);
+    fixture.componentInstance['selectAllFilteredOrders']();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('12 órdenes seleccionadas según los filtros actuales');
+
+    fixture.componentInstance['openBulkCreateModal']();
+    await fixture.componentInstance['confirmBulkCreateBillingDocument']();
+
+    expect(createBulkBillingDocument).toHaveBeenCalledWith({
+      documentType: 'I',
+      selectionMode: 'Filtered',
+      filters: {
+        customerQuery: 'Cliente Uno'
+      }
+    });
+    expect(feedback.show).toHaveBeenCalledWith('success', 'Documento de facturación creado con 12 órdenes.');
+    expect(router.navigate).toHaveBeenCalledWith(['/app/fiscal-documents'], { queryParams: { billingDocumentId: 45 } });
+    expect(api.createBulkBillingDocument).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears the current selection when filters are applied again', async () => {
+    const { fixture } = await configure();
+    const order = fixture.componentInstance['ordersPage']()!.items[0];
+
+    fixture.componentInstance['toggleOrderSelection'](order, true);
+    fixture.componentInstance['setCustomerQuery']('Cliente Uno');
+    await fixture.componentInstance['searchCurrentRange']();
+
+    expect(fixture.componentInstance['selectedOrdersCount']()).toBe(0);
+  });
+
+  it('clears the current selection when editing customerQuery', async () => {
+    const { fixture } = await configure();
+    const order = fixture.componentInstance['ordersPage']()!.items[0];
+
+    fixture.componentInstance['toggleOrderSelection'](order, true);
+    fixture.componentInstance['setCustomerQuery']('Cliente Uno');
+
+    expect(fixture.componentInstance['selectedOrdersCount']()).toBe(0);
+  });
+
+  it('clears the current selection when editing legacyOrderId', async () => {
+    const { fixture } = await configure();
+    const order = fixture.componentInstance['ordersPage']()!.items[0];
+
+    fixture.componentInstance['toggleOrderSelection'](order, true);
+    fixture.componentInstance['setLegacyOrderIdFilter']('117-5479');
+
+    expect(fixture.componentInstance['selectedOrdersCount']()).toBe(0);
+  });
+
+  it('clears the current selection when editing fromDate', async () => {
+    const { fixture } = await configure();
+    const order = fixture.componentInstance['ordersPage']()!.items[0];
+
+    fixture.componentInstance['setQuickRange']('custom');
+    fixture.componentInstance['toggleOrderSelection'](order, true);
+    fixture.componentInstance['setFromDate']('2026-03-20');
+
+    expect(fixture.componentInstance['selectedOrdersCount']()).toBe(0);
+  });
+
+  it('clears the current selection when editing toDate', async () => {
+    const { fixture } = await configure();
+    const order = fixture.componentInstance['ordersPage']()!.items[0];
+
+    fixture.componentInstance['setQuickRange']('custom');
+    fixture.componentInstance['toggleOrderSelection'](order, true);
+    fixture.componentInstance['setToDate']('2026-03-21');
+
+    expect(fixture.componentInstance['selectedOrdersCount']()).toBe(0);
+  });
+
+  it('clears the current selection when changing quickRange', async () => {
+    const { fixture } = await configure();
+    const order = fixture.componentInstance['ordersPage']()!.items[0];
+
+    fixture.componentInstance['toggleOrderSelection'](order, true);
+    fixture.componentInstance['setQuickRange']('today');
+
+    expect(fixture.componentInstance['selectedOrdersCount']()).toBe(0);
+  });
+
+  it('keeps the current selection when changing page without changing filters', async () => {
+    const searchLegacyOrders = vi
+      .fn()
+      .mockReturnValueOnce(of({
+        isSuccess: true,
+        items: [
+          {
+            legacyOrderId: 'LEG-1001',
+            orderDateUtc: '2026-03-23T10:00:00Z',
+            customerName: 'Cliente Uno',
+            total: 116,
+            legacyOrderType: 'F',
+            isImported: false,
+            salesOrderId: null,
+            billingDocumentId: null,
+            billingDocumentStatus: null,
+            fiscalDocumentId: null,
+            fiscalDocumentStatus: null,
+            importStatus: null
+          }
+        ],
+        totalCount: 2,
+        totalPages: 2,
+        page: 1,
+        pageSize: 10
+      }))
+      .mockReturnValueOnce(of({
+        isSuccess: true,
+        items: [
+          {
+            legacyOrderId: 'LEG-1002',
+            orderDateUtc: '2026-03-22T10:00:00Z',
+            customerName: 'Cliente Dos',
+            total: 58,
+            legacyOrderType: 'F',
+            isImported: false,
+            salesOrderId: null,
+            billingDocumentId: null,
+            billingDocumentStatus: null,
+            fiscalDocumentId: null,
+            fiscalDocumentStatus: null,
+            importStatus: null
+          }
+        ],
+        totalCount: 2,
+        totalPages: 2,
+        page: 2,
+        pageSize: 10
+      }));
+
+    const { fixture } = await configure({
+      searchLegacyOrders
+    });
+    const order = fixture.componentInstance['ordersPage']()!.items[0];
+
+    fixture.componentInstance['toggleOrderSelection'](order, true);
+    await fixture.componentInstance['changePage'](1);
+
+    expect(fixture.componentInstance['selectedOrdersCount']()).toBe(1);
+    expect(fixture.componentInstance['selectedLegacyOrderIds']()).toEqual(['LEG-1001']);
+  });
+
+  it('blocks selecting all filtered orders when there are no active filters', async () => {
+    const { fixture } = await configure({
+      searchLegacyOrders: vi.fn().mockReturnValue(of({
+        isSuccess: true,
+        items: [
+          {
+            legacyOrderId: 'LEG-1001',
+            orderDateUtc: '2026-03-23T10:00:00Z',
+            customerName: 'Cliente Uno',
+            total: 116,
+            legacyOrderType: 'F',
+            isImported: false,
+            salesOrderId: null,
+            billingDocumentId: null,
+            billingDocumentStatus: null,
+            fiscalDocumentId: null,
+            fiscalDocumentStatus: null,
+            importStatus: null
+          }
+        ],
+        totalCount: 12,
+        totalPages: 2,
+        page: 1,
+        pageSize: 10
+      }))
+    });
+    const order = fixture.componentInstance['ordersPage']()!.items[0];
+
+    fixture.componentInstance['toggleOrderSelection'](order, true);
+    fixture.componentInstance['selectAllFilteredOrders']();
+
+    expect(fixture.componentInstance['bulkActionError']()).toContain('Aplica al menos un filtro');
+  });
+
+  it('shows a clear error when filtered selection exceeds the 50-order limit', async () => {
+    const { fixture } = await configure({
+      searchLegacyOrders: vi.fn().mockReturnValue(of({
+        isSuccess: true,
+        items: [
+          {
+            legacyOrderId: 'LEG-1001',
+            orderDateUtc: '2026-03-23T10:00:00Z',
+            customerName: 'Cliente Uno',
+            total: 116,
+            legacyOrderType: 'F',
+            isImported: false,
+            salesOrderId: null,
+            billingDocumentId: null,
+            billingDocumentStatus: null,
+            fiscalDocumentId: null,
+            fiscalDocumentStatus: null,
+            importStatus: null
+          }
+        ],
+        totalCount: 51,
+        totalPages: 6,
+        page: 1,
+        pageSize: 10
+      }))
+    });
+
+    fixture.componentInstance['setCustomerQuery']('Cliente Uno');
+    await fixture.componentInstance['searchCurrentRange']();
+    fixture.componentInstance['toggleVisibleSelection'](true);
+    fixture.componentInstance['selectAllFilteredOrders']();
+
+    expect(fixture.componentInstance['bulkActionError']()).toContain('hasta 50 órdenes');
+  });
+
+  it('does not clear selection during initial query param hydration', async () => {
+    const clearBulkSelectionSpy = vi.spyOn(OrdersOperationsPageComponent.prototype as any, 'clearBulkSelection');
+
+    await configure({
+      queryParams: {
+        quickRange: 'today',
+        customerQuery: 'Cliente Uno',
+        legacyOrderId: '1175479'
+      }
+    });
+
+    expect(clearBulkSelectionSpy).not.toHaveBeenCalled();
+    clearBulkSelectionSpy.mockRestore();
+  });
+
+  it('does not call the bulk endpoint when the confirmation modal is cancelled', async () => {
+    const { fixture, api } = await configure();
+    const order = fixture.componentInstance['ordersPage']()!.items[0];
+
+    fixture.componentInstance['toggleOrderSelection'](order, true);
+    fixture.componentInstance['openBulkCreateModal']();
+    fixture.componentInstance['closeBulkCreateModal']();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['showBulkCreateModal']()).toBe(false);
+    expect(api.createBulkBillingDocument).not.toHaveBeenCalled();
+  });
+
+  it('renders backend incompatibility errors for the bulk flow', async () => {
+    const { fixture } = await configure({
+      createBulkBillingDocument: vi.fn().mockReturnValue(throwError(() =>
+        new HttpErrorResponse({
+          status: 400,
+          error: {
+            outcome: 'ValidationFailed',
+            isSuccess: false,
+            errorMessage: 'One or more selected legacy orders are not compatible for a single billing document.',
+            selectedOrderCount: 2,
+            importedOrderCount: 0,
+            associatedOrderCount: 0,
+            legacyOrderIds: ['LEG-1001', 'LEG-1002'],
+            orderErrors: [
+              {
+                legacyOrderId: 'LEG-1002',
+                errorCode: 'DifferentCustomer',
+                errorMessage: "Legacy order 'LEG-1002' belongs to a different customer than Legacy order 'LEG-1001'."
+              }
+            ]
+          }
+        })))
+    });
+    const order = fixture.componentInstance['ordersPage']()!.items[0];
+
+    fixture.componentInstance['toggleOrderSelection'](order, true);
+    fixture.componentInstance['openBulkCreateModal']();
+    await fixture.componentInstance['confirmBulkCreateBillingDocument']();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Órdenes no compatibles');
+    expect(fixture.nativeElement.textContent).toContain("Legacy order 'LEG-1002' belongs to a different customer");
   });
 
   it('hydrates an explicit quick range from the URL', async () => {
@@ -316,7 +728,7 @@ describe('OrdersOperationsPageComponent', () => {
   it('applies customer filter to the legacy orders search without importing automatically', async () => {
     const { fixture, api } = await configure();
 
-    fixture.componentInstance['customerQuery'].set('Cliente Uno');
+    fixture.componentInstance['setCustomerQuery']('Cliente Uno');
     await fixture.componentInstance['searchCurrentRange']();
 
     expect(api.searchLegacyOrders).toHaveBeenLastCalledWith({
@@ -377,7 +789,7 @@ describe('OrdersOperationsPageComponent', () => {
     const { fixture, api } = await configure();
 
     fixture.componentInstance['setLegacyOrderIdFilter']('117-5479');
-    fixture.componentInstance['customerQuery'].set('Cliente Uno');
+    fixture.componentInstance['setCustomerQuery']('Cliente Uno');
     fixture.componentInstance['setQuickRange']('today');
     fixture.componentInstance['setQuickRange']('');
 
@@ -393,8 +805,8 @@ describe('OrdersOperationsPageComponent', () => {
     const { fixture, api } = await configure();
 
     fixture.componentInstance['setQuickRange']('custom');
-    fixture.componentInstance['fromDate'].set('2026-03-24');
-    fixture.componentInstance['toDate'].set('2026-03-23');
+    fixture.componentInstance['setFromDate']('2026-03-24');
+    fixture.componentInstance['setToDate']('2026-03-23');
     fixture.detectChanges();
 
     await fixture.componentInstance['searchCustomRange']();

@@ -12,6 +12,7 @@ public sealed class UpdateBillingDocumentOrderAssociationService
     private readonly IBillingDocumentItemRemovalRepository _billingDocumentItemRemovalRepository;
     private readonly IBillingDocumentPendingItemAssignmentRepository _billingDocumentPendingItemAssignmentRepository;
     private readonly ILegacyImportRecordRepository _legacyImportRecordRepository;
+    private readonly IOperationalOrderMutationScopeFactory _operationalOrderMutationScopeFactory;
     private readonly IProductFiscalProfileRepository _productFiscalProfileRepository;
     private readonly ISalesOrderSnapshotRepository _salesOrderSnapshotRepository;
     private readonly IUnitOfWork _unitOfWork;
@@ -22,6 +23,7 @@ public sealed class UpdateBillingDocumentOrderAssociationService
         IBillingDocumentItemRemovalRepository billingDocumentItemRemovalRepository,
         IBillingDocumentPendingItemAssignmentRepository billingDocumentPendingItemAssignmentRepository,
         ILegacyImportRecordRepository legacyImportRecordRepository,
+        IOperationalOrderMutationScopeFactory operationalOrderMutationScopeFactory,
         IProductFiscalProfileRepository productFiscalProfileRepository,
         ISalesOrderSnapshotRepository salesOrderSnapshotRepository,
         IUnitOfWork unitOfWork)
@@ -31,28 +33,62 @@ public sealed class UpdateBillingDocumentOrderAssociationService
         _billingDocumentItemRemovalRepository = billingDocumentItemRemovalRepository;
         _billingDocumentPendingItemAssignmentRepository = billingDocumentPendingItemAssignmentRepository;
         _legacyImportRecordRepository = legacyImportRecordRepository;
+        _operationalOrderMutationScopeFactory = operationalOrderMutationScopeFactory;
         _productFiscalProfileRepository = productFiscalProfileRepository;
         _salesOrderSnapshotRepository = salesOrderSnapshotRepository;
         _unitOfWork = unitOfWork;
     }
 
-    public Task<UpdateBillingDocumentOrderAssociationResult> AddAsync(
+    public async Task<UpdateBillingDocumentOrderAssociationResult> AddAsync(
         long billingDocumentId,
         long salesOrderId,
         CancellationToken cancellationToken = default)
     {
-        return ExecuteAsync(billingDocumentId, salesOrderId, remove: false, cancellationToken);
+        return await ExecuteWithMutationScopeAsync(billingDocumentId, salesOrderId, remove: false, cancellationToken);
     }
 
-    public Task<UpdateBillingDocumentOrderAssociationResult> RemoveAsync(
+    public async Task<UpdateBillingDocumentOrderAssociationResult> RemoveAsync(
         long billingDocumentId,
         long salesOrderId,
         CancellationToken cancellationToken = default)
     {
-        return ExecuteAsync(billingDocumentId, salesOrderId, remove: true, cancellationToken);
+        return await ExecuteWithMutationScopeAsync(billingDocumentId, salesOrderId, remove: true, cancellationToken);
     }
 
-    private async Task<UpdateBillingDocumentOrderAssociationResult> ExecuteAsync(
+    internal Task<UpdateBillingDocumentOrderAssociationResult> AddWithinScopeAsync(
+        long billingDocumentId,
+        long salesOrderId,
+        CancellationToken cancellationToken = default)
+    {
+        return ExecuteWithinScopeAsync(billingDocumentId, salesOrderId, remove: false, cancellationToken);
+    }
+
+    internal Task<UpdateBillingDocumentOrderAssociationResult> RemoveWithinScopeAsync(
+        long billingDocumentId,
+        long salesOrderId,
+        CancellationToken cancellationToken = default)
+    {
+        return ExecuteWithinScopeAsync(billingDocumentId, salesOrderId, remove: true, cancellationToken);
+    }
+
+    private async Task<UpdateBillingDocumentOrderAssociationResult> ExecuteWithMutationScopeAsync(
+        long billingDocumentId,
+        long salesOrderId,
+        bool remove,
+        CancellationToken cancellationToken)
+    {
+        var lockKeys = await ResolveMutationLockKeysAsync(billingDocumentId, salesOrderId, cancellationToken);
+        await using var mutationScope = await _operationalOrderMutationScopeFactory.BeginAsync(lockKeys, cancellationToken);
+        var result = await ExecuteWithinScopeAsync(billingDocumentId, salesOrderId, remove, cancellationToken);
+        if (result.IsSuccess)
+        {
+            await mutationScope.CommitAsync(cancellationToken);
+        }
+
+        return result;
+    }
+
+    private async Task<UpdateBillingDocumentOrderAssociationResult> ExecuteWithinScopeAsync(
         long billingDocumentId,
         long salesOrderId,
         bool remove,
@@ -136,8 +172,8 @@ public sealed class UpdateBillingDocumentOrderAssociationService
         else
         {
             if (!string.Equals(
-                    FiscalMasterDataNormalization.NormalizeRequiredCode(targetSalesOrder.CurrencyCode),
                     FiscalMasterDataNormalization.NormalizeRequiredCode(billingDocument.CurrencyCode),
+                    FiscalMasterDataNormalization.NormalizeRequiredCode(targetSalesOrder.CurrencyCode),
                     StringComparison.Ordinal))
             {
                 return ValidationFailure(
@@ -207,7 +243,18 @@ public sealed class UpdateBillingDocumentOrderAssociationService
             ApplyFiscalDocumentComposition(fiscalDocument, billingDocument, nextFiscalItems);
         }
 
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (OperationalOrderConflictException exception)
+        {
+            return Conflict(
+                billingDocument,
+                fiscalDocument,
+                salesOrderId,
+                exception.Message);
+        }
 
         return new UpdateBillingDocumentOrderAssociationResult
         {
@@ -221,6 +268,40 @@ public sealed class UpdateBillingDocumentOrderAssociationService
             AssociatedOrderCount = nextSalesOrders.Count,
             Total = billingDocument.Total
         };
+    }
+
+    private async Task<IReadOnlyCollection<string>> ResolveMutationLockKeysAsync(
+        long billingDocumentId,
+        long salesOrderId,
+        CancellationToken cancellationToken)
+    {
+        var lockKeys = new List<string>
+        {
+            OperationalOrderMutationLockKeys.ForBillingDocument(billingDocumentId)
+        };
+
+        if (salesOrderId <= 0)
+        {
+            return lockKeys;
+        }
+
+        var salesOrder = await _salesOrderSnapshotRepository.GetByIdWithItemsAsync(salesOrderId, cancellationToken);
+        if (salesOrder is null)
+        {
+            return lockKeys;
+        }
+
+        var importRecord = await _legacyImportRecordRepository.GetByIdAsync(salesOrder.LegacyImportRecordId, cancellationToken);
+        var legacyOrderId = string.IsNullOrWhiteSpace(importRecord?.SourceDocumentId)
+            ? salesOrder.LegacyOrderNumber
+            : importRecord.SourceDocumentId;
+
+        if (!string.IsNullOrWhiteSpace(legacyOrderId))
+        {
+            lockKeys.Add(OperationalOrderMutationLockKeys.ForLegacyOrder(legacyOrderId));
+        }
+
+        return lockKeys;
     }
 
     private async Task<IReadOnlyList<SalesOrder>> EnsurePrimaryAssociationAndLoadSalesOrdersAsync(

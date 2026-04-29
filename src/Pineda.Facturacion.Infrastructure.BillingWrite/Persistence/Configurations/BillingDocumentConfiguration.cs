@@ -6,6 +6,8 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Configurati
 
 public class BillingDocumentConfiguration : IEntityTypeConfiguration<BillingDocument>
 {
+    public const string ActiveSalesOrderSingletonIndexName = "ux_billing_document_active_sales_order";
+
     public void Configure(EntityTypeBuilder<BillingDocument> builder)
     {
         builder.ToTable("billing_document");
@@ -103,7 +105,16 @@ public class BillingDocumentConfiguration : IEntityTypeConfiguration<BillingDocu
             .HasColumnName("updated_at_utc")
             .IsRequired();
 
+        builder.Property<long?>("ActiveSalesOrderId")
+            .HasColumnName("active_sales_order_id")
+            .HasColumnType("bigint")
+            .HasComputedColumnSql("CASE WHEN `status` <> 5 THEN `sales_order_id` ELSE NULL END", stored: true);
+
         builder.HasIndex(x => new { x.DocumentType, x.Series, x.Folio })
+            .IsUnique();
+
+        builder.HasIndex("ActiveSalesOrderId")
+            .HasDatabaseName(ActiveSalesOrderSingletonIndexName)
             .IsUnique();
 
         builder.HasOne<SalesOrder>()

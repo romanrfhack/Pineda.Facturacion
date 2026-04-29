@@ -174,6 +174,180 @@ public sealed class MySqlBackedIntegrationTests
     }
 
     [MySqlFact]
+    public async Task CreateBillingDocument_ConcurrentRequests_ForSameSalesOrder_LeavesSingleOperationalDocument()
+    {
+        await _fixture.ResetDatabaseAsync();
+        await using var factory = _fixture.CreateApiFactory();
+        await factory.SeedUserAsync("admin", "Admin123!", isActive: true, AppRoleNames.Admin);
+
+        const string legacyOrderId = "LEG-MYSQL-RACE-IND-1001";
+        factory.LegacyOrderReader.Orders[legacyOrderId] = CreateLegacyOrder(legacyOrderId, "SKU-1", 100m);
+
+        var seedClient = await factory.CreateAuthenticatedClientAsync();
+        var importBody = await (await seedClient.PostAsync($"/api/orders/{legacyOrderId}/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+        Assert.NotNull(importBody);
+
+        var clientA = await factory.CreateAuthenticatedClientAsync();
+        var clientB = await factory.CreateAuthenticatedClientAsync();
+
+        var createTaskA = clientA.PostAsJsonAsync(
+            $"/api/sales-orders/{importBody!.SalesOrderId}/billing-documents",
+            new SalesOrdersEndpoints.CreateBillingDocumentRequest { DocumentType = "I" });
+        var createTaskB = clientB.PostAsJsonAsync(
+            $"/api/sales-orders/{importBody.SalesOrderId}/billing-documents",
+            new SalesOrdersEndpoints.CreateBillingDocumentRequest { DocumentType = "I" });
+
+        var responses = await Task.WhenAll(createTaskA, createTaskB);
+
+        Assert.Contains(responses, response => response.StatusCode == HttpStatusCode.OK);
+        var conflictResponse = Assert.Single(responses, response => response.StatusCode == HttpStatusCode.Conflict);
+        var conflictBody = await conflictResponse.Content.ReadFromJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>();
+        Assert.NotNull(conflictBody);
+        Assert.Contains("billing document", conflictBody!.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+
+        await using var db = _fixture.CreateDbContext();
+        var activeBillingDocuments = await db.BillingDocuments
+            .Where(x => x.SalesOrderId == importBody.SalesOrderId && x.Status != BillingDocumentStatus.Cancelled)
+            .ToListAsync();
+        Assert.Single(activeBillingDocuments);
+
+        var importRecord = await db.LegacyImportRecords.SingleAsync(x => x.SourceDocumentId == legacyOrderId);
+        Assert.Equal(activeBillingDocuments[0].Id, importRecord.BillingDocumentId);
+    }
+
+    [MySqlFact]
+    public async Task CreateBulkBillingDocument_ConcurrentRequests_SharingOrder_DoNotDuplicateOperationalAssociation()
+    {
+        await _fixture.ResetDatabaseAsync();
+        await using var factory = _fixture.CreateApiFactory();
+        await factory.SeedUserAsync("admin", "Admin123!", isActive: true, AppRoleNames.Admin);
+
+        const string sharedLegacyOrderId = "LEG-MYSQL-RACE-BULK-SHARED";
+        factory.LegacyOrderReader.Orders["LEG-MYSQL-RACE-BULK-A"] = CreateLegacyOrder("LEG-MYSQL-RACE-BULK-A", "SKU-1", 100m);
+        factory.LegacyOrderReader.Orders[sharedLegacyOrderId] = CreateLegacyOrder(sharedLegacyOrderId, "SKU-1", 50m);
+        factory.LegacyOrderReader.Orders["LEG-MYSQL-RACE-BULK-B"] = CreateLegacyOrder("LEG-MYSQL-RACE-BULK-B", "SKU-1", 75m);
+
+        var clientA = await factory.CreateAuthenticatedClientAsync();
+        var clientB = await factory.CreateAuthenticatedClientAsync();
+
+        var createTaskA = clientA.PostAsJsonAsync("/api/orders/billing-documents", new OrdersEndpoints.CreateBulkBillingDocumentRequest
+        {
+            DocumentType = "I",
+            SelectionMode = "Explicit",
+            LegacyOrderIds = ["LEG-MYSQL-RACE-BULK-A", sharedLegacyOrderId]
+        });
+        var createTaskB = clientB.PostAsJsonAsync("/api/orders/billing-documents", new OrdersEndpoints.CreateBulkBillingDocumentRequest
+        {
+            DocumentType = "I",
+            SelectionMode = "Explicit",
+            LegacyOrderIds = ["LEG-MYSQL-RACE-BULK-B", sharedLegacyOrderId]
+        });
+
+        var responses = await Task.WhenAll(createTaskA, createTaskB);
+
+        Assert.Contains(responses, response => response.StatusCode == HttpStatusCode.OK);
+        var conflictResponse = Assert.Single(responses, response => response.StatusCode == HttpStatusCode.Conflict);
+        var conflictBody = await conflictResponse.Content.ReadFromJsonAsync<OrdersEndpoints.CreateBulkBillingDocumentResponse>();
+        Assert.NotNull(conflictBody);
+        Assert.Contains(conflictBody!.OrderErrors, error => error.LegacyOrderId == sharedLegacyOrderId);
+
+        await using var db = _fixture.CreateDbContext();
+        var sharedSalesOrderId = await ResolveSalesOrderIdAsync(db, sharedLegacyOrderId);
+        var activeAssociationCount = await CountActiveBillingDocumentsForSalesOrderAsync(db, sharedSalesOrderId);
+        Assert.Equal(1, activeAssociationCount);
+    }
+
+    [MySqlFact]
+    public async Task CreateBillingDocument_AndBulk_ConcurrentRequests_SharingOrder_DoNotDuplicateOperationalAssociation()
+    {
+        await _fixture.ResetDatabaseAsync();
+        await using var factory = _fixture.CreateApiFactory();
+        await factory.SeedUserAsync("admin", "Admin123!", isActive: true, AppRoleNames.Admin);
+
+        const string sharedLegacyOrderId = "LEG-MYSQL-RACE-MIXED-SHARED";
+        const string bulkPrimaryLegacyOrderId = "LEG-MYSQL-RACE-MIXED-PRIMARY";
+        factory.LegacyOrderReader.Orders[sharedLegacyOrderId] = CreateLegacyOrder(sharedLegacyOrderId, "SKU-1", 100m);
+        factory.LegacyOrderReader.Orders[bulkPrimaryLegacyOrderId] = CreateLegacyOrder(bulkPrimaryLegacyOrderId, "SKU-1", 50m);
+
+        var seedClient = await factory.CreateAuthenticatedClientAsync();
+        var importBody = await (await seedClient.PostAsync($"/api/orders/{sharedLegacyOrderId}/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+        Assert.NotNull(importBody);
+
+        var clientA = await factory.CreateAuthenticatedClientAsync();
+        var clientB = await factory.CreateAuthenticatedClientAsync();
+
+        var createTaskA = clientA.PostAsJsonAsync(
+            $"/api/sales-orders/{importBody!.SalesOrderId}/billing-documents",
+            new SalesOrdersEndpoints.CreateBillingDocumentRequest { DocumentType = "I" });
+        var createTaskB = clientB.PostAsJsonAsync("/api/orders/billing-documents", new OrdersEndpoints.CreateBulkBillingDocumentRequest
+        {
+            DocumentType = "I",
+            SelectionMode = "Explicit",
+            LegacyOrderIds = [bulkPrimaryLegacyOrderId, sharedLegacyOrderId]
+        });
+
+        var responses = await Task.WhenAll(createTaskA, createTaskB);
+
+        Assert.Contains(responses, response => response.StatusCode == HttpStatusCode.OK);
+        Assert.Contains(responses, response => response.StatusCode == HttpStatusCode.Conflict);
+
+        await using var db = _fixture.CreateDbContext();
+        var sharedSalesOrderId = await ResolveSalesOrderIdAsync(db, sharedLegacyOrderId);
+        var activeAssociationCount = await CountActiveBillingDocumentsForSalesOrderAsync(db, sharedSalesOrderId);
+        Assert.Equal(1, activeAssociationCount);
+    }
+
+    [MySqlFact]
+    public async Task AddSalesOrderToBillingDocument_AndBulk_ConcurrentRequests_SharingOrder_DoNotDuplicateOperationalAssociation()
+    {
+        await _fixture.ResetDatabaseAsync();
+        await using var factory = _fixture.CreateApiFactory();
+        await factory.SeedUserAsync("admin", "Admin123!", isActive: true, AppRoleNames.Admin);
+
+        const string baseLegacyOrderId = "LEG-MYSQL-RACE-ADD-BASE";
+        const string sharedLegacyOrderId = "LEG-MYSQL-RACE-ADD-SHARED";
+        const string bulkPrimaryLegacyOrderId = "LEG-MYSQL-RACE-ADD-PRIMARY";
+        factory.LegacyOrderReader.Orders[baseLegacyOrderId] = CreateLegacyOrder(baseLegacyOrderId, "SKU-1", 100m);
+        factory.LegacyOrderReader.Orders[sharedLegacyOrderId] = CreateLegacyOrder(sharedLegacyOrderId, "SKU-1", 50m);
+        factory.LegacyOrderReader.Orders[bulkPrimaryLegacyOrderId] = CreateLegacyOrder(bulkPrimaryLegacyOrderId, "SKU-1", 75m);
+
+        var seedClient = await factory.CreateAuthenticatedClientAsync();
+        var importBase = await (await seedClient.PostAsync($"/api/orders/{baseLegacyOrderId}/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+        var importShared = await (await seedClient.PostAsync($"/api/orders/{sharedLegacyOrderId}/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+        var billingBody = await (await seedClient.PostAsJsonAsync(
+            $"/api/sales-orders/{importBase!.SalesOrderId}/billing-documents",
+            new SalesOrdersEndpoints.CreateBillingDocumentRequest { DocumentType = "I" }))
+            .Content.ReadFromJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>();
+        Assert.NotNull(importShared);
+        Assert.NotNull(billingBody);
+
+        var clientA = await factory.CreateAuthenticatedClientAsync();
+        var clientB = await factory.CreateAuthenticatedClientAsync();
+
+        var addTask = clientA.PostAsync($"/api/billing-documents/{billingBody!.BillingDocumentId}/sales-orders/{importShared!.SalesOrderId}", null);
+        var bulkTask = clientB.PostAsJsonAsync("/api/orders/billing-documents", new OrdersEndpoints.CreateBulkBillingDocumentRequest
+        {
+            DocumentType = "I",
+            SelectionMode = "Explicit",
+            LegacyOrderIds = [bulkPrimaryLegacyOrderId, sharedLegacyOrderId]
+        });
+
+        var responses = await Task.WhenAll(addTask, bulkTask);
+
+        Assert.Contains(responses, response => response.StatusCode == HttpStatusCode.OK);
+        Assert.Contains(responses, response => response.StatusCode == HttpStatusCode.Conflict);
+
+        await using var db = _fixture.CreateDbContext();
+        var sharedSalesOrderId = await ResolveSalesOrderIdAsync(db, sharedLegacyOrderId);
+        var activeAssociationCount = await CountActiveBillingDocumentsForSalesOrderAsync(db, sharedSalesOrderId);
+        Assert.Equal(1, activeAssociationCount);
+    }
+
+    [MySqlFact]
     public async Task MySqlApiFactory_Upgrades_PreviousSchema_Before_Seeding_AppUsers()
     {
         await _fixture.ResetDatabaseAsync(MySqlIntegrationTestSupport.PreviousMigrationId);
@@ -561,6 +735,32 @@ public sealed class MySqlBackedIntegrationTests
             LastSeenAtUtc = new DateTime(2026, 4, 10, 0, 0, 0, DateTimeKind.Utc),
             BillingDocumentId = billingDocumentId
         };
+    }
+
+    private static async Task<long> ResolveSalesOrderIdAsync(BillingDbContext db, string legacyOrderId)
+    {
+        var importRecordId = await db.LegacyImportRecords
+            .Where(x => x.SourceDocumentId == legacyOrderId)
+            .Select(x => x.Id)
+            .SingleAsync();
+
+        return await db.SalesOrders
+            .Where(x => x.LegacyImportRecordId == importRecordId)
+            .Select(x => x.Id)
+            .SingleAsync();
+    }
+
+    private static async Task<int> CountActiveBillingDocumentsForSalesOrderAsync(BillingDbContext db, long salesOrderId)
+    {
+        return await db.BillingDocumentItems
+            .Where(item => item.SalesOrderId == salesOrderId)
+            .Join(
+                db.BillingDocuments.Where(document => document.Status != BillingDocumentStatus.Cancelled),
+                item => item.BillingDocumentId,
+                document => document.Id,
+                (item, document) => document.Id)
+            .Distinct()
+            .CountAsync();
     }
 
     private static IssuerProfile CreateIssuerProfileEntity(long id)

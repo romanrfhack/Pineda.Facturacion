@@ -70,4 +70,32 @@ describe('OrdersApiService', () => {
     expect(req.request.method).toBe('GET');
     httpTesting.verify();
   });
+
+  it('posts the bulk billing creation request with explicit ids or filters', () => {
+    const service = TestBed.inject(OrdersApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.createBulkBillingDocument({
+      documentType: 'I',
+      selectionMode: 'Filtered',
+      filters: {
+        fromDate: '2026-03-23',
+        toDate: '2026-03-23',
+        customerQuery: 'Cliente Uno'
+      }
+    }).subscribe();
+
+    const req = httpTesting.expectOne('/api/orders/billing-documents');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({
+      documentType: 'I',
+      selectionMode: 'Filtered',
+      filters: {
+        fromDate: '2026-03-23',
+        toDate: '2026-03-23',
+        customerQuery: 'Cliente Uno'
+      }
+    });
+    httpTesting.verify();
+  });
 });

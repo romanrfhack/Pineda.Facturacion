@@ -5,6 +5,8 @@ import { buildApiUrl } from '../../../core/config/api-url';
 import {
   CreateBillingDocumentRequest,
   CreateBillingDocumentResponse,
+  CreateBulkBillingDocumentRequest,
+  CreateBulkBillingDocumentResponse,
   ImportLegacyOrderPreviewResponse,
   ImportLegacyOrderRevisionHistoryResponse,
   ImportLegacyOrderResponse,
@@ -63,5 +65,9 @@ export class OrdersApiService {
 
   createBillingDocument(salesOrderId: number, request: CreateBillingDocumentRequest): Observable<CreateBillingDocumentResponse> {
     return this.http.post<CreateBillingDocumentResponse>(buildApiUrl(`/sales-orders/${salesOrderId}/billing-documents`), request);
+  }
+
+  createBulkBillingDocument(request: CreateBulkBillingDocumentRequest): Observable<CreateBulkBillingDocumentResponse> {
+    return this.http.post<CreateBulkBillingDocumentResponse>(buildApiUrl('/orders/billing-documents'), request);
   }
 }

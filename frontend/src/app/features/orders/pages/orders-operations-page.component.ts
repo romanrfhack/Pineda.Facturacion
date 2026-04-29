@@ -7,6 +7,9 @@ import { firstValueFrom } from 'rxjs';
 import { OrdersApiService } from '../infrastructure/orders-api.service';
 import {
   CreateBillingDocumentResponse,
+  CreateBulkBillingDocumentFiltersRequest,
+  CreateBulkBillingDocumentOrderError,
+  CreateBulkBillingDocumentResponse,
   ImportLegacyOrderResponse,
   ImportLegacyOrderAllowedAction,
   ImportLegacyOrderPreviewResponse,
@@ -24,6 +27,13 @@ import { adaptImportLegacyOrderPreview, ImportLegacyOrderPreviewViewModel } from
 
 type QuickRange = '' | 'today' | 'yesterday' | 'last7' | 'custom';
 type PresetQuickRange = Exclude<QuickRange, '' | 'custom'>;
+type BulkSelectionMode = 'explicit' | 'filtered';
+
+interface OrdersBulkSelectionSummary {
+  legacyOrderId: string;
+  customerName: string;
+  total: number;
+}
 
 @Component({
   selector: 'app-orders-operations-page',
@@ -61,12 +71,12 @@ type PresetQuickRange = Exclude<QuickRange, '' | 'custom'>;
           @if (quickRange() === 'custom') {
             <label>
               <span>Fecha inicial</span>
-              <input [ngModel]="fromDate()" (ngModelChange)="fromDate.set($event)" name="fromDate" type="date" [max]="today()" />
+              <input [ngModel]="fromDate()" (ngModelChange)="setFromDate($event)" name="fromDate" type="date" [max]="today()" />
             </label>
 
             <label>
               <span>Fecha final</span>
-              <input [ngModel]="toDate()" (ngModelChange)="toDate.set($event)" name="toDate" type="date" [max]="today()" />
+              <input [ngModel]="toDate()" (ngModelChange)="setToDate($event)" name="toDate" type="date" [max]="today()" />
             </label>
 
             <div class="actions align-end">
@@ -80,7 +90,7 @@ type PresetQuickRange = Exclude<QuickRange, '' | 'custom'>;
             <span>Cliente</span>
             <input
               [ngModel]="customerQuery()"
-              (ngModelChange)="customerQuery.set($event)"
+              (ngModelChange)="setCustomerQuery($event)"
               name="customerQuery"
               placeholder="Buscar por cliente"
             />
@@ -114,13 +124,68 @@ type PresetQuickRange = Exclude<QuickRange, '' | 'custom'>;
           <p class="error">{{ ordersError }}</p>
         }
 
+        @if (bulkActionError(); as bulkActionError) {
+          <p class="error">{{ bulkActionError }}</p>
+        }
+
         @if (loadingOrders()) {
           <p class="helper">Cargando órdenes legadas...</p>
         } @else if (ordersPage()?.items?.length) {
+          @if (selectedOrdersCount() > 0) {
+            <section class="bulk-toolbar">
+              <div>
+                <strong>
+                  @if (selectedOrdersCount() === 1) {
+                    1 orden seleccionada
+                  } @else if (bulkSelectionMode() === 'filtered') {
+                    {{ selectedOrdersCount() }} órdenes seleccionadas según los filtros actuales
+                  } @else {
+                    {{ selectedOrdersCount() }} órdenes seleccionadas
+                  }
+                </strong>
+                @if (bulkSelectionMode() === 'explicit' && shouldOfferSelectAllFiltered()) {
+                  <p class="helper">
+                    {{ selectedVisibleOrdersCount() }} órdenes de esta página seleccionadas.
+                    <button
+                      type="button"
+                      class="link-button"
+                      (click)="selectAllFilteredOrders()"
+                      [disabled]="loadingBulkBilling()">
+                      Seleccionar las {{ ordersPage()!.totalCount }} órdenes que coinciden con los filtros actuales
+                    </button>
+                  </p>
+                }
+              </div>
+
+              <div class="actions">
+                <button
+                  type="button"
+                  (click)="openBulkCreateModal()"
+                  [disabled]="loadingBulkBilling() || loadingOrders() || selectedOrdersCount() === 0">
+                  {{ loadingBulkBilling() ? 'Creando...' : 'Crear documento de facturación' }}
+                </button>
+                <button
+                  type="button"
+                  class="secondary"
+                  (click)="clearBulkSelection()"
+                  [disabled]="loadingBulkBilling()">
+                  Limpiar selección
+                </button>
+              </div>
+            </section>
+          }
+
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
+                  <th class="selection-col">
+                    <input
+                      type="checkbox"
+                      [checked]="allVisibleSelected()"
+                      (change)="toggleVisibleSelection($any($event.target).checked)"
+                      [disabled]="loadingBulkBilling() || !eligibleVisibleOrders().length" />
+                  </th>
                   <th>Id orden legacy</th>
                   <th>Fecha</th>
                   <th>Cliente</th>
@@ -131,7 +196,23 @@ type PresetQuickRange = Exclude<QuickRange, '' | 'custom'>;
               </thead>
               <tbody>
                 @for (order of ordersPage()!.items; track order.legacyOrderId) {
-                  <tr [class.selected]="selectedLegacyOrderId() === order.legacyOrderId">
+                  <tr
+                    [class.selected]="selectedLegacyOrderId() === order.legacyOrderId"
+                    [class.bulk-selected]="isOrderSelected(order)">
+                    <td class="selection-col">
+                      @if (getOrderSelectionBlockReason(order); as selectionBlockReason) {
+                        <div class="selection-disabled">
+                          <input type="checkbox" disabled />
+                          <span>{{ selectionBlockReason }}</span>
+                        </div>
+                      } @else {
+                        <input
+                          type="checkbox"
+                          [checked]="isOrderSelected(order)"
+                          (change)="toggleOrderSelection(order, $any($event.target).checked)"
+                          [disabled]="loadingBulkBilling() || bulkSelectionMode() === 'filtered'" />
+                      }
+                    </td>
                     <td>{{ order.legacyOrderId }}</td>
                     <td>{{ order.orderDateUtc | date:'dd/MM/yyyy HH:mm' }}</td>
                     <td>{{ order.customerName }}</td>
@@ -147,14 +228,14 @@ type PresetQuickRange = Exclude<QuickRange, '' | 'custom'>;
                           type="button"
                           class="secondary"
                           (click)="continueOrder(order)"
-                          [disabled]="loadingImportOrderId() === order.legacyOrderId || loadingBilling()">
+                          [disabled]="loadingImportOrderId() === order.legacyOrderId || loadingBilling() || loadingBulkBilling()">
                           Continuar
                         </button>
                       } @else {
                         <button
                           type="button"
                           (click)="importOrderFromList(order)"
-                          [disabled]="loadingImportOrderId() === order.legacyOrderId || loadingBilling()">
+                          [disabled]="loadingImportOrderId() === order.legacyOrderId || loadingBilling() || loadingBulkBilling()">
                           {{ loadingImportOrderId() === order.legacyOrderId ? 'Importando...' : 'Importar orden' }}
                         </button>
                       }
@@ -199,14 +280,14 @@ type PresetQuickRange = Exclude<QuickRange, '' | 'custom'>;
           </label>
 
           <div class="actions align-end">
-            <button type="submit" [disabled]="loadingImportOrderId() !== null || loadingBilling()">
+            <button type="submit" [disabled]="loadingImportOrderId() !== null || loadingBilling() || loadingBulkBilling()">
               {{ loadingImportOrderId() === manualImportKey ? 'Importando...' : 'Importar orden' }}
             </button>
             <button
               type="button"
               class="secondary"
               (click)="createBillingDocument()"
-              [disabled]="!importedOrder() || loadingBilling() || loadingImportOrderId() !== null">
+              [disabled]="!importedOrder() || loadingBilling() || loadingBulkBilling() || loadingImportOrderId() !== null">
               {{ loadingBilling() ? 'Creando...' : billingButtonLabel() }}
             </button>
           </div>
@@ -436,6 +517,113 @@ type PresetQuickRange = Exclude<QuickRange, '' | 'custom'>;
         </section>
       }
 
+      @if (showBulkCreateModal()) {
+        <section class="modal-backdrop" (click)="closeBulkCreateModal()">
+          <section class="modal-card" (click)="$event.stopPropagation()">
+            <header class="modal-header">
+              <div>
+                <p class="eyebrow">Creación masiva</p>
+                <h3>Crear documento de facturación</h3>
+              </div>
+              <button
+                type="button"
+                class="secondary"
+                (click)="closeBulkCreateModal()"
+                [disabled]="loadingBulkBilling()">
+                Cerrar
+              </button>
+            </header>
+
+            <p class="helper">
+              Se creará un documento de facturación con {{ selectedOrdersCount() }}
+              @if (selectedOrdersCount() === 1) {
+                orden seleccionada.
+              } @else {
+                órdenes seleccionadas.
+              }
+              Después podrás eliminar órdenes individualmente desde el documento.
+            </p>
+
+            @if (bulkSelectedCustomerName(); as selectedCustomerName) {
+              <p class="helper"><strong>Cliente:</strong> {{ selectedCustomerName }}</p>
+            }
+
+            @if (bulkSelectedEstimatedTotal(); as selectedEstimatedTotal) {
+              <p class="helper">
+                <strong>Total estimado:</strong> {{ selectedEstimatedTotal | currency:'MXN':'symbol':'1.2-2' }}
+              </p>
+            }
+
+            @if (bulkSelectedSample().length) {
+              <section class="preview-panel">
+                <div class="section-header">
+                  <div>
+                    <p class="eyebrow">Muestra</p>
+                    <h3>Órdenes incluidas</h3>
+                  </div>
+                </div>
+
+                <ul class="selection-sample-list">
+                  @for (order of bulkSelectedSample(); track order.legacyOrderId) {
+                    <li>
+                      <strong>{{ order.legacyOrderId }}</strong>
+                      <span>{{ order.customerName }} · {{ order.total | currency:'MXN':'symbol':'1.2-2' }}</span>
+                    </li>
+                  }
+                </ul>
+
+                @if (bulkSelectionMode() === 'filtered' && selectedOrdersCount() > bulkSelectedSample().length) {
+                  <p class="helper">La muestra corresponde a órdenes visibles con los filtros actuales.</p>
+                }
+              </section>
+            }
+
+            @if (bulkCreateModalError(); as bulkCreateModalError) {
+              <p class="error">{{ bulkCreateModalError }}</p>
+            }
+
+            @if (bulkCreateOrderErrors().length) {
+              <section class="conflict-panel">
+                <div class="section-header">
+                  <div>
+                    <p class="eyebrow">Validación</p>
+                    <h3>Órdenes no compatibles</h3>
+                  </div>
+                </div>
+
+                <ul class="selection-sample-list error-list">
+                  @for (orderError of bulkCreateOrderErrors(); track orderError.legacyOrderId + orderError.errorCode) {
+                    <li>
+                      <strong>{{ orderError.legacyOrderId }}</strong>
+                      @if (orderError.customerName) {
+                        <span>{{ orderError.customerName }}</span>
+                      }
+                      <span>{{ orderError.errorMessage }}</span>
+                    </li>
+                  }
+                </ul>
+              </section>
+            }
+
+            <div class="actions">
+              <button
+                type="button"
+                class="secondary"
+                (click)="closeBulkCreateModal()"
+                [disabled]="loadingBulkBilling()">
+                Cancelar
+              </button>
+              <button
+                type="button"
+                (click)="confirmBulkCreateBillingDocument()"
+                [disabled]="loadingBulkBilling()">
+                {{ loadingBulkBilling() ? 'Creando...' : 'Crear documento' }}
+              </button>
+            </div>
+          </section>
+        </section>
+      }
+
       @if (importedOrder(); as importedOrder) {
         <app-billing-document-card [imported]="importedOrder" [billing]="billingDocument()" />
       }
@@ -452,9 +640,11 @@ type PresetQuickRange = Exclude<QuickRange, '' | 'custom'>;
     input, select, button { font:inherit; }
     input, select { border:1px solid #c9d1da; border-radius:0.8rem; padding:0.75rem 0.9rem; }
     .actions { display:flex; gap:0.75rem; flex-wrap:wrap; }
+    .bulk-toolbar { border:1px solid #d8c49b; border-radius:0.9rem; background:#faf6ee; padding:1rem; display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; flex-wrap:wrap; }
     .align-end { align-items:end; }
     button { border:none; border-radius:0.8rem; padding:0.75rem 1rem; background:#182533; color:#fff; cursor:pointer; }
     button.secondary { background:#d8c49b; color:#182533; }
+    .link-button { border:none; background:none; padding:0; color:#8a6a32; text-decoration:underline; cursor:pointer; font:inherit; }
     button:disabled { opacity:0.6; cursor:wait; }
     .error { color:#7a2020; margin:0; }
     .helper { color:#5f6b76; margin:0; }
@@ -463,6 +653,10 @@ type PresetQuickRange = Exclude<QuickRange, '' | 'custom'>;
     th, td { padding:0.85rem 0.9rem; border-bottom:1px solid #f1ece1; text-align:left; vertical-align:middle; }
     th { font-size:0.85rem; color:#5f6b76; background:#faf6ee; }
     tr.selected { background:#f7f1e3; }
+    tr.bulk-selected { background:#fffaf0; }
+    .selection-col { width:84px; }
+    .selection-disabled { display:grid; gap:0.25rem; font-size:0.78rem; color:#7a2020; }
+    .selection-disabled input { width:auto; margin:0; }
     .pager { display:flex; justify-content:space-between; gap:1rem; align-items:center; flex-wrap:wrap; }
     .conflict-panel { border:1px solid #e6c981; border-radius:0.9rem; background:#fff8ea; padding:1rem; display:grid; gap:1rem; }
     .conflict-grid { margin:0; display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:0.75rem; }
@@ -472,6 +666,15 @@ type PresetQuickRange = Exclude<QuickRange, '' | 'custom'>;
     .preview-panel { border:1px solid #d8d1c2; border-radius:0.9rem; background:#fff; padding:1rem; display:grid; gap:1rem; }
     .preview-lines { display:grid; gap:0.75rem; }
     .preview-line-card { border:1px solid #eadfcb; border-radius:0.8rem; padding:0.9rem; background:#faf7f0; display:grid; gap:0.75rem; }
+    .selection-sample-list { margin:0; padding-left:1.2rem; display:grid; gap:0.5rem; }
+    .selection-sample-list li { display:grid; gap:0.15rem; }
+    .error-list li { color:#7a2020; }
+    .modal-backdrop { position:fixed; inset:0; background:rgba(24, 37, 51, 0.52); display:grid; place-items:center; padding:1rem; z-index:60; }
+    .modal-card { width:min(720px, 100%); max-height:calc(100vh - 2rem); overflow:auto; border:1px solid #d8d1c2; border-radius:1rem; background:#fff; padding:1rem; display:grid; gap:1rem; box-shadow:0 24px 60px rgba(24, 37, 51, 0.24); }
+    .modal-header { display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; }
+    @media (max-width: 720px) {
+      .bulk-toolbar, .pager, .modal-header { flex-direction:column; align-items:stretch; }
+    }
   `],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -482,6 +685,7 @@ export class OrdersOperationsPageComponent implements OnInit {
   private readonly feedbackService = inject(FeedbackService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private hydratingFilters = false;
 
   protected legacyOrderId = '';
   protected documentType = 'I';
@@ -494,11 +698,14 @@ export class OrdersOperationsPageComponent implements OnInit {
   protected readonly loadingOrders = signal(false);
   protected readonly loadingImportOrderId = signal<string | null>(null);
   protected readonly loadingBilling = signal(false);
+  protected readonly loadingBulkBilling = signal(false);
   protected readonly loadingPreview = signal(false);
   protected readonly loadingReimport = signal(false);
   protected readonly loadingRevisions = signal(false);
   protected readonly ordersError = signal<string | null>(null);
   protected readonly localError = signal<string | null>(null);
+  protected readonly bulkActionError = signal<string | null>(null);
+  protected readonly bulkCreateModalError = signal<string | null>(null);
   protected readonly previewError = signal<string | null>(null);
   protected readonly revisionsError = signal<string | null>(null);
   protected readonly ordersPage = signal<SearchLegacyOrdersResponse | null>(null);
@@ -508,8 +715,68 @@ export class OrdersOperationsPageComponent implements OnInit {
   protected readonly revisionHistory = signal<ImportLegacyOrderRevisionHistoryResponse | null>(null);
   protected readonly billingDocument = signal<CreateBillingDocumentResponse | null>(null);
   protected readonly selectedLegacyOrderId = signal<string | null>(null);
+  protected readonly selectedLegacyOrderIds = signal<string[]>([]);
+  protected readonly selectedOrderSummaries = signal<Record<string, OrdersBulkSelectionSummary>>({});
+  protected readonly bulkSelectionMode = signal<BulkSelectionMode>('explicit');
+  protected readonly bulkSelectionFilters = signal<CreateBulkBillingDocumentFiltersRequest | null>(null);
+  protected readonly showBulkCreateModal = signal(false);
+  protected readonly bulkCreateOrderErrors = signal<CreateBulkBillingDocumentOrderError[]>([]);
   protected readonly billingButtonLabel = computed(() =>
     this.billingDocument()?.billingDocumentId ? 'Abrir documento de facturación' : 'Crear documento de facturación');
+  protected readonly eligibleVisibleOrders = computed(() =>
+    this.ordersPage()?.items.filter((order) => this.getOrderSelectionBlockReason(order) === null) ?? []);
+  protected readonly selectedOrdersCount = computed(() =>
+    this.bulkSelectionMode() === 'filtered'
+      ? this.ordersPage()?.totalCount ?? 0
+      : this.selectedLegacyOrderIds().length);
+  protected readonly selectedVisibleOrdersCount = computed(() =>
+    this.eligibleVisibleOrders().filter((order) => this.isOrderSelected(order)).length);
+  protected readonly bulkSelectedSample = computed(() => {
+    if (this.bulkSelectionMode() === 'filtered') {
+      return this.eligibleVisibleOrders()
+        .map((order) => ({
+          legacyOrderId: order.legacyOrderId,
+          customerName: order.customerName,
+          total: order.total
+        }))
+        .slice(0, 5);
+    }
+
+    const summaries = this.selectedOrderSummaries();
+    return this.selectedLegacyOrderIds()
+      .map((legacyOrderId) => summaries[legacyOrderId])
+      .filter((summary): summary is OrdersBulkSelectionSummary => !!summary)
+      .slice(0, 5);
+  });
+  protected readonly bulkSelectedCustomerName = computed(() => {
+    if (this.bulkSelectionMode() !== 'explicit') {
+      return null;
+    }
+
+    const summaries = this.selectedLegacyOrderIds()
+      .map((legacyOrderId) => this.selectedOrderSummaries()[legacyOrderId])
+      .filter((summary): summary is OrdersBulkSelectionSummary => !!summary);
+    if (summaries.length === 0 || summaries.length !== this.selectedLegacyOrderIds().length) {
+      return null;
+    }
+
+    const uniqueCustomers = Array.from(new Set(summaries.map((summary) => summary.customerName.trim())));
+    return uniqueCustomers.length === 1 ? uniqueCustomers[0] : null;
+  });
+  protected readonly bulkSelectedEstimatedTotal = computed(() => {
+    if (this.bulkSelectionMode() !== 'explicit') {
+      return null;
+    }
+
+    const summaries = this.selectedLegacyOrderIds()
+      .map((legacyOrderId) => this.selectedOrderSummaries()[legacyOrderId])
+      .filter((summary): summary is OrdersBulkSelectionSummary => !!summary);
+    if (summaries.length === 0 || summaries.length !== this.selectedLegacyOrderIds().length) {
+      return null;
+    }
+
+    return summaries.reduce((total, summary) => total + summary.total, 0);
+  });
   protected readonly customRangeError = computed(() => {
     if (this.quickRange() !== 'custom') {
       return null;
@@ -529,7 +796,188 @@ export class OrdersOperationsPageComponent implements OnInit {
     void this.searchOrders(1);
   }
 
+  protected shouldOfferSelectAllFiltered(): boolean {
+    if (this.bulkSelectionMode() !== 'explicit' || !this.allVisibleSelected()) {
+      return false;
+    }
+
+    const totalCount = this.ordersPage()?.totalCount ?? 0;
+    return totalCount > (this.ordersPage()?.items.length ?? 0);
+  }
+
+  protected allVisibleSelected(): boolean {
+    const eligibleVisible = this.eligibleVisibleOrders();
+    return eligibleVisible.length > 0 && eligibleVisible.every((order) => this.isOrderSelected(order));
+  }
+
+  protected isOrderSelected(order: LegacyOrderListItem): boolean {
+    if (this.getOrderSelectionBlockReason(order)) {
+      return false;
+    }
+
+    return this.bulkSelectionMode() === 'filtered'
+      || this.selectedLegacyOrderIds().includes(order.legacyOrderId);
+  }
+
+  protected toggleOrderSelection(order: LegacyOrderListItem, checked: boolean): void {
+    if (this.getOrderSelectionBlockReason(order) || this.bulkSelectionMode() === 'filtered') {
+      return;
+    }
+
+    this.bulkActionError.set(null);
+    this.bulkCreateModalError.set(null);
+    this.bulkCreateOrderErrors.set([]);
+
+    if (checked) {
+      this.selectedLegacyOrderIds.set([...new Set([...this.selectedLegacyOrderIds(), order.legacyOrderId])]);
+      this.rememberSelectedOrderSummaries([order]);
+      return;
+    }
+
+    this.selectedLegacyOrderIds.set(this.selectedLegacyOrderIds().filter((legacyOrderId) => legacyOrderId !== order.legacyOrderId));
+
+    const nextSummaries = { ...this.selectedOrderSummaries() };
+    delete nextSummaries[order.legacyOrderId];
+    this.selectedOrderSummaries.set(nextSummaries);
+  }
+
+  protected toggleVisibleSelection(checked: boolean): void {
+    this.bulkActionError.set(null);
+    this.bulkCreateModalError.set(null);
+    this.bulkCreateOrderErrors.set([]);
+
+    if (this.bulkSelectionMode() === 'filtered') {
+      if (!checked) {
+        this.clearBulkSelection();
+      }
+      return;
+    }
+
+    const eligibleVisible = this.eligibleVisibleOrders();
+    if (checked) {
+      this.selectedLegacyOrderIds.set([
+        ...new Set([
+          ...this.selectedLegacyOrderIds(),
+          ...eligibleVisible.map((order) => order.legacyOrderId)
+        ])
+      ]);
+      this.rememberSelectedOrderSummaries(eligibleVisible);
+      return;
+    }
+
+    const visibleIds = new Set(eligibleVisible.map((order) => order.legacyOrderId));
+    this.selectedLegacyOrderIds.set(this.selectedLegacyOrderIds().filter((legacyOrderId) => !visibleIds.has(legacyOrderId)));
+
+    const nextSummaries = { ...this.selectedOrderSummaries() };
+    for (const legacyOrderId of visibleIds) {
+      delete nextSummaries[legacyOrderId];
+    }
+    this.selectedOrderSummaries.set(nextSummaries);
+  }
+
+  protected selectAllFilteredOrders(): void {
+    if (!this.hasEffectiveCurrentFilters()) {
+      this.bulkActionError.set('Aplica al menos un filtro antes de seleccionar todas las órdenes filtradas.');
+      return;
+    }
+
+    const totalCount = this.ordersPage()?.totalCount ?? 0;
+    if (totalCount > MAX_BULK_BILLING_ORDERS) {
+      this.bulkActionError.set(`Puedes seleccionar hasta ${MAX_BULK_BILLING_ORDERS} órdenes a la vez. Los filtros actuales coinciden con ${totalCount}.`);
+      return;
+    }
+
+    const filters = this.buildCurrentBulkFilters();
+    if (!filters) {
+      this.bulkActionError.set('Los filtros actuales no son válidos para una selección masiva.');
+      return;
+    }
+
+    this.bulkActionError.set(null);
+    this.bulkCreateModalError.set(null);
+    this.bulkCreateOrderErrors.set([]);
+    this.bulkSelectionMode.set('filtered');
+    this.bulkSelectionFilters.set(filters);
+    this.selectedLegacyOrderIds.set([]);
+    this.rememberSelectedOrderSummaries(this.eligibleVisibleOrders());
+  }
+
+  protected clearBulkSelection(): void {
+    this.selectedLegacyOrderIds.set([]);
+    this.selectedOrderSummaries.set({});
+    this.bulkSelectionMode.set('explicit');
+    this.bulkSelectionFilters.set(null);
+    this.showBulkCreateModal.set(false);
+    this.bulkActionError.set(null);
+    this.bulkCreateModalError.set(null);
+    this.bulkCreateOrderErrors.set([]);
+  }
+
+  protected openBulkCreateModal(): void {
+    if (this.selectedOrdersCount() === 0) {
+      return;
+    }
+
+    if (this.bulkSelectionMode() === 'explicit' && this.selectedLegacyOrderIds().length > MAX_BULK_BILLING_ORDERS) {
+      this.bulkActionError.set(`Puedes seleccionar hasta ${MAX_BULK_BILLING_ORDERS} órdenes a la vez.`);
+      return;
+    }
+
+    this.bulkActionError.set(null);
+    this.bulkCreateModalError.set(null);
+    this.bulkCreateOrderErrors.set([]);
+    this.showBulkCreateModal.set(true);
+  }
+
+  protected closeBulkCreateModal(): void {
+    if (this.loadingBulkBilling()) {
+      return;
+    }
+
+    this.showBulkCreateModal.set(false);
+  }
+
+  protected async confirmBulkCreateBillingDocument(): Promise<void> {
+    if (!this.showBulkCreateModal()) {
+      return;
+    }
+
+    const request = this.buildBulkCreateRequest();
+    if (!request) {
+      this.bulkCreateModalError.set('No hay una selección válida para crear el documento.');
+      return;
+    }
+
+    this.loadingBulkBilling.set(true);
+    this.bulkCreateModalError.set(null);
+    this.bulkCreateOrderErrors.set([]);
+
+    try {
+      const response = await firstValueFrom(this.ordersApi.createBulkBillingDocument(request));
+      this.feedbackService.show(
+        'success',
+        response.associatedOrderCount === 1
+          ? 'Documento de facturación creado con 1 orden.'
+          : `Documento de facturación creado con ${response.associatedOrderCount} órdenes.`);
+      this.showBulkCreateModal.set(false);
+      this.clearBulkSelection();
+      await this.openBillingDocument(response.billingDocumentId);
+    } catch (error) {
+      const bulkResponse = extractBulkBillingDocumentResponse(error);
+      if (bulkResponse) {
+        this.bulkCreateModalError.set(bulkResponse.errorMessage ?? 'No fue posible crear el documento de facturación con la selección actual.');
+        this.bulkCreateOrderErrors.set(bulkResponse.orderErrors ?? []);
+      } else {
+        this.bulkCreateModalError.set(extractErrorMessage(error));
+        this.bulkCreateOrderErrors.set([]);
+      }
+    } finally {
+      this.loadingBulkBilling.set(false);
+    }
+  }
+
   protected setQuickRange(range: QuickRange): void {
+    this.clearBulkSelection();
     this.quickRange.set(range);
     this.ordersError.set(null);
 
@@ -553,15 +1001,50 @@ export class OrdersOperationsPageComponent implements OnInit {
       return;
     }
 
+    this.clearBulkSelection();
     await this.searchOrders(1);
   }
 
   protected async searchCurrentRange(): Promise<void> {
+    this.clearBulkSelection();
     await this.searchOrders(1);
   }
 
+  protected setFromDate(value: string): void {
+    if (this.fromDate() === value) {
+      return;
+    }
+
+    this.clearBulkSelectionForFilterChange();
+    this.fromDate.set(value);
+  }
+
+  protected setToDate(value: string): void {
+    if (this.toDate() === value) {
+      return;
+    }
+
+    this.clearBulkSelectionForFilterChange();
+    this.toDate.set(value);
+  }
+
+  protected setCustomerQuery(value: string): void {
+    if (this.customerQuery() === value) {
+      return;
+    }
+
+    this.clearBulkSelectionForFilterChange();
+    this.customerQuery.set(value);
+  }
+
   protected setLegacyOrderIdFilter(value: string | number | null): void {
-    this.legacyOrderIdFilter.set(normalizeLegacyOrderIdFilter(value));
+    const normalized = normalizeLegacyOrderIdFilter(value);
+    if (this.legacyOrderIdFilter() === normalized) {
+      return;
+    }
+
+    this.clearBulkSelectionForFilterChange();
+    this.legacyOrderIdFilter.set(normalized);
   }
 
   protected async changePage(delta: number): Promise<void> {
@@ -683,6 +1166,7 @@ export class OrdersOperationsPageComponent implements OnInit {
         pageSize: 10
       }));
       this.ordersPage.set(response);
+      this.rememberSelectedOrderSummaries(response.items);
     } catch (error) {
       this.ordersError.set(extractErrorMessage(error));
     } finally {
@@ -894,35 +1378,159 @@ export class OrdersOperationsPageComponent implements OnInit {
       return;
     }
 
+    let updatedSummary: OrdersBulkSelectionSummary | null = null;
     this.ordersPage.set({
       ...currentPage,
-      items: currentPage.items.map((order) => order.legacyOrderId === legacyOrderId ? updater(order) : order)
+      items: currentPage.items.map((order) => {
+        if (order.legacyOrderId !== legacyOrderId) {
+          return order;
+        }
+
+        const updated = updater(order);
+        updatedSummary = {
+          legacyOrderId: updated.legacyOrderId,
+          customerName: updated.customerName,
+          total: updated.total
+        };
+        return updated;
+      })
     });
+
+    if (!updatedSummary) {
+      return;
+    }
+
+    if (this.bulkSelectionMode() === 'filtered' || this.selectedLegacyOrderIds().includes(legacyOrderId)) {
+      this.selectedOrderSummaries.set({
+        ...this.selectedOrderSummaries(),
+        [legacyOrderId]: updatedSummary
+      });
+    }
   }
 
   private hydrateFiltersFromQueryParams(params: ParamMap): void {
+    this.hydratingFilters = true;
     const quickRange = normalizeQuickRangeParam(params.get('quickRange'));
     const fromDate = normalizeDateInput(params.get('fromDate'));
     const toDate = normalizeDateInput(params.get('toDate'));
 
-    this.setLegacyOrderIdFilter(params.get('legacyOrderId'));
-    this.customerQuery.set(params.get('customerQuery')?.trim() ?? '');
+    try {
+      this.setLegacyOrderIdFilter(params.get('legacyOrderId'));
+      this.setCustomerQuery(params.get('customerQuery')?.trim() ?? '');
 
-    if (quickRange === 'custom' || (!quickRange && (fromDate || toDate))) {
-      this.quickRange.set('custom');
-      this.fromDate.set(fromDate);
-      this.toDate.set(toDate);
+      if (quickRange === 'custom' || (!quickRange && (fromDate || toDate))) {
+        this.quickRange.set('custom');
+        this.fromDate.set(fromDate);
+        this.toDate.set(toDate);
+        return;
+      }
+
+      if (quickRange) {
+        this.quickRange.set(quickRange);
+        this.applyQuickRange(quickRange);
+        return;
+      }
+
+      this.quickRange.set('');
+      this.clearDateRange();
+    } finally {
+      this.hydratingFilters = false;
+    }
+  }
+
+  protected getOrderSelectionBlockReason(order: LegacyOrderListItem): string | null {
+    if (order.billingDocumentId) {
+      return `Ya asociada al documento #${order.billingDocumentId}.`;
+    }
+
+    return null;
+  }
+
+  private hasEffectiveCurrentFilters(): boolean {
+    const filters = this.buildCurrentBulkFilters();
+    return !!filters && (
+      !!filters.fromDate
+      || !!filters.toDate
+      || !!filters.legacyOrderId
+      || !!filters.customerQuery
+    );
+  }
+
+  private buildCurrentBulkFilters(): CreateBulkBillingDocumentFiltersRequest | null {
+    const range = resolveRange(this.quickRange(), this.fromDate(), this.toDate(), this.today());
+    if (!range) {
+      return null;
+    }
+
+    return {
+      ...(range.fromDate ? { fromDate: range.fromDate } : {}),
+      ...(range.toDate ? { toDate: range.toDate } : {}),
+      ...(this.legacyOrderIdFilter() ? { legacyOrderId: this.legacyOrderIdFilter() } : {}),
+      ...(this.customerQuery().trim() ? { customerQuery: this.customerQuery().trim() } : {})
+    };
+  }
+
+  private buildBulkCreateRequest(): {
+    documentType: string;
+    selectionMode: 'Explicit' | 'Filtered';
+    legacyOrderIds?: string[];
+    filters?: CreateBulkBillingDocumentFiltersRequest;
+  } | null {
+    if (this.bulkSelectionMode() === 'filtered') {
+      const filters = this.bulkSelectionFilters() ?? this.buildCurrentBulkFilters();
+      if (!filters) {
+        return null;
+      }
+
+      return {
+        documentType: this.documentType,
+        selectionMode: 'Filtered',
+        filters
+      };
+    }
+
+    const legacyOrderIds = this.selectedLegacyOrderIds();
+    if (legacyOrderIds.length === 0) {
+      return null;
+    }
+
+    if (legacyOrderIds.length > MAX_BULK_BILLING_ORDERS) {
+      this.bulkCreateModalError.set(`Puedes seleccionar hasta ${MAX_BULK_BILLING_ORDERS} órdenes a la vez.`);
+      return null;
+    }
+
+    return {
+      documentType: this.documentType,
+      selectionMode: 'Explicit',
+      legacyOrderIds
+    };
+  }
+
+  private rememberSelectedOrderSummaries(orders: LegacyOrderListItem[]): void {
+    if (this.bulkSelectionMode() !== 'filtered' && this.selectedLegacyOrderIds().length === 0) {
       return;
     }
 
-    if (quickRange) {
-      this.quickRange.set(quickRange);
-      this.applyQuickRange(quickRange);
+    const nextSummaries = { ...this.selectedOrderSummaries() };
+    for (const order of orders) {
+      if (this.bulkSelectionMode() === 'filtered' || this.selectedLegacyOrderIds().includes(order.legacyOrderId)) {
+        nextSummaries[order.legacyOrderId] = {
+          legacyOrderId: order.legacyOrderId,
+          customerName: order.customerName,
+          total: order.total
+        };
+      }
+    }
+
+    this.selectedOrderSummaries.set(nextSummaries);
+  }
+
+  private clearBulkSelectionForFilterChange(): void {
+    if (this.hydratingFilters) {
       return;
     }
 
-    this.quickRange.set('');
-    this.clearDateRange();
+    this.clearBulkSelection();
   }
 
   private applyQuickRange(range: PresetQuickRange): void {
@@ -979,6 +1587,29 @@ function extractBillingDocumentResponse(error: unknown): CreateBillingDocumentRe
         salesOrderId: payload.salesOrderId ?? 0,
         billingDocumentId: payload.billingDocumentId,
         billingDocumentStatus: payload.billingDocumentStatus ?? null
+      }
+    : null;
+}
+
+function extractBulkBillingDocumentResponse(error: unknown): CreateBulkBillingDocumentResponse | null {
+  if (!(error instanceof HttpErrorResponse) || typeof error.error !== 'object' || !error.error) {
+    return null;
+  }
+
+  const payload = error.error as Partial<CreateBulkBillingDocumentResponse>;
+  return typeof payload.outcome === 'string'
+    ? {
+        outcome: payload.outcome,
+        isSuccess: !!payload.isSuccess,
+        errorCode: payload.errorCode ?? null,
+        errorMessage: payload.errorMessage ?? null,
+        billingDocumentId: payload.billingDocumentId ?? null,
+        billingDocumentStatus: payload.billingDocumentStatus ?? null,
+        selectedOrderCount: payload.selectedOrderCount ?? 0,
+        importedOrderCount: payload.importedOrderCount ?? 0,
+        associatedOrderCount: payload.associatedOrderCount ?? 0,
+        legacyOrderIds: payload.legacyOrderIds ?? [],
+        orderErrors: payload.orderErrors ?? []
       }
     : null;
 }
@@ -1047,6 +1678,8 @@ function resolveRange(
 function normalizeLegacyOrderIdFilter(value: string | number | null | undefined): string {
   return String(value ?? '').replace(/\D+/g, '');
 }
+
+const MAX_BULK_BILLING_ORDERS = 50;
 
 function toImportedOrder(order: LegacyOrderListItem): ImportLegacyOrderResponse {
   return {
