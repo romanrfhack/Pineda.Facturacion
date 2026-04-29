@@ -41,6 +41,45 @@ public class LegacyOrderReaderTests
     }
 
     [Fact]
+    public void LegacySchemaResolver_Resolves_Table_Name_When_Exact_Lowercase_Exists()
+    {
+        var resolved = LegacySchemaResolver.SelectResolvedTableName(
+            "legacydb",
+            "pedidos",
+            ["pedidos"],
+            ["pedidos", "clientes"]);
+
+        Assert.Equal("pedidos", resolved);
+    }
+
+    [Fact]
+    public void LegacySchemaResolver_Resolves_Table_Name_From_Available_Tables_When_Query_Matches_Are_Empty()
+    {
+        var resolved = LegacySchemaResolver.SelectResolvedTableName(
+            "legacydb",
+            "pedidos",
+            [],
+            ["Pedidos", "Clientes"]);
+
+        Assert.Equal("Pedidos", resolved);
+    }
+
+    [Fact]
+    public void LegacySchemaResolver_Table_Error_Includes_Diagnostics_When_Table_Is_Missing()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() => LegacySchemaResolver.SelectResolvedTableName(
+            "legacydb",
+            "pedidos",
+            [],
+            ["AccesoUsuarios", "Clientes"]));
+
+        Assert.Contains("schema 'legacydb'", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Logical table 'pedidos'", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("'AccesoUsuarios'", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("'Clientes'", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildDetailSql_Uses_Resolved_Table_Names_And_Effective_Price()
     {
         var schema = CreateResolvedSchema(
