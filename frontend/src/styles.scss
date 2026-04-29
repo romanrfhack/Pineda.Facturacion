@@ -1,3 +1,5 @@
+@use './app/features/accounts-receivable/pages/accounts-receivable-workspace';
+
 * {
   box-sizing: border-box;
 }
@@ -6,10 +8,7 @@ html,
 body {
   margin: 0;
   min-height: 100%;
-  font-family:
-    "IBM Plex Sans",
-    "Segoe UI",
-    sans-serif;
+  font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
   background: #f7f4ed;
   color: #1f1f1f;
 }
