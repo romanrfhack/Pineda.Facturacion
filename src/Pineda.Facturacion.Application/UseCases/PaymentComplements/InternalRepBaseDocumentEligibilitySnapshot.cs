@@ -18,6 +18,8 @@ public sealed class InternalRepBaseDocumentEligibilitySnapshot
 
     public string? AccountsReceivableStatus { get; init; }
 
+    public decimal? AccountsReceivableTotal { get; init; }
+
     public decimal Total { get; init; }
 
     public decimal PaidTotal { get; init; }

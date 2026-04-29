@@ -36,6 +36,8 @@ public sealed class InternalRepBaseDocumentSummaryReadModel
 
     public string CurrencyCode { get; init; } = string.Empty;
 
+    public decimal? AccountsReceivableTotal { get; init; }
+
     public decimal Total { get; init; }
 
     public decimal PaidTotal { get; init; }
