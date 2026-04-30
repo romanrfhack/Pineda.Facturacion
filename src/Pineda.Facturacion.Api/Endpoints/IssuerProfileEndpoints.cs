@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Pineda.Facturacion.Api.Security;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Abstractions.Security;
+using Pineda.Facturacion.Application.Abstractions.Storage;
 using Pineda.Facturacion.Application.Security;
 using Pineda.Facturacion.Application.UseCases.IssuerProfiles;
 using Pineda.Facturacion.Domain.Entities;
@@ -70,6 +71,7 @@ public static class IssuerProfileEndpoints
     private static async Task<Results<Ok<IssuerProfileResponse>, NotFound>> GetActiveIssuerProfileAsync(
         GetActiveIssuerProfileService service,
         IFiscalDocumentRepository fiscalDocumentRepository,
+        IIssuerProfileLogoStorage logoStorage,
         CancellationToken cancellationToken)
     {
         var result = await service.ExecuteAsync(cancellationToken);
@@ -80,8 +82,9 @@ public static class IssuerProfileEndpoints
 
         var normalizedSeries = result.IssuerProfile.FiscalSeries?.Trim() ?? string.Empty;
         var lastUsedFiscalFolio = await fiscalDocumentRepository.GetLastUsedFolioAsync(result.IssuerProfile.Rfc, normalizedSeries, cancellationToken);
+        var hasLogo = await HasAvailableLogoAsync(result.IssuerProfile, logoStorage, cancellationToken);
 
-        return TypedResults.Ok(MapIssuerProfile(result.IssuerProfile, lastUsedFiscalFolio));
+        return TypedResults.Ok(MapIssuerProfile(result.IssuerProfile, lastUsedFiscalFolio, hasLogo));
     }
 
     private static async Task<Results<Ok<MutationResponse>, BadRequest<MutationResponse>, Conflict<MutationResponse>>> CreateIssuerProfileAsync(
@@ -318,7 +321,26 @@ public static class IssuerProfileEndpoints
         };
     }
 
-    private static IssuerProfileResponse MapIssuerProfile(IssuerProfile issuerProfile, int? lastUsedFiscalFolio)
+    private static async Task<bool> HasAvailableLogoAsync(
+        IssuerProfile issuerProfile,
+        IIssuerProfileLogoStorage logoStorage,
+        CancellationToken cancellationToken)
+    {
+        if (issuerProfile.LogoData is { Length: > 0 })
+        {
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(issuerProfile.LogoStoragePath))
+        {
+            return false;
+        }
+
+        var legacyLogo = await logoStorage.ReadAsync(issuerProfile.LogoStoragePath, cancellationToken);
+        return legacyLogo is { Content.Length: > 0 };
+    }
+
+    private static IssuerProfileResponse MapIssuerProfile(IssuerProfile issuerProfile, int? lastUsedFiscalFolio, bool hasLogo)
     {
         return new IssuerProfileResponse
         {
@@ -331,7 +353,7 @@ public static class IssuerProfileEndpoints
             HasCertificateReference = !string.IsNullOrWhiteSpace(issuerProfile.CertificateReference),
             HasPrivateKeyReference = !string.IsNullOrWhiteSpace(issuerProfile.PrivateKeyReference),
             HasPrivateKeyPasswordReference = !string.IsNullOrWhiteSpace(issuerProfile.PrivateKeyPasswordReference),
-            HasLogo = !string.IsNullOrWhiteSpace(issuerProfile.LogoStoragePath),
+            HasLogo = hasLogo,
             LogoFileName = issuerProfile.LogoFileName,
             LogoUpdatedAtUtc = issuerProfile.LogoUpdatedAtUtc,
             PacEnvironment = issuerProfile.PacEnvironment,

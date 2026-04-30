@@ -28,6 +28,10 @@ public class IssuerProfile
 
     public string? LogoStoragePath { get; set; }
 
+    public byte[]? LogoData { get; set; }
+
+    public int? LogoSizeBytes { get; set; }
+
     public string? LogoFileName { get; set; }
 
     public string? LogoContentType { get; set; }

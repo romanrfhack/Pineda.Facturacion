@@ -52,7 +52,17 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
         try
         {
             var issuerProfile = await _issuerProfileRepository.GetByIdAsync(issuerProfileId, cancellationToken);
-            if (issuerProfile is null || string.IsNullOrWhiteSpace(issuerProfile.LogoStoragePath))
+            if (issuerProfile is null)
+            {
+                return null;
+            }
+
+            if (issuerProfile.LogoData is { Length: > 0 })
+            {
+                return PdfImageAsset.TryCreate(issuerProfile.LogoData, issuerProfile.LogoContentType ?? "application/octet-stream");
+            }
+
+            if (string.IsNullOrWhiteSpace(issuerProfile.LogoStoragePath))
             {
                 return null;
             }

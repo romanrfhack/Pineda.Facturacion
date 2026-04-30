@@ -24,7 +24,24 @@ public sealed class GetIssuerProfileLogoService
         }
 
         var issuerProfile = await _issuerProfileRepository.GetByIdAsync(issuerProfileId, cancellationToken);
-        if (issuerProfile is null || string.IsNullOrWhiteSpace(issuerProfile.LogoStoragePath))
+        if (issuerProfile is null)
+        {
+            return NotFound();
+        }
+
+        if (issuerProfile.LogoData is { Length: > 0 })
+        {
+            return new GetIssuerProfileLogoResult
+            {
+                Outcome = GetIssuerProfileLogoOutcome.Found,
+                IsSuccess = true,
+                FileName = string.IsNullOrWhiteSpace(issuerProfile.LogoFileName) ? "logo" : issuerProfile.LogoFileName,
+                ContentType = string.IsNullOrWhiteSpace(issuerProfile.LogoContentType) ? "application/octet-stream" : issuerProfile.LogoContentType,
+                Content = issuerProfile.LogoData
+            };
+        }
+
+        if (string.IsNullOrWhiteSpace(issuerProfile.LogoStoragePath))
         {
             return NotFound();
         }

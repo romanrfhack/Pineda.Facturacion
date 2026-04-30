@@ -229,10 +229,48 @@ public class MvpLifecycleApiTests
         Assert.True(activeJson.RootElement.GetProperty("hasLogo").GetBoolean());
         Assert.Equal("logo.png", activeJson.RootElement.GetProperty("logoFileName").GetString());
 
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+            var issuer = await db.Set<IssuerProfile>().SingleAsync(x => x.Id == seed.IssuerId);
+            Assert.Null(issuer.LogoStoragePath);
+            Assert.NotNull(issuer.LogoData);
+            Assert.Equal(20, issuer.LogoSizeBytes);
+            Assert.Equal("logo.png", issuer.LogoFileName);
+            Assert.Equal("image/png", issuer.LogoContentType);
+        }
+
         var logoResponse = await client.GetAsync($"/api/fiscal/issuer-profile/{seed.IssuerId}/logo");
         Assert.Equal(HttpStatusCode.OK, logoResponse.StatusCode);
         Assert.Equal("image/png", logoResponse.Content.Headers.ContentType?.MediaType);
         Assert.NotEmpty(await logoResponse.Content.ReadAsByteArrayAsync());
+    }
+
+    [Fact]
+    public async Task IssuerProfile_Logo_Returns_NotFound_And_HasLogo_False_When_Only_Missing_Legacy_Path_Remains()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        var seed = await factory.SeedStandardFiscalMasterDataAsync();
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+            var issuer = await db.Set<IssuerProfile>().SingleAsync(x => x.Id == seed.IssuerId);
+            issuer.LogoStoragePath = "1/missing-logo.png";
+            issuer.LogoFileName = "missing-logo.png";
+            issuer.LogoContentType = "image/png";
+            issuer.LogoUpdatedAtUtc = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+        }
+
+        var activeResponse = await client.GetAsync("/api/fiscal/issuer-profile/active");
+        Assert.Equal(HttpStatusCode.OK, activeResponse.StatusCode);
+        using var activeJson = await JsonDocument.ParseAsync(await activeResponse.Content.ReadAsStreamAsync());
+        Assert.False(activeJson.RootElement.GetProperty("hasLogo").GetBoolean());
+
+        var logoResponse = await client.GetAsync($"/api/fiscal/issuer-profile/{seed.IssuerId}/logo");
+        Assert.Equal(HttpStatusCode.NotFound, logoResponse.StatusCode);
     }
 
     [Fact]

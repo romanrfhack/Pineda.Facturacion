@@ -35,6 +35,8 @@ public sealed class RemoveIssuerProfileLogoService
         await _logoStorage.DeleteAsync(issuerProfile.LogoStoragePath, cancellationToken);
 
         issuerProfile.LogoStoragePath = null;
+        issuerProfile.LogoData = null;
+        issuerProfile.LogoSizeBytes = null;
         issuerProfile.LogoFileName = null;
         issuerProfile.LogoContentType = null;
         issuerProfile.LogoUpdatedAtUtc = null;

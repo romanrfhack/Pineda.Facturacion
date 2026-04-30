@@ -87,6 +87,13 @@ public class IssuerProfileConfiguration : IEntityTypeConfiguration<IssuerProfile
             .HasMaxLength(500)
             .HasColumnType("varchar(500)");
 
+        builder.Property(x => x.LogoData)
+            .HasColumnName("logo_data")
+            .HasColumnType("longblob");
+
+        builder.Property(x => x.LogoSizeBytes)
+            .HasColumnName("logo_size_bytes");
+
         builder.Property(x => x.LogoFileName)
             .HasColumnName("logo_file_name")
             .HasMaxLength(255)
