@@ -34,7 +34,19 @@ public static class RepOperationalAlertCatalog
             RepOperationalAlertCode.UnsupportedCurrency => RepOperationalAlertSeverity.Error,
             RepOperationalAlertCode.BlockedOperation => RepOperationalAlertSeverity.Critical,
             RepOperationalAlertCode.CancelledBaseDocument => RepOperationalAlertSeverity.Critical,
+            RepOperationalAlertCode.CancelledBaseDocumentOperationalInconsistency => RepOperationalAlertSeverity.Critical,
             _ => RepOperationalAlertSeverity.Warning
+        };
+    }
+
+    public static bool IsCancelledBaseDocumentReason(string? primaryReasonCode)
+    {
+        return primaryReasonCode switch
+        {
+            "FiscalDocumentCancelled" => true,
+            "FiscalCancellationPending" => true,
+            "CancelledExternalInvoice" => true,
+            _ => false
         };
     }
 

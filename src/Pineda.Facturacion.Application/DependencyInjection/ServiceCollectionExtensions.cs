@@ -48,6 +48,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<GetAccountsReceivableInvoiceDetailService>();
         services.AddScoped<SearchAccountsReceivablePortfolioService>();
         services.AddScoped<GetAccountsReceivableReceiverWorkspaceService>();
+        services.AddScoped<ReceivablesSummaryDocumentFactory>();
+        services.AddScoped<PreviewReceivablesSummaryService>();
+        services.AddScoped<SendReceivablesSummaryService>();
         services.AddScoped<SynchronizeAccountsReceivableCollectionStateService>();
         services.AddScoped<CreateCollectionCommitmentService>();
         services.AddScoped<ListCollectionCommitmentsByInvoiceIdService>();
@@ -126,7 +129,10 @@ public static class ServiceCollectionExtensions
         services.AddScoped<CreateProductFiscalProfileService>();
         services.AddScoped<UpdateProductFiscalProfileService>();
         services.AddScoped<SuggestSatAssignmentForLegacyItemService>();
+        services.AddScoped<ProductFiscalProfileResolver>();
         services.AddScoped<ApproveLegacySatAssignmentService>();
+        services.AddScoped<ImportLegacyFiscalProductMappingsFromCsvService>();
+        services.AddScoped<ListLegacyFiscalProductMappingImportBatchesService>();
         services.AddScoped<PreviewProductFiscalProfileImportFromExcelService>();
         services.AddScoped<GetProductFiscalProfileImportBatchService>();
         services.AddScoped<ListProductFiscalProfileImportRowsService>();

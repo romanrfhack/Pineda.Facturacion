@@ -55,6 +55,7 @@ export interface AccountsReceivablePortfolioItemResponse {
   fiscalSeries?: string | null;
   fiscalFolio?: string | null;
   fiscalUuid?: string | null;
+  currencyCode?: string | null;
   total: number;
   paidTotal: number;
   outstandingBalance: number;
@@ -348,4 +349,122 @@ export interface PreparePaymentComplementResponse {
   accountsReceivablePaymentId: number;
   paymentComplementId?: number | null;
   status?: string | null;
+}
+
+export type ReceivablesSummaryScope =
+  | 'all_pending'
+  | 'overdue'
+  | 'manual'
+  | 'current_selection';
+
+export type ReceivablesSummaryFormat = 'html' | 'html_with_pdf' | 'pdf';
+
+export interface ReceivablesSummaryPartyResponse {
+  id?: number | null;
+  legalName: string;
+  rfc: string;
+  email?: string | null;
+  fiscalRegimeCode?: string | null;
+  postalCode?: string | null;
+}
+
+export interface ReceivablesSummaryCandidateResponse {
+  accountsReceivableInvoiceId: number;
+  fiscalDocumentId?: number | null;
+  fiscalSeries?: string | null;
+  fiscalFolio?: string | null;
+  fiscalUuid?: string | null;
+  issuedAtUtc: string;
+  dueAtUtc?: string | null;
+  daysPastDue: number;
+  currencyCode: string;
+  total: number;
+  paidTotal: number;
+  outstandingBalance: number;
+  status: string;
+  isOverdue: boolean;
+  documentLink?: string | null;
+}
+
+export interface ReceivablesSummaryCandidatesResponse {
+  receiver: ReceivablesSummaryPartyResponse;
+  issuer: ReceivablesSummaryPartyResponse;
+  defaultTo: string[];
+  defaultSubject: string;
+  defaultMessage: string;
+  invoices: ReceivablesSummaryCandidateResponse[];
+}
+
+export interface ReceivablesSummaryIncludeOptionsRequest {
+  invoiceTable: boolean;
+  totalsByCurrency: boolean;
+  highlightOverdue: boolean;
+  paymentInstructions: boolean;
+  receiverFiscalData: boolean;
+  issuerData: boolean;
+  invoiceLinks: boolean;
+}
+
+export interface ReceivablesSummaryRequest {
+  receiverId: string;
+  invoiceIds: number[];
+  scope: ReceivablesSummaryScope;
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  message: string;
+  format: ReceivablesSummaryFormat;
+  includeOptions: ReceivablesSummaryIncludeOptionsRequest;
+}
+
+export interface ReceivablesSummaryTotalByCurrencyResponse {
+  currencyCode: string;
+  invoiceCount: number;
+  total: number;
+  paidTotal: number;
+  outstandingBalance: number;
+  overdueBalance: number;
+  currentBalance: number;
+}
+
+export interface ReceivablesSummarySelectionResponse {
+  invoiceCount: number;
+  outstandingBalance: number;
+  overdueBalance: number;
+  currentBalance: number;
+  totalsByCurrency: ReceivablesSummaryTotalByCurrencyResponse[];
+}
+
+export interface ReceivablesSummaryFinalResponse {
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  invoiceCount: number;
+  format: string;
+  attachedPdf: boolean;
+  totalsByCurrency: ReceivablesSummaryTotalByCurrencyResponse[];
+}
+
+export interface ReceivablesSummaryPreviewResponse {
+  outcome: string;
+  success: boolean;
+  errorMessage?: string | null;
+  html?: string | null;
+  pdfBase64?: string | null;
+  pdfFileName?: string | null;
+  summary?: ReceivablesSummarySelectionResponse | null;
+  finalSummary?: ReceivablesSummaryFinalResponse | null;
+}
+
+export interface SendReceivablesSummaryResponse {
+  success: boolean;
+  outcome: string;
+  errorMessage?: string | null;
+  sentAt?: string | null;
+  historyId?: string | null;
+  emailProviderMessageId?: string | null;
+  attachedPdf: boolean;
+  summary?: ReceivablesSummarySelectionResponse | null;
 }

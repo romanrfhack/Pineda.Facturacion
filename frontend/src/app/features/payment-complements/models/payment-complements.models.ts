@@ -707,6 +707,7 @@ export interface RepAttentionItemsFilters {
   alertCode?: string | null;
   severity?: string | null;
   nextRecommendedAction?: string | null;
+  includeCancelledBaseDocuments?: boolean | null;
 }
 
 export interface RepOperationalAttentionCandidateResponse {

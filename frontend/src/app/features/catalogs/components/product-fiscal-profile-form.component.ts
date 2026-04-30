@@ -82,9 +82,13 @@ import { SatProductServicesApiService } from '../infrastructure/sat-product-serv
                   >
                     <strong>{{ suggestion.satProductServiceCode }}</strong>
                     <span>{{ suggestion.satProductServiceDescription || 'Sin descripción resuelta' }}</span>
+                    @if (suggestion.source === 'legacy_mapping') {
+                      <small>Sugerido por historial fiscal importado.</small>
+                    }
                     <small>
                       {{ suggestion.reason }}
                       · score {{ suggestion.score | number:'1.2-2' }}
+                      · confianza {{ confidenceLabel(suggestion) }}
                       · fuente {{ suggestion.source }}
                       @if (suggestion.requiresExplicitConfirmation) {
                         · requiere confirmación
@@ -445,6 +449,22 @@ export class ProductFiscalProfileFormComponent implements OnChanges, OnDestroy {
 
   protected hasSatProductServiceCode(): boolean {
     return this.draft.satProductServiceCode.trim().length > 0;
+  }
+
+  protected confidenceLabel(suggestion: ProductFiscalProfileRecoverySuggestion): string {
+    if (suggestion.matchKind.toLowerCase().includes('ambiguous')) {
+      return 'Ambigua';
+    }
+
+    if (suggestion.confidence >= 0.9) {
+      return 'Alta';
+    }
+
+    if (suggestion.confidence >= 0.7) {
+      return 'Media';
+    }
+
+    return 'Baja';
   }
 
   private buildSelectedStateFromDraft(): SatProductServiceSearchItem | null {

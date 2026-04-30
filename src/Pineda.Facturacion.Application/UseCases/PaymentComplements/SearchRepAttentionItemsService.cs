@@ -121,6 +121,11 @@ public sealed class SearchRepAttentionItemsService
     private static RepAttentionItem MapInternal(InternalRepBaseDocumentListItem item)
     {
         var attentionAlerts = RepOperationalAttentionCatalog.GetCandidates(item.Alerts);
+        var primaryAttentionReason = ResolvePrimaryAttentionReason(
+            attentionAlerts,
+            item.Eligibility.PrimaryReasonCode,
+            item.Eligibility.PrimaryReasonMessage);
+
         return new RepAttentionItem
         {
             SourceType = RepBaseDocumentSourceType.Internal.ToString(),
@@ -138,8 +143,8 @@ public sealed class SearchRepAttentionItemsService
             OutstandingBalance = item.OutstandingBalance,
             OperationalStatus = item.RepOperationalStatus,
             IsBlocked = item.IsBlocked,
-            PrimaryReasonCode = item.Eligibility.PrimaryReasonCode,
-            PrimaryReasonMessage = item.Eligibility.PrimaryReasonMessage,
+            PrimaryReasonCode = primaryAttentionReason.Code,
+            PrimaryReasonMessage = primaryAttentionReason.Message,
             NextRecommendedAction = item.NextRecommendedAction,
             AvailableActions = item.AvailableActions,
             AttentionSeverity = RepOperationalAttentionCatalog.ResolveHighestSeverity(attentionAlerts),
@@ -150,6 +155,11 @@ public sealed class SearchRepAttentionItemsService
     private static RepAttentionItem MapExternal(ExternalRepBaseDocumentListItem item)
     {
         var attentionAlerts = RepOperationalAttentionCatalog.GetCandidates(item.Alerts);
+        var primaryAttentionReason = ResolvePrimaryAttentionReason(
+            attentionAlerts,
+            item.PrimaryReasonCode,
+            item.PrimaryReasonMessage);
+
         return new RepAttentionItem
         {
             SourceType = RepBaseDocumentSourceType.External.ToString(),
@@ -169,8 +179,8 @@ public sealed class SearchRepAttentionItemsService
             OutstandingBalance = item.OutstandingBalance,
             OperationalStatus = item.OperationalStatus,
             IsBlocked = item.IsBlocked,
-            PrimaryReasonCode = item.PrimaryReasonCode,
-            PrimaryReasonMessage = item.PrimaryReasonMessage,
+            PrimaryReasonCode = primaryAttentionReason.Code,
+            PrimaryReasonMessage = primaryAttentionReason.Message,
             NextRecommendedAction = item.NextRecommendedAction,
             AvailableActions = item.AvailableActions,
             AttentionSeverity = RepOperationalAttentionCatalog.ResolveHighestSeverity(attentionAlerts),
@@ -181,6 +191,11 @@ public sealed class SearchRepAttentionItemsService
     private static bool MatchesAttentionFilter(RepAttentionItem item, SearchRepAttentionItemsFilter filter)
     {
         if (item.AttentionAlerts.Count == 0)
+        {
+            return false;
+        }
+
+        if (!filter.IncludeCancelledBaseDocuments && IsNonActionableCancelledBaseDocument(item))
         {
             return false;
         }
@@ -204,6 +219,41 @@ public sealed class SearchRepAttentionItemsService
         }
 
         return true;
+    }
+
+    private static (string Code, string Message) ResolvePrimaryAttentionReason(
+        IReadOnlyList<RepOperationalAttentionCandidate> attentionAlerts,
+        string fallbackCode,
+        string fallbackMessage)
+    {
+        var operationalInconsistency = attentionAlerts.FirstOrDefault(x =>
+            string.Equals(x.AlertCode, RepOperationalAlertCode.CancelledBaseDocumentOperationalInconsistency, StringComparison.Ordinal));
+
+        return operationalInconsistency is null
+            ? (fallbackCode, fallbackMessage)
+            : (operationalInconsistency.AlertCode, operationalInconsistency.Message);
+    }
+
+    private static bool IsNonActionableCancelledBaseDocument(RepAttentionItem item)
+    {
+        if (!RepOperationalAlertCatalog.IsCancelledBaseDocumentReason(item.PrimaryReasonCode))
+        {
+            return false;
+        }
+
+        if (item.AttentionAlerts.Count != 1
+            || !string.Equals(item.AttentionAlerts[0].AlertCode, RepOperationalAlertCode.CancelledBaseDocument, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!string.Equals(item.NextRecommendedAction, RepBaseDocumentRecommendedAction.Blocked, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return item.AvailableActions.Count == 0
+            || item.AvailableActions.All(x => string.Equals(x, RepBaseDocumentAvailableAction.ViewDetail.ToString(), StringComparison.Ordinal));
     }
 
     private static RepOperationalAlert MapCandidateAlert(RepOperationalAttentionCandidate candidate)

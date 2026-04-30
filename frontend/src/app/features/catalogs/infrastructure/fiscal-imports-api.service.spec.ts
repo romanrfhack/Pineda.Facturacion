@@ -68,4 +68,34 @@ describe('FiscalImportsApiService', () => {
     expect(form.has('sourceFileName')).toBe(false);
     httpTesting.verify();
   });
+
+  it('uploads legacy product mappings as multipart form data with source name', () => {
+    const service = TestBed.inject(FiscalImportsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+    const file = new File(['Id,Descripción'], 'legacy.csv', {
+      type: 'text/csv'
+    });
+
+    service.importLegacyProductMappingsCsv(file, 'Sistema anterior').subscribe();
+
+    const req = httpTesting.expectOne('/api/fiscal/imports/products/legacy-mappings/csv');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body instanceof FormData).toBe(true);
+
+    const form = req.request.body as FormData;
+    expect(form.get('file')).toBe(file);
+    expect(form.get('sourceName')).toBe('Sistema anterior');
+    httpTesting.verify();
+  });
+
+  it('lists legacy product mapping import batches', () => {
+    const service = TestBed.inject(FiscalImportsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.listLegacyProductMappingBatches().subscribe();
+
+    const req = httpTesting.expectOne('/api/fiscal/imports/products/legacy-mappings/batches');
+    expect(req.request.method).toBe('GET');
+    httpTesting.verify();
+  });
 });

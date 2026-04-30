@@ -1379,6 +1379,83 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
                     b.ToTable("fiscal_cancellation", (string)null);
                 });
 
+            modelBuilder.Entity("Pineda.Facturacion.Domain.Entities.FiscalProductMappingImportBatch", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("AmbiguousRows")
+                        .HasColumnType("int")
+                        .HasColumnName("ambiguous_rows");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasMaxLength(1000)
+                        .HasColumnType("varchar(1000)")
+                        .HasColumnName("error_message");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("varchar(255)")
+                        .HasColumnName("file_name");
+
+                    b.Property<DateTime>("ImportedAtUtc")
+                        .HasColumnType("datetime(6)")
+                        .HasColumnName("imported_at_utc");
+
+                    b.Property<long?>("ImportedByUserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("imported_by_user_id");
+
+                    b.Property<string>("ImportedByUsername")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)")
+                        .HasColumnName("imported_by_username");
+
+                    b.Property<int>("InvalidRows")
+                        .HasColumnType("int")
+                        .HasColumnName("invalid_rows");
+
+                    b.Property<int>("SkippedRows")
+                        .HasColumnType("int")
+                        .HasColumnName("skipped_rows");
+
+                    b.Property<string>("SourceChecksum")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("varchar(128)")
+                        .HasColumnName("source_checksum");
+
+                    b.Property<string>("SourceName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("varchar(255)")
+                        .HasColumnName("source_name");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int")
+                        .HasColumnName("status");
+
+                    b.Property<int>("TotalRows")
+                        .HasColumnType("int")
+                        .HasColumnName("total_rows");
+
+                    b.Property<int>("ValidRows")
+                        .HasColumnType("int")
+                        .HasColumnName("valid_rows");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SourceChecksum")
+                        .IsUnique();
+
+                    b.ToTable("fiscal_product_mapping_import_batch", (string)null);
+                });
+
             modelBuilder.Entity("Pineda.Facturacion.Domain.Entities.FiscalDocument", b =>
                 {
                     b.Property<long>("Id")
@@ -2678,6 +2755,119 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("legacy_import_revision", (string)null);
+                });
+
+            modelBuilder.Entity("Pineda.Facturacion.Domain.Entities.LegacyFiscalProductMapping", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime(6)")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<string>("DescriptionNormalized")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)")
+                        .HasColumnName("description_normalized");
+
+                    b.Property<string>("DescriptionRaw")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)")
+                        .HasColumnName("description_raw");
+
+                    b.Property<string>("EanCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)")
+                        .HasColumnName("ean_code");
+
+                    b.Property<string>("EanCodeNormalized")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)")
+                        .HasColumnName("ean_code_normalized");
+
+                    b.Property<long>("ImportBatchId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("import_batch_id");
+
+                    b.Property<string>("InternalCatalogNormalized")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)")
+                        .HasColumnName("internal_catalog_normalized");
+
+                    b.Property<string>("InternalCatalogRaw")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)")
+                        .HasColumnName("internal_catalog_raw");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("tinyint(1)")
+                        .HasColumnName("is_active");
+
+                    b.Property<bool>("IsAmbiguousByDescription")
+                        .HasColumnType("tinyint(1)")
+                        .HasColumnName("is_ambiguous_by_description");
+
+                    b.Property<bool>("IsAmbiguousByInternalCode")
+                        .HasColumnType("tinyint(1)")
+                        .HasColumnName("is_ambiguous_by_internal_code");
+
+                    b.Property<string>("SatProductServiceCode")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("sat_product_service_code");
+
+                    b.Property<string>("SatUnitCode")
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)")
+                        .HasColumnName("sat_unit_code");
+
+                    b.Property<string>("SkuCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)")
+                        .HasColumnName("sku_code");
+
+                    b.Property<string>("SkuCodeNormalized")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)")
+                        .HasColumnName("sku_code_normalized");
+
+                    b.Property<string>("SourceConceptId")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)")
+                        .HasColumnName("source_concept_id");
+
+                    b.Property<string>("SourceName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("varchar(255)")
+                        .HasColumnName("source_name");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DescriptionNormalized")
+                        .HasDatabaseName("IX_legacy_mapping_description_normalized");
+
+                    b.HasIndex("EanCodeNormalized")
+                        .HasDatabaseName("IX_legacy_mapping_ean_code_normalized");
+
+                    b.HasIndex("InternalCatalogNormalized")
+                        .HasDatabaseName("IX_legacy_mapping_internal_catalog_normalized");
+
+                    b.HasIndex("SkuCodeNormalized")
+                        .HasDatabaseName("IX_legacy_mapping_sku_code_normalized");
+
+                    b.HasIndex("ImportBatchId", "SourceConceptId")
+                        .HasDatabaseName("IX_legacy_mapping_import_source_concept");
+
+                    b.ToTable("legacy_fiscal_product_mapping", (string)null);
                 });
 
             modelBuilder.Entity("Pineda.Facturacion.Domain.Entities.PaymentComplementCancellation", b =>
@@ -4569,6 +4759,17 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Pineda.Facturacion.Domain.Entities.LegacyFiscalProductMapping", b =>
+                {
+                    b.HasOne("Pineda.Facturacion.Domain.Entities.FiscalProductMappingImportBatch", "ImportBatch")
+                        .WithMany("Mappings")
+                        .HasForeignKey("ImportBatchId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ImportBatch");
+                });
+
             modelBuilder.Entity("Pineda.Facturacion.Domain.Entities.PaymentComplementCancellation", b =>
                 {
                     b.HasOne("Pineda.Facturacion.Domain.Entities.PaymentComplementDocument", null)
@@ -4743,6 +4944,11 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
             modelBuilder.Entity("Pineda.Facturacion.Domain.Entities.FiscalReceiverImportBatch", b =>
                 {
                     b.Navigation("Rows");
+                });
+
+            modelBuilder.Entity("Pineda.Facturacion.Domain.Entities.FiscalProductMappingImportBatch", b =>
+                {
+                    b.Navigation("Mappings");
                 });
 
             modelBuilder.Entity("Pineda.Facturacion.Domain.Entities.PaymentComplementDocument", b =>

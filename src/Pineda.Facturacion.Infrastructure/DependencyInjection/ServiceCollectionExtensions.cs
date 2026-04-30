@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
 using Pineda.Facturacion.Application.Abstractions.Communication;
 using Pineda.Facturacion.Application.Abstractions.Documents;
 using Pineda.Facturacion.Application.Abstractions.FiscalReceivers;
@@ -43,6 +44,18 @@ public static class ServiceCollectionExtensions
             services.AddOptions<SmtpEmailOptions>()
                 .Bind(configuration.GetSection(SmtpEmailOptions.SectionName));
 
+            services.AddOptions<EmailDeliverySafetyOptions>()
+                .Bind(configuration.GetSection(EmailDeliverySafetyOptions.SectionName));
+            services.PostConfigure<EmailDeliverySafetyOptions>(options =>
+            {
+                options.SafeRecipient = FirstConfiguredValue(
+                    options.SafeRecipient,
+                    configuration["EMAIL_SAFE_RECIPIENT"]);
+                options.ProductionBccRecipient = FirstConfiguredValue(
+                    options.ProductionBccRecipient,
+                    configuration["EMAIL_PRODUCTION_BCC"]);
+            });
+
             services.AddOptions<IssuerLogoStorageOptions>()
                 .Bind(configuration.GetSection(IssuerLogoStorageOptions.SectionName));
         }
@@ -55,7 +68,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IExcelWorksheetReader, ClosedXmlWorksheetReader>();
         services.AddSingleton<ILoginAttemptThrottleService, InMemoryLoginAttemptThrottleService>();
         services.AddScoped<IFiscalDocumentPdfRenderer, FiscalDocumentPdfRenderer>();
+        services.AddScoped<IReceivablesSummaryPdfRenderer, ReceivablesSummaryPdfRenderer>();
         services.AddSingleton<IIssuerProfileLogoStorage, IssuerProfileLogoStorage>();
+        services.AddSingleton<EmailDeliverySafetyPolicy>();
         services.AddSingleton<IEmailSender, SmtpEmailSender>();
         services.AddSingleton<IPasswordHasher, PasswordHasherService>();
         services.AddSingleton<IJwtTokenService, JwtTokenService>();
@@ -68,5 +83,12 @@ public static class ServiceCollectionExtensions
         services.AddHostedService<AuthBootstrapHostedService>();
         services.AddHostedService<SatProductServiceCatalogBootstrapHostedService>();
         return services;
+    }
+
+    private static string FirstConfiguredValue(string? primaryValue, string? fallbackValue)
+    {
+        return !string.IsNullOrWhiteSpace(primaryValue)
+            ? primaryValue
+            : fallbackValue ?? string.Empty;
     }
 }

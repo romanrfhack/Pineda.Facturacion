@@ -11,7 +11,13 @@ public sealed class EmailMessage
 
     public string Body { get; init; } = string.Empty;
 
+    public bool IsBodyHtml { get; init; }
+
     public IReadOnlyList<string> Recipients { get; init; } = [];
+
+    public IReadOnlyList<string> CcRecipients { get; init; } = [];
+
+    public IReadOnlyList<string> BccRecipients { get; init; } = [];
 
     public IReadOnlyList<EmailAttachment> Attachments { get; init; } = [];
 }

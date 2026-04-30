@@ -64,6 +64,31 @@ public static class AccountsReceivableEndpoints
             .Produces<AccountsReceivableReceiverWorkspaceResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status404NotFound);
 
+        group.MapGet("/receivers/{fiscalReceiverId:long}/summary-candidates", GetReceivablesSummaryCandidatesAsync)
+            .WithName("GetReceivablesSummaryCandidates")
+            .WithSummary("Get eligible pending receivables for a receiver debt summary")
+            .Produces<ReceivablesSummaryCandidatesResponse>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
+
+        group.MapPost("/receivers/{fiscalReceiverId:long}/summary-preview", PreviewReceivablesSummaryAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.OperatorOrAbove)
+            .WithName("PreviewReceivablesSummary")
+            .WithSummary("Generate an HTML/PDF preview for a receiver debt summary")
+            .Produces<ReceivablesSummaryPreviewResponse>(StatusCodes.Status200OK)
+            .Produces<ReceivablesSummaryPreviewResponse>(StatusCodes.Status400BadRequest)
+            .Produces<ReceivablesSummaryPreviewResponse>(StatusCodes.Status404NotFound)
+            .Produces<ReceivablesSummaryPreviewResponse>(StatusCodes.Status409Conflict);
+
+        group.MapPost("/receivers/{fiscalReceiverId:long}/send-summary", SendReceivablesSummaryAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.OperatorOrAbove)
+            .WithName("SendReceivablesSummary")
+            .WithSummary("Send a configurable debt summary email for a fiscal receiver")
+            .Produces<SendReceivablesSummaryResponse>(StatusCodes.Status200OK)
+            .Produces<SendReceivablesSummaryResponse>(StatusCodes.Status400BadRequest)
+            .Produces<SendReceivablesSummaryResponse>(StatusCodes.Status404NotFound)
+            .Produces<SendReceivablesSummaryResponse>(StatusCodes.Status409Conflict)
+            .Produces<SendReceivablesSummaryResponse>(StatusCodes.Status503ServiceUnavailable);
+
         group.MapGet("/invoices/{accountsReceivableInvoiceId:long}", GetAccountsReceivableInvoiceByIdAsync)
             .WithName("GetAccountsReceivableInvoiceById")
             .WithSummary("Get the consolidated detail for an accounts receivable invoice")
@@ -361,6 +386,58 @@ public static class AccountsReceivableEndpoints
         }
 
         return TypedResults.Ok(MapReceiverWorkspace(result.Workspace));
+    }
+
+    private static async Task<Results<Ok<ReceivablesSummaryCandidatesResponse>, NotFound>> GetReceivablesSummaryCandidatesAsync(
+        long fiscalReceiverId,
+        ReceivablesSummaryDocumentFactory documentFactory,
+        CancellationToken cancellationToken)
+    {
+        var result = await documentFactory.GetCandidatesAsync(fiscalReceiverId, cancellationToken);
+        if (!result.IsSuccess)
+        {
+            return TypedResults.NotFound();
+        }
+
+        return TypedResults.Ok(MapSummaryCandidates(result));
+    }
+
+    private static async Task<Results<Ok<ReceivablesSummaryPreviewResponse>, BadRequest<ReceivablesSummaryPreviewResponse>, NotFound<ReceivablesSummaryPreviewResponse>, Conflict<ReceivablesSummaryPreviewResponse>>> PreviewReceivablesSummaryAsync(
+        long fiscalReceiverId,
+        ReceivablesSummaryRequest request,
+        PreviewReceivablesSummaryService service,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(MapSummaryCommand(fiscalReceiverId, request), cancellationToken);
+        var response = MapSummaryPreview(result);
+
+        return result.Outcome switch
+        {
+            ReceivablesSummaryOutcome.Found => TypedResults.Ok(response),
+            ReceivablesSummaryOutcome.NotFound => TypedResults.NotFound(response),
+            ReceivablesSummaryOutcome.PdfGenerationFailed => TypedResults.Conflict(response),
+            _ => TypedResults.BadRequest(response)
+        };
+    }
+
+    private static async Task<Results<Ok<SendReceivablesSummaryResponse>, BadRequest<SendReceivablesSummaryResponse>, NotFound<SendReceivablesSummaryResponse>, Conflict<SendReceivablesSummaryResponse>, JsonHttpResult<SendReceivablesSummaryResponse>>> SendReceivablesSummaryAsync(
+        long fiscalReceiverId,
+        ReceivablesSummaryRequest request,
+        SendReceivablesSummaryService service,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(MapSummaryCommand(fiscalReceiverId, request), cancellationToken);
+        var response = MapSendSummary(result);
+
+        return result.Outcome switch
+        {
+            ReceivablesSummaryOutcome.Sent => TypedResults.Ok(response),
+            ReceivablesSummaryOutcome.NotFound => TypedResults.NotFound(response),
+            ReceivablesSummaryOutcome.PdfGenerationFailed => TypedResults.Conflict(response),
+            ReceivablesSummaryOutcome.DeliveryFailed => TypedResults.Json(response, statusCode: StatusCodes.Status503ServiceUnavailable),
+            ReceivablesSummaryOutcome.HistoryFailed => TypedResults.Json(response, statusCode: StatusCodes.Status503ServiceUnavailable),
+            _ => TypedResults.BadRequest(response)
+        };
     }
 
     private static async Task<Ok<CollectionCommitmentsResponse>> ListCollectionCommitmentsAsync(
@@ -830,6 +907,7 @@ public static class AccountsReceivableEndpoints
             FiscalSeries = item.FiscalSeries,
             FiscalFolio = item.FiscalFolio,
             FiscalUuid = item.FiscalUuid,
+            CurrencyCode = item.CurrencyCode,
             Total = item.Total,
             PaidTotal = item.PaidTotal,
             OutstandingBalance = item.OutstandingBalance,
@@ -978,6 +1056,157 @@ public static class AccountsReceivableEndpoints
                 NextFollowUpAtUtc = item.NextFollowUpAtUtc,
                 CreatedAtUtc = item.CreatedAtUtc,
                 CreatedByUsername = item.CreatedByUsername
+            }).ToList()
+        };
+    }
+
+    private static ReceivablesSummaryCommand MapSummaryCommand(long fiscalReceiverId, ReceivablesSummaryRequest request)
+    {
+        var includeOptions = request.IncludeOptions ?? new ReceivablesSummaryIncludeOptionsRequest();
+
+        return new ReceivablesSummaryCommand
+        {
+            ReceiverId = fiscalReceiverId,
+            InvoiceIds = request.InvoiceIds,
+            Scope = request.Scope,
+            To = request.To,
+            Cc = request.Cc,
+            Bcc = request.Bcc,
+            Subject = request.Subject,
+            Message = request.Message,
+            Format = request.Format,
+            IncludeOptions = new ReceivablesSummaryIncludeOptions
+            {
+                InvoiceTable = includeOptions.InvoiceTable,
+                TotalsByCurrency = includeOptions.TotalsByCurrency,
+                HighlightOverdue = includeOptions.HighlightOverdue,
+                PaymentInstructions = includeOptions.PaymentInstructions,
+                ReceiverFiscalData = includeOptions.ReceiverFiscalData,
+                IssuerData = includeOptions.IssuerData,
+                InvoiceLinks = includeOptions.InvoiceLinks
+            }
+        };
+    }
+
+    private static ReceivablesSummaryCandidatesResponse MapSummaryCandidates(GetReceivablesSummaryCandidatesResult result)
+    {
+        return new ReceivablesSummaryCandidatesResponse
+        {
+            Receiver = MapSummaryParty(result.Receiver),
+            Issuer = MapSummaryParty(result.Issuer),
+            DefaultTo = result.DefaultTo.ToList(),
+            DefaultSubject = result.DefaultSubject,
+            DefaultMessage = result.DefaultMessage,
+            Invoices = result.Invoices.Select(MapSummaryCandidate).ToList()
+        };
+    }
+
+    private static ReceivablesSummaryPreviewResponse MapSummaryPreview(ReceivablesSummaryPreviewResult result)
+    {
+        return new ReceivablesSummaryPreviewResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            Success = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            Html = result.Html,
+            PdfBase64 = result.PdfContent is null ? null : Convert.ToBase64String(result.PdfContent),
+            PdfFileName = result.PdfFileName,
+            Summary = result.Document is null ? null : MapSummarySelection(result.Document.Selection),
+            FinalSummary = result.Document is null ? null : MapSummaryFinal(result.Document)
+        };
+    }
+
+    private static SendReceivablesSummaryResponse MapSendSummary(SendReceivablesSummaryResult result)
+    {
+        return new SendReceivablesSummaryResponse
+        {
+            Success = result.IsSuccess,
+            Outcome = result.Outcome.ToString(),
+            ErrorMessage = result.ErrorMessage,
+            SentAt = result.SentAtUtc,
+            HistoryId = result.HistoryId,
+            EmailProviderMessageId = result.EmailProviderMessageId,
+            AttachedPdf = result.AttachedPdf,
+            Summary = result.Document is null ? null : MapSummarySelection(result.Document.Selection)
+        };
+    }
+
+    private static ReceivablesSummaryPartyResponse MapSummaryParty(ReceivablesSummaryParty party)
+    {
+        return new ReceivablesSummaryPartyResponse
+        {
+            Id = party.Id,
+            LegalName = party.LegalName,
+            Rfc = party.Rfc,
+            Email = party.Email,
+            FiscalRegimeCode = party.FiscalRegimeCode,
+            PostalCode = party.PostalCode
+        };
+    }
+
+    private static ReceivablesSummaryCandidateResponse MapSummaryCandidate(ReceivablesSummaryCandidate item)
+    {
+        return new ReceivablesSummaryCandidateResponse
+        {
+            AccountsReceivableInvoiceId = item.AccountsReceivableInvoiceId,
+            FiscalDocumentId = item.FiscalDocumentId,
+            FiscalSeries = item.FiscalSeries,
+            FiscalFolio = item.FiscalFolio,
+            FiscalUuid = item.FiscalUuid,
+            IssuedAtUtc = item.IssuedAtUtc,
+            DueAtUtc = item.DueAtUtc,
+            DaysPastDue = item.DaysPastDue,
+            CurrencyCode = item.CurrencyCode,
+            Total = item.Total,
+            PaidTotal = item.PaidTotal,
+            OutstandingBalance = item.OutstandingBalance,
+            Status = item.Status,
+            IsOverdue = item.IsOverdue,
+            DocumentLink = item.DocumentLink
+        };
+    }
+
+    private static ReceivablesSummarySelectionResponse MapSummarySelection(ReceivablesSummarySelection selection)
+    {
+        return new ReceivablesSummarySelectionResponse
+        {
+            InvoiceCount = selection.InvoiceCount,
+            OutstandingBalance = selection.OutstandingBalance,
+            OverdueBalance = selection.OverdueBalance,
+            CurrentBalance = selection.CurrentBalance,
+            TotalsByCurrency = selection.TotalsByCurrency.Select(x => new ReceivablesSummaryTotalByCurrencyResponse
+            {
+                CurrencyCode = x.CurrencyCode,
+                InvoiceCount = x.InvoiceCount,
+                Total = x.Total,
+                PaidTotal = x.PaidTotal,
+                OutstandingBalance = x.OutstandingBalance,
+                OverdueBalance = x.OverdueBalance,
+                CurrentBalance = x.CurrentBalance
+            }).ToList()
+        };
+    }
+
+    private static ReceivablesSummaryFinalResponse MapSummaryFinal(ReceivablesSummaryDocument document)
+    {
+        return new ReceivablesSummaryFinalResponse
+        {
+            To = document.To.ToList(),
+            Cc = document.Cc.ToList(),
+            Bcc = document.Bcc.ToList(),
+            Subject = document.Subject,
+            InvoiceCount = document.Selection.InvoiceCount,
+            Format = document.Format.ToString(),
+            AttachedPdf = document.HasPdf,
+            TotalsByCurrency = document.Selection.TotalsByCurrency.Select(x => new ReceivablesSummaryTotalByCurrencyResponse
+            {
+                CurrencyCode = x.CurrencyCode,
+                InvoiceCount = x.InvoiceCount,
+                Total = x.Total,
+                PaidTotal = x.PaidTotal,
+                OutstandingBalance = x.OutstandingBalance,
+                OverdueBalance = x.OverdueBalance,
+                CurrentBalance = x.CurrentBalance
             }).ToList()
         };
     }
@@ -1180,6 +1409,8 @@ public class AccountsReceivablePortfolioItemResponse
     public string? FiscalFolio { get; set; }
 
     public string? FiscalUuid { get; set; }
+
+    public string CurrencyCode { get; set; } = string.Empty;
 
     public decimal Total { get; set; }
 
@@ -1545,4 +1776,194 @@ public class AccountsReceivablePaymentApplicationResponse
     public decimal NewBalance { get; set; }
 
     public DateTime CreatedAtUtc { get; set; }
+}
+
+public class ReceivablesSummaryRequest
+{
+    public string ReceiverId { get; set; } = string.Empty;
+
+    public List<long> InvoiceIds { get; set; } = [];
+
+    public string Scope { get; set; } = "all_pending";
+
+    public List<string> To { get; set; } = [];
+
+    public List<string> Cc { get; set; } = [];
+
+    public List<string> Bcc { get; set; } = [];
+
+    public string? Subject { get; set; }
+
+    public string? Message { get; set; }
+
+    public string Format { get; set; } = "html";
+
+    public ReceivablesSummaryIncludeOptionsRequest IncludeOptions { get; set; } = new();
+}
+
+public class ReceivablesSummaryIncludeOptionsRequest
+{
+    public bool InvoiceTable { get; set; } = true;
+
+    public bool TotalsByCurrency { get; set; } = true;
+
+    public bool HighlightOverdue { get; set; } = true;
+
+    public bool PaymentInstructions { get; set; } = true;
+
+    public bool ReceiverFiscalData { get; set; } = true;
+
+    public bool IssuerData { get; set; } = true;
+
+    public bool InvoiceLinks { get; set; } = true;
+}
+
+public class ReceivablesSummaryCandidatesResponse
+{
+    public ReceivablesSummaryPartyResponse Receiver { get; set; } = new();
+
+    public ReceivablesSummaryPartyResponse Issuer { get; set; } = new();
+
+    public List<string> DefaultTo { get; set; } = [];
+
+    public string DefaultSubject { get; set; } = string.Empty;
+
+    public string DefaultMessage { get; set; } = string.Empty;
+
+    public List<ReceivablesSummaryCandidateResponse> Invoices { get; set; } = [];
+}
+
+public class ReceivablesSummaryPartyResponse
+{
+    public long? Id { get; set; }
+
+    public string LegalName { get; set; } = string.Empty;
+
+    public string Rfc { get; set; } = string.Empty;
+
+    public string? Email { get; set; }
+
+    public string? FiscalRegimeCode { get; set; }
+
+    public string? PostalCode { get; set; }
+}
+
+public class ReceivablesSummaryCandidateResponse
+{
+    public long AccountsReceivableInvoiceId { get; set; }
+
+    public long? FiscalDocumentId { get; set; }
+
+    public string? FiscalSeries { get; set; }
+
+    public string? FiscalFolio { get; set; }
+
+    public string? FiscalUuid { get; set; }
+
+    public DateTime IssuedAtUtc { get; set; }
+
+    public DateTime? DueAtUtc { get; set; }
+
+    public int DaysPastDue { get; set; }
+
+    public string CurrencyCode { get; set; } = string.Empty;
+
+    public decimal Total { get; set; }
+
+    public decimal PaidTotal { get; set; }
+
+    public decimal OutstandingBalance { get; set; }
+
+    public string Status { get; set; } = string.Empty;
+
+    public bool IsOverdue { get; set; }
+
+    public string? DocumentLink { get; set; }
+}
+
+public class ReceivablesSummaryPreviewResponse
+{
+    public string Outcome { get; set; } = string.Empty;
+
+    public bool Success { get; set; }
+
+    public string? ErrorMessage { get; set; }
+
+    public string? Html { get; set; }
+
+    public string? PdfBase64 { get; set; }
+
+    public string? PdfFileName { get; set; }
+
+    public ReceivablesSummarySelectionResponse? Summary { get; set; }
+
+    public ReceivablesSummaryFinalResponse? FinalSummary { get; set; }
+}
+
+public class SendReceivablesSummaryResponse
+{
+    public bool Success { get; set; }
+
+    public string Outcome { get; set; } = string.Empty;
+
+    public string? ErrorMessage { get; set; }
+
+    public DateTime? SentAt { get; set; }
+
+    public string? HistoryId { get; set; }
+
+    public string? EmailProviderMessageId { get; set; }
+
+    public bool AttachedPdf { get; set; }
+
+    public ReceivablesSummarySelectionResponse? Summary { get; set; }
+}
+
+public class ReceivablesSummarySelectionResponse
+{
+    public int InvoiceCount { get; set; }
+
+    public decimal OutstandingBalance { get; set; }
+
+    public decimal OverdueBalance { get; set; }
+
+    public decimal CurrentBalance { get; set; }
+
+    public List<ReceivablesSummaryTotalByCurrencyResponse> TotalsByCurrency { get; set; } = [];
+}
+
+public class ReceivablesSummaryTotalByCurrencyResponse
+{
+    public string CurrencyCode { get; set; } = string.Empty;
+
+    public int InvoiceCount { get; set; }
+
+    public decimal Total { get; set; }
+
+    public decimal PaidTotal { get; set; }
+
+    public decimal OutstandingBalance { get; set; }
+
+    public decimal OverdueBalance { get; set; }
+
+    public decimal CurrentBalance { get; set; }
+}
+
+public class ReceivablesSummaryFinalResponse
+{
+    public List<string> To { get; set; } = [];
+
+    public List<string> Cc { get; set; } = [];
+
+    public List<string> Bcc { get; set; } = [];
+
+    public string Subject { get; set; } = string.Empty;
+
+    public int InvoiceCount { get; set; }
+
+    public string Format { get; set; } = string.Empty;
+
+    public bool AttachedPdf { get; set; }
+
+    public List<ReceivablesSummaryTotalByCurrencyResponse> TotalsByCurrency { get; set; } = [];
 }

@@ -1,4 +1,6 @@
 import { Routes } from '@angular/router';
+import { AppRole } from '../../core/auth/models';
+import { roleGuard } from '../../core/auth/role.guard';
 
 export const CATALOG_ROUTES: Routes = [
   {
@@ -24,6 +26,11 @@ export const CATALOG_ROUTES: Routes = [
   {
     path: 'imports/products',
     loadComponent: () => import('./pages/product-imports-page.component').then((m) => m.ProductImportsPageComponent)
+  },
+  {
+    path: 'imports/products/legacy-mappings',
+    canMatch: [roleGuard([AppRole.Admin, AppRole.FiscalSupervisor])],
+    loadComponent: () => import('./pages/legacy-product-mapping-imports-page.component').then((m) => m.LegacyProductMappingImportsPageComponent)
   },
   {
     path: 'imports/sat',

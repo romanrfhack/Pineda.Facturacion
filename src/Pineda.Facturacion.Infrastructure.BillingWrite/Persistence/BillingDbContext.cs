@@ -79,6 +79,10 @@ public class BillingDbContext : DbContext, IUnitOfWork
 
     public DbSet<ProductFiscalAssignment> ProductFiscalAssignments => Set<ProductFiscalAssignment>();
 
+    public DbSet<FiscalProductMappingImportBatch> FiscalProductMappingImportBatches => Set<FiscalProductMappingImportBatch>();
+
+    public DbSet<LegacyFiscalProductMapping> LegacyFiscalProductMappings => Set<LegacyFiscalProductMapping>();
+
     public DbSet<ProductFiscalReviewCleanupBatch> ProductFiscalReviewCleanupBatches => Set<ProductFiscalReviewCleanupBatch>();
 
     public DbSet<ProductFiscalReviewCleanupEntry> ProductFiscalReviewCleanupEntries => Set<ProductFiscalReviewCleanupEntry>();

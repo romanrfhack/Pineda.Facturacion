@@ -81,6 +81,21 @@ public static class FiscalImportEndpoints
             .Produces<ApplyImportBatchResponse>(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status404NotFound);
 
+        group.MapPost("/products/legacy-mappings/csv", ImportLegacyProductMappingsCsvAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
+            .DisableAntiforgery()
+            .WithName("ImportLegacyProductSatMappingsCsv")
+            .WithSummary("Import legacy product SAT mappings from CSV")
+            .Accepts<ImportLegacyProductMappingsCsvRequest>("multipart/form-data")
+            .Produces<LegacyProductMappingImportResponse>(StatusCodes.Status200OK)
+            .Produces<LegacyProductMappingImportResponse>(StatusCodes.Status400BadRequest);
+
+        group.MapGet("/products/legacy-mappings/batches", ListLegacyProductMappingImportBatchesAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
+            .WithName("ListLegacyProductSatMappingImportBatches")
+            .WithSummary("List recent legacy product SAT mapping import batches")
+            .Produces<IReadOnlyList<LegacyProductMappingImportBatchResponse>>(StatusCodes.Status200OK);
+
         group.MapPost("/sat/official", ImportOfficialSatCatalogAsync)
             .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
             .DisableAntiforgery()
@@ -296,6 +311,59 @@ public static class FiscalImportEndpoints
         };
     }
 
+    private static async Task<Results<Ok<LegacyProductMappingImportResponse>, BadRequest<LegacyProductMappingImportResponse>>> ImportLegacyProductMappingsCsvAsync(
+        [FromForm] ImportLegacyProductMappingsCsvRequest request,
+        ImportLegacyFiscalProductMappingsFromCsvService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var fileBytes = await ReadFileAsync(request.File, cancellationToken);
+        var result = await service.ExecuteAsync(new ImportLegacyFiscalProductMappingsFromCsvCommand
+        {
+            SourceFileName = request.File.FileName,
+            SourceName = request.SourceName,
+            FileContent = fileBytes
+        }, cancellationToken);
+
+        var response = MapLegacyProductMappingImportResponse(result);
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "LegacyProductSatMapping.ImportCsv",
+            "FiscalProductMappingImportBatch",
+            result.Batch?.Id.ToString(),
+            result.Outcome.ToString(),
+            new { request.File.FileName, request.File.Length, request.SourceName },
+            new
+            {
+                result.Batch?.Id,
+                result.Batch?.Status,
+                result.Batch?.TotalRows,
+                result.Batch?.ValidRows,
+                result.Batch?.InvalidRows,
+                result.Batch?.AmbiguousRows,
+                result.Batch?.SkippedRows,
+                result.WasAlreadyImported
+            },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome is ImportLegacyFiscalProductMappingsFromCsvOutcome.ValidationFailed
+            or ImportLegacyFiscalProductMappingsFromCsvOutcome.Failed
+            ? TypedResults.BadRequest(response)
+            : TypedResults.Ok(response);
+    }
+
+    private static async Task<Ok<IReadOnlyList<LegacyProductMappingImportBatchResponse>>> ListLegacyProductMappingImportBatchesAsync(
+        ListLegacyFiscalProductMappingImportBatchesService service,
+        CancellationToken cancellationToken)
+    {
+        var batches = await service.ExecuteAsync(cancellationToken: cancellationToken);
+        IReadOnlyList<LegacyProductMappingImportBatchResponse> response = batches
+            .Select(MapLegacyProductMappingImportBatchResponse)
+            .ToList();
+        return TypedResults.Ok(response);
+    }
+
     private static async Task<Results<Ok<ImportOfficialSatCatalogResponse>, BadRequest<ImportOfficialSatCatalogResponse>>> ImportOfficialSatCatalogAsync(
         [FromForm] ImportOfficialSatCatalogRequest request,
         HttpContext httpContext,
@@ -477,6 +545,50 @@ public static class FiscalImportEndpoints
         };
     }
 
+    private static LegacyProductMappingImportResponse MapLegacyProductMappingImportResponse(
+        ImportLegacyFiscalProductMappingsFromCsvResult result)
+    {
+        return new LegacyProductMappingImportResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            WasAlreadyImported = result.WasAlreadyImported,
+            ErrorMessage = result.ErrorMessage ?? result.Batch?.ErrorMessage,
+            BatchId = result.Batch?.Id,
+            FileName = result.Batch?.FileName ?? string.Empty,
+            SourceName = result.Batch?.SourceName ?? string.Empty,
+            SourceChecksum = result.Batch?.SourceChecksum ?? string.Empty,
+            ImportedAtUtc = result.Batch?.ImportedAtUtc,
+            ImportedByUserId = result.Batch?.ImportedByUserId,
+            TotalRows = result.Batch?.TotalRows ?? 0,
+            ValidRows = result.Batch?.ValidRows ?? 0,
+            InvalidRows = result.Batch?.InvalidRows ?? 0,
+            AmbiguousRows = result.Batch?.AmbiguousRows ?? 0,
+            SkippedRows = result.Batch?.SkippedRows ?? 0,
+            Status = result.Batch?.Status.ToString() ?? string.Empty
+        };
+    }
+
+    private static LegacyProductMappingImportBatchResponse MapLegacyProductMappingImportBatchResponse(
+        FiscalProductMappingImportBatch batch)
+    {
+        return new LegacyProductMappingImportBatchResponse
+        {
+            Id = batch.Id,
+            FileName = batch.FileName,
+            SourceName = batch.SourceName,
+            ImportedAtUtc = batch.ImportedAtUtc,
+            ImportedByUser = batch.ImportedByUsername,
+            TotalRows = batch.TotalRows,
+            ValidRows = batch.ValidRows,
+            InvalidRows = batch.InvalidRows,
+            AmbiguousRows = batch.AmbiguousRows,
+            SkippedRows = batch.SkippedRows,
+            Status = batch.Status.ToString(),
+            ErrorMessage = batch.ErrorMessage
+        };
+    }
+
     private static ApplyImportBatchResponse MapApplyResponse(ApplyFiscalReceiverImportBatchResult result)
     {
         return new ApplyImportBatchResponse
@@ -557,6 +669,13 @@ public static class FiscalImportEndpoints
         public string? SourceChecksum { get; init; }
     }
 
+    public sealed class ImportLegacyProductMappingsCsvRequest
+    {
+        public IFormFile File { get; init; } = default!;
+
+        public string? SourceName { get; init; }
+    }
+
     public sealed class PreviewProductFiscalProfileImportRequest
     {
         public IFormFile File { get; init; } = default!;
@@ -605,6 +724,68 @@ public static class FiscalImportEndpoints
         public SatCatalogImportExecutionResponse ProductServices { get; init; } = new();
 
         public SatCatalogImportExecutionResponse Units { get; init; } = new();
+    }
+
+    public sealed class LegacyProductMappingImportResponse
+    {
+        public string Outcome { get; init; } = string.Empty;
+
+        public bool IsSuccess { get; init; }
+
+        public bool WasAlreadyImported { get; init; }
+
+        public string? ErrorMessage { get; init; }
+
+        public long? BatchId { get; init; }
+
+        public string FileName { get; init; } = string.Empty;
+
+        public string SourceName { get; init; } = string.Empty;
+
+        public string SourceChecksum { get; init; } = string.Empty;
+
+        public DateTime? ImportedAtUtc { get; init; }
+
+        public long? ImportedByUserId { get; init; }
+
+        public int TotalRows { get; init; }
+
+        public int ValidRows { get; init; }
+
+        public int InvalidRows { get; init; }
+
+        public int AmbiguousRows { get; init; }
+
+        public int SkippedRows { get; init; }
+
+        public string Status { get; init; } = string.Empty;
+    }
+
+    public sealed class LegacyProductMappingImportBatchResponse
+    {
+        public long Id { get; init; }
+
+        public string FileName { get; init; } = string.Empty;
+
+        public string SourceName { get; init; } = string.Empty;
+
+        public DateTime ImportedAtUtc { get; init; }
+
+        public string? ImportedByUser { get; init; }
+
+        public int TotalRows { get; init; }
+
+        public int ValidRows { get; init; }
+
+        public int InvalidRows { get; init; }
+
+        public int AmbiguousRows { get; init; }
+
+        public int SkippedRows { get; init; }
+
+        public string Status { get; init; } = string.Empty;
+
+        public string? ErrorMessage { get; init; }
     }
 
     public sealed class SatCatalogImportExecutionResponse

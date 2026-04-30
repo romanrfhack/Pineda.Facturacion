@@ -18,6 +18,8 @@ public sealed class AccountsReceivablePortfolioItem
 
     public string? FiscalUuid { get; init; }
 
+    public string CurrencyCode { get; init; } = string.Empty;
+
     public decimal Total { get; init; }
 
     public decimal PaidTotal { get; init; }

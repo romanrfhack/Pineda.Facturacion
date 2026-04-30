@@ -8,6 +8,7 @@ app-accounts-receivable-page .detail-badges {
   gap: 0.5rem;
   margin-top: 0.75rem;
   flex-wrap: wrap;
+  align-items: center;
 }
 
 app-accounts-receivable-page .summary-grid {
@@ -37,6 +38,13 @@ app-accounts-receivable-page .summary-card-action {
 
 app-accounts-receivable-page .summary-card-action:hover {
   background: #fbf7ef;
+}
+
+app-accounts-receivable-page .summary-card-action:hover,
+app-accounts-receivable-page .summary-card-action:hover *,
+app-accounts-receivable-page .summary-card-action.is-active,
+app-accounts-receivable-page .summary-card-action.is-active * {
+  color: #182533;
 }
 
 app-accounts-receivable-page .summary-card-action:focus-visible,

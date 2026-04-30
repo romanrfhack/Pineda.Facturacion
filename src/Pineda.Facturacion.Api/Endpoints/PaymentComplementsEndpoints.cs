@@ -486,6 +486,7 @@ public static class PaymentComplementsEndpoints
         string? alertCode,
         string? severity,
         string? nextRecommendedAction,
+        bool? includeCancelledBaseDocuments,
         SearchRepAttentionItemsService service,
         CancellationToken cancellationToken)
     {
@@ -509,7 +510,8 @@ public static class PaymentComplementsEndpoints
                 SourceType = sourceType,
                 AlertCode = alertCode,
                 Severity = severity,
-                NextRecommendedAction = nextRecommendedAction
+                NextRecommendedAction = nextRecommendedAction,
+                IncludeCancelledBaseDocuments = includeCancelledBaseDocuments == true
             },
             cancellationToken);
 

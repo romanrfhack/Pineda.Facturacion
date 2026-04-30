@@ -65,12 +65,20 @@ import {
               }
             </select>
           </label>
+          <label class="checkbox wide">
+            <input [(ngModel)]="includeCancelledBaseDocuments" name="includeCancelledBaseDocuments" type="checkbox" />
+            <span>Incluir documentos base cancelados (auditoría)</span>
+          </label>
 
           <div class="actions wide">
             <button type="submit" [disabled]="loading()">{{ loading() ? 'Buscando...' : 'Buscar' }}</button>
             <button type="button" class="secondary" (click)="clearFilters()" [disabled]="loading()">Limpiar filtros</button>
           </div>
         </form>
+
+        @if (includeCancelledBaseDocuments || alertCodeFilter === 'CancelledBaseDocument') {
+          <p class="helper"><strong>Documentos base cancelados.</strong> Estos CFDI están cancelados y no son elegibles para complemento de pago.</p>
+        }
 
         @if (summaryCounts().alertCounts.length) {
           <div class="summary-strip">
@@ -89,7 +97,7 @@ import {
         } @else if (errorMessage()) {
           <p class="error">{{ errorMessage() }}</p>
         } @else if (!items().length) {
-          <p class="helper">No hay documentos REP que requieran atención con los filtros actuales.</p>
+          <p class="helper">No hay documentos que requieran atención.</p>
         } @else {
           <div class="toolbar">
             <p class="helper">Mostrando {{ items().length }} de {{ totalCount() }} documentos que requieren atención.</p>
@@ -239,6 +247,8 @@ import {
     .filters { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:0.85rem; }
     .filters label { display:grid; gap:0.35rem; }
     .filters .wide { grid-column:1 / -1; }
+    .filters .checkbox { display:flex; align-items:center; gap:0.5rem; color:#425466; }
+    .filters .checkbox input { width:auto; }
     input, select { font:inherit; padding:0.65rem 0.75rem; border:1px solid #d8d1c2; border-radius:0.7rem; }
     button { border:none; border-radius:0.8rem; padding:0.75rem 1rem; background:#182533; color:#fff; cursor:pointer; }
     button.secondary { background:#d8c49b; color:#182533; }
@@ -308,13 +318,15 @@ export class PaymentComplementAttentionItemsPageComponent {
   protected alertCodeFilter = '';
   protected severityFilter = '';
   protected nextRecommendedActionFilter = '';
+  protected includeCancelledBaseDocuments = false;
 
   protected readonly attentionAlertOptions = [
     'RepStampingRejected',
     'RepCancellationRejected',
     'SatValidationUnavailable',
     'BlockedOperation',
-    'CancelledBaseDocument'
+    'CancelledBaseDocument',
+    'CancelledBaseDocumentOperationalInconsistency'
   ];
   protected readonly severityOptions = ['warning', 'error', 'critical'];
   protected readonly recommendedActionOptions = ['RegisterPayment', 'PrepareRep', 'StampRep', 'RefreshRepStatus', 'CancelRep', 'ViewDetail', 'Blocked', 'NoAction'];
@@ -343,6 +355,9 @@ export class PaymentComplementAttentionItemsPageComponent {
     this.errorMessage.set(null);
 
     try {
+      const shouldIncludeCancelledBaseDocuments = this.includeCancelledBaseDocuments
+        || this.alertCodeFilter === 'CancelledBaseDocument';
+
       const response = await firstValueFrom(this.api.searchAttentionItems({
         page: this.page(),
         pageSize: this.pageSize(),
@@ -353,7 +368,8 @@ export class PaymentComplementAttentionItemsPageComponent {
         sourceType: this.sourceType || null,
         alertCode: this.alertCodeFilter || null,
         severity: this.severityFilter || null,
-        nextRecommendedAction: this.nextRecommendedActionFilter || null
+        nextRecommendedAction: this.nextRecommendedActionFilter || null,
+        includeCancelledBaseDocuments: shouldIncludeCancelledBaseDocuments || null
       }));
 
       if (response.totalPages > 0 && response.page > response.totalPages) {
@@ -389,6 +405,7 @@ export class PaymentComplementAttentionItemsPageComponent {
     this.alertCodeFilter = '';
     this.severityFilter = '';
     this.nextRecommendedActionFilter = '';
+    this.includeCancelledBaseDocuments = false;
     this.page.set(1);
     void this.load();
   }

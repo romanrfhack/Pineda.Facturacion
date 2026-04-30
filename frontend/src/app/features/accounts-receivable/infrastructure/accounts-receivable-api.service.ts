@@ -25,7 +25,11 @@ import {
   PreparePaymentComplementRequest,
   PreparePaymentComplementResponse,
   SetAccountsReceivablePaymentUnappliedDispositionRequest,
-  SetAccountsReceivablePaymentUnappliedDispositionResponse
+  SetAccountsReceivablePaymentUnappliedDispositionResponse,
+  ReceivablesSummaryCandidatesResponse,
+  ReceivablesSummaryPreviewResponse,
+  ReceivablesSummaryRequest,
+  SendReceivablesSummaryResponse,
 } from '../models/accounts-receivable.models';
 import { PaymentComplementDocumentResponse } from '../../payment-complements/models/payment-complements.models';
 
@@ -88,6 +92,18 @@ export class AccountsReceivableApiService {
 
   getReceiverWorkspace(fiscalReceiverId: number): Observable<AccountsReceivableReceiverWorkspaceResponse> {
     return this.http.get<AccountsReceivableReceiverWorkspaceResponse>(buildApiUrl(`/accounts-receivable/receivers/${fiscalReceiverId}/workspace`));
+  }
+
+  getReceivablesSummaryCandidates(fiscalReceiverId: number): Observable<ReceivablesSummaryCandidatesResponse> {
+    return this.http.get<ReceivablesSummaryCandidatesResponse>(buildApiUrl(`/accounts-receivable/receivers/${fiscalReceiverId}/summary-candidates`));
+  }
+
+  previewReceivablesSummary(fiscalReceiverId: number, request: ReceivablesSummaryRequest): Observable<ReceivablesSummaryPreviewResponse> {
+    return this.http.post<ReceivablesSummaryPreviewResponse>(buildApiUrl(`/accounts-receivable/receivers/${fiscalReceiverId}/summary-preview`), request);
+  }
+
+  sendReceivablesSummary(fiscalReceiverId: number, request: ReceivablesSummaryRequest): Observable<SendReceivablesSummaryResponse> {
+    return this.http.post<SendReceivablesSummaryResponse>(buildApiUrl(`/accounts-receivable/receivers/${fiscalReceiverId}/send-summary`), request);
   }
 
   listCollectionCommitments(accountsReceivableInvoiceId: number): Observable<CollectionCommitmentsResponse> {

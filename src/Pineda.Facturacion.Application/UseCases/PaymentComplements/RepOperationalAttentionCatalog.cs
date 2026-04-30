@@ -5,6 +5,7 @@ public static class RepOperationalAttentionCatalog
     public static IReadOnlyList<string> OrderedAlertCodes { get; } =
     [
         RepOperationalAlertCode.BlockedOperation,
+        RepOperationalAlertCode.CancelledBaseDocumentOperationalInconsistency,
         RepOperationalAlertCode.CancelledBaseDocument,
         RepOperationalAlertCode.RepStampingRejected,
         RepOperationalAlertCode.RepCancellationRejected,
@@ -70,6 +71,7 @@ public static class RepOperationalAttentionCatalog
             RepOperationalAlertCode.RepCancellationRejected => "Cancelación REP rechazada",
             RepOperationalAlertCode.SatValidationUnavailable => "Validación SAT no disponible",
             RepOperationalAlertCode.CancelledBaseDocument => "Documento base cancelado",
+            RepOperationalAlertCode.CancelledBaseDocumentOperationalInconsistency => "Cancelado con inconsistencia operativa",
             RepOperationalAlertCode.BlockedOperation => "Operación bloqueada",
             _ => alertCode
         };
@@ -83,6 +85,7 @@ public static class RepOperationalAttentionCatalog
             RepOperationalAlertCode.RepCancellationRejected => "rep.cancellation-rejected",
             RepOperationalAlertCode.SatValidationUnavailable => "rep.sat-validation-unavailable",
             RepOperationalAlertCode.CancelledBaseDocument => "rep.cancelled-base-document",
+            RepOperationalAlertCode.CancelledBaseDocumentOperationalInconsistency => "rep.cancelled-base-document-operational-inconsistency",
             RepOperationalAlertCode.BlockedOperation => "rep.blocked-operation",
             _ => $"rep.{alertCode}"
         };

@@ -3941,7 +3941,7 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
-    public async Task RepAttentionItems_Returns_BlockedAndUnavailableDocuments_RequiringAttention()
+    public async Task RepAttentionItems_ExcludesSimpleCancelledDocuments_ByDefault_AndIncludesThemForAudit()
     {
         await using var factory = new MvpApiFactory();
         var client = await factory.CreateAuthenticatedClientAsync();
@@ -3984,16 +3984,11 @@ public class MvpLifecycleApiTests
         using var json = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
         var root = json.RootElement;
         var items = root.GetProperty("items").EnumerateArray().ToList();
-        Assert.Equal(2, items.Count);
+        var item = Assert.Single(items);
+        Assert.Equal("External", item.GetProperty("sourceType").GetString());
+        Assert.DoesNotContain(items, x => x.GetProperty("sourceType").GetString() == "Internal");
 
-        var internalItem = Assert.Single(items, x => x.GetProperty("sourceType").GetString() == "Internal");
-        Assert.Equal(blockedFiscalDocumentId, internalItem.GetProperty("fiscalDocumentId").GetInt64());
-        Assert.Equal("Blocked", internalItem.GetProperty("nextRecommendedAction").GetString());
-        Assert.Contains(
-            internalItem.GetProperty("attentionAlerts").EnumerateArray().Select(x => x.GetProperty("alertCode").GetString()).ToList(),
-            x => x == "CancelledBaseDocument");
-
-        var externalItem = Assert.Single(items, x => x.GetProperty("sourceType").GetString() == "External");
+        var externalItem = item;
         Assert.Equal(externalId, externalItem.GetProperty("externalRepBaseDocumentId").GetInt64());
         Assert.Equal("Blocked", externalItem.GetProperty("nextRecommendedAction").GetString());
         Assert.Contains(
@@ -4001,6 +3996,21 @@ public class MvpLifecycleApiTests
             x => x == "rep.sat-validation-unavailable");
 
         Assert.DoesNotContain(items, x => string.Equals(x.GetProperty("uuid").GetString(), "UUID-REP-ATTN-OK-1001", StringComparison.Ordinal));
+
+        var auditResponse = await client.GetAsync("/api/payment-complements/attention-items?page=1&pageSize=25&includeCancelledBaseDocuments=true");
+        Assert.Equal(HttpStatusCode.OK, auditResponse.StatusCode);
+
+        using var auditJson = await JsonDocument.ParseAsync(await auditResponse.Content.ReadAsStreamAsync());
+        var auditItems = auditJson.RootElement.GetProperty("items").EnumerateArray().ToList();
+        var internalAuditItem = Assert.Single(auditItems, x => x.GetProperty("sourceType").GetString() == "Internal");
+        Assert.Equal(blockedFiscalDocumentId, internalAuditItem.GetProperty("fiscalDocumentId").GetInt64());
+        Assert.Equal("Blocked", internalAuditItem.GetProperty("nextRecommendedAction").GetString());
+        Assert.Contains(
+            internalAuditItem.GetProperty("attentionAlerts").EnumerateArray().Select(x => x.GetProperty("alertCode").GetString()).ToList(),
+            x => x == "CancelledBaseDocument");
+        Assert.Equal(
+            ["ViewDetail"],
+            internalAuditItem.GetProperty("availableActions").EnumerateArray().Select(x => x.GetString() ?? string.Empty).ToArray());
     }
 
     [Fact]

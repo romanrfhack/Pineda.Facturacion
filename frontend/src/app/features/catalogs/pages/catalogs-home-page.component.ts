@@ -39,6 +39,13 @@ import { PermissionService } from '../../../core/auth/permission.service';
           <p>Consulta la vista previa y aplica lotes de perfiles fiscales de producto, incluyendo faltantes de enriquecimiento.</p>
         </a>
 
+        @if (permissionService.canWriteMasterData()) {
+          <a routerLink="/app/catalogs/imports/products/legacy-mappings" class="card">
+            <h3>Importar mappings SAT históricos</h3>
+            <p>Carga CSV del sistema anterior para sugerir claves SAT y unidades desde el historial fiscal importado.</p>
+          </a>
+        }
+
         <a routerLink="/app/catalogs/imports/sat" class="card">
           <h3>Importar catálogo SAT</h3>
           <p>Sube el archivo oficial completo, revisa checksum y ejecuta la carga canónica de claves SAT y unidades.</p>
