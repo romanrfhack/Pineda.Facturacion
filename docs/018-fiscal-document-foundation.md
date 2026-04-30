@@ -54,10 +54,13 @@ Define the first persisted fiscal snapshot layer created from an existing `Billi
   - otherwise use `FiscalReceiver.CfdiUseCodeDefault`
 
 ### Product fiscal mapping
-- each BillingDocument line must resolve a `ProductFiscalProfile`
-- current stable key: `BillingDocumentItem.ProductInternalCode -> ProductFiscalProfile.InternalCode`
-- no free-text guessing is allowed
-- if a line has no stable internal code or no active product fiscal profile match, the entire operation fails
+- each BillingDocument line must resolve a fiscal product profile before a `FiscalDocument` can be created
+- the primary stable key remains `BillingDocumentItem.ProductInternalCode`
+- product fiscal resolution now uses the intelligent resolver documented in [`049-product-fiscal-profile-resolution.md`](049-product-fiscal-profile-resolution.md)
+- confirmed/manual product profiles and existing product fiscal profiles have priority over imported legacy mappings
+- exact imported legacy matches can resolve by internal code plus description, internal code, or unique normalized description
+- fuzzy legacy matches are suggestions only and require user validation
+- if a line has no stable internal code or cannot be resolved by an accepted source, the entire operation fails with `MissingProductFiscalProfile`
 
 ### Currency semantics
 - `BillingDocument.CurrencyCode` is the commercial source of truth for the fiscal snapshot
