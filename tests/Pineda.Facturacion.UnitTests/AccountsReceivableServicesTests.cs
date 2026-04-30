@@ -1597,6 +1597,7 @@ public class AccountsReceivableServicesTests
         Assert.Contains(result.Document.Selection.TotalsByCurrency, x => x.CurrencyCode == "USD" && x.OverdueBalance == 300m);
         Assert.Equal("%PDF-summary"u8.ToArray(), result.PdfContent);
         Assert.Contains("Resumen de adeudos", result.Html, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("<main class=\"content\" style=\"padding:20px 24px 24px;\">", result.Html, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1663,6 +1664,8 @@ public class AccountsReceivableServicesTests
         Assert.Equal("900", result.HistoryId);
         Assert.NotNull(emailSender.LastMessage);
         Assert.True(emailSender.LastMessage!.IsBodyHtml);
+        Assert.Contains("<main class=\"content\" style=\"padding:20px 24px 24px;\">", emailSender.LastMessage.Body, StringComparison.Ordinal);
+        Assert.Contains("<footer class=\"footer\" style=\"padding:18px 24px;", emailSender.LastMessage.Body, StringComparison.Ordinal);
         Assert.Equal(["cliente@example.com"], emailSender.LastMessage.Recipients);
         Assert.Equal(["cobranza@example.com"], emailSender.LastMessage.CcRecipients);
         Assert.Single(emailSender.LastMessage.Attachments);
