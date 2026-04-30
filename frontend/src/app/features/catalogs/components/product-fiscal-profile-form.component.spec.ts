@@ -217,6 +217,52 @@ describe('ProductFiscalProfileFormComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('40161513');
   });
 
+  it('labels legacy mapping suggestions with source and confidence', async () => {
+    await TestBed.configureTestingModule({
+      imports: [ProductFiscalProfileFormComponent],
+      providers: [
+        {
+          provide: SatProductServicesApiService,
+          useValue: createSatProductServicesApi(),
+        },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(ProductFiscalProfileFormComponent);
+    fixture.componentRef.setInput('initialValue', {
+      internalCode: 'SW-1',
+      description: 'SWITCH DE IGNICION',
+      satProductServiceCode: '25173900',
+      satUnitCode: 'H87',
+      taxObjectCode: '02',
+      vatRate: 0.16,
+      defaultUnitText: 'PIEZA',
+      isActive: true,
+    });
+    fixture.componentRef.setInput('recoverySuggestions', [
+      {
+        satProductServiceCode: '25173900',
+        satProductServiceDescription: 'Componentes eléctricos automotrices',
+        satUnitCode: 'H87',
+        satUnitDescription: 'Pieza',
+        taxObjectCode: '02',
+        vatRate: 0.16,
+        defaultUnitText: 'PIEZA',
+        score: 0.98,
+        confidence: 0.97,
+        source: 'legacy_mapping',
+        matchKind: 'exactInternalAndDescription',
+        reason: 'Coincidencia exacta por código interno y descripción.',
+        isActive: true,
+        requiresExplicitConfirmation: false,
+      },
+    ]);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Sugerido por historial fiscal importado');
+    expect(fixture.nativeElement.textContent).toContain('confianza Alta');
+  });
+
   it('does not assign 01010101 silently and allows explicit generic fallback', async () => {
     await TestBed.configureTestingModule({
       imports: [ProductFiscalProfileFormComponent],

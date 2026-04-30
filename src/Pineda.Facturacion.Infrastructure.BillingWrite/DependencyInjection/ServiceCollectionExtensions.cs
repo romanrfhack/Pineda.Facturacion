@@ -65,6 +65,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IIssuerProfileRepository, IssuerProfileRepository>();
         services.AddScoped<IFiscalReceiverRepository, FiscalReceiverRepository>();
         services.AddScoped<IProductFiscalProfileRepository, ProductFiscalProfileRepository>();
+        services.AddScoped<ILegacyFiscalProductMappingRepository, LegacyFiscalProductMappingRepository>();
         services.AddScoped<ISatProductServiceCatalogRepository, SatProductServiceCatalogRepository>();
         services.AddScoped<ISatClaveUnidadRepository, SatClaveUnidadRepository>();
         services.AddScoped<ISatCatalogImportRepository, SatCatalogImportRepository>();

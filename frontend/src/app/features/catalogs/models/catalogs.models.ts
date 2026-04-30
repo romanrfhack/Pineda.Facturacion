@@ -179,6 +179,25 @@ export interface ImportBatchSummary {
   errorMessage?: string | null;
 }
 
+export interface LegacyProductMappingImportResponse {
+  outcome: string;
+  isSuccess: boolean;
+  wasAlreadyImported: boolean;
+  errorMessage?: string | null;
+  batchId?: number | null;
+  fileName: string;
+  sourceName: string;
+  sourceChecksum: string;
+  importedAtUtc?: string | null;
+  importedByUserId?: number | null;
+  totalRows: number;
+  validRows: number;
+  invalidRows: number;
+  ambiguousRows: number;
+  skippedRows: number;
+  status: string;
+}
+
 export interface ReceiverImportRow {
   rowNumber: number;
   status: string;

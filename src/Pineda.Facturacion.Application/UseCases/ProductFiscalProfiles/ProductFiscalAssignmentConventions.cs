@@ -6,6 +6,7 @@ public static class ProductFiscalAssignmentConventions
 {
     public const string ManualSource = "product_fiscal_profile_manual";
     public const string ImportSource = "product_fiscal_profile_import";
+    public const string LegacyMappingSource = "legacy_fiscal_product_mapping";
     public const string BackfillSource = "product_fiscal_profile_backfill";
     public const string LegacyPendingReviewSource = "product_fiscal_profile_pending_review";
     public const string BootstrapReviewStatus = "approved";

@@ -755,7 +755,13 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
                     <span>Línea {{ missingProduct.lineNumber }} del documento de facturación.</span>
                   }
                   @if (missingProduct.suggestions.length) {
-                    <span>Hay sugerencias determinísticas disponibles. Las coincidencias por descripción requieren confirmación explícita.</span>
+                    @if (hasAmbiguousProductFiscalSuggestions(missingProduct)) {
+                      <span>Hay mappings históricos ambiguos. Selecciona una opción candidata antes de reintentar.</span>
+                    } @else if (hasLegacyProductFiscalSuggestions(missingProduct)) {
+                      <span>Hay sugerencias del historial fiscal importado con fuente, motivo y nivel de confianza.</span>
+                    } @else {
+                      <span>Hay sugerencias determinísticas disponibles. Las coincidencias por descripción requieren confirmación explícita.</span>
+                    }
                   }
                 </div>
 
@@ -2994,6 +3000,20 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected closeMissingProductProfileForm(): void {
     this.showMissingProductProfileForm.set(false);
     this.missingProductProfileError.set(null);
+  }
+
+  protected hasLegacyProductFiscalSuggestions(
+    missingProduct: MissingProductFiscalProfileContext,
+  ): boolean {
+    return missingProduct.suggestions.some((suggestion) => suggestion.source === 'legacy_mapping');
+  }
+
+  protected hasAmbiguousProductFiscalSuggestions(
+    missingProduct: MissingProductFiscalProfileContext,
+  ): boolean {
+    return missingProduct.suggestions.some((suggestion) =>
+      suggestion.matchKind.toLowerCase().includes('ambiguous'),
+    );
   }
 
   private clearMissingProductFiscalProfileState(): void {

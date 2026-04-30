@@ -19,6 +19,7 @@ public class PrepareFiscalDocumentService
     private readonly IProductFiscalProfileRepository _productFiscalProfileRepository;
     private readonly ISatCatalogDescriptionProvider _satCatalogDescriptionProvider;
     private readonly SuggestSatAssignmentForLegacyItemService _suggestSatAssignmentForLegacyItemService;
+    private readonly ProductFiscalProfileResolver _productFiscalProfileResolver;
     private readonly IUnitOfWork _unitOfWork;
 
     public PrepareFiscalDocumentService(
@@ -49,7 +50,8 @@ public class PrepareFiscalDocumentService
         IProductFiscalProfileRepository productFiscalProfileRepository,
         ISatCatalogDescriptionProvider satCatalogDescriptionProvider,
         SuggestSatAssignmentForLegacyItemService suggestSatAssignmentForLegacyItemService,
-        IUnitOfWork unitOfWork)
+        IUnitOfWork unitOfWork,
+        ProductFiscalProfileResolver? productFiscalProfileResolver = null)
     {
         _billingDocumentRepository = billingDocumentRepository;
         _fiscalDocumentRepository = fiscalDocumentRepository;
@@ -58,6 +60,8 @@ public class PrepareFiscalDocumentService
         _productFiscalProfileRepository = productFiscalProfileRepository;
         _satCatalogDescriptionProvider = satCatalogDescriptionProvider;
         _suggestSatAssignmentForLegacyItemService = suggestSatAssignmentForLegacyItemService;
+        _productFiscalProfileResolver = productFiscalProfileResolver
+            ?? CreateNoOpProductFiscalProfileResolver(productFiscalProfileRepository, suggestSatAssignmentForLegacyItemService);
         _unitOfWork = unitOfWork;
     }
 
@@ -234,6 +238,7 @@ public class PrepareFiscalDocumentService
 
         var now = DateTime.UtcNow;
         var itemResults = new List<FiscalDocumentItem>();
+        var autoResolvedAssignments = new List<PendingAutomaticFiscalAssignment>();
 
         foreach (var billingDocumentItem in billingDocument.Items.OrderBy(x => x.LineNumber))
         {
@@ -244,18 +249,34 @@ public class PrepareFiscalDocumentService
                     billingDocumentItem,
                     null,
                     now,
+                    null,
                     cancellationToken);
             }
 
             var internalCode = FiscalMasterDataNormalization.NormalizeRequiredCode(billingDocumentItem.ProductInternalCode);
-            var productFiscalProfile = await _productFiscalProfileRepository.GetEffectiveByInternalCodeAsync(internalCode, now, cancellationToken);
-            if (productFiscalProfile is null || !productFiscalProfile.IsActive)
+            var resolution = await _productFiscalProfileResolver.ResolveAsync(
+                new ProductFiscalProfileResolutionRequest
+                {
+                    InternalCode = internalCode,
+                    Description = billingDocumentItem.Description,
+                    BillingDocumentItemSatProductServiceCode = billingDocumentItem.SatProductServiceCode,
+                    BillingDocumentItemSatUnitCode = billingDocumentItem.SatUnitCode,
+                    BillingDocumentItemTaxObjectCode = billingDocumentItem.TaxObjectCode,
+                    BillingDocumentItemVatRate = billingDocumentItem.TaxRate
+                },
+                now,
+                cancellationToken);
+            var productFiscalProfile = resolution.ResolvedProfile;
+            if (resolution.Status != ProductFiscalProfileResolutionStatus.Resolved
+                || productFiscalProfile is null
+                || !productFiscalProfile.IsActive)
             {
                 return await MissingProductFiscalProfileFailureAsync(
                     command.BillingDocumentId,
                     billingDocumentItem,
                     internalCode,
                     now,
+                    resolution,
                     cancellationToken);
             }
 
@@ -285,6 +306,15 @@ public class PrepareFiscalDocumentService
                 UnitText = productFiscalProfile.DefaultUnitText,
                 CreatedAtUtc = now
             });
+
+            if (resolution.ShouldPersistEffectiveAssignment)
+            {
+                autoResolvedAssignments.Add(new PendingAutomaticFiscalAssignment(
+                    productFiscalProfile,
+                    ProductFiscalAssignmentConventions.LegacyMappingSource,
+                    resolution.Confidence,
+                    resolution.Reason));
+            }
         }
 
         var folioAssignment = await ReserveFiscalFolioAsync(issuerProfile, cancellationToken);
@@ -335,6 +365,20 @@ public class PrepareFiscalDocumentService
             Items = itemResults,
             SpecialFieldValues = BuildSpecialFieldSnapshots(fiscalReceiver, command.SpecialFields, now)
         };
+
+        foreach (var assignment in autoResolvedAssignments
+                     .GroupBy(x => x.Profile.InternalCode, StringComparer.Ordinal)
+                     .Select(x => x.Last()))
+        {
+            await _productFiscalProfileRepository.EnsureEffectiveAssignmentAsync(
+                assignment.Profile,
+                assignment.Source,
+                assignment.Confidence,
+                ProductFiscalAssignmentConventions.BootstrapReviewStatus,
+                assignment.Reason,
+                now,
+                cancellationToken);
+        }
 
         await _fiscalDocumentRepository.AddAsync(fiscalDocument, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -524,12 +568,14 @@ public class PrepareFiscalDocumentService
         BillingDocumentItem billingDocumentItem,
         string? normalizedInternalCode,
         DateTime asOfUtc,
+        ProductFiscalProfileResolutionResult? resolutionResult,
         CancellationToken cancellationToken)
     {
         var missingProductFiscalProfile = await BuildMissingProductFiscalProfileAsync(
             billingDocumentItem,
             normalizedInternalCode,
             asOfUtc,
+            resolutionResult,
             cancellationToken);
 
         return new PrepareFiscalDocumentResult
@@ -546,6 +592,7 @@ public class PrepareFiscalDocumentService
         BillingDocumentItem billingDocumentItem,
         string? normalizedInternalCode,
         DateTime asOfUtc,
+        ProductFiscalProfileResolutionResult? resolutionResult,
         CancellationToken cancellationToken)
     {
         ProductFiscalProfile? existingProfile = null;
@@ -564,20 +611,25 @@ public class PrepareFiscalDocumentService
             existingProfile = await _productFiscalProfileRepository.GetByInternalCodeAsync(normalizedInternalCode, cancellationToken);
             existingProfileStatus = ResolveExistingProductFiscalProfileStatus(existingProfile, effectiveAssignment);
 
-            suggestionResult = await _suggestSatAssignmentForLegacyItemService.ExecuteAsync(new SuggestSatAssignmentForLegacyItemCommand
+            if (resolutionResult is null)
             {
-                InternalCode = normalizedInternalCode,
-                Description = billingDocumentItem.Description,
-                BillingDocumentItemSatProductServiceCode = billingDocumentItem.SatProductServiceCode,
-                BillingDocumentItemSatUnitCode = billingDocumentItem.SatUnitCode,
-                SuppressHistoricalCandidates = suppressHistoricalCandidates
-            }, cancellationToken);
+                suggestionResult = await _suggestSatAssignmentForLegacyItemService.ExecuteAsync(new SuggestSatAssignmentForLegacyItemCommand
+                {
+                    InternalCode = normalizedInternalCode,
+                    Description = billingDocumentItem.Description,
+                    BillingDocumentItemSatProductServiceCode = billingDocumentItem.SatProductServiceCode,
+                    BillingDocumentItemSatUnitCode = billingDocumentItem.SatUnitCode,
+                    SuppressHistoricalCandidates = suppressHistoricalCandidates
+                }, cancellationToken);
+            }
         }
 
-        var suggestions = BuildMissingProductFiscalProfileSuggestions(
-            billingDocumentItem,
-            existingProfile,
-            suggestionResult);
+        var suggestions = resolutionResult is not null
+            ? MapResolutionCandidates(resolutionResult.Candidates)
+            : BuildMissingProductFiscalProfileSuggestions(
+                billingDocumentItem,
+                existingProfile,
+                suggestionResult);
 
         var autoPrefillSuggestion = suggestions.FirstOrDefault(x =>
             !x.RequiresExplicitConfirmation
@@ -656,6 +708,30 @@ public class PrepareFiscalDocumentService
                     IsActive = productCandidate.IsActive && (pairedUnit?.IsActive ?? true),
                     RequiresExplicitConfirmation = productCandidate.RequiresExplicitConfirmation
                 };
+            })
+            .ToList();
+    }
+
+    private static IReadOnlyList<PrepareFiscalDocumentMissingProductFiscalProfileSuggestion> MapResolutionCandidates(
+        IReadOnlyList<ProductFiscalProfileResolutionCandidate> candidates)
+    {
+        return candidates
+            .Select(candidate => new PrepareFiscalDocumentMissingProductFiscalProfileSuggestion
+            {
+                SatProductServiceCode = candidate.SatProductServiceCode,
+                SatProductServiceDescription = candidate.SatProductServiceDescription,
+                SatUnitCode = candidate.SatUnitCode,
+                SatUnitDescription = candidate.SatUnitDescription,
+                TaxObjectCode = candidate.TaxObjectCode,
+                VatRate = candidate.VatRate,
+                DefaultUnitText = candidate.DefaultUnitText,
+                Score = candidate.Score,
+                Confidence = candidate.Confidence,
+                Source = candidate.Source,
+                MatchKind = candidate.MatchKind,
+                Reason = candidate.Reason,
+                IsActive = candidate.IsActive,
+                RequiresExplicitConfirmation = candidate.RequiresExplicitConfirmation
             })
             .ToList();
     }
@@ -798,6 +874,21 @@ public class PrepareFiscalDocumentService
             new SearchSatClaveUnidadService(satClaveUnidadRepository));
     }
 
+    private static ProductFiscalProfileResolver CreateNoOpProductFiscalProfileResolver(
+        IProductFiscalProfileRepository productFiscalProfileRepository,
+        SuggestSatAssignmentForLegacyItemService suggestSatAssignmentForLegacyItemService)
+    {
+        var satProductServiceCatalogRepository = new NoOpSatProductServiceCatalogRepository();
+        var satClaveUnidadRepository = new NoOpSatClaveUnidadRepository();
+
+        return new ProductFiscalProfileResolver(
+            productFiscalProfileRepository,
+            new NoOpLegacyFiscalProductMappingRepository(),
+            satProductServiceCatalogRepository,
+            satClaveUnidadRepository,
+            suggestSatAssignmentForLegacyItemService);
+    }
+
     private sealed class NoOpSatProductServiceCatalogRepository : ISatProductServiceCatalogRepository
     {
         public Task<IReadOnlyList<Domain.Entities.SatProductServiceCatalogEntry>> SearchAsync(
@@ -826,4 +917,35 @@ public class PrepareFiscalDocumentService
             CancellationToken cancellationToken = default)
             => Task.FromException<SatCatalogSyncResult>(new NotSupportedException());
     }
+
+    private sealed class NoOpLegacyFiscalProductMappingRepository : ILegacyFiscalProductMappingRepository
+    {
+        public Task<FiscalProductMappingImportBatch?> FindBatchByChecksumAsync(
+            string sourceChecksum,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<FiscalProductMappingImportBatch?>(null);
+
+        public Task AddBatchAsync(
+            FiscalProductMappingImportBatch batch,
+            CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task<IReadOnlyList<LegacyFiscalProductMapping>> FindActiveExactCandidatesAsync(
+            string? normalizedInternalCode,
+            string? normalizedDescription,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<LegacyFiscalProductMapping>>([]);
+
+        public Task<IReadOnlyList<LegacyFiscalProductMapping>> FindActiveDescriptionCandidatesAsync(
+            string normalizedDescription,
+            int maxCandidates,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<LegacyFiscalProductMapping>>([]);
+    }
+
+    private sealed record PendingAutomaticFiscalAssignment(
+        ProductFiscalProfile Profile,
+        string Source,
+        decimal Confidence,
+        string Reason);
 }
