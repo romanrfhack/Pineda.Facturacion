@@ -17,6 +17,42 @@ import { SendReceivablesSummaryModalComponent } from './send-receivables-summary
       (sent)="handleSent($event)"
     />
   `,
+  styles: [
+    `
+      :host {
+        display: inline-flex;
+        align-items: center;
+      }
+
+      button {
+        border: none;
+        border-radius: 0.8rem;
+        padding: 0.75rem 1rem;
+        background: #182533;
+        color: #fff;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      button.secondary {
+        background: #eef1f4;
+        color: #182533;
+      }
+
+      button:disabled {
+        opacity: 0.58;
+        cursor: not-allowed;
+      }
+
+      button:focus-visible {
+        outline: 2px solid #8a6a32;
+        outline-offset: 2px;
+      }
+    `,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SendReceivablesSummaryButtonComponent {
