@@ -198,6 +198,21 @@ export interface LegacyProductMappingImportResponse {
   status: string;
 }
 
+export interface LegacyProductMappingImportBatchSummary {
+  id: number;
+  fileName: string;
+  sourceName: string;
+  importedAtUtc: string;
+  importedByUser?: string | null;
+  totalRows: number;
+  validRows: number;
+  invalidRows: number;
+  ambiguousRows: number;
+  skippedRows: number;
+  status: string;
+  errorMessage?: string | null;
+}
+
 export interface ReceiverImportRow {
   rowNumber: number;
   status: string;

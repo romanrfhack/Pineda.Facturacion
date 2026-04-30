@@ -930,6 +930,11 @@ public class PrepareFiscalDocumentService
             CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
+        public Task<IReadOnlyList<FiscalProductMappingImportBatch>> ListRecentBatchesAsync(
+            int maxResults,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<FiscalProductMappingImportBatch>>([]);
+
         public Task<IReadOnlyList<LegacyFiscalProductMapping>> FindActiveExactCandidatesAsync(
             string? normalizedInternalCode,
             string? normalizedDescription,

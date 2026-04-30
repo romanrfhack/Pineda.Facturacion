@@ -29,6 +29,18 @@ public sealed class LegacyFiscalProductMappingRepository : ILegacyFiscalProductM
         await _dbContext.FiscalProductMappingImportBatches.AddAsync(batch, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<FiscalProductMappingImportBatch>> ListRecentBatchesAsync(
+        int maxResults,
+        CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.FiscalProductMappingImportBatches
+            .AsNoTracking()
+            .OrderByDescending(x => x.ImportedAtUtc)
+            .ThenByDescending(x => x.Id)
+            .Take(Math.Max(maxResults, 1))
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<LegacyFiscalProductMapping>> FindActiveExactCandidatesAsync(
         string? normalizedInternalCode,
         string? normalizedDescription,

@@ -132,6 +132,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ProductFiscalProfileResolver>();
         services.AddScoped<ApproveLegacySatAssignmentService>();
         services.AddScoped<ImportLegacyFiscalProductMappingsFromCsvService>();
+        services.AddScoped<ListLegacyFiscalProductMappingImportBatchesService>();
         services.AddScoped<PreviewProductFiscalProfileImportFromExcelService>();
         services.AddScoped<GetProductFiscalProfileImportBatchService>();
         services.AddScoped<ListProductFiscalProfileImportRowsService>();

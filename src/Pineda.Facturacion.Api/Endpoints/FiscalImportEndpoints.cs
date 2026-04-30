@@ -90,6 +90,12 @@ public static class FiscalImportEndpoints
             .Produces<LegacyProductMappingImportResponse>(StatusCodes.Status200OK)
             .Produces<LegacyProductMappingImportResponse>(StatusCodes.Status400BadRequest);
 
+        group.MapGet("/products/legacy-mappings/batches", ListLegacyProductMappingImportBatchesAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
+            .WithName("ListLegacyProductSatMappingImportBatches")
+            .WithSummary("List recent legacy product SAT mapping import batches")
+            .Produces<IReadOnlyList<LegacyProductMappingImportBatchResponse>>(StatusCodes.Status200OK);
+
         group.MapPost("/sat/official", ImportOfficialSatCatalogAsync)
             .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
             .DisableAntiforgery()
@@ -347,6 +353,17 @@ public static class FiscalImportEndpoints
             : TypedResults.Ok(response);
     }
 
+    private static async Task<Ok<IReadOnlyList<LegacyProductMappingImportBatchResponse>>> ListLegacyProductMappingImportBatchesAsync(
+        ListLegacyFiscalProductMappingImportBatchesService service,
+        CancellationToken cancellationToken)
+    {
+        var batches = await service.ExecuteAsync(cancellationToken: cancellationToken);
+        IReadOnlyList<LegacyProductMappingImportBatchResponse> response = batches
+            .Select(MapLegacyProductMappingImportBatchResponse)
+            .ToList();
+        return TypedResults.Ok(response);
+    }
+
     private static async Task<Results<Ok<ImportOfficialSatCatalogResponse>, BadRequest<ImportOfficialSatCatalogResponse>>> ImportOfficialSatCatalogAsync(
         [FromForm] ImportOfficialSatCatalogRequest request,
         HttpContext httpContext,
@@ -552,6 +569,26 @@ public static class FiscalImportEndpoints
         };
     }
 
+    private static LegacyProductMappingImportBatchResponse MapLegacyProductMappingImportBatchResponse(
+        FiscalProductMappingImportBatch batch)
+    {
+        return new LegacyProductMappingImportBatchResponse
+        {
+            Id = batch.Id,
+            FileName = batch.FileName,
+            SourceName = batch.SourceName,
+            ImportedAtUtc = batch.ImportedAtUtc,
+            ImportedByUser = batch.ImportedByUsername,
+            TotalRows = batch.TotalRows,
+            ValidRows = batch.ValidRows,
+            InvalidRows = batch.InvalidRows,
+            AmbiguousRows = batch.AmbiguousRows,
+            SkippedRows = batch.SkippedRows,
+            Status = batch.Status.ToString(),
+            ErrorMessage = batch.ErrorMessage
+        };
+    }
+
     private static ApplyImportBatchResponse MapApplyResponse(ApplyFiscalReceiverImportBatchResult result)
     {
         return new ApplyImportBatchResponse
@@ -722,6 +759,33 @@ public static class FiscalImportEndpoints
         public int SkippedRows { get; init; }
 
         public string Status { get; init; } = string.Empty;
+    }
+
+    public sealed class LegacyProductMappingImportBatchResponse
+    {
+        public long Id { get; init; }
+
+        public string FileName { get; init; } = string.Empty;
+
+        public string SourceName { get; init; } = string.Empty;
+
+        public DateTime ImportedAtUtc { get; init; }
+
+        public string? ImportedByUser { get; init; }
+
+        public int TotalRows { get; init; }
+
+        public int ValidRows { get; init; }
+
+        public int InvalidRows { get; init; }
+
+        public int AmbiguousRows { get; init; }
+
+        public int SkippedRows { get; init; }
+
+        public string Status { get; init; } = string.Empty;
+
+        public string? ErrorMessage { get; init; }
     }
 
     public sealed class SatCatalogImportExecutionResponse

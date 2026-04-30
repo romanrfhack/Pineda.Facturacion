@@ -5,6 +5,7 @@ import {
   ApplyImportBatchRequest,
   ApplyImportBatchResponse,
   ImportBatchSummary,
+  LegacyProductMappingImportBatchSummary,
   LegacyProductMappingImportResponse,
   OfficialSatCatalogImportResponse,
   ProductImportRow,
@@ -69,6 +70,10 @@ export class FiscalImportsApiService {
     }
 
     return this.http.post<LegacyProductMappingImportResponse>(buildApiUrl('/fiscal/imports/products/legacy-mappings/csv'), form);
+  }
+
+  listLegacyProductMappingBatches(): Observable<LegacyProductMappingImportBatchSummary[]> {
+    return this.http.get<LegacyProductMappingImportBatchSummary[]>(buildApiUrl('/fiscal/imports/products/legacy-mappings/batches'));
   }
 
   importOfficialSatCatalog(file: File, sourceChecksum?: string): Observable<OfficialSatCatalogImportResponse> {

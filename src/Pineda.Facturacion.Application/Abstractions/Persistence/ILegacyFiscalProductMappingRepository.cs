@@ -12,6 +12,10 @@ public interface ILegacyFiscalProductMappingRepository
         FiscalProductMappingImportBatch batch,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<FiscalProductMappingImportBatch>> ListRecentBatchesAsync(
+        int maxResults,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<LegacyFiscalProductMapping>> FindActiveExactCandidatesAsync(
         string? normalizedInternalCode,
         string? normalizedDescription,
