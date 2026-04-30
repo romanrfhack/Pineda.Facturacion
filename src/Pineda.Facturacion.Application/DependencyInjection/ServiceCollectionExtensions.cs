@@ -48,6 +48,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<GetAccountsReceivableInvoiceDetailService>();
         services.AddScoped<SearchAccountsReceivablePortfolioService>();
         services.AddScoped<GetAccountsReceivableReceiverWorkspaceService>();
+        services.AddScoped<ReceivablesSummaryDocumentFactory>();
+        services.AddScoped<PreviewReceivablesSummaryService>();
+        services.AddScoped<SendReceivablesSummaryService>();
         services.AddScoped<SynchronizeAccountsReceivableCollectionStateService>();
         services.AddScoped<CreateCollectionCommitmentService>();
         services.AddScoped<ListCollectionCommitmentsByInvoiceIdService>();

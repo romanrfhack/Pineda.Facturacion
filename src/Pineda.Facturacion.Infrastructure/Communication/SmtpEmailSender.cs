@@ -30,12 +30,22 @@ public class SmtpEmailSender : IEmailSender
             From = new MailAddress(_options.FromAddress, _options.FromDisplayName),
             Subject = message.Subject,
             Body = message.Body,
-            IsBodyHtml = false
+            IsBodyHtml = message.IsBodyHtml
         };
 
         foreach (var recipient in message.Recipients)
         {
             mailMessage.To.Add(new MailAddress(recipient));
+        }
+
+        foreach (var recipient in message.CcRecipients)
+        {
+            mailMessage.CC.Add(new MailAddress(recipient));
+        }
+
+        foreach (var recipient in message.BccRecipients)
+        {
+            mailMessage.Bcc.Add(new MailAddress(recipient));
         }
 
         var attachmentStreams = new List<MemoryStream>();

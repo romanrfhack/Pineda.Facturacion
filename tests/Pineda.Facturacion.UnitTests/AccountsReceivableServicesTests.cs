@@ -1,9 +1,11 @@
 using Microsoft.EntityFrameworkCore;
+using Pineda.Facturacion.Application.Abstractions.Communication;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Abstractions.Security;
 using Pineda.Facturacion.Application.Abstractions.Documents;
 using Pineda.Facturacion.Application.Security;
 using Pineda.Facturacion.Application.UseCases.AccountsReceivable;
+using Pineda.Facturacion.Application.UseCases.Audit;
 using Pineda.Facturacion.Domain.Entities;
 using Pineda.Facturacion.Domain.Enums;
 using Pineda.Facturacion.Infrastructure.BillingWrite.Persistence;
@@ -1561,6 +1563,441 @@ public class AccountsReceivableServicesTests
         Assert.Single(result.Workspace.RecentNotes);
     }
 
+    [Fact]
+    public async Task PreviewReceivablesSummary_SelectsAllPending_AndKeepsTotalsByCurrency()
+    {
+        var today = DateTime.UtcNow.Date;
+        var invoiceRepository = new ArFakeAccountsReceivableInvoiceRepository
+        {
+            PortfolioItems =
+            [
+                CreatePortfolioItem(201, "MXN", total: 1000m, paid: 250m, outstanding: 750m, dueAtUtc: today.AddDays(3)),
+                CreatePortfolioItem(202, "USD", total: 300m, paid: 0m, outstanding: 300m, dueAtUtc: today.AddDays(-2))
+            ]
+        };
+        var service = new PreviewReceivablesSummaryService(
+            CreateSummaryDocumentFactory(invoiceRepository),
+            new ArFakeReceivablesSummaryPdfRenderer());
+
+        var result = await service.ExecuteAsync(new ReceivablesSummaryCommand
+        {
+            ReceiverId = 77,
+            Scope = "all_pending",
+            To = ["cliente@example.com"],
+            Subject = "Resumen",
+            Message = "Mensaje",
+            Format = "html_with_pdf"
+        });
+
+        Assert.Equal(ReceivablesSummaryOutcome.Found, result.Outcome);
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(result.Document);
+        Assert.Equal(2, result.Document!.Selection.InvoiceCount);
+        Assert.Contains(result.Document.Selection.TotalsByCurrency, x => x.CurrencyCode == "MXN" && x.OutstandingBalance == 750m);
+        Assert.Contains(result.Document.Selection.TotalsByCurrency, x => x.CurrencyCode == "USD" && x.OverdueBalance == 300m);
+        Assert.Equal("%PDF-summary"u8.ToArray(), result.PdfContent);
+        Assert.Contains("Resumen de adeudos", result.Html, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task PreviewReceivablesSummary_ReturnsValidation_WhenOverdueScopeHasNoInvoices()
+    {
+        var invoiceRepository = new ArFakeAccountsReceivableInvoiceRepository
+        {
+            PortfolioItems =
+            [
+                CreatePortfolioItem(201, "MXN", total: 1000m, paid: 0m, outstanding: 1000m, dueAtUtc: DateTime.UtcNow.Date.AddDays(3))
+            ]
+        };
+        var service = new PreviewReceivablesSummaryService(
+            CreateSummaryDocumentFactory(invoiceRepository),
+            new ArFakeReceivablesSummaryPdfRenderer());
+
+        var result = await service.ExecuteAsync(new ReceivablesSummaryCommand
+        {
+            ReceiverId = 77,
+            Scope = "overdue",
+            To = ["cliente@example.com"],
+            Subject = "Resumen",
+            Message = "Mensaje",
+            Format = "html"
+        });
+
+        Assert.Equal(ReceivablesSummaryOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("vencidas", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SendReceivablesSummary_SendsHtmlWithPdf_AndRegistersReceiverHistory()
+    {
+        var emailSender = new ArFakeEmailSender();
+        var auditRepository = new ArFakeAuditEventRepository();
+        var service = new SendReceivablesSummaryService(
+            CreateSummaryDocumentFactory(new ArFakeAccountsReceivableInvoiceRepository
+            {
+                PortfolioItems =
+                [
+                    CreatePortfolioItem(201, "MXN", total: 1000m, paid: 100m, outstanding: 900m, dueAtUtc: DateTime.UtcNow.Date.AddDays(-1))
+                ]
+            }),
+            new ArFakeReceivablesSummaryPdfRenderer(),
+            emailSender,
+            auditRepository,
+            new ArFakeCurrentUserAccessor(),
+            new ArFakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new ReceivablesSummaryCommand
+        {
+            ReceiverId = 77,
+            Scope = "manual",
+            InvoiceIds = [201],
+            To = ["cliente@example.com"],
+            Cc = ["cobranza@example.com"],
+            Subject = "Resumen",
+            Message = "Mensaje",
+            Format = "html_with_pdf"
+        });
+
+        Assert.Equal(ReceivablesSummaryOutcome.Sent, result.Outcome);
+        Assert.True(result.IsSuccess);
+        Assert.Equal("900", result.HistoryId);
+        Assert.NotNull(emailSender.LastMessage);
+        Assert.True(emailSender.LastMessage!.IsBodyHtml);
+        Assert.Equal(["cliente@example.com"], emailSender.LastMessage.Recipients);
+        Assert.Equal(["cobranza@example.com"], emailSender.LastMessage.CcRecipients);
+        Assert.Single(emailSender.LastMessage.Attachments);
+        Assert.NotNull(auditRepository.Added);
+        Assert.Equal("AccountsReceivable.SendSummary", auditRepository.Added!.ActionType);
+        Assert.Equal("FiscalReceiver", auditRepository.Added.EntityType);
+        Assert.Equal("77", auditRepository.Added.EntityId);
+        Assert.Contains("\"invoiceIds\":[201]", auditRepository.Added.RequestSummaryJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PreviewReceivablesSummary_RejectsManualInvoiceOutsideReceiver()
+    {
+        var service = new PreviewReceivablesSummaryService(
+            CreateSummaryDocumentFactory(new ArFakeAccountsReceivableInvoiceRepository
+            {
+                PortfolioItems =
+                [
+                    CreatePortfolioItem(201, "MXN", total: 1000m, paid: 0m, outstanding: 1000m, dueAtUtc: DateTime.UtcNow.Date.AddDays(3), fiscalReceiverId: 77),
+                    CreatePortfolioItem(202, "MXN", total: 500m, paid: 0m, outstanding: 500m, dueAtUtc: DateTime.UtcNow.Date.AddDays(3), fiscalReceiverId: 88)
+                ]
+            }),
+            new ArFakeReceivablesSummaryPdfRenderer());
+
+        var result = await service.ExecuteAsync(new ReceivablesSummaryCommand
+        {
+            ReceiverId = 77,
+            Scope = "manual",
+            InvoiceIds = [201, 202],
+            To = ["cliente@example.com"],
+            Subject = "Resumen",
+            Message = "Mensaje",
+            Format = "html"
+        });
+
+        Assert.Equal(ReceivablesSummaryOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("no son elegibles", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task PreviewReceivablesSummary_RejectsPaidOrCancelledManualInvoices()
+    {
+        var service = new PreviewReceivablesSummaryService(
+            CreateSummaryDocumentFactory(new ArFakeAccountsReceivableInvoiceRepository
+            {
+                PortfolioItems =
+                [
+                    CreatePortfolioItem(201, "MXN", total: 1000m, paid: 1000m, outstanding: 0m, dueAtUtc: DateTime.UtcNow.Date.AddDays(-3), status: AccountsReceivableInvoiceStatus.Paid.ToString()),
+                    CreatePortfolioItem(202, "MXN", total: 500m, paid: 0m, outstanding: 500m, dueAtUtc: DateTime.UtcNow.Date.AddDays(-2), status: AccountsReceivableInvoiceStatus.Cancelled.ToString())
+                ]
+            }),
+            new ArFakeReceivablesSummaryPdfRenderer());
+
+        var result = await service.ExecuteAsync(new ReceivablesSummaryCommand
+        {
+            ReceiverId = 77,
+            Scope = "manual",
+            InvoiceIds = [201, 202],
+            To = ["cliente@example.com"],
+            Subject = "Resumen",
+            Message = "Mensaje",
+            Format = "html"
+        });
+
+        Assert.Equal(ReceivablesSummaryOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("no son elegibles", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task PreviewReceivablesSummary_AllowsCapturedRecipient_WhenReceiverHasNoEmail()
+    {
+        var service = new PreviewReceivablesSummaryService(
+            CreateSummaryDocumentFactory(
+                new ArFakeAccountsReceivableInvoiceRepository
+                {
+                    PortfolioItems =
+                    [
+                        CreatePortfolioItem(201, "MXN", total: 1000m, paid: 100m, outstanding: 900m, dueAtUtc: DateTime.UtcNow.Date.AddDays(3))
+                    ]
+                },
+                receiverEmail: null),
+            new ArFakeReceivablesSummaryPdfRenderer());
+
+        var result = await service.ExecuteAsync(new ReceivablesSummaryCommand
+        {
+            ReceiverId = 77,
+            Scope = "all_pending",
+            To = ["capturado@example.com"],
+            Subject = "Resumen",
+            Message = "Mensaje",
+            Format = "html"
+        });
+
+        Assert.Equal(ReceivablesSummaryOutcome.Found, result.Outcome);
+        Assert.True(result.IsSuccess);
+        Assert.Equal(["capturado@example.com"], result.Document!.To);
+    }
+
+    [Fact]
+    public async Task PreviewReceivablesSummary_RejectsInvalidCcOrBcc()
+    {
+        var service = new PreviewReceivablesSummaryService(
+            CreateSummaryDocumentFactory(new ArFakeAccountsReceivableInvoiceRepository
+            {
+                PortfolioItems =
+                [
+                    CreatePortfolioItem(201, "MXN", total: 1000m, paid: 0m, outstanding: 1000m, dueAtUtc: DateTime.UtcNow.Date.AddDays(3))
+                ]
+            }),
+            new ArFakeReceivablesSummaryPdfRenderer());
+
+        var result = await service.ExecuteAsync(new ReceivablesSummaryCommand
+        {
+            ReceiverId = 77,
+            Scope = "all_pending",
+            To = ["cliente@example.com"],
+            Cc = ["cc-invalido"],
+            Bcc = ["bcc@example.com"],
+            Subject = "Resumen",
+            Message = "Mensaje",
+            Format = "html"
+        });
+
+        Assert.Equal(ReceivablesSummaryOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("cc-invalido", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task PreviewReceivablesSummary_RejectsEmptySubjectOrMessage()
+    {
+        var service = new PreviewReceivablesSummaryService(
+            CreateSummaryDocumentFactory(new ArFakeAccountsReceivableInvoiceRepository
+            {
+                PortfolioItems =
+                [
+                    CreatePortfolioItem(201, "MXN", total: 1000m, paid: 0m, outstanding: 1000m, dueAtUtc: DateTime.UtcNow.Date.AddDays(3))
+                ]
+            }),
+            new ArFakeReceivablesSummaryPdfRenderer());
+
+        var emptySubject = await service.ExecuteAsync(new ReceivablesSummaryCommand
+        {
+            ReceiverId = 77,
+            Scope = "all_pending",
+            To = ["cliente@example.com"],
+            Subject = " ",
+            Message = "Mensaje",
+            Format = "html"
+        });
+        var emptyMessage = await service.ExecuteAsync(new ReceivablesSummaryCommand
+        {
+            ReceiverId = 77,
+            Scope = "all_pending",
+            To = ["cliente@example.com"],
+            Subject = "Resumen",
+            Message = " ",
+            Format = "html"
+        });
+
+        Assert.Equal(ReceivablesSummaryOutcome.ValidationFailed, emptySubject.Outcome);
+        Assert.Contains("asunto", emptySubject.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(ReceivablesSummaryOutcome.ValidationFailed, emptyMessage.Outcome);
+        Assert.Contains("mensaje", emptyMessage.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task PreviewReceivablesSummary_DoesNotTreatMissingDueDateAsOverdue()
+    {
+        var service = new PreviewReceivablesSummaryService(
+            CreateSummaryDocumentFactory(new ArFakeAccountsReceivableInvoiceRepository
+            {
+                PortfolioItems =
+                [
+                    CreatePortfolioItem(201, "MXN", total: 1000m, paid: 100m, outstanding: 900m, dueAtUtc: null)
+                ]
+            }),
+            new ArFakeReceivablesSummaryPdfRenderer());
+
+        var result = await service.ExecuteAsync(new ReceivablesSummaryCommand
+        {
+            ReceiverId = 77,
+            Scope = "all_pending",
+            To = ["cliente@example.com"],
+            Subject = "Resumen",
+            Message = "Mensaje",
+            Format = "html"
+        });
+
+        Assert.Equal(ReceivablesSummaryOutcome.Found, result.Outcome);
+        Assert.False(result.Document!.Invoices.Single().IsOverdue);
+        Assert.Equal(0, result.Document.Invoices.Single().DaysPastDue);
+        Assert.Contains("Sin fecha de vencimiento", result.Html, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task PreviewReceivablesSummary_ReturnsPdfGenerationFailure_WhenRendererFails()
+    {
+        var service = new PreviewReceivablesSummaryService(
+            CreateSummaryDocumentFactory(new ArFakeAccountsReceivableInvoiceRepository
+            {
+                PortfolioItems =
+                [
+                    CreatePortfolioItem(201, "MXN", total: 1000m, paid: 0m, outstanding: 1000m, dueAtUtc: DateTime.UtcNow.Date.AddDays(-1))
+                ]
+            }),
+            new ArFakeReceivablesSummaryPdfRenderer { Exception = new InvalidOperationException("PDF roto") });
+
+        var result = await service.ExecuteAsync(new ReceivablesSummaryCommand
+        {
+            ReceiverId = 77,
+            Scope = "all_pending",
+            To = ["cliente@example.com"],
+            Subject = "Resumen",
+            Message = "Mensaje",
+            Format = "html_with_pdf"
+        });
+
+        Assert.Equal(ReceivablesSummaryOutcome.PdfGenerationFailed, result.Outcome);
+        Assert.Contains("PDF roto", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.NotNull(result.Html);
+    }
+
+    [Fact]
+    public async Task SendReceivablesSummary_ReturnsDeliveryFailed_AndAudits_WhenSmtpFails()
+    {
+        var emailSender = new ArFakeEmailSender { Exception = new System.Net.Mail.SmtpException("SMTP caído") };
+        var auditRepository = new ArFakeAuditEventRepository();
+        var service = new SendReceivablesSummaryService(
+            CreateSummaryDocumentFactory(new ArFakeAccountsReceivableInvoiceRepository
+            {
+                PortfolioItems =
+                [
+                    CreatePortfolioItem(201, "MXN", total: 1000m, paid: 0m, outstanding: 1000m, dueAtUtc: DateTime.UtcNow.Date.AddDays(-1))
+                ]
+            }),
+            new ArFakeReceivablesSummaryPdfRenderer(),
+            emailSender,
+            auditRepository,
+            new ArFakeCurrentUserAccessor(),
+            new ArFakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new ReceivablesSummaryCommand
+        {
+            ReceiverId = 77,
+            Scope = "all_pending",
+            To = ["cliente@example.com"],
+            Subject = "Resumen",
+            Message = "Mensaje",
+            Format = "html"
+        });
+
+        Assert.Equal(ReceivablesSummaryOutcome.DeliveryFailed, result.Outcome);
+        Assert.False(result.IsSuccess);
+        Assert.NotNull(auditRepository.Added);
+        Assert.Equal(ReceivablesSummaryOutcome.DeliveryFailed.ToString(), auditRepository.Added!.Outcome);
+        Assert.Contains("SMTP", auditRepository.Added.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SendReceivablesSummary_ReturnsHistoryFailed_WhenAuditFailsAfterEmailSent()
+    {
+        var emailSender = new ArFakeEmailSender();
+        var auditRepository = new ArFakeAuditEventRepository { Exception = new InvalidOperationException("Audit offline") };
+        var service = new SendReceivablesSummaryService(
+            CreateSummaryDocumentFactory(new ArFakeAccountsReceivableInvoiceRepository
+            {
+                PortfolioItems =
+                [
+                    CreatePortfolioItem(201, "MXN", total: 1000m, paid: 0m, outstanding: 1000m, dueAtUtc: DateTime.UtcNow.Date.AddDays(-1))
+                ]
+            }),
+            new ArFakeReceivablesSummaryPdfRenderer(),
+            emailSender,
+            auditRepository,
+            new ArFakeCurrentUserAccessor(),
+            new ArFakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new ReceivablesSummaryCommand
+        {
+            ReceiverId = 77,
+            Scope = "all_pending",
+            To = ["cliente@example.com"],
+            Subject = "Resumen",
+            Message = "Mensaje",
+            Format = "html"
+        });
+
+        Assert.Equal(ReceivablesSummaryOutcome.HistoryFailed, result.Outcome);
+        Assert.NotNull(emailSender.LastMessage);
+        Assert.Contains("correo fue enviado", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task PreviewAndSendReceivablesSummary_UseSameTotals()
+    {
+        var invoiceRepository = new ArFakeAccountsReceivableInvoiceRepository
+        {
+            PortfolioItems =
+            [
+                CreatePortfolioItem(201, "MXN", total: 1000m, paid: 100m, outstanding: 900m, dueAtUtc: DateTime.UtcNow.Date.AddDays(-1)),
+                CreatePortfolioItem(202, "USD", total: 300m, paid: 20m, outstanding: 280m, dueAtUtc: DateTime.UtcNow.Date.AddDays(2))
+            ]
+        };
+        var command = new ReceivablesSummaryCommand
+        {
+            ReceiverId = 77,
+            Scope = "all_pending",
+            To = ["cliente@example.com"],
+            Subject = "Resumen",
+            Message = "Mensaje",
+            Format = "html"
+        };
+        var previewService = new PreviewReceivablesSummaryService(
+            CreateSummaryDocumentFactory(invoiceRepository),
+            new ArFakeReceivablesSummaryPdfRenderer());
+        var sendService = new SendReceivablesSummaryService(
+            CreateSummaryDocumentFactory(invoiceRepository),
+            new ArFakeReceivablesSummaryPdfRenderer(),
+            new ArFakeEmailSender(),
+            new ArFakeAuditEventRepository(),
+            new ArFakeCurrentUserAccessor(),
+            new ArFakeUnitOfWork());
+
+        var preview = await previewService.ExecuteAsync(command);
+        var send = await sendService.ExecuteAsync(command);
+
+        Assert.Equal(ReceivablesSummaryOutcome.Found, preview.Outcome);
+        Assert.Equal(ReceivablesSummaryOutcome.Sent, send.Outcome);
+        Assert.Equal(preview.Document!.Selection.InvoiceCount, send.Document!.Selection.InvoiceCount);
+        Assert.Equal(preview.Document.Selection.OutstandingBalance, send.Document.Selection.OutstandingBalance);
+        Assert.Equal(
+            preview.Document.Selection.TotalsByCurrency.Select(x => (x.CurrencyCode, x.OutstandingBalance)).ToArray(),
+            send.Document.Selection.TotalsByCurrency.Select(x => (x.CurrencyCode, x.OutstandingBalance)).ToArray());
+    }
+
     private static ApplyAccountsReceivablePaymentService CreateApplyService(
         AccountsReceivablePayment payment,
         params AccountsReceivableInvoice[] invoices)
@@ -1612,6 +2049,71 @@ public class AccountsReceivableServicesTests
             .Options;
 
         return new BillingDbContext(options);
+    }
+
+    private static ReceivablesSummaryDocumentFactory CreateSummaryDocumentFactory(
+        ArFakeAccountsReceivableInvoiceRepository invoiceRepository,
+        string? receiverEmail = "cliente@example.com")
+    {
+        return new ReceivablesSummaryDocumentFactory(
+            new SearchAccountsReceivablePortfolioService(
+                invoiceRepository,
+                new ArFakeAccountsReceivableCollectionRepository()),
+            new ArFakeFiscalReceiverRepository
+            {
+                ExistingById = new FiscalReceiver
+                {
+                    Id = 77,
+                    Rfc = "AAA010101AAA",
+                    LegalName = "Cliente Uno",
+                    Email = receiverEmail,
+                    FiscalRegimeCode = "601",
+                    PostalCode = "01000"
+                }
+            },
+            new ArFakeIssuerProfileRepository
+            {
+                ExistingActive = new IssuerProfile
+                {
+                    Id = 1,
+                    Rfc = "III010101III",
+                    LegalName = "Emisor Uno",
+                    FiscalRegimeCode = "601",
+                    PostalCode = "01000",
+                    IsActive = true
+                }
+            },
+            TimeProvider.System);
+    }
+
+    private static AccountsReceivablePortfolioItem CreatePortfolioItem(
+        long id,
+        string currencyCode,
+        decimal total,
+        decimal paid,
+        decimal outstanding,
+        DateTime? dueAtUtc,
+        long fiscalReceiverId = 77,
+        string? status = null)
+    {
+        return new AccountsReceivablePortfolioItem
+        {
+            AccountsReceivableInvoiceId = id,
+            FiscalDocumentId = id + 1000,
+            FiscalReceiverId = fiscalReceiverId,
+            ReceiverRfc = "AAA010101AAA",
+            ReceiverLegalName = "Cliente Uno",
+            FiscalSeries = "A",
+            FiscalFolio = id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            FiscalUuid = $"UUID-{id}",
+            CurrencyCode = currencyCode,
+            Total = total,
+            PaidTotal = paid,
+            OutstandingBalance = outstanding,
+            IssuedAtUtc = DateTime.UtcNow.Date.AddDays(-10),
+            DueAtUtc = dueAtUtc,
+            Status = status ?? AccountsReceivableInvoiceStatus.Open.ToString()
+        };
     }
 
     private static FiscalDocument CreateStampedFiscalDocument()
@@ -1819,7 +2321,20 @@ public class AccountsReceivableServicesTests
 
         public Task<IReadOnlyList<AccountsReceivablePortfolioItem>> SearchPortfolioAsync(SearchAccountsReceivablePortfolioFilter filter, CancellationToken cancellationToken = default)
         {
-            return Task.FromResult(PortfolioItems);
+            IEnumerable<AccountsReceivablePortfolioItem> query = PortfolioItems;
+            if (filter.FiscalReceiverId.HasValue)
+            {
+                query = query.Where(x => x.FiscalReceiverId == filter.FiscalReceiverId.Value);
+            }
+
+            if (filter.HasPendingBalance.HasValue)
+            {
+                query = filter.HasPendingBalance.Value
+                    ? query.Where(x => x.OutstandingBalance > 0m)
+                    : query.Where(x => x.OutstandingBalance <= 0m);
+            }
+
+            return Task.FromResult<IReadOnlyList<AccountsReceivablePortfolioItem>>(query.ToList());
         }
 
         public Task AddAsync(AccountsReceivableInvoice accountsReceivableInvoice, CancellationToken cancellationToken = default)
@@ -1906,6 +2421,82 @@ public class AccountsReceivableServicesTests
     private sealed class ArFakeUnitOfWork : IUnitOfWork
     {
         public Task SaveChangesAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private sealed class ArFakeIssuerProfileRepository : IIssuerProfileRepository
+    {
+        public IssuerProfile? ExistingActive { get; set; }
+
+        public Task<IssuerProfile?> GetActiveAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(ExistingActive);
+
+        public Task<IssuerProfile?> GetTrackedActiveAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(ExistingActive);
+
+        public Task<IssuerProfile?> GetByIdAsync(long issuerProfileId, CancellationToken cancellationToken = default)
+            => Task.FromResult(ExistingActive?.Id == issuerProfileId ? ExistingActive : null);
+
+        public Task<bool> TryAdvanceNextFiscalFolioAsync(long issuerProfileId, int expectedNextFiscalFolio, int newNextFiscalFolio, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+
+        public Task AddAsync(IssuerProfile issuerProfile, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task UpdateAsync(IssuerProfile issuerProfile, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class ArFakeReceivablesSummaryPdfRenderer : IReceivablesSummaryPdfRenderer
+    {
+        public Exception? Exception { get; set; }
+
+        public Task<byte[]> RenderAsync(ReceivablesSummaryDocument document, CancellationToken cancellationToken = default)
+        {
+            if (Exception is not null)
+            {
+                throw Exception;
+            }
+
+            return Task.FromResult("%PDF-summary"u8.ToArray());
+        }
+    }
+
+    private sealed class ArFakeEmailSender : IEmailSender
+    {
+        public EmailMessage? LastMessage { get; private set; }
+
+        public Exception? Exception { get; set; }
+
+        public Task SendAsync(EmailMessage message, CancellationToken cancellationToken = default)
+        {
+            LastMessage = message;
+            if (Exception is not null)
+            {
+                throw Exception;
+            }
+
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class ArFakeAuditEventRepository : IAuditEventRepository
+    {
+        public AuditEvent? Added { get; private set; }
+
+        public Exception? Exception { get; set; }
+
+        public Task AddAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
+        {
+            if (Exception is not null)
+            {
+                throw Exception;
+            }
+
+            auditEvent.Id = 900;
+            Added = auditEvent;
+            return Task.CompletedTask;
+        }
+
+        public Task<AuditEventPage> SearchAsync(AuditEventFilter filter, CancellationToken cancellationToken = default)
+            => Task.FromResult(new AuditEventPage());
     }
 
     private sealed class ArFakeCurrentUserAccessor : ICurrentUserAccessor

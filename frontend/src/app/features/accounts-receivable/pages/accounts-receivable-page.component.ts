@@ -20,10 +20,12 @@ import {
   CreateCollectionNoteRequest,
   SearchAccountsReceivablePortfolioRequest,
   SearchAccountsReceivablePaymentsRequest,
+  SendReceivablesSummaryResponse,
 } from '../models/accounts-receivable.models';
 import { AccountsReceivableCardComponent } from '../components/accounts-receivable-card.component';
 import { PaymentApplicationFormComponent } from '../components/payment-application-form.component';
 import { PaymentRemainderApplicationFormComponent } from '../components/payment-remainder-application-form.component';
+import { SendReceivablesSummaryButtonComponent } from '../components/send-receivables-summary-button.component';
 import { extractApiErrorMessage } from '../../../core/http/api-error-message';
 import {
   StatusBadgeComponent,
@@ -58,6 +60,7 @@ interface ReceiverWorkspaceInvoiceViewModel {
     AccountsReceivableCardComponent,
     PaymentApplicationFormComponent,
     PaymentRemainderApplicationFormComponent,
+    SendReceivablesSummaryButtonComponent,
     StatusBadgeComponent,
   ],
   template: `
@@ -474,6 +477,14 @@ interface ReceiverWorkspaceInvoiceViewModel {
               </p>
             </div>
             <div class="detail-badges">
+              @if (permissionService.canManagePayments()) {
+                <app-send-receivables-summary-button
+                  [receiverId]="workspace.fiscalReceiverId"
+                  [currentSelection]="selectedReceiverWorkspaceInvoiceIds()"
+                  [disabled]="loading()"
+                  (summarySent)="handleReceivablesSummarySent($event)"
+                />
+              }
               @if (workspace.summary.hasPendingCommitment) {
                 <span class="badge" data-status="PendingCommitment">Compromiso pendiente</span>
               }
@@ -608,6 +619,14 @@ interface ReceiverWorkspaceInvoiceViewModel {
               <table class="portfolio receiver-workspace-table">
                 <thead>
                   <tr>
+                    <th>
+                      <input
+                        type="checkbox"
+                        [checked]="allVisibleReceiverWorkspaceInvoicesSelected()"
+                        (change)="toggleAllVisibleReceiverWorkspaceInvoices($any($event.target).checked)"
+                        aria-label="Seleccionar todas las facturas visibles"
+                      />
+                    </th>
                     <th>Factura</th>
                     <th>Emisión</th>
                     <th>Vencimiento</th>
@@ -628,6 +647,25 @@ interface ReceiverWorkspaceInvoiceViewModel {
                       [class.is-overdue]="item.collection.status === 'overdue'"
                       [attr.data-collection-status]="item.collection.status"
                     >
+                      <td data-label="Seleccionar">
+                        <input
+                          type="checkbox"
+                          [checked]="
+                            isReceiverWorkspaceInvoiceSelected(
+                              item.invoice.accountsReceivableInvoiceId
+                            )
+                          "
+                          (change)="
+                            toggleReceiverWorkspaceInvoiceSelection(
+                              item.invoice.accountsReceivableInvoiceId,
+                              $any($event.target).checked
+                            )
+                          "
+                          [attr.aria-label]="
+                            'Seleccionar factura ' + formatFiscalLabel(item.invoice)
+                          "
+                        />
+                      </td>
                       <td data-label="Factura">
                         <div>{{ formatFiscalLabel(item.invoice) }}</div>
                         <div class="subtle">{{ item.invoice.fiscalUuid || 'UUID pendiente' }}</div>
@@ -1701,6 +1739,7 @@ export class AccountsReceivablePageComponent {
   protected readonly receiverWorkspace = signal<AccountsReceivableReceiverWorkspaceResponse | null>(
     null,
   );
+  protected readonly selectedReceiverWorkspaceInvoiceIds = signal<number[]>([]);
   protected readonly receiverWorkspaceFilters = RECEIVABLE_WORKSPACE_FILTERS;
   protected readonly receiverWorkspaceFilter = signal<ReceivableWorkspaceFilter>(
     RECEIVABLE_WORKSPACE_FILTERS.openInvoices,
@@ -1935,6 +1974,7 @@ export class AccountsReceivablePageComponent {
 
       if (accountsReceivableInvoiceId !== null || fiscalDocumentId !== null || paymentId !== null) {
         this.receiverWorkspace.set(null);
+        this.selectedReceiverWorkspaceInvoiceIds.set([]);
         this.receiverLookupResults.set([]);
 
         if (accountsReceivableInvoiceId !== null) {
@@ -1958,6 +1998,7 @@ export class AccountsReceivablePageComponent {
         this.invoice.set(null);
         this.payment.set(null);
         this.eligibleReceiverInvoices.set([]);
+        this.selectedReceiverWorkspaceInvoiceIds.set([]);
         this.receiverWorkspaceFilter.set(RECEIVABLE_WORKSPACE_FILTERS.openInvoices);
         this.receiverWorkspaceToday.set(new Date());
         void this.loadReceiverWorkspace(receiverWorkspaceId);
@@ -1967,6 +2008,7 @@ export class AccountsReceivablePageComponent {
       this.invoice.set(null);
       this.payment.set(null);
       this.receiverWorkspace.set(null);
+      this.selectedReceiverWorkspaceInvoiceIds.set([]);
       this.receiverLookupResults.set([]);
       this.eligibleReceiverInvoices.set([]);
       void this.loadPortfolio();
@@ -2015,6 +2057,67 @@ export class AccountsReceivablePageComponent {
     }
 
     return {};
+  }
+
+  protected isReceiverWorkspaceInvoiceSelected(accountsReceivableInvoiceId: number): boolean {
+    return this.selectedReceiverWorkspaceInvoiceIds().includes(accountsReceivableInvoiceId);
+  }
+
+  protected toggleReceiverWorkspaceInvoiceSelection(
+    accountsReceivableInvoiceId: number,
+    checked: boolean,
+  ): void {
+    if (checked) {
+      this.selectedReceiverWorkspaceInvoiceIds.set([
+        ...new Set([...this.selectedReceiverWorkspaceInvoiceIds(), accountsReceivableInvoiceId]),
+      ]);
+      return;
+    }
+
+    this.selectedReceiverWorkspaceInvoiceIds.set(
+      this.selectedReceiverWorkspaceInvoiceIds().filter((id) => id !== accountsReceivableInvoiceId),
+    );
+  }
+
+  protected allVisibleReceiverWorkspaceInvoicesSelected(): boolean {
+    const visibleIds = this.receiverWorkspaceInvoiceRows().map(
+      (item) => item.invoice.accountsReceivableInvoiceId,
+    );
+    return (
+      visibleIds.length > 0 &&
+      visibleIds.every((id) => this.selectedReceiverWorkspaceInvoiceIds().includes(id))
+    );
+  }
+
+  protected toggleAllVisibleReceiverWorkspaceInvoices(checked: boolean): void {
+    const visibleIds = this.receiverWorkspaceInvoiceRows().map(
+      (item) => item.invoice.accountsReceivableInvoiceId,
+    );
+    if (checked) {
+      this.selectedReceiverWorkspaceInvoiceIds.set([
+        ...new Set([...this.selectedReceiverWorkspaceInvoiceIds(), ...visibleIds]),
+      ]);
+      return;
+    }
+
+    const visibleIdSet = new Set(visibleIds);
+    this.selectedReceiverWorkspaceInvoiceIds.set(
+      this.selectedReceiverWorkspaceInvoiceIds().filter((id) => !visibleIdSet.has(id)),
+    );
+  }
+
+  protected async handleReceivablesSummarySent(
+    response: SendReceivablesSummaryResponse,
+  ): Promise<void> {
+    this.feedbackService.show(
+      'success',
+      `Resumen de adeudos enviado. Historial #${response.historyId ?? 'registrado'}.`,
+    );
+    const fiscalReceiverId = this.receiverWorkspaceId();
+    if (fiscalReceiverId !== null) {
+      this.selectedReceiverWorkspaceInvoiceIds.set([]);
+      await this.loadReceiverWorkspace(fiscalReceiverId);
+    }
   }
 
   protected async applyPortfolioFilters(): Promise<void> {
@@ -2179,6 +2282,12 @@ export class AccountsReceivablePageComponent {
     try {
       const workspace = await firstValueFrom(this.api.getReceiverWorkspace(fiscalReceiverId));
       this.receiverWorkspace.set(workspace);
+      const workspaceInvoiceIds = new Set(
+        workspace.invoices.map((invoice) => invoice.accountsReceivableInvoiceId),
+      );
+      this.selectedReceiverWorkspaceInvoiceIds.set(
+        this.selectedReceiverWorkspaceInvoiceIds().filter((id) => workspaceInvoiceIds.has(id)),
+      );
       this.receiverLookupResults.set([]);
       this.receiverLookupQuery = workspace.rfc || workspace.legalName || '';
     } catch {

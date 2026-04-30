@@ -55,6 +55,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IExcelWorksheetReader, ClosedXmlWorksheetReader>();
         services.AddSingleton<ILoginAttemptThrottleService, InMemoryLoginAttemptThrottleService>();
         services.AddScoped<IFiscalDocumentPdfRenderer, FiscalDocumentPdfRenderer>();
+        services.AddScoped<IReceivablesSummaryPdfRenderer, ReceivablesSummaryPdfRenderer>();
         services.AddSingleton<IIssuerProfileLogoStorage, IssuerProfileLogoStorage>();
         services.AddSingleton<IEmailSender, SmtpEmailSender>();
         services.AddSingleton<IPasswordHasher, PasswordHasherService>();

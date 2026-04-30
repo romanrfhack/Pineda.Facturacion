@@ -86,4 +86,55 @@ describe('AccountsReceivableApiService', () => {
     });
     httpTesting.verify();
   });
+
+  it('uses receiver summary routes for candidates, preview and send', () => {
+    const service = TestBed.inject(AccountsReceivableApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+    const request = {
+      receiverId: '77',
+      invoiceIds: [10],
+      scope: 'manual' as const,
+      to: ['cliente@example.com'],
+      cc: [],
+      bcc: [],
+      subject: 'Resumen de adeudos pendientes - Cliente',
+      message: 'Mensaje',
+      format: 'html_with_pdf' as const,
+      includeOptions: {
+        invoiceTable: true,
+        totalsByCurrency: true,
+        highlightOverdue: true,
+        paymentInstructions: true,
+        receiverFiscalData: true,
+        issuerData: true,
+        invoiceLinks: true,
+      },
+    };
+
+    service.getReceivablesSummaryCandidates(77).subscribe();
+    let req = httpTesting.expectOne('/api/accounts-receivable/receivers/77/summary-candidates');
+    expect(req.request.method).toBe('GET');
+    req.flush({
+      receiver: { id: 77, legalName: 'Cliente', rfc: 'AAA010101AAA' },
+      issuer: { id: 1, legalName: 'Emisor', rfc: 'III010101III' },
+      defaultTo: ['cliente@example.com'],
+      defaultSubject: 'Resumen',
+      defaultMessage: 'Mensaje',
+      invoices: [],
+    });
+
+    service.previewReceivablesSummary(77, request).subscribe();
+    req = httpTesting.expectOne('/api/accounts-receivable/receivers/77/summary-preview');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual(request);
+    req.flush({ outcome: 'Found', success: true, html: '<p>ok</p>' });
+
+    service.sendReceivablesSummary(77, request).subscribe();
+    req = httpTesting.expectOne('/api/accounts-receivable/receivers/77/send-summary');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual(request);
+    req.flush({ success: true, outcome: 'Sent', sentAt: '2026-04-29T12:00:00Z', historyId: '1', attachedPdf: true });
+
+    httpTesting.verify();
+  });
 });
