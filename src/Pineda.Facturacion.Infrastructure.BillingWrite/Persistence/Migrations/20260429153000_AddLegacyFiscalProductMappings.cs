@@ -1,12 +1,16 @@
 ﻿using System;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Pineda.Facturacion.Infrastructure.BillingWrite.Persistence;
 
 #nullable disable
 
 namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
 {
     /// <inheritdoc />
+    [DbContext(typeof(BillingDbContext))]
+    [Migration("20260429153000_AddLegacyFiscalProductMappings")]
     public partial class AddLegacyFiscalProductMappings : Migration
     {
         /// <inheritdoc />
