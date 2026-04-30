@@ -85,6 +85,7 @@ public sealed class EmailDeliverySafetyPolicy
                 Recipients = [safeRecipient],
                 CcRecipients = [],
                 BccRecipients = [],
+                InlineResources = message.InlineResources,
                 Attachments = message.Attachments
             },
             EnvironmentName: environmentName,
@@ -110,6 +111,7 @@ public sealed class EmailDeliverySafetyPolicy
             Recipients = recipients,
             CcRecipients = ccRecipients,
             BccRecipients = bccRecipients,
+            InlineResources = message.InlineResources,
             Attachments = message.Attachments
         };
     }

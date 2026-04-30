@@ -8,6 +8,14 @@ namespace Pineda.Facturacion.Application.UseCases.AccountsReceivable;
 
 public static class ReceivablesSummaryComposer
 {
+    public const string IssuerLogoContentId = "issuer-logo";
+
+    private const string ContentCellStyle = "padding:20px 24px 24px;";
+    private const string SectionHeadingStyle = "margin:22px 0 10px;font-size:20px;color:#182533;font-family:Georgia,'Times New Roman',serif;";
+    private const string DataTableStyle = "width:100%;border-collapse:collapse;margin-top:14px;font-family:Arial,sans-serif;font-size:13px;";
+    private const string HeaderCellStyle = "background:#efe7d8;color:#3d3323;text-align:left;padding:10px;border-bottom:1px solid #eadfcb;";
+    private const string DataCellStyle = "padding:10px;border-bottom:1px solid #eadfcb;vertical-align:top;";
+
     public static bool TryParseScope(string? value, out ReceivablesSummaryScope scope)
     {
         scope = NormalizeKey(value) switch
@@ -137,7 +145,7 @@ public static class ReceivablesSummaryComposer
         };
     }
 
-    public static string BuildHtml(ReceivablesSummaryDocument document)
+    public static string BuildHtml(ReceivablesSummaryDocument document, bool renderIssuerLogoAsDataUri = false)
     {
         ArgumentNullException.ThrowIfNull(document);
 
@@ -145,39 +153,49 @@ public static class ReceivablesSummaryComposer
         builder.AppendLine("<!doctype html>");
         builder.AppendLine("<html><head><meta charset=\"utf-8\"><style>");
         builder.AppendLine("body{margin:0;background:#f4f0e7;color:#182533;font-family:Georgia,'Times New Roman',serif;}");
-        builder.AppendLine(".wrap{max-width:900px;margin:0 auto;padding:28px;}.panel{background:#fff;border:1px solid #d8d1c2;border-radius:18px;overflow:hidden;box-shadow:0 18px 40px rgba(24,37,51,.12);}");
+        builder.AppendLine(".wrap{max-width:900px;margin:0 auto;padding:28px;}.panel{background:#fff;border:1px solid #d8d1c2;border-radius:18px;overflow:hidden;box-shadow:0 18px 40px rgba(24,37,51,.12);border-collapse:separate;}");
         builder.AppendLine(".hero{background:#182533;color:#fff;padding:28px 32px;}.hero small{color:#d8c7a0;letter-spacing:.12em;text-transform:uppercase}.hero h1{margin:8px 0 0;font-size:28px;}");
-        builder.AppendLine(".content{padding:20px 24px 24px;}.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:22px 0;}.metric{border:1px solid #e6dccb;border-radius:14px;padding:14px;background:#fffdf8;}.metric span{display:block;color:#6c5a38;font-size:12px;text-transform:uppercase;letter-spacing:.08em}.metric strong{display:block;margin-top:8px;font-size:20px;}");
-        builder.AppendLine("table{width:100%;border-collapse:collapse;margin-top:14px;font-family:Arial,sans-serif;font-size:13px;}th{background:#efe7d8;color:#3d3323;text-align:left;}th,td{padding:10px;border-bottom:1px solid #eadfcb;}tr.overdue{background:#fff4f1;}a{color:#174f78}.footer{padding:18px 32px;background:#faf7ef;color:#6b7280;font-size:12px;}");
-        builder.AppendLine("</style></head><body><div class=\"wrap\"><section class=\"panel\">");
-        builder.AppendLine("<header class=\"hero\">");
-        builder.Append("<small>").Append(Html(document.Issuer.LegalName)).AppendLine("</small>");
-        builder.AppendLine("<h1>Resumen de adeudos pendientes</h1>");
-        builder.Append("<p>Emitido para ").Append(Html(document.Receiver.LegalName)).Append(" el ").Append(Html(FormatDateTime(document.GeneratedAtUtc))).AppendLine("</p>");
-        builder.AppendLine("</header><main class=\"content\" style=\"padding:20px 24px 24px;\">");
-        builder.Append("<p>").Append(Html(document.Message)).AppendLine("</p>");
+        builder.AppendLine(".content{padding:20px 24px 24px;}.metric{border:1px solid #e6dccb;border-radius:14px;padding:14px;background:#fffdf8;}.metric span{display:block;color:#6c5a38;font-size:12px;text-transform:uppercase;letter-spacing:.08em}.metric strong{display:block;margin-top:8px;font-size:20px;}");
+        builder.AppendLine("table.data-table{width:100%;border-collapse:collapse;margin-top:14px;font-family:Arial,sans-serif;font-size:13px;}table.data-table th{background:#efe7d8;color:#3d3323;text-align:left;}table.data-table th,table.data-table td{padding:10px;border-bottom:1px solid #eadfcb;}tr.overdue{background:#fff4f1;}a{color:#174f78}.footer{padding:18px 24px;background:#faf7ef;color:#6b7280;font-size:12px;}");
+        builder.AppendLine("</style></head><body><div class=\"wrap\" style=\"max-width:900px;margin:0 auto;padding:28px;\">");
+        builder.AppendLine("<table role=\"presentation\" class=\"panel\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"background:#fff;border:1px solid #d8d1c2;border-radius:18px;overflow:hidden;box-shadow:0 18px 40px rgba(24,37,51,.12);border-collapse:separate;\">");
+        builder.AppendLine("<tr><td class=\"hero\" style=\"background:#182533;color:#fff;padding:28px 32px;\">");
+        AppendHeader(builder, document, renderIssuerLogoAsDataUri);
+        builder.AppendLine("</td></tr>");
+        builder.AppendLine("<tr><td class=\"content\" style=\"" + ContentCellStyle + "\">");
+        builder.Append("<p style=\"margin:0 0 14px;line-height:1.55;\">").Append(Html(document.Message)).AppendLine("</p>");
 
         if (document.Format == ReceivablesSummaryFormat.Pdf)
         {
-            builder.AppendLine("<p>El estado de cuenta detallado se incluye como archivo PDF adjunto.</p>");
+            builder.AppendLine("<p style=\"margin:0 0 14px;line-height:1.55;\">El estado de cuenta detallado se incluye como archivo PDF adjunto.</p>");
         }
 
-        builder.AppendLine("<section class=\"summary\">");
+        builder.AppendLine("<table role=\"presentation\" class=\"summary\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"width:100%;border-collapse:separate;border-spacing:0;margin:22px 0 10px;\"><tr>");
         AppendMetric(builder, "Facturas incluidas", document.Selection.InvoiceCount.ToString(CultureInfo.InvariantCulture));
         AppendMetric(builder, "Saldo total", FormatCurrencyTotals(document.Selection.TotalsByCurrency, x => x.OutstandingBalance));
         AppendMetric(builder, "Saldo vencido", FormatCurrencyTotals(document.Selection.TotalsByCurrency, x => x.OverdueBalance));
         AppendMetric(builder, "Saldo por vencer", FormatCurrencyTotals(document.Selection.TotalsByCurrency, x => x.CurrentBalance));
-        builder.AppendLine("</section>");
+        builder.AppendLine("</tr></table>");
 
         if (document.IncludeOptions.TotalsByCurrency && document.Selection.TotalsByCurrency.Count > 1)
         {
-            builder.AppendLine("<h2>Totales por moneda</h2><table><thead><tr><th>Moneda</th><th>Facturas</th><th>Saldo</th><th>Vencido</th><th>Por vencer</th></tr></thead><tbody>");
+            builder.Append("<h2 style=\"").Append(SectionHeadingStyle).AppendLine("\">Totales por moneda</h2>");
+            builder.Append("<table class=\"data-table\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"").Append(DataTableStyle).AppendLine("\"><thead><tr>");
+            AppendHeaderCell(builder, "Moneda");
+            AppendHeaderCell(builder, "Facturas");
+            AppendHeaderCell(builder, "Saldo");
+            AppendHeaderCell(builder, "Vencido");
+            AppendHeaderCell(builder, "Por vencer");
+            builder.AppendLine("</tr></thead><tbody>");
             foreach (var total in document.Selection.TotalsByCurrency)
             {
-                builder.Append("<tr><td>").Append(Html(total.CurrencyCode)).Append("</td><td>").Append(total.InvoiceCount.ToString(CultureInfo.InvariantCulture)).Append("</td><td>")
-                    .Append(Html(FormatMoney(total.OutstandingBalance, total.CurrencyCode))).Append("</td><td>")
-                    .Append(Html(FormatMoney(total.OverdueBalance, total.CurrencyCode))).Append("</td><td>")
-                    .Append(Html(FormatMoney(total.CurrentBalance, total.CurrencyCode))).AppendLine("</td></tr>");
+                builder.Append("<tr>");
+                AppendDataCell(builder, total.CurrencyCode);
+                AppendDataCell(builder, total.InvoiceCount.ToString(CultureInfo.InvariantCulture));
+                AppendDataCell(builder, FormatMoney(total.OutstandingBalance, total.CurrencyCode));
+                AppendDataCell(builder, FormatMoney(total.OverdueBalance, total.CurrencyCode));
+                AppendDataCell(builder, FormatMoney(total.CurrentBalance, total.CurrencyCode));
+                builder.AppendLine("</tr>");
             }
             builder.AppendLine("</tbody></table>");
         }
@@ -189,13 +207,14 @@ public static class ReceivablesSummaryComposer
 
         if (document.IncludeOptions.PaymentInstructions)
         {
-            builder.AppendLine("<h2>Instrucciones de pago</h2>");
-            builder.AppendLine("<p>Favor de realizar el pago conforme a los acuerdos comerciales vigentes y compartir el comprobante para su conciliación. Si requiere una aclaración, responda a este correo indicando los folios involucrados.</p>");
+            builder.Append("<h2 style=\"").Append(SectionHeadingStyle).AppendLine("\">Instrucciones de pago</h2>");
+            builder.AppendLine("<p style=\"margin:0 0 14px;line-height:1.55;\">Favor de realizar el pago conforme a los acuerdos comerciales vigentes y compartir el comprobante para su conciliación. Si requiere una aclaración, responda a este correo indicando los folios involucrados.</p>");
         }
 
         if (document.IncludeOptions.ReceiverFiscalData || document.IncludeOptions.IssuerData)
         {
-            builder.AppendLine("<h2>Datos fiscales</h2><table><tbody>");
+            builder.Append("<h2 style=\"").Append(SectionHeadingStyle).AppendLine("\">Datos fiscales</h2>");
+            builder.Append("<table class=\"data-table\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"").Append(DataTableStyle).AppendLine("\"><tbody>");
             if (document.IncludeOptions.IssuerData)
             {
                 AppendPartyRow(builder, "Emisor", document.Issuer);
@@ -207,8 +226,8 @@ public static class ReceivablesSummaryComposer
             builder.AppendLine("</tbody></table>");
         }
 
-        builder.AppendLine("</main><footer class=\"footer\" style=\"padding:18px 24px;background:#faf7ef;color:#6b7280;font-size:12px;\">Resumen informativo generado con base en los registros actuales de cuentas por cobrar. Firma institucional.</footer>");
-        builder.AppendLine("</section></div></body></html>");
+        builder.AppendLine("</td></tr><tr><td class=\"footer\" style=\"padding:18px 24px;background:#faf7ef;color:#6b7280;font-size:12px;\">Resumen informativo generado con base en los registros actuales de cuentas por cobrar. Firma institucional.</td></tr>");
+        builder.AppendLine("</table></div></body></html>");
         return builder.ToString();
     }
 
@@ -293,17 +312,31 @@ public static class ReceivablesSummaryComposer
 
     private static void AppendMetric(StringBuilder builder, string label, string value)
     {
-        builder.Append("<article class=\"metric\"><span>").Append(Html(label)).Append("</span><strong>")
-            .Append(Html(value)).AppendLine("</strong></article>");
+        builder.Append("<td style=\"width:25%;padding:0 8px 12px 0;vertical-align:top;\">")
+            .Append("<div class=\"metric\" style=\"border:1px solid #e6dccb;border-radius:14px;padding:14px;background:#fffdf8;\">")
+            .Append("<span style=\"display:block;color:#6c5a38;font-size:12px;text-transform:uppercase;letter-spacing:.08em;\">")
+            .Append(Html(label))
+            .Append("</span><strong style=\"display:block;margin-top:8px;font-size:20px;color:#182533;\">")
+            .Append(Html(value))
+            .AppendLine("</strong></div></td>");
     }
 
     private static void AppendInvoiceTable(StringBuilder builder, ReceivablesSummaryDocument document)
     {
-        builder.AppendLine("<h2>Facturas incluidas</h2>");
-        builder.AppendLine("<table><thead><tr><th>Folio</th><th>Fecha factura</th><th>Vencimiento</th><th>Días vencida</th><th>Moneda</th><th>Total</th><th>Pagado</th><th>Saldo</th><th>Estado</th>");
+        builder.Append("<h2 style=\"").Append(SectionHeadingStyle).AppendLine("\">Facturas incluidas</h2>");
+        builder.Append("<table class=\"data-table\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"").Append(DataTableStyle).AppendLine("\"><thead><tr>");
+        AppendHeaderCell(builder, "Folio");
+        AppendHeaderCell(builder, "Fecha factura");
+        AppendHeaderCell(builder, "Vencimiento");
+        AppendHeaderCell(builder, "Días vencida");
+        AppendHeaderCell(builder, "Moneda");
+        AppendHeaderCell(builder, "Total");
+        AppendHeaderCell(builder, "Pagado");
+        AppendHeaderCell(builder, "Saldo");
+        AppendHeaderCell(builder, "Estado");
         if (document.IncludeOptions.InvoiceLinks)
         {
-            builder.Append("<th>Comprobante</th>");
+            AppendHeaderCell(builder, "Comprobante");
         }
         builder.AppendLine("</tr></thead><tbody>");
 
@@ -312,21 +345,22 @@ public static class ReceivablesSummaryComposer
             builder.Append("<tr");
             if (document.IncludeOptions.HighlightOverdue && invoice.IsOverdue)
             {
-                builder.Append(" class=\"overdue\"");
+                builder.Append(" class=\"overdue\" style=\"background:#fff4f1;\"");
             }
-            builder.Append("><td>").Append(Html(FormatInvoiceLabel(invoice))).Append("</td><td>")
-                .Append(Html(FormatDate(invoice.IssuedAtUtc))).Append("</td><td>")
-                .Append(Html(FormatDate(invoice.DueAtUtc))).Append("</td><td>")
-                .Append(invoice.IsOverdue ? invoice.DaysPastDue.ToString(CultureInfo.InvariantCulture) : "-").Append("</td><td>")
-                .Append(Html(invoice.CurrencyCode)).Append("</td><td>")
-                .Append(Html(FormatMoney(invoice.Total, invoice.CurrencyCode))).Append("</td><td>")
-                .Append(Html(FormatMoney(invoice.PaidTotal, invoice.CurrencyCode))).Append("</td><td>")
-                .Append(Html(FormatMoney(invoice.OutstandingBalance, invoice.CurrencyCode))).Append("</td><td>")
-                .Append(Html(invoice.Status)).Append("</td>");
+            builder.Append(">");
+            AppendDataCell(builder, FormatInvoiceLabel(invoice));
+            AppendDataCell(builder, FormatDate(invoice.IssuedAtUtc));
+            AppendDataCell(builder, FormatDate(invoice.DueAtUtc));
+            AppendDataCell(builder, invoice.IsOverdue ? invoice.DaysPastDue.ToString(CultureInfo.InvariantCulture) : "-");
+            AppendDataCell(builder, invoice.CurrencyCode);
+            AppendDataCell(builder, FormatMoney(invoice.Total, invoice.CurrencyCode));
+            AppendDataCell(builder, FormatMoney(invoice.PaidTotal, invoice.CurrencyCode));
+            AppendDataCell(builder, FormatMoney(invoice.OutstandingBalance, invoice.CurrencyCode));
+            AppendDataCell(builder, invoice.Status);
 
             if (document.IncludeOptions.InvoiceLinks)
             {
-                builder.Append("<td>");
+                builder.Append("<td style=\"").Append(DataCellStyle).Append("\">");
                 if (!string.IsNullOrWhiteSpace(invoice.DocumentLink))
                 {
                     builder.Append("<a href=\"").Append(HtmlAttribute(invoice.DocumentLink)).Append("\">Ver CFDI</a>");
@@ -346,7 +380,8 @@ public static class ReceivablesSummaryComposer
 
     private static void AppendPartyRow(StringBuilder builder, string label, ReceivablesSummaryParty party)
     {
-        builder.Append("<tr><th>").Append(Html(label)).Append("</th><td>")
+        builder.Append("<tr><th scope=\"row\" style=\"").Append(HeaderCellStyle).Append("\">").Append(Html(label)).Append("</th><td style=\"")
+            .Append(DataCellStyle).Append("\">")
             .Append(Html(party.LegalName)).Append(" · RFC ").Append(Html(party.Rfc));
         if (!string.IsNullOrWhiteSpace(party.FiscalRegimeCode))
         {
@@ -357,6 +392,58 @@ public static class ReceivablesSummaryComposer
             builder.Append(" · CP ").Append(Html(party.PostalCode));
         }
         builder.AppendLine("</td></tr>");
+    }
+
+    private static void AppendHeader(StringBuilder builder, ReceivablesSummaryDocument document, bool renderIssuerLogoAsDataUri)
+    {
+        var logoSource = BuildIssuerLogoSource(document.IssuerLogo, renderIssuerLogoAsDataUri);
+        if (logoSource is null)
+        {
+            AppendHeaderText(builder, document);
+            return;
+        }
+
+        builder.AppendLine("<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"width:100%;border-collapse:collapse;margin:0;font-family:Georgia,'Times New Roman',serif;\"><tr>");
+        builder.AppendLine("<td style=\"vertical-align:top;padding:0;color:#fff;\">");
+        AppendHeaderText(builder, document);
+        builder.AppendLine("</td>");
+        builder.Append("<td style=\"vertical-align:top;text-align:right;width:140px;padding:0 0 0 16px;\">")
+            .Append("<img src=\"").Append(HtmlAttribute(logoSource)).Append("\" alt=\"Logo del emisor\" style=\"display:block;max-width:120px;max-height:48px;width:auto;height:auto;margin-left:auto;border:0;\" />")
+            .AppendLine("</td>");
+        builder.AppendLine("</tr></table>");
+    }
+
+    private static void AppendHeaderText(StringBuilder builder, ReceivablesSummaryDocument document)
+    {
+        builder.Append("<small style=\"color:#d8c7a0;letter-spacing:.12em;text-transform:uppercase;\">").Append(Html(document.Issuer.LegalName)).AppendLine("</small>");
+        builder.AppendLine("<h1 style=\"margin:8px 0 0;font-size:28px;line-height:1.15;color:#fff;\">Resumen de adeudos pendientes</h1>");
+        builder.Append("<p style=\"margin:10px 0 0;line-height:1.45;color:#fff;\">Emitido para ").Append(Html(document.Receiver.LegalName)).Append(" el ").Append(Html(FormatDateTime(document.GeneratedAtUtc))).AppendLine("</p>");
+    }
+
+    private static string? BuildIssuerLogoSource(ReceivablesSummaryLogo? logo, bool renderIssuerLogoAsDataUri)
+    {
+        if (logo?.Content is not { Length: > 0 })
+        {
+            return null;
+        }
+
+        if (!renderIssuerLogoAsDataUri)
+        {
+            return $"cid:{IssuerLogoContentId}";
+        }
+
+        var contentType = string.IsNullOrWhiteSpace(logo.ContentType) ? "application/octet-stream" : logo.ContentType;
+        return $"data:{contentType};base64,{Convert.ToBase64String(logo.Content)}";
+    }
+
+    private static void AppendHeaderCell(StringBuilder builder, string label)
+    {
+        builder.Append("<th style=\"").Append(HeaderCellStyle).Append("\">").Append(Html(label)).Append("</th>");
+    }
+
+    private static void AppendDataCell(StringBuilder builder, string value)
+    {
+        builder.Append("<td style=\"").Append(DataCellStyle).Append("\">").Append(Html(value)).Append("</td>");
     }
 
     private static string FormatCurrencyTotals(

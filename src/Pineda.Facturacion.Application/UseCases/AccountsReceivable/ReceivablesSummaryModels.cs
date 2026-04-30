@@ -144,6 +144,17 @@ public sealed class ReceivablesSummarySelection
     public IReadOnlyList<ReceivablesSummaryTotalByCurrency> TotalsByCurrency { get; init; } = [];
 }
 
+public sealed class ReceivablesSummaryLogo
+{
+    public string ContentId { get; init; } = string.Empty;
+
+    public string FileName { get; init; } = string.Empty;
+
+    public string ContentType { get; init; } = string.Empty;
+
+    public byte[] Content { get; init; } = [];
+}
+
 public sealed class ReceivablesSummaryDocument
 {
     public long ReceiverId { get; init; }
@@ -155,6 +166,8 @@ public sealed class ReceivablesSummaryDocument
     public ReceivablesSummaryParty Receiver { get; init; } = new();
 
     public ReceivablesSummaryParty Issuer { get; init; } = new();
+
+    public ReceivablesSummaryLogo? IssuerLogo { get; init; }
 
     public IReadOnlyList<ReceivablesSummaryCandidate> Invoices { get; init; } = [];
 
@@ -188,6 +201,8 @@ public sealed class GetReceivablesSummaryCandidatesResult
     public ReceivablesSummaryParty Receiver { get; init; } = new();
 
     public ReceivablesSummaryParty Issuer { get; init; } = new();
+
+    public ReceivablesSummaryLogo? IssuerLogo { get; init; }
 
     public IReadOnlyList<ReceivablesSummaryCandidate> Invoices { get; init; } = [];
 

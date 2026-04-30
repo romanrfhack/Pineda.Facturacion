@@ -1597,7 +1597,46 @@ public class AccountsReceivableServicesTests
         Assert.Contains(result.Document.Selection.TotalsByCurrency, x => x.CurrencyCode == "USD" && x.OverdueBalance == 300m);
         Assert.Equal("%PDF-summary"u8.ToArray(), result.PdfContent);
         Assert.Contains("Resumen de adeudos", result.Html, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("<main class=\"content\" style=\"padding:20px 24px 24px;\">", result.Html, StringComparison.Ordinal);
+        Assert.Contains("<td class=\"content\" style=\"padding:20px 24px 24px;\">", result.Html, StringComparison.Ordinal);
+        Assert.DoesNotContain("Logo del emisor", result.Html, StringComparison.Ordinal);
+        Assert.DoesNotContain("cid:issuer-logo", result.Html, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task PreviewReceivablesSummary_RendersBodySectionsInsidePaddedContentCell()
+    {
+        var service = new PreviewReceivablesSummaryService(
+            CreateSummaryDocumentFactory(new ArFakeAccountsReceivableInvoiceRepository
+            {
+                PortfolioItems =
+                [
+                    CreatePortfolioItem(201, "MXN", total: 1000m, paid: 250m, outstanding: 750m, dueAtUtc: DateTime.UtcNow.Date.AddDays(3))
+                ]
+            }),
+            new ArFakeReceivablesSummaryPdfRenderer());
+
+        var result = await service.ExecuteAsync(new ReceivablesSummaryCommand
+        {
+            ReceiverId = 77,
+            Scope = "all_pending",
+            To = ["cliente@example.com"],
+            Subject = "Resumen",
+            Message = "Mensaje inicial validado",
+            Format = "html"
+        });
+
+        Assert.Equal(ReceivablesSummaryOutcome.Found, result.Outcome);
+        var html = result.Html!;
+        var bodyStart = html.IndexOf("<td class=\"content\" style=\"padding:20px 24px 24px;\">", StringComparison.Ordinal);
+        var bodyEnd = html.IndexOf("</td></tr><tr><td class=\"footer\"", StringComparison.Ordinal);
+
+        Assert.True(bodyStart >= 0);
+        Assert.True(bodyEnd > bodyStart);
+        AssertTextInside(html, "Mensaje inicial validado", bodyStart, bodyEnd);
+        AssertTextInside(html, "Facturas incluidas", bodyStart, bodyEnd);
+        AssertTextInside(html, "Instrucciones de pago", bodyStart, bodyEnd);
+        AssertTextInside(html, "Datos fiscales", bodyStart, bodyEnd);
+        Assert.Contains("<table class=\"data-table\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"width:100%;border-collapse:collapse;", html, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1664,8 +1703,9 @@ public class AccountsReceivableServicesTests
         Assert.Equal("900", result.HistoryId);
         Assert.NotNull(emailSender.LastMessage);
         Assert.True(emailSender.LastMessage!.IsBodyHtml);
-        Assert.Contains("<main class=\"content\" style=\"padding:20px 24px 24px;\">", emailSender.LastMessage.Body, StringComparison.Ordinal);
-        Assert.Contains("<footer class=\"footer\" style=\"padding:18px 24px;", emailSender.LastMessage.Body, StringComparison.Ordinal);
+        Assert.Contains("<td class=\"content\" style=\"padding:20px 24px 24px;\">", emailSender.LastMessage.Body, StringComparison.Ordinal);
+        Assert.Contains("<td class=\"footer\" style=\"padding:18px 24px;", emailSender.LastMessage.Body, StringComparison.Ordinal);
+        Assert.Empty(emailSender.LastMessage.InlineResources);
         Assert.Equal(["cliente@example.com"], emailSender.LastMessage.Recipients);
         Assert.Equal(["cobranza@example.com"], emailSender.LastMessage.CcRecipients);
         Assert.Single(emailSender.LastMessage.Attachments);
@@ -1674,6 +1714,76 @@ public class AccountsReceivableServicesTests
         Assert.Equal("FiscalReceiver", auditRepository.Added.EntityType);
         Assert.Equal("77", auditRepository.Added.EntityId);
         Assert.Contains("\"invoiceIds\":[201]", auditRepository.Added.RequestSummaryJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PreviewReceivablesSummary_RendersIssuerLogoAsDataUri_WhenLogoExists()
+    {
+        var service = new PreviewReceivablesSummaryService(
+            CreateSummaryDocumentFactory(
+                new ArFakeAccountsReceivableInvoiceRepository
+                {
+                    PortfolioItems =
+                    [
+                        CreatePortfolioItem(201, "MXN", total: 1000m, paid: 100m, outstanding: 900m, dueAtUtc: DateTime.UtcNow.Date.AddDays(3))
+                    ]
+                },
+                issuerLogoData: [0x89, 0x50, 0x4E, 0x47]),
+            new ArFakeReceivablesSummaryPdfRenderer());
+
+        var result = await service.ExecuteAsync(new ReceivablesSummaryCommand
+        {
+            ReceiverId = 77,
+            Scope = "all_pending",
+            To = ["cliente@example.com"],
+            Subject = "Resumen",
+            Message = "Mensaje",
+            Format = "html"
+        });
+
+        Assert.Equal(ReceivablesSummaryOutcome.Found, result.Outcome);
+        Assert.Contains("alt=\"Logo del emisor\"", result.Html, StringComparison.Ordinal);
+        Assert.Contains("src=\"data:image/png;base64,", result.Html, StringComparison.Ordinal);
+        Assert.DoesNotContain("cid:issuer-logo", result.Html, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SendReceivablesSummary_AttachesIssuerLogoInline_WhenLogoExists()
+    {
+        var emailSender = new ArFakeEmailSender();
+        var service = new SendReceivablesSummaryService(
+            CreateSummaryDocumentFactory(
+                new ArFakeAccountsReceivableInvoiceRepository
+                {
+                    PortfolioItems =
+                    [
+                        CreatePortfolioItem(201, "MXN", total: 1000m, paid: 100m, outstanding: 900m, dueAtUtc: DateTime.UtcNow.Date.AddDays(3))
+                    ]
+                },
+                issuerLogoData: [0x89, 0x50, 0x4E, 0x47]),
+            new ArFakeReceivablesSummaryPdfRenderer(),
+            emailSender,
+            new ArFakeAuditEventRepository(),
+            new ArFakeCurrentUserAccessor(),
+            new ArFakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new ReceivablesSummaryCommand
+        {
+            ReceiverId = 77,
+            Scope = "all_pending",
+            To = ["cliente@example.com"],
+            Subject = "Resumen",
+            Message = "Mensaje",
+            Format = "html"
+        });
+
+        Assert.Equal(ReceivablesSummaryOutcome.Sent, result.Outcome);
+        Assert.NotNull(emailSender.LastMessage);
+        Assert.Contains("src=\"cid:issuer-logo\"", emailSender.LastMessage!.Body, StringComparison.Ordinal);
+        var inlineResource = Assert.Single(emailSender.LastMessage.InlineResources);
+        Assert.Equal("issuer-logo", inlineResource.ContentId);
+        Assert.Equal("image/png", inlineResource.ContentType);
+        Assert.Equal([0x89, 0x50, 0x4E, 0x47], inlineResource.Content);
     }
 
     [Fact]
@@ -2056,7 +2166,8 @@ public class AccountsReceivableServicesTests
 
     private static ReceivablesSummaryDocumentFactory CreateSummaryDocumentFactory(
         ArFakeAccountsReceivableInvoiceRepository invoiceRepository,
-        string? receiverEmail = "cliente@example.com")
+        string? receiverEmail = "cliente@example.com",
+        byte[]? issuerLogoData = null)
     {
         return new ReceivablesSummaryDocumentFactory(
             new SearchAccountsReceivablePortfolioService(
@@ -2083,10 +2194,20 @@ public class AccountsReceivableServicesTests
                     LegalName = "Emisor Uno",
                     FiscalRegimeCode = "601",
                     PostalCode = "01000",
-                    IsActive = true
+                    IsActive = true,
+                    LogoData = issuerLogoData,
+                    LogoSizeBytes = issuerLogoData?.Length,
+                    LogoFileName = issuerLogoData is null ? null : "issuer-logo.png",
+                    LogoContentType = issuerLogoData is null ? null : "image/png"
                 }
             },
             TimeProvider.System);
+    }
+
+    private static void AssertTextInside(string html, string expectedText, int startIndex, int endIndex)
+    {
+        var textIndex = html.IndexOf(expectedText, StringComparison.Ordinal);
+        Assert.True(textIndex >= startIndex && textIndex < endIndex, $"Expected '{expectedText}' inside padded content cell.");
     }
 
     private static AccountsReceivablePortfolioItem CreatePortfolioItem(

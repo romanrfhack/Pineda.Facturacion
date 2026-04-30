@@ -30,7 +30,7 @@ public sealed class PreviewReceivablesSummaryService
         }
 
         var document = buildResult.Document;
-        var html = ReceivablesSummaryComposer.BuildHtml(document);
+        var html = ReceivablesSummaryComposer.BuildHtml(document, renderIssuerLogoAsDataUri: true);
         byte[]? pdfContent = null;
         string? pdfFileName = null;
 

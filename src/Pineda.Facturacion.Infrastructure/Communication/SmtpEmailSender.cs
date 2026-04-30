@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Mail;
+using System.Net.Mime;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Pineda.Facturacion.Application.Abstractions.Communication;
@@ -64,8 +65,38 @@ public class SmtpEmailSender : IEmailSender
         }
 
         var attachmentStreams = new List<MemoryStream>();
+        var inlineResourceStreams = new List<MemoryStream>();
         try
         {
+            if (message.IsBodyHtml && message.InlineResources.Count > 0)
+            {
+                var htmlView = AlternateView.CreateAlternateViewFromString(message.Body, null, MediaTypeNames.Text.Html);
+                foreach (var inlineResource in message.InlineResources)
+                {
+                    if (inlineResource.Content.Length == 0 || string.IsNullOrWhiteSpace(inlineResource.ContentId))
+                    {
+                        continue;
+                    }
+
+                    var stream = new MemoryStream(inlineResource.Content, writable: false);
+                    inlineResourceStreams.Add(stream);
+                    var contentType = string.IsNullOrWhiteSpace(inlineResource.ContentType)
+                        ? MediaTypeNames.Application.Octet
+                        : inlineResource.ContentType;
+                    var linkedResource = new LinkedResource(stream, contentType)
+                    {
+                        ContentId = inlineResource.ContentId,
+                        TransferEncoding = TransferEncoding.Base64
+                    };
+                    linkedResource.ContentType.Name = string.IsNullOrWhiteSpace(inlineResource.FileName)
+                        ? inlineResource.ContentId
+                        : inlineResource.FileName;
+                    htmlView.LinkedResources.Add(linkedResource);
+                }
+
+                mailMessage.AlternateViews.Add(htmlView);
+            }
+
             foreach (var attachment in message.Attachments)
             {
                 var stream = new MemoryStream(attachment.Content, writable: false);
@@ -90,6 +121,11 @@ public class SmtpEmailSender : IEmailSender
         finally
         {
             foreach (var stream in attachmentStreams)
+            {
+                await stream.DisposeAsync();
+            }
+
+            foreach (var stream in inlineResourceStreams)
             {
                 await stream.DisposeAsync();
             }
