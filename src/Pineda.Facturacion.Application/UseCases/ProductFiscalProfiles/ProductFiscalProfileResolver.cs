@@ -42,6 +42,8 @@ public sealed class ProductFiscalProfileResolver
         }
 
         var normalizedInternalCode = FiscalMasterDataNormalization.NormalizeRequiredCode(request.InternalCode);
+        var normalizedLegacyInternalKey = FiscalProductTextNormalization.NormalizeOptionalKey(request.InternalCode)
+            ?? normalizedInternalCode;
         var normalizedDescription = FiscalProductTextNormalization.NormalizeOptionalText(request.Description);
         var effectiveAssignment = await _productFiscalProfileRepository.GetEffectiveAssignmentAsync(
             normalizedInternalCode,
@@ -101,7 +103,7 @@ public sealed class ProductFiscalProfileResolver
         }
 
         var legacyResult = await TryResolveLegacyMappingAsync(
-            normalizedInternalCode,
+            normalizedLegacyInternalKey,
             normalizedDescription,
             request,
             existingProfile,

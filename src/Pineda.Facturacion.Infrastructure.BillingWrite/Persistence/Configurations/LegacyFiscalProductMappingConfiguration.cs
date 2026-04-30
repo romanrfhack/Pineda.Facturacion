@@ -108,10 +108,15 @@ public sealed class LegacyFiscalProductMappingConfiguration : IEntityTypeConfigu
             .HasColumnName("created_at_utc")
             .IsRequired();
 
-        builder.HasIndex(x => x.DescriptionNormalized);
-        builder.HasIndex(x => x.InternalCatalogNormalized);
-        builder.HasIndex(x => x.SkuCodeNormalized);
-        builder.HasIndex(x => x.EanCodeNormalized);
-        builder.HasIndex(x => new { x.ImportBatchId, x.SourceConceptId });
+        builder.HasIndex(x => x.DescriptionNormalized)
+            .HasDatabaseName("IX_legacy_mapping_description_normalized");
+        builder.HasIndex(x => x.InternalCatalogNormalized)
+            .HasDatabaseName("IX_legacy_mapping_internal_catalog_normalized");
+        builder.HasIndex(x => x.SkuCodeNormalized)
+            .HasDatabaseName("IX_legacy_mapping_sku_code_normalized");
+        builder.HasIndex(x => x.EanCodeNormalized)
+            .HasDatabaseName("IX_legacy_mapping_ean_code_normalized");
+        builder.HasIndex(x => new { x.ImportBatchId, x.SourceConceptId })
+            .HasDatabaseName("IX_legacy_mapping_import_source_concept");
     }
 }

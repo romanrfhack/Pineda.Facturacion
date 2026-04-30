@@ -668,6 +668,57 @@ public sealed class SatCatalogImportAndAssignmentTests
     }
 
     [Fact]
+    public async Task ProductFiscalProfileResolver_ResolvesExactLegacyMappingByDescription_WhenInternalCodeDiffers()
+    {
+        await using var dbContext = CreateDbContext();
+        await SeedSatCatalogEntriesAsync(dbContext);
+        await CreateLegacyMappingImportService(dbContext).ExecuteAsync(new ImportLegacyFiscalProductMappingsFromCsvCommand
+        {
+            SourceFileName = "switch-description.csv",
+            FileContent = CreateLegacyCsvBytes("1,Switch de ignición,25173900,H87,LEGACY-SWITCH,,")
+        });
+        var resolver = CreateResolver(dbContext);
+
+        var result = await resolver.ResolveAsync(new ProductFiscalProfileResolutionRequest
+        {
+            InternalCode = "7E0 905 865",
+            Description = "SWITCH DE IGNICION",
+            BillingDocumentItemTaxObjectCode = "02",
+            BillingDocumentItemVatRate = 0.16m
+        }, DateTime.UtcNow);
+
+        Assert.Equal(ProductFiscalProfileResolutionStatus.Resolved, result.Status);
+        Assert.Equal(ProductFiscalProfileResolver.SourceLegacyMapping, result.Source);
+        Assert.True(result.ShouldPersistEffectiveAssignment);
+        Assert.Equal("25173900", result.ResolvedProfile!.SatProductServiceCode);
+        Assert.Equal("H87", result.ResolvedProfile.SatUnitCode);
+        Assert.Equal("7E0 905 865", result.ResolvedProfile.InternalCode);
+        Assert.Contains("descripcion", result.Reason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ProductFiscalProfileResolver_ResolvesExactLegacyMappingByUniqueInternalCode()
+    {
+        await using var dbContext = CreateDbContext();
+        await SeedSatCatalogEntriesAsync(dbContext);
+        await ImportSwitchLegacyMappingAsync(dbContext);
+        var resolver = CreateResolver(dbContext);
+
+        var result = await resolver.ResolveAsync(new ProductFiscalProfileResolutionRequest
+        {
+            InternalCode = "SW-1",
+            Description = "Descripcion capturada distinta",
+            BillingDocumentItemTaxObjectCode = "02",
+            BillingDocumentItemVatRate = 0.16m
+        }, DateTime.UtcNow);
+
+        Assert.Equal(ProductFiscalProfileResolutionStatus.Resolved, result.Status);
+        Assert.Equal(ProductFiscalProfileResolver.SourceLegacyMapping, result.Source);
+        Assert.Equal("25173900", result.ResolvedProfile!.SatProductServiceCode);
+        Assert.Contains("codigo interno", result.Reason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task ProductFiscalProfileResolver_ReturnsAmbiguous_WhenLegacyDescriptionMapsToMultipleSatCodes()
     {
         await using var dbContext = CreateDbContext();
@@ -689,6 +740,34 @@ public sealed class SatCatalogImportAndAssignmentTests
         }, DateTime.UtcNow);
 
         Assert.Equal(ProductFiscalProfileResolutionStatus.Ambiguous, result.Status);
+        Assert.Equal(2, result.Candidates.Count);
+        Assert.All(result.Candidates, candidate => Assert.True(candidate.RequiresExplicitConfirmation));
+    }
+
+    [Fact]
+    public async Task ProductFiscalProfileResolver_ReturnsAmbiguous_WhenLegacyInternalCodeMapsToMultipleSatCodes()
+    {
+        await using var dbContext = CreateDbContext();
+        await SeedSatCatalogEntriesAsync(dbContext);
+        await CreateLegacyMappingImportService(dbContext).ExecuteAsync(new ImportLegacyFiscalProductMappingsFromCsvCommand
+        {
+            SourceFileName = "ambiguous-internal.csv",
+            FileContent = CreateLegacyCsvBytes(
+                "1,Switch de ignición,25173900,H87,SW-1,,",
+                "2,Interruptor encendido,40161513,H87,SW-1,,")
+        });
+        var resolver = CreateResolver(dbContext);
+
+        var result = await resolver.ResolveAsync(new ProductFiscalProfileResolutionRequest
+        {
+            InternalCode = "SW-1",
+            Description = "Descripcion sin match exacto",
+            BillingDocumentItemVatRate = 0.16m
+        }, DateTime.UtcNow);
+
+        Assert.Equal(ProductFiscalProfileResolutionStatus.Ambiguous, result.Status);
+        Assert.Null(result.ResolvedProfile);
+        Assert.False(result.ShouldPersistEffectiveAssignment);
         Assert.Equal(2, result.Candidates.Count);
         Assert.All(result.Candidates, candidate => Assert.True(candidate.RequiresExplicitConfirmation));
     }
@@ -768,6 +847,36 @@ public sealed class SatCatalogImportAndAssignmentTests
         Assert.False(result.ShouldPersistEffectiveAssignment);
         Assert.Equal("01010101", Assert.Single(result.Candidates).SatProductServiceCode);
         Assert.True(result.Candidates[0].RequiresExplicitConfirmation);
+    }
+
+    [Fact]
+    public async Task ProductFiscalProfileResolver_ReturnsFuzzyLegacyMappingOnlyAsSuggestion()
+    {
+        await using var dbContext = CreateDbContext();
+        await SeedSatCatalogEntriesAsync(dbContext);
+        await CreateLegacyMappingImportService(dbContext).ExecuteAsync(new ImportLegacyFiscalProductMappingsFromCsvCommand
+        {
+            SourceFileName = "fuzzy.csv",
+            FileContent = CreateLegacyCsvBytes("1,Switch de ignición automotriz,25173900,H87,SW-AUTO,,")
+        });
+        var resolver = CreateResolver(dbContext);
+
+        var result = await resolver.ResolveAsync(new ProductFiscalProfileResolutionRequest
+        {
+            InternalCode = "SW-FUZZY",
+            Description = "Switch de ignición",
+            BillingDocumentItemTaxObjectCode = "02",
+            BillingDocumentItemVatRate = 0.16m
+        }, DateTime.UtcNow);
+
+        Assert.Equal(ProductFiscalProfileResolutionStatus.Suggested, result.Status);
+        Assert.Equal(ProductFiscalProfileResolver.SourceLegacyMapping, result.Source);
+        Assert.Null(result.ResolvedProfile);
+        Assert.False(result.ShouldPersistEffectiveAssignment);
+        var candidate = Assert.Single(result.Candidates);
+        Assert.Equal("25173900", candidate.SatProductServiceCode);
+        Assert.Equal("fuzzyDescription", candidate.MatchKind);
+        Assert.True(candidate.RequiresExplicitConfirmation);
     }
 
     [Fact]
