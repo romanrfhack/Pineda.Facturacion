@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Mail;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Pineda.Facturacion.Application.Abstractions.Communication;
 using Pineda.Facturacion.Infrastructure.Options;
@@ -8,16 +9,30 @@ namespace Pineda.Facturacion.Infrastructure.Communication;
 
 public class SmtpEmailSender : IEmailSender
 {
+    private readonly EmailDeliverySafetyPolicy _deliverySafetyPolicy;
+    private readonly ILogger<SmtpEmailSender> _logger;
     private readonly SmtpEmailOptions _options;
 
-    public SmtpEmailSender(IOptions<SmtpEmailOptions> options)
+    public SmtpEmailSender(
+        IOptions<SmtpEmailOptions> options,
+        EmailDeliverySafetyPolicy deliverySafetyPolicy,
+        ILogger<SmtpEmailSender> logger)
     {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(deliverySafetyPolicy);
+        ArgumentNullException.ThrowIfNull(logger);
+
         _options = options.Value;
+        _deliverySafetyPolicy = deliverySafetyPolicy;
+        _logger = logger;
     }
 
     public async Task SendAsync(EmailMessage message, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(message);
+
+        var safetyResult = _deliverySafetyPolicy.Apply(message);
+        message = safetyResult.Message;
 
         var configurationValidationError = ValidateConfiguration();
         if (configurationValidationError is not null)
@@ -70,6 +85,7 @@ public class SmtpEmailSender : IEmailSender
 
             cancellationToken.ThrowIfCancellationRequested();
             await smtpClient.SendMailAsync(mailMessage);
+            LogSafetyResult(safetyResult);
         }
         finally
         {
@@ -78,6 +94,28 @@ public class SmtpEmailSender : IEmailSender
                 await stream.DisposeAsync();
             }
         }
+    }
+
+    private void LogSafetyResult(EmailDeliverySafetyResult safetyResult)
+    {
+        if (safetyResult.IsProduction)
+        {
+            _logger.LogInformation(
+                "Email safety policy applied in production environment {EnvironmentName}. MonitoringBccAdded={MonitoringBccAdded}. ToCount={ToCount}; CcCount={CcCount}; BccCount={BccCount}.",
+                safetyResult.EnvironmentName,
+                safetyResult.ProductionBccAdded,
+                safetyResult.OriginalToCount,
+                safetyResult.OriginalCcCount,
+                safetyResult.OriginalBccCount);
+            return;
+        }
+
+        _logger.LogInformation(
+            "Email safety policy redirected message to safe recipient for non-production environment {EnvironmentName}. OriginalToCount={OriginalToCount}; OriginalCcCount={OriginalCcCount}; OriginalBccCount={OriginalBccCount}.",
+            safetyResult.EnvironmentName,
+            safetyResult.OriginalToCount,
+            safetyResult.OriginalCcCount,
+            safetyResult.OriginalBccCount);
     }
 
     private string? ValidateConfiguration()
