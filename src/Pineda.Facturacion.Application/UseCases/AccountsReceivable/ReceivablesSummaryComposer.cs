@@ -147,14 +147,14 @@ public static class ReceivablesSummaryComposer
         builder.AppendLine("body{margin:0;background:#f4f0e7;color:#182533;font-family:Georgia,'Times New Roman',serif;}");
         builder.AppendLine(".wrap{max-width:900px;margin:0 auto;padding:28px;}.panel{background:#fff;border:1px solid #d8d1c2;border-radius:18px;overflow:hidden;box-shadow:0 18px 40px rgba(24,37,51,.12);}");
         builder.AppendLine(".hero{background:#182533;color:#fff;padding:28px 32px;}.hero small{color:#d8c7a0;letter-spacing:.12em;text-transform:uppercase}.hero h1{margin:8px 0 0;font-size:28px;}");
-        builder.AppendLine(".content{padding:28px 32px;}.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:22px 0;}.metric{border:1px solid #e6dccb;border-radius:14px;padding:14px;background:#fffdf8;}.metric span{display:block;color:#6c5a38;font-size:12px;text-transform:uppercase;letter-spacing:.08em}.metric strong{display:block;margin-top:8px;font-size:20px;}");
+        builder.AppendLine(".content{padding:20px 24px 24px;}.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:22px 0;}.metric{border:1px solid #e6dccb;border-radius:14px;padding:14px;background:#fffdf8;}.metric span{display:block;color:#6c5a38;font-size:12px;text-transform:uppercase;letter-spacing:.08em}.metric strong{display:block;margin-top:8px;font-size:20px;}");
         builder.AppendLine("table{width:100%;border-collapse:collapse;margin-top:14px;font-family:Arial,sans-serif;font-size:13px;}th{background:#efe7d8;color:#3d3323;text-align:left;}th,td{padding:10px;border-bottom:1px solid #eadfcb;}tr.overdue{background:#fff4f1;}a{color:#174f78}.footer{padding:18px 32px;background:#faf7ef;color:#6b7280;font-size:12px;}");
         builder.AppendLine("</style></head><body><div class=\"wrap\"><section class=\"panel\">");
         builder.AppendLine("<header class=\"hero\">");
         builder.Append("<small>").Append(Html(document.Issuer.LegalName)).AppendLine("</small>");
         builder.AppendLine("<h1>Resumen de adeudos pendientes</h1>");
         builder.Append("<p>Emitido para ").Append(Html(document.Receiver.LegalName)).Append(" el ").Append(Html(FormatDateTime(document.GeneratedAtUtc))).AppendLine("</p>");
-        builder.AppendLine("</header><main class=\"content\">");
+        builder.AppendLine("</header><main class=\"content\" style=\"padding:20px 24px 24px;\">");
         builder.Append("<p>").Append(Html(document.Message)).AppendLine("</p>");
 
         if (document.Format == ReceivablesSummaryFormat.Pdf)
@@ -207,7 +207,7 @@ public static class ReceivablesSummaryComposer
             builder.AppendLine("</tbody></table>");
         }
 
-        builder.AppendLine("</main><footer class=\"footer\">Resumen informativo generado con base en los registros actuales de cuentas por cobrar. Firma institucional.</footer>");
+        builder.AppendLine("</main><footer class=\"footer\" style=\"padding:18px 24px;background:#faf7ef;color:#6b7280;font-size:12px;\">Resumen informativo generado con base en los registros actuales de cuentas por cobrar. Firma institucional.</footer>");
         builder.AppendLine("</section></div></body></html>");
         return builder.ToString();
     }

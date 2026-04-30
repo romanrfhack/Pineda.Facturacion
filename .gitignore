@@ -73,6 +73,7 @@ BenchmarkDotNet.Artifacts/
 project.lock.json
 project.fragment.lock.json
 artifacts/
+src/Pineda.Facturacion.Api/App_Data/issuer-logos/
 
 # Tye
 .tye/

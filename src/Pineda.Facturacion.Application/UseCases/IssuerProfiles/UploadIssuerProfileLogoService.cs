@@ -5,6 +5,14 @@ namespace Pineda.Facturacion.Application.UseCases.IssuerProfiles;
 
 public sealed class UploadIssuerProfileLogoService
 {
+    private const int MaxLogoFileSizeBytes = 1_048_576;
+
+    private static readonly IReadOnlyDictionary<string, LogoFormat> SupportedFormats = new Dictionary<string, LogoFormat>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["image/png"] = new(".png", [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
+        ["image/jpeg"] = new(".jpg", [0xFF, 0xD8, 0xFF])
+    };
+
     private readonly IIssuerProfileRepository _issuerProfileRepository;
     private readonly IIssuerProfileLogoStorage _logoStorage;
     private readonly IUnitOfWork _unitOfWork;
@@ -42,31 +50,25 @@ public sealed class UploadIssuerProfileLogoService
             };
         }
 
-        var storageResult = await _logoStorage.SaveAsync(issuerProfileId, fileName, declaredContentType, content, cancellationToken);
-        if (!storageResult.IsSuccess)
+        var validation = ValidateLogo(fileName, declaredContentType, content);
+        if (!validation.IsSuccess || validation.Format is null)
         {
-            return ValidationFailure(storageResult.ErrorMessage ?? "No fue posible guardar el logotipo.");
+            return ValidationFailure(validation.ErrorMessage ?? "No fue posible validar el logotipo.");
         }
 
         var previousStoragePath = issuerProfile.LogoStoragePath;
-        try
-        {
-            issuerProfile.LogoStoragePath = storageResult.StoragePath;
-            issuerProfile.LogoFileName = storageResult.FileName;
-            issuerProfile.LogoContentType = storageResult.ContentType;
-            issuerProfile.LogoUpdatedAtUtc = DateTime.UtcNow;
-            issuerProfile.UpdatedAtUtc = DateTime.UtcNow;
+        issuerProfile.LogoStoragePath = null;
+        issuerProfile.LogoData = content.ToArray();
+        issuerProfile.LogoSizeBytes = content.Length;
+        issuerProfile.LogoFileName = validation.FileName;
+        issuerProfile.LogoContentType = validation.Format.ContentType;
+        issuerProfile.LogoUpdatedAtUtc = DateTime.UtcNow;
+        issuerProfile.UpdatedAtUtc = DateTime.UtcNow;
 
-            await _issuerProfileRepository.UpdateAsync(issuerProfile, cancellationToken);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-        }
-        catch
-        {
-            await _logoStorage.DeleteAsync(storageResult.StoragePath, cancellationToken);
-            throw;
-        }
+        await _issuerProfileRepository.UpdateAsync(issuerProfile, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        if (!string.Equals(previousStoragePath, storageResult.StoragePath, StringComparison.OrdinalIgnoreCase))
+        if (!string.IsNullOrWhiteSpace(previousStoragePath))
         {
             await _logoStorage.DeleteAsync(previousStoragePath, cancellationToken);
         }
@@ -87,5 +89,94 @@ public sealed class UploadIssuerProfileLogoService
             IsSuccess = false,
             ErrorMessage = errorMessage
         };
+    }
+
+    private static LogoValidationResult ValidateLogo(string fileName, string? declaredContentType, byte[] content)
+    {
+        if (content.Length == 0)
+        {
+            return LogoValidationResult.Failure("El archivo del logotipo no puede estar vacío.");
+        }
+
+        if (content.Length > MaxLogoFileSizeBytes)
+        {
+            return LogoValidationResult.Failure("El logotipo supera el tamaño máximo permitido de 1 MB.");
+        }
+
+        var detectedFormat = DetectFormat(content);
+        if (detectedFormat is null)
+        {
+            return LogoValidationResult.Failure("Solo se permiten imágenes PNG, JPG o JPEG válidas.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(declaredContentType)
+            && !string.Equals(declaredContentType, detectedFormat.ContentType, StringComparison.OrdinalIgnoreCase))
+        {
+            return LogoValidationResult.Failure("El formato declarado del archivo no coincide con el contenido de la imagen.");
+        }
+
+        var safeFileName = NormalizeFileName(fileName, detectedFormat.Extension);
+
+        return LogoValidationResult.Success(detectedFormat, safeFileName);
+    }
+
+    private static string NormalizeFileName(string fileName, string extension)
+    {
+        var candidate = string.IsNullOrWhiteSpace(fileName)
+            ? string.Empty
+            : Path.GetFileName(fileName.Replace('\\', '/')).Trim();
+
+        if (string.IsNullOrWhiteSpace(candidate) || candidate is "." or "..")
+        {
+            return $"logo{extension}";
+        }
+
+        var invalidChars = Path.GetInvalidFileNameChars();
+        var sanitized = new string(candidate
+            .Select(character => invalidChars.Contains(character) || char.IsControl(character) ? '_' : character)
+            .ToArray());
+
+        return string.IsNullOrWhiteSpace(sanitized) ? $"logo{extension}" : sanitized;
+    }
+
+    private static LogoFormat? DetectFormat(byte[] content)
+    {
+        foreach (var supported in SupportedFormats)
+        {
+            if (content.AsSpan().StartsWith(supported.Value.Signature))
+            {
+                return supported.Value with { ContentType = supported.Key };
+            }
+        }
+
+        return null;
+    }
+
+    private sealed record LogoFormat(string Extension, byte[] Signature)
+    {
+        public string ContentType { get; init; } = string.Empty;
+    }
+
+    private sealed class LogoValidationResult
+    {
+        public bool IsSuccess { get; private init; }
+        public string? ErrorMessage { get; private init; }
+        public LogoFormat? Format { get; private init; }
+        public string FileName { get; private init; } = string.Empty;
+
+        public static LogoValidationResult Success(LogoFormat format, string fileName)
+            => new()
+            {
+                IsSuccess = true,
+                Format = format,
+                FileName = fileName
+            };
+
+        public static LogoValidationResult Failure(string errorMessage)
+            => new()
+            {
+                IsSuccess = false,
+                ErrorMessage = errorMessage
+            };
     }
 }
