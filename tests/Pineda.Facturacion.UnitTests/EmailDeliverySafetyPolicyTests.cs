@@ -23,6 +23,16 @@ public class EmailDeliverySafetyPolicyTests
                 Content = [1, 2, 3]
             }
         };
+        var inlineResources = new[]
+        {
+            new EmailInlineResource
+            {
+                ContentId = "issuer-logo",
+                FileName = "logo.png",
+                ContentType = "image/png",
+                Content = [8, 9]
+            }
+        };
         var message = new EmailMessage
         {
             Subject = "Factura A8",
@@ -30,6 +40,7 @@ public class EmailDeliverySafetyPolicyTests
             Recipients = ["cliente@example.com"],
             CcRecipients = ["contador@example.com"],
             BccRecipients = ["auditor@example.com"],
+            InlineResources = inlineResources,
             Attachments = attachments
         };
 
@@ -44,6 +55,7 @@ public class EmailDeliverySafetyPolicyTests
         Assert.Equal(["cliente@example.com"], result.Message.Recipients);
         Assert.Equal(["contador@example.com"], result.Message.CcRecipients);
         Assert.Equal(["auditor@example.com", SafeRecipient], result.Message.BccRecipients);
+        Assert.Same(inlineResources, result.Message.InlineResources);
         Assert.Same(attachments, result.Message.Attachments);
     }
 
@@ -80,6 +92,16 @@ public class EmailDeliverySafetyPolicyTests
                 Content = [4, 5, 6]
             }
         };
+        var inlineResources = new[]
+        {
+            new EmailInlineResource
+            {
+                ContentId = "issuer-logo",
+                FileName = "logo.png",
+                ContentType = "image/png",
+                Content = [7, 8]
+            }
+        };
         var message = new EmailMessage
         {
             Subject = "Estado de cuenta",
@@ -87,6 +109,7 @@ public class EmailDeliverySafetyPolicyTests
             Recipients = ["cliente@example.com", "otrocliente@example.com"],
             CcRecipients = ["gerente@example.com"],
             BccRecipients = ["auditoria@example.com"],
+            InlineResources = inlineResources,
             Attachments = attachments
         };
 
@@ -97,6 +120,7 @@ public class EmailDeliverySafetyPolicyTests
         Assert.Equal([SafeRecipient], result.Message.Recipients);
         Assert.Empty(result.Message.CcRecipients);
         Assert.Empty(result.Message.BccRecipients);
+        Assert.Same(inlineResources, result.Message.InlineResources);
         Assert.Same(attachments, result.Message.Attachments);
     }
 

@@ -86,6 +86,7 @@ public sealed class SendReceivablesSummaryService
                     Recipients = document.To,
                     CcRecipients = document.Cc,
                     BccRecipients = document.Bcc,
+                    InlineResources = BuildInlineResources(document),
                     Attachments = pdfContent is null || string.IsNullOrWhiteSpace(pdfFileName)
                         ? []
                         :
@@ -162,6 +163,25 @@ public sealed class SendReceivablesSummaryService
                 AttachedPdf = pdfContent is not null
             };
         }
+    }
+
+    private static IReadOnlyList<EmailInlineResource> BuildInlineResources(ReceivablesSummaryDocument document)
+    {
+        if (document.IssuerLogo is not { Content.Length: > 0 } logo)
+        {
+            return [];
+        }
+
+        return
+        [
+            new EmailInlineResource
+            {
+                ContentId = ReceivablesSummaryComposer.IssuerLogoContentId,
+                FileName = logo.FileName,
+                ContentType = logo.ContentType,
+                Content = logo.Content
+            }
+        ];
     }
 
     private async Task TryRecordHistoryAsync(

@@ -24,6 +24,7 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
 import { StatusBadgeComponent } from '../../../shared/components/status-badge.component';
 import { extractImportLegacyOrderConflict, ImportLegacyOrderConflictViewModel } from '../application/import-legacy-order-conflict';
 import { adaptImportLegacyOrderPreview, ImportLegacyOrderPreviewViewModel } from '../application/import-legacy-order-preview';
+import { DEFAULT_ORDER_CURRENCY, normalizeOrderCurrency, summarizeOrderSelection } from '../application/order-selection-summary';
 
 type QuickRange = '' | 'today' | 'yesterday' | 'last7' | 'custom';
 type PresetQuickRange = Exclude<QuickRange, '' | 'custom'>;
@@ -33,6 +34,7 @@ interface OrdersBulkSelectionSummary {
   legacyOrderId: string;
   customerName: string;
   total: number;
+  currencyCode: string;
 }
 
 @Component({
@@ -131,32 +133,50 @@ interface OrdersBulkSelectionSummary {
         @if (loadingOrders()) {
           <p class="helper">Cargando órdenes legadas...</p>
         } @else if (ordersPage()?.items?.length) {
-          @if (selectedOrdersCount() > 0) {
-            <section class="bulk-toolbar">
-              <div>
-                <strong>
-                  @if (selectedOrdersCount() === 1) {
+          <section class="bulk-toolbar">
+            <div>
+              <strong class="selection-summary-line">
+                <span>
+                  @if (selectedOrdersCount() === 0) {
+                    0 órdenes seleccionadas
+                  } @else if (selectedOrdersCount() === 1) {
                     1 orden seleccionada
                   } @else if (bulkSelectionMode() === 'filtered') {
                     {{ selectedOrdersCount() }} órdenes seleccionadas según los filtros actuales
                   } @else {
                     {{ selectedOrdersCount() }} órdenes seleccionadas
                   }
-                </strong>
-                @if (bulkSelectionMode() === 'explicit' && shouldOfferSelectAllFiltered()) {
-                  <p class="helper">
-                    {{ selectedVisibleOrdersCount() }} órdenes de esta página seleccionadas.
-                    <button
-                      type="button"
-                      class="link-button"
-                      (click)="selectAllFilteredOrders()"
-                      [disabled]="loadingBulkBilling()">
-                      Seleccionar las {{ ordersPage()!.totalCount }} órdenes que coinciden con los filtros actuales
-                    </button>
-                  </p>
-                }
-              </div>
+                </span>
+                <span aria-hidden="true">·</span>
+                <span>
+                  Total seleccionado:
+                  @if (selectedOrdersTotalsReady()) {
+                    @for (total of selectedOrdersSelectionSummary().totalsByCurrency; track total.currencyCode) {
+                      <span>{{ total.amount | currency: total.currencyCode : 'symbol' : '1.2-2' }} {{ total.currencyCode }}</span>
+                      @if (!$last) {
+                        <span> · </span>
+                      }
+                    }
+                  } @else {
+                    <span>Calculando...</span>
+                  }
+                </span>
+              </strong>
+              @if (bulkSelectionMode() === 'explicit' && shouldOfferSelectAllFiltered()) {
+                <p class="helper">
+                  {{ selectedVisibleOrdersCount() }} órdenes de esta página seleccionadas.
+                  <button
+                    type="button"
+                    class="link-button"
+                    (click)="selectAllFilteredOrders()"
+                    [disabled]="loadingBulkBilling() || loadingSelectionSummary()">
+                    Seleccionar las {{ ordersPage()!.totalCount }} órdenes que coinciden con los filtros actuales
+                  </button>
+                </p>
+              }
+            </div>
 
+            @if (selectedOrdersCount() > 0) {
               <div class="actions">
                 <button
                   type="button"
@@ -172,8 +192,8 @@ interface OrdersBulkSelectionSummary {
                   Limpiar selección
                 </button>
               </div>
-            </section>
-          }
+            }
+          </section>
 
           <div class="table-wrap">
             <table>
@@ -216,7 +236,7 @@ interface OrdersBulkSelectionSummary {
                     <td>{{ order.legacyOrderId }}</td>
                     <td>{{ order.orderDateUtc | date:'dd/MM/yyyy HH:mm' }}</td>
                     <td>{{ order.customerName }}</td>
-                    <td>{{ order.total | currency:'MXN':'symbol':'1.2-2' }}</td>
+                    <td>{{ order.total | currency: (order.currencyCode || 'MXN') : 'symbol' : '1.2-2' }}</td>
                     <td>
                       <app-status-badge
                         [label]="order.isImported ? 'Importada' : 'No importada'"
@@ -548,9 +568,19 @@ interface OrdersBulkSelectionSummary {
               <p class="helper"><strong>Cliente:</strong> {{ selectedCustomerName }}</p>
             }
 
-            @if (bulkSelectedEstimatedTotal(); as selectedEstimatedTotal) {
+            @if (selectedOrdersCount() > 0) {
               <p class="helper">
-                <strong>Total estimado:</strong> {{ selectedEstimatedTotal | currency:'MXN':'symbol':'1.2-2' }}
+                <strong>Total estimado:</strong>
+                @if (selectedOrdersTotalsReady()) {
+                  @for (total of selectedOrdersSelectionSummary().totalsByCurrency; track total.currencyCode) {
+                    <span>{{ total.amount | currency: total.currencyCode : 'symbol' : '1.2-2' }} {{ total.currencyCode }}</span>
+                    @if (!$last) {
+                      <span> · </span>
+                    }
+                  }
+                } @else {
+                  <span>Calculando...</span>
+                }
               </p>
             }
 
@@ -567,7 +597,7 @@ interface OrdersBulkSelectionSummary {
                   @for (order of bulkSelectedSample(); track order.legacyOrderId) {
                     <li>
                       <strong>{{ order.legacyOrderId }}</strong>
-                      <span>{{ order.customerName }} · {{ order.total | currency:'MXN':'symbol':'1.2-2' }}</span>
+                      <span>{{ order.customerName }} · {{ order.total | currency: order.currencyCode : 'symbol' : '1.2-2' }} {{ order.currencyCode }}</span>
                     </li>
                   }
                 </ul>
@@ -641,6 +671,7 @@ interface OrdersBulkSelectionSummary {
     input, select { border:1px solid #c9d1da; border-radius:0.8rem; padding:0.75rem 0.9rem; }
     .actions { display:flex; gap:0.75rem; flex-wrap:wrap; }
     .bulk-toolbar { border:1px solid #d8c49b; border-radius:0.9rem; background:#faf6ee; padding:1rem; display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; flex-wrap:wrap; }
+    .selection-summary-line { display:flex; gap:0.35rem; flex-wrap:wrap; align-items:center; }
     .align-end { align-items:end; }
     button { border:none; border-radius:0.8rem; padding:0.75rem 1rem; background:#182533; color:#fff; cursor:pointer; }
     button.secondary { background:#d8c49b; color:#182533; }
@@ -686,6 +717,7 @@ export class OrdersOperationsPageComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private hydratingFilters = false;
+  private filteredSelectionSummaryRequestId = 0;
 
   protected legacyOrderId = '';
   protected documentType = 'I';
@@ -699,6 +731,7 @@ export class OrdersOperationsPageComponent implements OnInit {
   protected readonly loadingImportOrderId = signal<string | null>(null);
   protected readonly loadingBilling = signal(false);
   protected readonly loadingBulkBilling = signal(false);
+  protected readonly loadingSelectionSummary = signal(false);
   protected readonly loadingPreview = signal(false);
   protected readonly loadingReimport = signal(false);
   protected readonly loadingRevisions = signal(false);
@@ -731,13 +764,34 @@ export class OrdersOperationsPageComponent implements OnInit {
       : this.selectedLegacyOrderIds().length);
   protected readonly selectedVisibleOrdersCount = computed(() =>
     this.eligibleVisibleOrders().filter((order) => this.isOrderSelected(order)).length);
+  protected readonly selectedOrderSummaryItems = computed(() => {
+    if (this.bulkSelectionMode() === 'filtered') {
+      return Object.values(this.selectedOrderSummaries());
+    }
+
+    const summaries = this.selectedOrderSummaries();
+    return this.selectedLegacyOrderIds().map((legacyOrderId) =>
+      summaries[legacyOrderId] ?? {
+        legacyOrderId,
+        customerName: '',
+        total: 0,
+        currencyCode: DEFAULT_ORDER_CURRENCY
+      });
+  });
+  protected readonly selectedOrdersSelectionSummary = computed(() =>
+    summarizeOrderSelection(this.selectedOrderSummaryItems()));
+  protected readonly selectedOrdersTotalsReady = computed(() =>
+    this.selectedOrdersCount() === 0
+      || this.bulkSelectionMode() !== 'filtered'
+      || this.selectedOrderSummaryItems().length >= this.selectedOrdersCount());
   protected readonly bulkSelectedSample = computed(() => {
     if (this.bulkSelectionMode() === 'filtered') {
       return this.eligibleVisibleOrders()
         .map((order) => ({
           legacyOrderId: order.legacyOrderId,
           customerName: order.customerName,
-          total: order.total
+          total: order.total,
+          currencyCode: normalizeOrderCurrency(order.currencyCode)
         }))
         .slice(0, 5);
     }
@@ -762,20 +816,6 @@ export class OrdersOperationsPageComponent implements OnInit {
 
     const uniqueCustomers = Array.from(new Set(summaries.map((summary) => summary.customerName.trim())));
     return uniqueCustomers.length === 1 ? uniqueCustomers[0] : null;
-  });
-  protected readonly bulkSelectedEstimatedTotal = computed(() => {
-    if (this.bulkSelectionMode() !== 'explicit') {
-      return null;
-    }
-
-    const summaries = this.selectedLegacyOrderIds()
-      .map((legacyOrderId) => this.selectedOrderSummaries()[legacyOrderId])
-      .filter((summary): summary is OrdersBulkSelectionSummary => !!summary);
-    if (summaries.length === 0 || summaries.length !== this.selectedLegacyOrderIds().length) {
-      return null;
-    }
-
-    return summaries.reduce((total, summary) => total + summary.total, 0);
   });
   protected readonly customRangeError = computed(() => {
     if (this.quickRange() !== 'custom') {
@@ -875,7 +915,7 @@ export class OrdersOperationsPageComponent implements OnInit {
     this.selectedOrderSummaries.set(nextSummaries);
   }
 
-  protected selectAllFilteredOrders(): void {
+  protected async selectAllFilteredOrders(): Promise<void> {
     if (!this.hasEffectiveCurrentFilters()) {
       this.bulkActionError.set('Aplica al menos un filtro antes de seleccionar todas las órdenes filtradas.');
       return;
@@ -899,18 +939,63 @@ export class OrdersOperationsPageComponent implements OnInit {
     this.bulkSelectionMode.set('filtered');
     this.bulkSelectionFilters.set(filters);
     this.selectedLegacyOrderIds.set([]);
-    this.rememberSelectedOrderSummaries(this.eligibleVisibleOrders());
+    this.selectedOrderSummaries.set({});
+    this.rememberSelectedOrderSummaries(this.ordersPage()?.items ?? []);
+    await this.loadFilteredSelectionSummaries(filters, totalCount);
   }
 
   protected clearBulkSelection(): void {
+    this.filteredSelectionSummaryRequestId += 1;
     this.selectedLegacyOrderIds.set([]);
     this.selectedOrderSummaries.set({});
     this.bulkSelectionMode.set('explicit');
     this.bulkSelectionFilters.set(null);
+    this.loadingSelectionSummary.set(false);
     this.showBulkCreateModal.set(false);
     this.bulkActionError.set(null);
     this.bulkCreateModalError.set(null);
     this.bulkCreateOrderErrors.set([]);
+  }
+
+  private async loadFilteredSelectionSummaries(
+    filters: CreateBulkBillingDocumentFiltersRequest,
+    totalCount: number,
+  ): Promise<void> {
+    if (totalCount <= Object.keys(this.selectedOrderSummaries()).length) {
+      return;
+    }
+
+    const requestId = ++this.filteredSelectionSummaryRequestId;
+    const totalPages = Math.ceil(totalCount / FILTERED_SELECTION_SUMMARY_PAGE_SIZE);
+    const selectedOrders: LegacyOrderListItem[] = [];
+
+    this.loadingSelectionSummary.set(true);
+
+    try {
+      for (let page = 1; page <= totalPages; page += 1) {
+        const response = await firstValueFrom(this.ordersApi.searchLegacyOrders({
+          ...filters,
+          page,
+          pageSize: FILTERED_SELECTION_SUMMARY_PAGE_SIZE
+        }));
+
+        if (this.filteredSelectionSummaryRequestId !== requestId || this.bulkSelectionMode() !== 'filtered') {
+          return;
+        }
+
+        selectedOrders.push(...response.items);
+      }
+
+      this.rememberSelectedOrderSummaries(selectedOrders);
+    } catch (error) {
+      if (this.filteredSelectionSummaryRequestId === requestId && this.bulkSelectionMode() === 'filtered') {
+        this.bulkActionError.set(extractErrorMessage(error));
+      }
+    } finally {
+      if (this.filteredSelectionSummaryRequestId === requestId) {
+        this.loadingSelectionSummary.set(false);
+      }
+    }
   }
 
   protected openBulkCreateModal(): void {
@@ -1390,7 +1475,8 @@ export class OrdersOperationsPageComponent implements OnInit {
         updatedSummary = {
           legacyOrderId: updated.legacyOrderId,
           customerName: updated.customerName,
-          total: updated.total
+          total: updated.total,
+          currencyCode: normalizeOrderCurrency(updated.currencyCode)
         };
         return updated;
       })
@@ -1517,7 +1603,8 @@ export class OrdersOperationsPageComponent implements OnInit {
         nextSummaries[order.legacyOrderId] = {
           legacyOrderId: order.legacyOrderId,
           customerName: order.customerName,
-          total: order.total
+          total: Number.isFinite(order.total) ? order.total : 0,
+          currencyCode: normalizeOrderCurrency(order.currencyCode)
         };
       }
     }
@@ -1680,6 +1767,7 @@ function normalizeLegacyOrderIdFilter(value: string | number | null | undefined)
 }
 
 const MAX_BULK_BILLING_ORDERS = 50;
+const FILTERED_SELECTION_SUMMARY_PAGE_SIZE = 10;
 
 function toImportedOrder(order: LegacyOrderListItem): ImportLegacyOrderResponse {
   return {

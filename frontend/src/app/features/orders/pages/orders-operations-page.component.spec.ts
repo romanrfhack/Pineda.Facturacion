@@ -5,6 +5,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { OrdersOperationsPageComponent } from './orders-operations-page.component';
 import { OrdersApiService } from '../infrastructure/orders-api.service';
 import { FeedbackService } from '../../../core/ui/feedback.service';
+import { LegacyOrderListItem, SearchLegacyOrdersResponse } from '../models/orders.models';
 
 describe('OrdersOperationsPageComponent', () => {
   beforeEach(() => {
@@ -250,6 +251,39 @@ describe('OrdersOperationsPageComponent', () => {
     return !!value && ('apiOverrides' in value || 'queryParams' in value);
   }
 
+  function createLegacyOrder(overrides: Partial<LegacyOrderListItem> = {}): LegacyOrderListItem {
+    return {
+      legacyOrderId: overrides.legacyOrderId ?? 'LEG-1001',
+      orderDateUtc: overrides.orderDateUtc ?? '2026-03-23T10:00:00Z',
+      customerName: overrides.customerName ?? 'Cliente Uno',
+      total: 'total' in overrides ? overrides.total as number : 116,
+      currencyCode: overrides.currencyCode,
+      legacyOrderType: overrides.legacyOrderType ?? 'F',
+      isImported: overrides.isImported ?? false,
+      salesOrderId: overrides.salesOrderId ?? null,
+      billingDocumentId: overrides.billingDocumentId ?? null,
+      billingDocumentStatus: overrides.billingDocumentStatus ?? null,
+      fiscalDocumentId: overrides.fiscalDocumentId ?? null,
+      fiscalDocumentStatus: overrides.fiscalDocumentStatus ?? null,
+      importStatus: overrides.importStatus ?? null
+    };
+  }
+
+  function createSearchResponse(
+    items: LegacyOrderListItem[],
+    overrides: Partial<SearchLegacyOrdersResponse> = {},
+  ): SearchLegacyOrdersResponse {
+    return {
+      isSuccess: overrides.isSuccess ?? true,
+      errorMessage: overrides.errorMessage ?? null,
+      items,
+      totalCount: overrides.totalCount ?? items.length,
+      totalPages: overrides.totalPages ?? 1,
+      page: overrides.page ?? 1,
+      pageSize: overrides.pageSize ?? 10
+    };
+  }
+
   it('loads orders without a default period filter on init', async () => {
     const { fixture, api } = await configure();
     expect(fixture.componentInstance['quickRange']()).toBe('');
@@ -265,6 +299,11 @@ describe('OrdersOperationsPageComponent', () => {
     const { fixture } = await configure();
 
     expect(fixture.componentInstance['selectedOrdersCount']()).toBe(0);
+    expect(fixture.componentInstance['selectedOrdersSelectionSummary']().totalsByCurrency).toEqual([
+      { currencyCode: 'MXN', amount: 0 }
+    ]);
+    expect(fixture.nativeElement.textContent).toContain('0 órdenes seleccionadas');
+    expect(fixture.nativeElement.textContent).toContain('Total seleccionado:');
     expect(fixture.nativeElement.textContent).not.toContain('Limpiar selección');
   });
 
@@ -276,8 +315,104 @@ describe('OrdersOperationsPageComponent', () => {
     fixture.detectChanges();
 
     expect(fixture.componentInstance['selectedOrdersCount']()).toBe(1);
+    expect(fixture.componentInstance['selectedOrdersSelectionSummary']().totalsByCurrency).toEqual([
+      { currencyCode: 'MXN', amount: 116 }
+    ]);
     expect(fixture.nativeElement.textContent).toContain('1 orden seleccionada');
+    expect(fixture.nativeElement.textContent).toContain('Total seleccionado:');
     expect(fixture.nativeElement.textContent).toContain('Crear documento de facturación');
+  });
+
+  it('updates the selected total when selecting and deselecting orders', async () => {
+    const { fixture } = await configure({
+      searchLegacyOrders: vi.fn().mockReturnValue(of({
+        isSuccess: true,
+        items: [
+          createLegacyOrder({ legacyOrderId: 'LEG-1001', total: 116 }),
+          createLegacyOrder({ legacyOrderId: 'LEG-1002', total: 58 })
+        ],
+        totalCount: 2,
+        totalPages: 1,
+        page: 1,
+        pageSize: 10
+      }))
+    });
+    const [firstOrder, secondOrder] = fixture.componentInstance['ordersPage']()!.items;
+
+    fixture.componentInstance['toggleOrderSelection'](firstOrder, true);
+    fixture.componentInstance['toggleOrderSelection'](secondOrder, true);
+
+    expect(fixture.componentInstance['selectedOrdersCount']()).toBe(2);
+    expect(fixture.componentInstance['selectedOrdersSelectionSummary']().totalsByCurrency).toEqual([
+      { currencyCode: 'MXN', amount: 174 }
+    ]);
+
+    fixture.componentInstance['toggleOrderSelection'](firstOrder, false);
+
+    expect(fixture.componentInstance['selectedOrdersCount']()).toBe(1);
+    expect(fixture.componentInstance['selectedOrdersSelectionSummary']().totalsByCurrency).toEqual([
+      { currencyCode: 'MXN', amount: 58 }
+    ]);
+  });
+
+  it('resets the selected total when clearing the selection', async () => {
+    const { fixture } = await configure();
+    const order = fixture.componentInstance['ordersPage']()!.items[0];
+
+    fixture.componentInstance['toggleOrderSelection'](order, true);
+    fixture.componentInstance['clearBulkSelection']();
+
+    expect(fixture.componentInstance['selectedOrdersCount']()).toBe(0);
+    expect(fixture.componentInstance['selectedOrdersSelectionSummary']().totalsByCurrency).toEqual([
+      { currencyCode: 'MXN', amount: 0 }
+    ]);
+  });
+
+  it('groups selected totals by currency when currency is available', async () => {
+    const { fixture } = await configure({
+      searchLegacyOrders: vi.fn().mockReturnValue(of({
+        isSuccess: true,
+        items: [
+          createLegacyOrder({ legacyOrderId: 'LEG-1001', total: 8500, currencyCode: 'MXN' }),
+          createLegacyOrder({ legacyOrderId: 'LEG-1002', total: 320, currencyCode: 'USD' }),
+          createLegacyOrder({ legacyOrderId: 'LEG-1003', total: 1500, currencyCode: 'MXN' })
+        ],
+        totalCount: 3,
+        totalPages: 1,
+        page: 1,
+        pageSize: 10
+      }))
+    });
+
+    fixture.componentInstance['toggleVisibleSelection'](true);
+
+    expect(fixture.componentInstance['selectedOrdersCount']()).toBe(3);
+    expect(fixture.componentInstance['selectedOrdersSelectionSummary']().totalsByCurrency).toEqual([
+      { currencyCode: 'MXN', amount: 10000 },
+      { currencyCode: 'USD', amount: 320 }
+    ]);
+  });
+
+  it('treats an invalid selected order total as zero', async () => {
+    const { fixture } = await configure({
+      searchLegacyOrders: vi.fn().mockReturnValue(of({
+        isSuccess: true,
+        items: [
+          createLegacyOrder({ legacyOrderId: 'LEG-1001', total: null as unknown as number }),
+          createLegacyOrder({ legacyOrderId: 'LEG-1002', total: 58 })
+        ],
+        totalCount: 2,
+        totalPages: 1,
+        page: 1,
+        pageSize: 10
+      }))
+    });
+
+    fixture.componentInstance['toggleVisibleSelection'](true);
+
+    expect(fixture.componentInstance['selectedOrdersSelectionSummary']().totalsByCurrency).toEqual([
+      { currencyCode: 'MXN', amount: 58 }
+    ]);
   });
 
   it('selects only the eligible visible orders from the current page', async () => {
@@ -386,7 +521,7 @@ describe('OrdersOperationsPageComponent', () => {
     fixture.componentInstance['customerQuery'].set('Cliente Uno');
     await fixture.componentInstance['searchCurrentRange']();
     fixture.componentInstance['toggleVisibleSelection'](true);
-    fixture.componentInstance['selectAllFilteredOrders']();
+    await fixture.componentInstance['selectAllFilteredOrders']();
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).toContain('12 órdenes seleccionadas según los filtros actuales');
@@ -404,6 +539,33 @@ describe('OrdersOperationsPageComponent', () => {
     expect(feedback.show).toHaveBeenCalledWith('success', 'Documento de facturación creado con 12 órdenes.');
     expect(router.navigate).toHaveBeenCalledWith(['/app/fiscal-documents'], { queryParams: { billingDocumentId: 45 } });
     expect(api.createBulkBillingDocument).toHaveBeenCalledTimes(1);
+  });
+
+  it('calculates the selected total for all filtered orders across pages', async () => {
+    const firstPageOrders = Array.from({ length: 10 }, (_, index) =>
+      createLegacyOrder({ legacyOrderId: `LEG-10${index}`, total: 10 }));
+    const secondPageOrders = [
+      createLegacyOrder({ legacyOrderId: 'LEG-2001', total: 20 }),
+      createLegacyOrder({ legacyOrderId: 'LEG-2002', total: 30 })
+    ];
+    const searchLegacyOrders = vi
+      .fn()
+      .mockReturnValueOnce(of(createSearchResponse(firstPageOrders, { totalCount: 12, totalPages: 2 })))
+      .mockReturnValueOnce(of(createSearchResponse(firstPageOrders, { totalCount: 12, totalPages: 2 })))
+      .mockReturnValueOnce(of(createSearchResponse(firstPageOrders, { totalCount: 12, totalPages: 2 })))
+      .mockReturnValueOnce(of(createSearchResponse(secondPageOrders, { totalCount: 12, totalPages: 2, page: 2 })));
+    const { fixture } = await configure({ searchLegacyOrders });
+
+    fixture.componentInstance['customerQuery'].set('Cliente Uno');
+    await fixture.componentInstance['searchCurrentRange']();
+    fixture.componentInstance['toggleVisibleSelection'](true);
+    await fixture.componentInstance['selectAllFilteredOrders']();
+
+    expect(fixture.componentInstance['selectedOrdersCount']()).toBe(12);
+    expect(fixture.componentInstance['selectedOrdersTotalsReady']()).toBe(true);
+    expect(fixture.componentInstance['selectedOrdersSelectionSummary']().totalsByCurrency).toEqual([
+      { currencyCode: 'MXN', amount: 150 }
+    ]);
   });
 
   it('clears the current selection when filters are applied again', async () => {

@@ -19,7 +19,20 @@ public sealed class EmailMessage
 
     public IReadOnlyList<string> BccRecipients { get; init; } = [];
 
+    public IReadOnlyList<EmailInlineResource> InlineResources { get; init; } = [];
+
     public IReadOnlyList<EmailAttachment> Attachments { get; init; } = [];
+}
+
+public sealed class EmailInlineResource
+{
+    public string ContentId { get; init; } = string.Empty;
+
+    public string FileName { get; init; } = string.Empty;
+
+    public string ContentType { get; init; } = string.Empty;
+
+    public byte[] Content { get; init; } = [];
 }
 
 public sealed class EmailAttachment

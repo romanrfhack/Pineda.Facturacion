@@ -54,6 +54,7 @@ export interface LegacyOrderListItem {
   orderDateUtc: string;
   customerName: string;
   total: number;
+  currencyCode?: string | null;
   legacyOrderType?: string | null;
   isImported: boolean;
   salesOrderId?: number | null;

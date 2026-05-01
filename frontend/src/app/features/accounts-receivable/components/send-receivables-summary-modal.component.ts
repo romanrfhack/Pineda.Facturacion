@@ -1,6 +1,7 @@
 import { CurrencyPipe, DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { firstValueFrom } from 'rxjs';
 import { extractApiErrorMessage } from '../../../core/http/api-error-message';
 import { AccountsReceivableApiService } from '../infrastructure/accounts-receivable-api.service';
@@ -242,7 +243,7 @@ type SummaryStep = 1 | 2 | 3;
                     </div>
                   }
 
-                  <section class="email-preview" [innerHTML]="currentPreview.html || ''"></section>
+                  <section class="email-preview" [innerHTML]="previewHtml()"></section>
                 } @else {
                   <p class="helper">Genera la vista previa para confirmar el envío.</p>
                 }
@@ -314,6 +315,7 @@ type SummaryStep = 1 | 2 | 3;
 })
 export class SendReceivablesSummaryModalComponent {
   private readonly api = inject(AccountsReceivableApiService);
+  private readonly sanitizer = inject(DomSanitizer);
 
   readonly open = input(false);
   readonly receiverId = input.required<number>();
@@ -331,6 +333,9 @@ export class SendReceivablesSummaryModalComponent {
   protected readonly scope = signal<ReceivablesSummaryScope>('all_pending');
   protected readonly manualSelectedIds = signal<number[]>([]);
   protected readonly preview = signal<ReceivablesSummaryPreviewResponse | null>(null);
+  protected readonly previewHtml = computed<SafeHtml>(() =>
+    this.sanitizer.bypassSecurityTrustHtml(this.preview()?.html || ''),
+  );
 
   protected toInput = '';
   protected ccInput = '';

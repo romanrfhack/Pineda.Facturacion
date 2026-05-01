@@ -80,6 +80,7 @@ public sealed class ReceivablesSummaryDocumentFactory
             FiscalRegimeCode = issuer?.FiscalRegimeCode,
             PostalCode = issuer?.PostalCode
         };
+        var issuerLogo = BuildIssuerLogo(issuer);
 
         return new GetReceivablesSummaryCandidatesResult
         {
@@ -87,6 +88,7 @@ public sealed class ReceivablesSummaryDocumentFactory
             IsSuccess = true,
             Receiver = receiverParty,
             Issuer = issuerParty,
+            IssuerLogo = issuerLogo,
             Invoices = invoices,
             DefaultTo = string.IsNullOrWhiteSpace(receiverParty.Email) ? [] : [receiverParty.Email.Trim()],
             DefaultSubject = ReceivablesSummaryComposer.BuildDefaultSubject(receiverParty.LegalName),
@@ -179,6 +181,7 @@ public sealed class ReceivablesSummaryDocumentFactory
             Format = format,
             Receiver = candidatesResult.Receiver,
             Issuer = candidatesResult.Issuer,
+            IssuerLogo = candidatesResult.IssuerLogo,
             Invoices = selectedInvoices,
             Selection = ReceivablesSummaryComposer.BuildSelectionSummary(selectedInvoices),
             To = to,
@@ -195,6 +198,26 @@ public sealed class ReceivablesSummaryDocumentFactory
             Outcome = ReceivablesSummaryOutcome.Found,
             IsSuccess = true,
             Document = document
+        };
+    }
+
+    private static ReceivablesSummaryLogo? BuildIssuerLogo(Domain.Entities.IssuerProfile? issuer)
+    {
+        if (issuer?.LogoData is not { Length: > 0 })
+        {
+            return null;
+        }
+
+        var contentType = string.IsNullOrWhiteSpace(issuer.LogoContentType)
+            ? "application/octet-stream"
+            : issuer.LogoContentType.Trim();
+
+        return new ReceivablesSummaryLogo
+        {
+            ContentId = ReceivablesSummaryComposer.IssuerLogoContentId,
+            FileName = string.IsNullOrWhiteSpace(issuer.LogoFileName) ? "issuer-logo" : issuer.LogoFileName.Trim(),
+            ContentType = contentType,
+            Content = issuer.LogoData
         };
     }
 

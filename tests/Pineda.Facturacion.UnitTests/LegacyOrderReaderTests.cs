@@ -137,6 +137,54 @@ public class LegacyOrderReaderTests
     }
 
     [Fact]
+    public void BuildHeaderSql_Filters_To_Orders_With_Current_Legacy_Invoice()
+    {
+        var schema = CreateResolvedSchema(
+            ordersTableName: "Pedidos",
+            customersTableName: "Clientes",
+            orderItemsTableName: "PedidosDet",
+            articlesTableName: "Articulos",
+            articleNamesTableName: "NombresArticulos",
+            orderDateColumnName: "FechaPedido");
+
+        var sql = LegacyOrderReader.BuildHeaderSql(schema);
+
+        AssertCurrentInvoiceEligibilityFilter(sql);
+    }
+
+    [Fact]
+    public void BuildCountSql_Filters_To_Orders_With_Current_Legacy_Invoice()
+    {
+        var schema = CreateResolvedSchema(
+            ordersTableName: "Pedidos",
+            customersTableName: "Clientes",
+            orderItemsTableName: "PedidosDet",
+            articlesTableName: "Articulos",
+            articleNamesTableName: "NombresArticulos",
+            orderDateColumnName: "FechaPedido");
+
+        var sql = LegacyOrderReader.BuildCountSql(schema);
+
+        AssertCurrentInvoiceEligibilityFilter(sql);
+    }
+
+    [Fact]
+    public void BuildListSql_Filters_To_Orders_With_Current_Legacy_Invoice()
+    {
+        var schema = CreateResolvedSchema(
+            ordersTableName: "Pedidos",
+            customersTableName: "Clientes",
+            orderItemsTableName: "PedidosDet",
+            articlesTableName: "Articulos",
+            articleNamesTableName: "NombresArticulos",
+            orderDateColumnName: "FechaPedido");
+
+        var sql = LegacyOrderReader.BuildListSql(schema);
+
+        AssertCurrentInvoiceEligibilityFilter(sql);
+    }
+
+    [Fact]
     public void BuildListSql_Applies_Customer_Filter_Before_Pagination()
     {
         var schema = CreateResolvedSchema(
@@ -219,7 +267,8 @@ public class LegacyOrderReaderTests
         string orderItemsTableName,
         string articlesTableName,
         string articleNamesTableName,
-        string orderDateColumnName)
+        string orderDateColumnName,
+        string invoicesTableName = "Facturas")
     {
         return new LegacyOrderReadSchema(
             CreateTable(
@@ -270,7 +319,21 @@ public class LegacyOrderReaderTests
                 ("cveNomArt", "cveNomArt"),
                 ("cveCategoria", "cveCategoria"),
                 ("cveGrupo", "cveGrupo")),
+            CreateTable(
+                "facturas",
+                invoicesTableName,
+                ("noPedido", "noPedido"),
+                ("EstatusFactura", "EstatusFactura")),
             orderDateColumnName);
+    }
+
+    private static void AssertCurrentInvoiceEligibilityFilter(string sql)
+    {
+        Assert.Contains("EXISTS (", sql, StringComparison.Ordinal);
+        Assert.Contains("FROM `Facturas` f", sql, StringComparison.Ordinal);
+        Assert.Contains("WHERE f.`noPedido` = p.`noPedido`", sql, StringComparison.Ordinal);
+        Assert.Contains("AND UPPER(TRIM(f.`EstatusFactura`)) = 'V'", sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("JOIN `Facturas`", sql, StringComparison.Ordinal);
     }
 
     private static ResolvedLegacyTable CreateTable(string logicalName, string actualName, params (string Logical, string Actual)[] columns)
