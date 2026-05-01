@@ -178,6 +178,11 @@ public class LegacyOrderReader : ILegacyOrderReader
             "nombresarticulos",
             ["NomArt", "cveNomArt", "cveCategoria", "cveGrupo"],
             cancellationToken);
+        var invoices = await ResolveTableAsync(
+            connection,
+            "facturas",
+            ["noPedido", "EstatusFactura"],
+            cancellationToken);
         var orderDateColumn = await _schemaResolver.ResolveColumnAsync(
             connection,
             orders.ActualName,
@@ -185,7 +190,7 @@ public class LegacyOrderReader : ILegacyOrderReader
             OrderDateColumnCandidates,
             cancellationToken);
 
-        _schema = new LegacyOrderReadSchema(orders, customers, orderItems, articles, articleNames, orderDateColumn);
+        _schema = new LegacyOrderReadSchema(orders, customers, orderItems, articles, articleNames, invoices, orderDateColumn);
         return _schema;
     }
 
@@ -233,6 +238,7 @@ public class LegacyOrderReader : ILegacyOrderReader
               AND p.{Q(schema.Orders["noCliente"])} <> 0
               AND p.{Q(schema.Orders["MontoPedido"])} <> 0.00
               AND p.{Q(schema.Orders["refPedido"])} IS NOT NULL
+              AND {BuildCurrentInvoiceExistsPredicate(schema)}
             LIMIT 1;
             """;
     }
@@ -279,7 +285,8 @@ public class LegacyOrderReader : ILegacyOrderReader
               AND (@customerQueryLike IS NULL OR UPPER({BuildCustomerNameExpression(schema)}) LIKE @customerQueryLike)
               AND p.{Q(schema.Orders["noCliente"])} <> 0
               AND p.{Q(schema.Orders["MontoPedido"])} <> 0.00
-              AND p.{Q(schema.Orders["refPedido"])} IS NOT NULL;
+              AND p.{Q(schema.Orders["refPedido"])} IS NOT NULL
+              AND {BuildCurrentInvoiceExistsPredicate(schema)};
             """;
     }
 
@@ -307,8 +314,21 @@ public class LegacyOrderReader : ILegacyOrderReader
               AND p.{Q(schema.Orders["noCliente"])} <> 0
               AND p.{Q(schema.Orders["MontoPedido"])} <> 0.00
               AND p.{Q(schema.Orders["refPedido"])} IS NOT NULL
+              AND {BuildCurrentInvoiceExistsPredicate(schema)}
             ORDER BY p.{Q(schema.OrderDateColumn)} DESC, p.{Q(schema.Orders["noPedido"])} DESC
             LIMIT @skip, @take;
+            """;
+    }
+
+    private static string BuildCurrentInvoiceExistsPredicate(LegacyOrderReadSchema schema)
+    {
+        return $"""
+            EXISTS (
+                SELECT 1
+                FROM {Q(schema.Invoices.ActualName)} f
+                WHERE f.{Q(schema.Invoices["noPedido"])} = p.{Q(schema.Orders["noPedido"])}
+                  AND UPPER(TRIM(f.{Q(schema.Invoices["EstatusFactura"])})) = 'V'
+            )
             """;
     }
 

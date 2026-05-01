@@ -8,6 +8,7 @@ internal sealed class LegacyOrderReadSchema
         ResolvedLegacyTable orderItems,
         ResolvedLegacyTable articles,
         ResolvedLegacyTable articleNames,
+        ResolvedLegacyTable invoices,
         string orderDateColumn)
     {
         Orders = orders;
@@ -15,6 +16,7 @@ internal sealed class LegacyOrderReadSchema
         OrderItems = orderItems;
         Articles = articles;
         ArticleNames = articleNames;
+        Invoices = invoices;
         OrderDateColumn = orderDateColumn;
     }
 
@@ -27,6 +29,8 @@ internal sealed class LegacyOrderReadSchema
     public ResolvedLegacyTable Articles { get; }
 
     public ResolvedLegacyTable ArticleNames { get; }
+
+    public ResolvedLegacyTable Invoices { get; }
 
     public string OrderDateColumn { get; }
 }
