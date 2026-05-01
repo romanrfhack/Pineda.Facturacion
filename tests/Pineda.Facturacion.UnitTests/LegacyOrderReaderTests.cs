@@ -137,7 +137,7 @@ public class LegacyOrderReaderTests
     }
 
     [Fact]
-    public void BuildHeaderSql_Filters_To_Orders_With_Current_Legacy_Invoice()
+    public void BuildHeaderSql_Excludes_Orders_With_Canceled_Legacy_Invoice()
     {
         var schema = CreateResolvedSchema(
             ordersTableName: "Pedidos",
@@ -149,11 +149,11 @@ public class LegacyOrderReaderTests
 
         var sql = LegacyOrderReader.BuildHeaderSql(schema);
 
-        AssertCurrentInvoiceEligibilityFilter(sql);
+        AssertCanceledInvoiceExclusionFilter(sql);
     }
 
     [Fact]
-    public void BuildCountSql_Filters_To_Orders_With_Current_Legacy_Invoice()
+    public void BuildCountSql_Excludes_Orders_With_Canceled_Legacy_Invoice()
     {
         var schema = CreateResolvedSchema(
             ordersTableName: "Pedidos",
@@ -165,11 +165,11 @@ public class LegacyOrderReaderTests
 
         var sql = LegacyOrderReader.BuildCountSql(schema);
 
-        AssertCurrentInvoiceEligibilityFilter(sql);
+        AssertCanceledInvoiceExclusionFilter(sql);
     }
 
     [Fact]
-    public void BuildListSql_Filters_To_Orders_With_Current_Legacy_Invoice()
+    public void BuildListSql_Excludes_Orders_With_Canceled_Legacy_Invoice()
     {
         var schema = CreateResolvedSchema(
             ordersTableName: "Pedidos",
@@ -181,7 +181,7 @@ public class LegacyOrderReaderTests
 
         var sql = LegacyOrderReader.BuildListSql(schema);
 
-        AssertCurrentInvoiceEligibilityFilter(sql);
+        AssertCanceledInvoiceExclusionFilter(sql);
     }
 
     [Fact]
@@ -327,12 +327,14 @@ public class LegacyOrderReaderTests
             orderDateColumnName);
     }
 
-    private static void AssertCurrentInvoiceEligibilityFilter(string sql)
+    private static void AssertCanceledInvoiceExclusionFilter(string sql)
     {
-        Assert.Contains("EXISTS (", sql, StringComparison.Ordinal);
+        Assert.Contains("NOT EXISTS (", sql, StringComparison.Ordinal);
         Assert.Contains("FROM `Facturas` f", sql, StringComparison.Ordinal);
         Assert.Contains("WHERE f.`noPedido` = p.`noPedido`", sql, StringComparison.Ordinal);
-        Assert.Contains("AND UPPER(TRIM(f.`EstatusFactura`)) = 'V'", sql, StringComparison.Ordinal);
+        Assert.Contains("AND UPPER(TRIM(f.`EstatusFactura`)) = 'C'", sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("AND UPPER(TRIM(f.`EstatusFactura`)) = 'V'", sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("AND EXISTS (", sql, StringComparison.Ordinal);
         Assert.DoesNotContain("JOIN `Facturas`", sql, StringComparison.Ordinal);
     }
 

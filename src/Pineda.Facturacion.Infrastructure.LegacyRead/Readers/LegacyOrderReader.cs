@@ -238,7 +238,7 @@ public class LegacyOrderReader : ILegacyOrderReader
               AND p.{Q(schema.Orders["noCliente"])} <> 0
               AND p.{Q(schema.Orders["MontoPedido"])} <> 0.00
               AND p.{Q(schema.Orders["refPedido"])} IS NOT NULL
-              AND {BuildCurrentInvoiceExistsPredicate(schema)}
+              AND {BuildCanceledInvoiceNotExistsPredicate(schema)}
             LIMIT 1;
             """;
     }
@@ -286,7 +286,7 @@ public class LegacyOrderReader : ILegacyOrderReader
               AND p.{Q(schema.Orders["noCliente"])} <> 0
               AND p.{Q(schema.Orders["MontoPedido"])} <> 0.00
               AND p.{Q(schema.Orders["refPedido"])} IS NOT NULL
-              AND {BuildCurrentInvoiceExistsPredicate(schema)};
+              AND {BuildCanceledInvoiceNotExistsPredicate(schema)};
             """;
     }
 
@@ -314,20 +314,20 @@ public class LegacyOrderReader : ILegacyOrderReader
               AND p.{Q(schema.Orders["noCliente"])} <> 0
               AND p.{Q(schema.Orders["MontoPedido"])} <> 0.00
               AND p.{Q(schema.Orders["refPedido"])} IS NOT NULL
-              AND {BuildCurrentInvoiceExistsPredicate(schema)}
+              AND {BuildCanceledInvoiceNotExistsPredicate(schema)}
             ORDER BY p.{Q(schema.OrderDateColumn)} DESC, p.{Q(schema.Orders["noPedido"])} DESC
             LIMIT @skip, @take;
             """;
     }
 
-    private static string BuildCurrentInvoiceExistsPredicate(LegacyOrderReadSchema schema)
+    private static string BuildCanceledInvoiceNotExistsPredicate(LegacyOrderReadSchema schema)
     {
         return $"""
-            EXISTS (
+            NOT EXISTS (
                 SELECT 1
                 FROM {Q(schema.Invoices.ActualName)} f
                 WHERE f.{Q(schema.Invoices["noPedido"])} = p.{Q(schema.Orders["noPedido"])}
-                  AND UPPER(TRIM(f.{Q(schema.Invoices["EstatusFactura"])})) = 'V'
+                  AND UPPER(TRIM(f.{Q(schema.Invoices["EstatusFactura"])})) = 'C'
             )
             """;
     }
