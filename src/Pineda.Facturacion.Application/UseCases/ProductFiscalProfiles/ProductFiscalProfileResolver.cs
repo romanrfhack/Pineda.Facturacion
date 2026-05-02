@@ -53,9 +53,11 @@ public sealed class ProductFiscalProfileResolver
             normalizedInternalCode,
             cancellationToken);
         var suppressExistingProfile = ProductFiscalAssignmentConventions.IsUnresolvedForSatSuggestion(effectiveAssignment);
+        var hasGenericEffectiveAssignment = HasGenericSatProductServiceCode(effectiveAssignment);
 
         if (effectiveAssignment is not null
-            && !suppressExistingProfile)
+            && !suppressExistingProfile
+            && !hasGenericEffectiveAssignment)
         {
             return new ProductFiscalProfileResolutionResult
             {
@@ -71,13 +73,14 @@ public sealed class ProductFiscalProfileResolver
             };
         }
 
-        if (!suppressExistingProfile)
+        if (!suppressExistingProfile && !hasGenericEffectiveAssignment)
         {
             var effectiveProfile = await _productFiscalProfileRepository.GetEffectiveByInternalCodeAsync(
                 normalizedInternalCode,
                 asOfUtc,
                 cancellationToken);
-            if (effectiveProfile is { IsActive: true })
+            if (effectiveProfile is { IsActive: true }
+                && !HasGenericSatProductServiceCode(effectiveProfile))
             {
                 return new ProductFiscalProfileResolutionResult
                 {
@@ -90,7 +93,9 @@ public sealed class ProductFiscalProfileResolver
             }
         }
 
-        if (!suppressExistingProfile && existingProfile is { IsActive: true })
+        if (!suppressExistingProfile
+            && existingProfile is { IsActive: true }
+            && !HasGenericSatProductServiceCode(existingProfile))
         {
             return new ProductFiscalProfileResolutionResult
             {
@@ -102,11 +107,14 @@ public sealed class ProductFiscalProfileResolver
             };
         }
 
+        var requiresManualReviewBeforePersistence = !suppressExistingProfile
+            && (hasGenericEffectiveAssignment || HasGenericSatProductServiceCode(existingProfile));
         var legacyResult = await TryResolveLegacyMappingAsync(
             normalizedLegacyInternalKey,
             normalizedDescription,
             request,
             existingProfile,
+            requiresManualReviewBeforePersistence,
             cancellationToken);
         if (legacyResult is not null)
         {
@@ -125,7 +133,7 @@ public sealed class ProductFiscalProfileResolver
             cancellationToken);
 
         var candidates = currentSuggestions.ProductServiceCandidates
-            .Where(x => !string.Equals(x.Code, ProductFiscalAssignmentConventions.GenericSatProductServiceCode, StringComparison.Ordinal))
+            .Where(x => !ProductFiscalAssignmentConventions.IsGenericSatProductServiceCode(x.Code))
             .Select(x => MapCurrentSuggestion(x, currentSuggestions, request, existingProfile))
             .ToList();
 
@@ -136,9 +144,16 @@ public sealed class ProductFiscalProfileResolver
                 Status = ProductFiscalProfileResolutionStatus.Suggested,
                 Source = SourceCurrentAutoDetection,
                 Confidence = candidates[0].Confidence,
-                Reason = "Sugerencias calculadas con la logica automatica actual del sistema.",
+                Reason = requiresManualReviewBeforePersistence
+                    ? "El perfil anterior usaba la clave generica 01010101. Valida la sugerencia antes de continuar."
+                    : "Sugerencias calculadas con la logica automatica actual del sistema.",
                 Candidates = candidates
             };
+        }
+
+        if (requiresManualReviewBeforePersistence)
+        {
+            return Unresolved("El perfil anterior usaba la clave generica 01010101 y no se encontro una alternativa SAT especifica confiable.");
         }
 
         return Unresolved("No se encontro perfil fiscal confirmado, mapping legado ni sugerencia SAT confiable.");
@@ -149,6 +164,7 @@ public sealed class ProductFiscalProfileResolver
         string? normalizedDescription,
         ProductFiscalProfileResolutionRequest request,
         ProductFiscalProfile? existingProfile,
+        bool requiresManualReviewBeforePersistence,
         CancellationToken cancellationToken)
     {
         var exactCandidates = await _legacyFiscalProductMappingRepository.FindActiveExactCandidatesAsync(
@@ -167,6 +183,7 @@ public sealed class ProductFiscalProfileResolver
             0.9700m,
             request,
             existingProfile,
+            requiresManualReviewBeforePersistence,
             cancellationToken);
         if (bothResult is not null)
         {
@@ -184,6 +201,7 @@ public sealed class ProductFiscalProfileResolver
             0.9300m,
             request,
             existingProfile,
+            requiresManualReviewBeforePersistence,
             cancellationToken);
         if (internalResult is not null)
         {
@@ -201,6 +219,7 @@ public sealed class ProductFiscalProfileResolver
             0.9000m,
             request,
             existingProfile,
+            requiresManualReviewBeforePersistence,
             cancellationToken);
         if (descriptionResult is not null)
         {
@@ -216,7 +235,8 @@ public sealed class ProductFiscalProfileResolver
             var ranked = fuzzyCandidates
                 .Select(x => (Mapping: x, Score: CalculateTokenScore(normalizedDescription, x.DescriptionNormalized)))
                 .Where(x => x.Score >= 0.6000m)
-                .OrderByDescending(x => x.Score)
+                .OrderBy(x => ProductFiscalAssignmentConventions.IsGenericSatProductServiceCode(x.Mapping.SatProductServiceCode))
+                .ThenByDescending(x => x.Score)
                 .ThenBy(x => x.Mapping.SatProductServiceCode, StringComparer.Ordinal)
                 .Take(5)
                 .Select(x => BuildLegacyCandidate(
@@ -234,12 +254,18 @@ public sealed class ProductFiscalProfileResolver
 
             if (ranked.Count > 0)
             {
+                var hasSpecificCandidate = ranked.Any(x =>
+                    !ProductFiscalAssignmentConventions.IsGenericSatProductServiceCode(x.SatProductServiceCode));
                 return new ProductFiscalProfileResolutionResult
                 {
-                    Status = ProductFiscalProfileResolutionStatus.Suggested,
+                    Status = hasSpecificCandidate
+                        ? ProductFiscalProfileResolutionStatus.Suggested
+                        : ProductFiscalProfileResolutionStatus.Unresolved,
                     Source = SourceLegacyMapping,
                     Confidence = ranked[0].Confidence,
-                    Reason = "Se encontraron coincidencias aproximadas en el historial fiscal importado.",
+                    Reason = hasSpecificCandidate
+                        ? "Se encontraron coincidencias aproximadas en el historial fiscal importado."
+                        : "El historial fiscal importado solo encontro la clave generica 01010101; requiere validacion manual.",
                     Candidates = ranked
                 };
             }
@@ -256,6 +282,7 @@ public sealed class ProductFiscalProfileResolver
         decimal confidence,
         ProductFiscalProfileResolutionRequest request,
         ProductFiscalProfile? existingProfile,
+        bool requiresManualReviewBeforePersistence,
         CancellationToken cancellationToken)
     {
         if (mappings.Count == 0)
@@ -263,19 +290,34 @@ public sealed class ProductFiscalProfileResolver
             return null;
         }
 
+        var nonGenericMappings = mappings
+            .Where(x => !ProductFiscalAssignmentConventions.IsGenericSatProductServiceCode(x.SatProductServiceCode))
+            .ToArray();
+        var hasSpecificCandidate = nonGenericMappings.Length > 0;
         var distinctProductCodes = mappings
             .Select(x => x.SatProductServiceCode)
             .Distinct(StringComparer.Ordinal)
             .ToArray();
-        var isAmbiguous = distinctProductCodes.Length > 1
-            || mappings.Any(x => matchKind.Contains("Description", StringComparison.Ordinal) && x.IsAmbiguousByDescription)
-            || mappings.Any(x => matchKind.Contains("Internal", StringComparison.Ordinal) && x.IsAmbiguousByInternalCode);
+        var distinctSpecificProductCodes = nonGenericMappings
+            .Select(x => x.SatProductServiceCode)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var ambiguityCanBeExplainedByGenericCompanion = hasSpecificCandidate
+            && mappings.Any(x => ProductFiscalAssignmentConventions.IsGenericSatProductServiceCode(x.SatProductServiceCode))
+            && distinctSpecificProductCodes.Length == 1
+            && distinctProductCodes.Length == 2;
+        var mappingsForAmbiguity = hasSpecificCandidate ? nonGenericMappings : mappings;
+        var hasStoredAmbiguity = mappingsForAmbiguity.Any(x => matchKind.Contains("Description", StringComparison.Ordinal) && x.IsAmbiguousByDescription)
+            || mappingsForAmbiguity.Any(x => matchKind.Contains("Internal", StringComparison.Ordinal) && x.IsAmbiguousByInternalCode);
+        var isAmbiguous = distinctSpecificProductCodes.Length > 1
+            || (!ambiguityCanBeExplainedByGenericCompanion && hasStoredAmbiguity);
 
         var candidates = new List<ProductFiscalProfileResolutionCandidate>();
         foreach (var mapping in mappings
                      .GroupBy(x => $"{x.SatProductServiceCode}|{x.SatUnitCode}", StringComparer.Ordinal)
                      .Select(group => group.First())
-                     .OrderBy(x => x.SatProductServiceCode, StringComparer.Ordinal))
+                     .OrderBy(x => ProductFiscalAssignmentConventions.IsGenericSatProductServiceCode(x.SatProductServiceCode))
+                     .ThenBy(x => x.SatProductServiceCode, StringComparer.Ordinal))
         {
             var product = await _satProductServiceCatalogRepository.GetByCodeAsync(mapping.SatProductServiceCode, cancellationToken);
             Pineda.Facturacion.Domain.Entities.SatClaveUnidad? unit = null;
@@ -297,7 +339,19 @@ public sealed class ProductFiscalProfileResolver
                 product,
                 unit,
                 requiresExplicitConfirmation: isAmbiguous
-                    || string.Equals(mapping.SatProductServiceCode, ProductFiscalAssignmentConventions.GenericSatProductServiceCode, StringComparison.Ordinal)));
+                    || ProductFiscalAssignmentConventions.IsGenericSatProductServiceCode(mapping.SatProductServiceCode)));
+        }
+
+        if (!hasSpecificCandidate)
+        {
+            return new ProductFiscalProfileResolutionResult
+            {
+                Status = ProductFiscalProfileResolutionStatus.Unresolved,
+                Source = SourceLegacyMapping,
+                Confidence = candidates.Count > 0 ? candidates[0].Confidence : 0m,
+                Reason = "El mapping legado solo encontro la clave generica 01010101; requiere validacion manual.",
+                Candidates = candidates
+            };
         }
 
         if (isAmbiguous)
@@ -313,14 +367,16 @@ public sealed class ProductFiscalProfileResolver
         }
 
         var first = candidates[0];
-        if (first.RequiresExplicitConfirmation)
+        if (first.RequiresExplicitConfirmation || requiresManualReviewBeforePersistence)
         {
             return new ProductFiscalProfileResolutionResult
             {
                 Status = ProductFiscalProfileResolutionStatus.Suggested,
                 Source = SourceLegacyMapping,
                 Confidence = first.Confidence,
-                Reason = "El mapping legado encontro una clave que requiere confirmacion explicita.",
+                Reason = requiresManualReviewBeforePersistence
+                    ? "El perfil anterior usaba la clave generica 01010101. Se encontro una clave SAT mas especifica en el historial fiscal importado. Valida la sugerencia antes de continuar."
+                    : "El mapping legado encontro una clave que requiere confirmacion explicita.",
                 Candidates = candidates
             };
         }
@@ -525,6 +581,16 @@ public sealed class ProductFiscalProfileResolver
     private static bool IsManualAssignment(ProductFiscalAssignment assignment)
     {
         return string.Equals(assignment.Source, ProductFiscalAssignmentConventions.ManualSource, StringComparison.Ordinal);
+    }
+
+    private static bool HasGenericSatProductServiceCode(ProductFiscalAssignment? assignment)
+    {
+        return ProductFiscalAssignmentConventions.IsGenericSatProductServiceCode(assignment?.SatProductServiceCode);
+    }
+
+    private static bool HasGenericSatProductServiceCode(ProductFiscalProfile? profile)
+    {
+        return ProductFiscalAssignmentConventions.IsGenericSatProductServiceCode(profile?.SatProductServiceCode);
     }
 
     private static ProductFiscalProfileResolutionResult Unresolved(string reason)

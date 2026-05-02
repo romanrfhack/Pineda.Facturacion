@@ -380,6 +380,141 @@ public class FiscalDocumentServicesTests
     }
 
     [Fact]
+    public async Task PrepareFiscalDocument_PrefillsSpecificLegacySuggestion_WhenExistingProfileIsGeneric()
+    {
+        var options = new DbContextOptionsBuilder<BillingDbContext>()
+            .UseInMemoryDatabase($"prepare-fiscal-generic-specific-legacy-{Guid.NewGuid():N}")
+            .Options;
+        await using var dbContext = new BillingDbContext(options);
+        var now = DateTime.UtcNow;
+
+        dbContext.SatProductServiceCatalogEntries.Add(new SatProductServiceCatalogEntry
+        {
+            Code = "25173900",
+            Description = "Componentes electricos automotrices",
+            NormalizedDescription = "COMPONENTES ELECTRICOS AUTOMOTRICES",
+            KeywordsNormalized = "SWITCH IGNICION ENCENDIDO",
+            IsActive = true,
+            SourceVersion = "4.0",
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now
+        });
+        dbContext.SatClaveUnidades.Add(new SatClaveUnidad
+        {
+            Code = "H87",
+            Description = "Pieza",
+            NormalizedDescription = "PIEZA",
+            Symbol = "PZA",
+            Notes = "Unidad de pieza",
+            IsActive = true,
+            SourceVersion = "4.0",
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now
+        });
+        dbContext.ProductFiscalProfiles.Add(new ProductFiscalProfile
+        {
+            Id = 99,
+            InternalCode = "SW-PREP",
+            Description = "Switch generico historico",
+            NormalizedDescription = "SWITCH GENERICO HISTORICO",
+            SatProductServiceCode = ProductFiscalAssignmentConventions.GenericSatProductServiceCode,
+            SatUnitCode = "H87",
+            TaxObjectCode = "02",
+            VatRate = 0.16m,
+            DefaultUnitText = "PIEZA",
+            IsActive = true,
+            CreatedAtUtc = now.AddDays(-10),
+            UpdatedAtUtc = now.AddDays(-10)
+        });
+        dbContext.ProductFiscalAssignments.Add(new ProductFiscalAssignment
+        {
+            Id = 100,
+            InternalCode = "SW-PREP",
+            SatProductServiceCode = ProductFiscalAssignmentConventions.GenericSatProductServiceCode,
+            SatUnitCode = "H87",
+            TaxObjectCode = "02",
+            VatRate = 0.16m,
+            DefaultUnitText = "PIEZA",
+            Source = ProductFiscalAssignmentConventions.ManualSource,
+            Confidence = 1.0000m,
+            ReviewStatus = ProductFiscalAssignmentConventions.BootstrapReviewStatus,
+            ValidFromUtc = now.AddDays(-5),
+            ValidToUtc = null,
+            CreatedAtUtc = now.AddDays(-5),
+            UpdatedAtUtc = now.AddDays(-5)
+        });
+        dbContext.LegacyFiscalProductMappings.Add(new LegacyFiscalProductMapping
+        {
+            SourceName = "legacy",
+            SourceConceptId = "1",
+            DescriptionRaw = "Switch de ignición",
+            DescriptionNormalized = "SWITCH DE IGNICION",
+            InternalCatalogRaw = "SW-PREP",
+            InternalCatalogNormalized = "SW-PREP",
+            SatProductServiceCode = "25173900",
+            SatUnitCode = "H87",
+            IsActive = true,
+            CreatedAtUtc = now.AddDays(-1)
+        });
+        await dbContext.SaveChangesAsync();
+
+        var billingDocument = CreateBillingDocument();
+        billingDocument.Items[0].Sku = "SW-PREP";
+        billingDocument.Items[0].ProductInternalCode = "SW-PREP";
+        billingDocument.Items[0].Description = "Switch de ignición";
+
+        var productFiscalProfileRepository = new ProductFiscalProfileRepository(dbContext);
+        var legacyFiscalProductMappingRepository = new LegacyFiscalProductMappingRepository(dbContext);
+        var satProductServiceCatalogRepository = new SatProductServiceCatalogRepository(dbContext);
+        var satClaveUnidadRepository = new SatClaveUnidadRepository(dbContext);
+        var suggestionService = new SuggestSatAssignmentForLegacyItemService(
+            productFiscalProfileRepository,
+            satProductServiceCatalogRepository,
+            satClaveUnidadRepository,
+            new SearchSatProductServicesService(satProductServiceCatalogRepository),
+            new SearchSatClaveUnidadService(satClaveUnidadRepository));
+        var resolver = new ProductFiscalProfileResolver(
+            productFiscalProfileRepository,
+            legacyFiscalProductMappingRepository,
+            satProductServiceCatalogRepository,
+            satClaveUnidadRepository,
+            suggestionService);
+
+        var service = new PrepareFiscalDocumentService(
+            new FakeBillingDocumentRepository { BillingDocumentById = billingDocument },
+            new FakeFiscalDocumentRepository(),
+            new FakeIssuerProfileRepository { Active = CreateIssuerProfile() },
+            new FakeFiscalReceiverRepository { ExistingById = CreateReceiver() },
+            productFiscalProfileRepository,
+            new FakeSatCatalogDescriptionProvider(),
+            suggestionService,
+            new FakeUnitOfWork(),
+            resolver);
+
+        var result = await service.ExecuteAsync(new PrepareFiscalDocumentCommand
+        {
+            BillingDocumentId = billingDocument.Id,
+            FiscalReceiverId = 11,
+            PaymentMethodSat = "PUE",
+            PaymentFormSat = "03",
+            PaymentCondition = "Contado"
+        });
+
+        Assert.Equal(PrepareFiscalDocumentOutcome.MissingProductFiscalProfile, result.Outcome);
+        Assert.NotNull(result.MissingProductFiscalProfile);
+        Assert.Equal(PrepareFiscalDocumentExistingProductFiscalProfileStatus.Active, result.MissingProductFiscalProfile!.ExistingProfileStatus);
+        Assert.Equal("25173900", result.MissingProductFiscalProfile.Prefill.SatProductServiceCode);
+        Assert.Equal("25173900", result.MissingProductFiscalProfile.Suggestions[0].SatProductServiceCode);
+        Assert.Contains("El perfil anterior usaba la clave genérica 01010101.", result.MissingProductFiscalProfile.ReviewMessages);
+        Assert.Contains("Se encontró una clave SAT más específica en el historial fiscal importado.", result.MissingProductFiscalProfile.ReviewMessages);
+        Assert.Contains("Valida la sugerencia antes de continuar.", result.MissingProductFiscalProfile.ReviewMessages);
+        Assert.Equal(
+            ProductFiscalAssignmentConventions.GenericSatProductServiceCode,
+            (await dbContext.ProductFiscalProfiles.SingleAsync(x => x.InternalCode == "SW-PREP")).SatProductServiceCode);
+        Assert.Single(await dbContext.ProductFiscalAssignments.Where(x => x.InternalCode == "SW-PREP").ToListAsync());
+    }
+
+    [Fact]
     public async Task PrepareFiscalDocument_UsesEffectiveAssignment_WhenMasterProfileIsInactive()
     {
         var repository = new FakeFiscalDocumentRepository();
@@ -1301,6 +1436,7 @@ public class FiscalDocumentServicesTests
         Assert.Contains("ExistingProfileStatus", missingFields);
         Assert.Contains("ExistingProductFiscalProfileId", missingFields);
         Assert.Contains("CanUseExplicitGeneric", missingFields);
+        Assert.Contains("ReviewMessages", missingFields);
         Assert.Contains("Suggestions", missingFields);
         Assert.Contains("RequiresExplicitProductServiceConfirmation", prefillFields);
         Assert.Contains("Reason", suggestionFields);

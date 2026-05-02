@@ -468,6 +468,7 @@ public static class BillingDocumentsEndpoints
         public string ExistingProfileStatus { get; init; } = PrepareFiscalDocumentExistingProductFiscalProfileStatus.None.ToString();
         public long? ExistingProductFiscalProfileId { get; init; }
         public bool CanUseExplicitGeneric { get; init; }
+        public IReadOnlyList<string> ReviewMessages { get; init; } = [];
         public MissingProductFiscalProfilePrefillResponse Prefill { get; init; } = new();
         public IReadOnlyList<MissingProductFiscalProfileSuggestionResponse> Suggestions { get; init; } = [];
     }
@@ -693,6 +694,7 @@ public static class BillingDocumentsEndpoints
             ExistingProfileStatus = missingProductFiscalProfile.ExistingProfileStatus.ToString(),
             ExistingProductFiscalProfileId = missingProductFiscalProfile.ExistingProductFiscalProfileId,
             CanUseExplicitGeneric = missingProductFiscalProfile.CanUseExplicitGeneric,
+            ReviewMessages = missingProductFiscalProfile.ReviewMessages,
             Prefill = new MissingProductFiscalProfilePrefillResponse
             {
                 SatProductServiceCode = missingProductFiscalProfile.Prefill.SatProductServiceCode,

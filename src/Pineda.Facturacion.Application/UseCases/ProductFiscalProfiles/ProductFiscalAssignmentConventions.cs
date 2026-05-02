@@ -34,6 +34,11 @@ public static class ProductFiscalAssignmentConventions
         return IsLegacyGenericResetPending(assignment);
     }
 
+    public static bool IsGenericSatProductServiceCode(string? code)
+    {
+        return string.Equals(code?.Trim(), GenericSatProductServiceCode, StringComparison.Ordinal);
+    }
+
     public static bool IsManagedManualOrImportSource(string? source)
     {
         return string.Equals(source, ManualSource, StringComparison.Ordinal)

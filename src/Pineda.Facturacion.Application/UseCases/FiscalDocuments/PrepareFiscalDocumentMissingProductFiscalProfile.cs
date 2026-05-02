@@ -24,6 +24,8 @@ public sealed class PrepareFiscalDocumentMissingProductFiscalProfile
 
     public bool CanUseExplicitGeneric { get; init; } = true;
 
+    public IReadOnlyList<string> ReviewMessages { get; init; } = [];
+
     public PrepareFiscalDocumentMissingProductFiscalProfilePrefill Prefill { get; init; } = new();
 
     public IReadOnlyList<PrepareFiscalDocumentMissingProductFiscalProfileSuggestion> Suggestions { get; init; } = [];

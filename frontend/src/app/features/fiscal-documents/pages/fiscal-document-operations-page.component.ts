@@ -754,6 +754,13 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
                   @if (missingProduct.lineNumber) {
                     <span>Línea {{ missingProduct.lineNumber }} del documento de facturación.</span>
                   }
+                  @if (missingProduct.reviewMessages?.length) {
+                    <ul class="review-messages">
+                      @for (message of missingProduct.reviewMessages ?? []; track message) {
+                        <li>{{ message }}</li>
+                      }
+                    </ul>
+                  }
                   @if (missingProduct.suggestions.length) {
                     @if (hasAmbiguousProductFiscalSuggestions(missingProduct)) {
                       <span>Hay mappings históricos ambiguos. Selecciona una opción candidata antes de reintentar.</span>
@@ -1791,6 +1798,11 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
       }
       .recovery-summary span {
         color: #5f6b76;
+      }
+      .review-messages {
+        margin: 0.35rem 0 0;
+        padding-left: 1.1rem;
+        color: #7a4a00;
       }
       .nested-card {
         padding: 0;

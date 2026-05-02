@@ -15,6 +15,7 @@ export interface MissingProductFiscalProfileContext {
   existingProfileStatus: 'Active' | 'Inactive' | 'None' | string;
   existingProductFiscalProfileId?: number | null;
   canUseExplicitGeneric: boolean;
+  reviewMessages?: string[];
   requiresExplicitProductServiceConfirmation: boolean;
   suggestions: ProductFiscalProfileRecoverySuggestion[];
   draft: UpsertProductFiscalProfileRequest;
@@ -77,6 +78,9 @@ function buildMissingProductFiscalProfileContext(
     || internalCode
   ).trim();
   const prefill = missingProfile.prefill;
+  const reviewMessages = (missingProfile.reviewMessages ?? [])
+    .map((message) => message.trim())
+    .filter(Boolean);
 
   return {
     internalCode,
@@ -86,6 +90,7 @@ function buildMissingProductFiscalProfileContext(
     existingProfileStatus: missingProfile.existingProfileStatus ?? 'None',
     existingProductFiscalProfileId: missingProfile.existingProductFiscalProfileId ?? null,
     canUseExplicitGeneric: missingProfile.canUseExplicitGeneric ?? true,
+    ...(reviewMessages.length ? { reviewMessages } : {}),
     requiresExplicitProductServiceConfirmation:
       prefill?.requiresExplicitProductServiceConfirmation ?? false,
     suggestions: (missingProfile.suggestions ?? []).slice(),
