@@ -583,6 +583,7 @@ public sealed class MySqlBackedIntegrationTests
     {
         var seed = await factory.SeedStandardFiscalMasterDataAsync();
         factory.LegacyOrderReader.Orders[legacyOrderId] = CreateLegacyOrder(legacyOrderId, "SKU-1", 100m);
+        var context = $"legacyOrderId={legacyOrderId}; sku=SKU-1; uuid={uuid}; receiverIdOverride=<seed>";
         factory.FiscalStampingGateway.ResponseFactory = _ => new FiscalStampingGatewayResult
         {
             Outcome = FiscalStampingGatewayOutcome.Stamped,
@@ -595,19 +596,39 @@ public sealed class MySqlBackedIntegrationTests
             XmlHash = "XML-HASH-MYSQL-FISCAL"
         };
 
-        var importBody = await (await client.PostAsync($"/api/orders/{legacyOrderId}/import", null))
-            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+        var importResponse = await client.PostAsync($"/api/orders/{legacyOrderId}/import", null);
+        var importResult = await IntegrationHttpTestDiagnostics.ReadJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>(
+            importResponse,
+            HttpStatusCode.OK,
+            "Import legacy order",
+            context);
+        var salesOrderId = IntegrationHttpTestDiagnostics.Require(
+            importResult.Value.SalesOrderId,
+            nameof(importResult.Value.SalesOrderId),
+            "Import legacy order",
+            context,
+            importResult.Body);
 
-        var billingBody = await (await client.PostAsJsonAsync(
-                $"/api/sales-orders/{importBody!.SalesOrderId}/billing-documents",
+        var billingResponse = await client.PostAsJsonAsync(
+                $"/api/sales-orders/{salesOrderId}/billing-documents",
                 new SalesOrdersEndpoints.CreateBillingDocumentRequest
                 {
                     DocumentType = "I"
-                }))
-            .Content.ReadFromJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>();
+                });
+        var billingResult = await IntegrationHttpTestDiagnostics.ReadJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>(
+            billingResponse,
+            HttpStatusCode.OK,
+            "Create billing document",
+            context);
+        var billingDocumentId = IntegrationHttpTestDiagnostics.Require(
+            billingResult.Value.BillingDocumentId,
+            nameof(billingResult.Value.BillingDocumentId),
+            "Create billing document",
+            context,
+            billingResult.Body);
 
-        var fiscalBody = await (await client.PostAsJsonAsync(
-                $"/api/billing-documents/{billingBody!.BillingDocumentId}/fiscal-documents",
+        var fiscalResponse = await client.PostAsJsonAsync(
+                $"/api/billing-documents/{billingDocumentId}/fiscal-documents",
                 new BillingDocumentsEndpoints.PrepareFiscalDocumentRequest
                 {
                     FiscalReceiverId = seed.ReceiverId,
@@ -617,15 +638,28 @@ public sealed class MySqlBackedIntegrationTests
                     PaymentCondition = "CREDITO",
                     IsCreditSale = true,
                     CreditDays = 7
-                }))
-            .Content.ReadFromJsonAsync<BillingDocumentsEndpoints.PrepareFiscalDocumentResponse>();
+                });
+        var fiscalResult = await IntegrationHttpTestDiagnostics.ReadJsonAsync<BillingDocumentsEndpoints.PrepareFiscalDocumentResponse>(
+            fiscalResponse,
+            HttpStatusCode.OK,
+            "Prepare fiscal document",
+            context);
 
-        var fiscalDocumentId = fiscalBody!.FiscalDocumentId!.Value;
+        var fiscalDocumentId = IntegrationHttpTestDiagnostics.Require(
+            fiscalResult.Value.FiscalDocumentId,
+            nameof(fiscalResult.Value.FiscalDocumentId),
+            "Prepare fiscal document",
+            context,
+            fiscalResult.Body);
         var stampResponse = await client.PostAsJsonAsync(
             $"/api/fiscal-documents/{fiscalDocumentId}/stamp",
             new FiscalDocumentsEndpoints.StampFiscalDocumentRequest());
 
-        Assert.Equal(HttpStatusCode.OK, stampResponse.StatusCode);
+        await IntegrationHttpTestDiagnostics.ReadJsonAsync<FiscalDocumentsEndpoints.StampFiscalDocumentResponse>(
+            stampResponse,
+            HttpStatusCode.OK,
+            "Stamp fiscal document",
+            $"{context}; fiscalDocumentId={fiscalDocumentId}");
         return fiscalDocumentId;
     }
 
@@ -1076,6 +1110,8 @@ public sealed class MySqlDatabaseFixture : IAsyncLifetime
 
 internal sealed class MySqlApiFactory : WebApplicationFactory<Program>, IAsyncDisposable
 {
+    private const string StandardProductSatProductServiceCode = "40161513";
+
     public FakeLegacyOrderReader LegacyOrderReader { get; } = new();
     public FakeFiscalStampingGateway FiscalStampingGateway { get; } = new();
     public FakeFiscalCancellationGateway FiscalCancellationGateway { get; } = new();
@@ -1316,7 +1352,7 @@ internal sealed class MySqlApiFactory : WebApplicationFactory<Program>, IAsyncDi
                 InternalCode = "SKU-1",
                 Description = "Product SKU-1",
                 NormalizedDescription = "PRODUCT SKU-1",
-                SatProductServiceCode = "01010101",
+                SatProductServiceCode = StandardProductSatProductServiceCode,
                 SatUnitCode = "H87",
                 TaxObjectCode = "02",
                 VatRate = 0.16m,
@@ -1326,6 +1362,11 @@ internal sealed class MySqlApiFactory : WebApplicationFactory<Program>, IAsyncDi
                 UpdatedAtUtc = DateTime.UtcNow
             };
             db.Add(product);
+        }
+        else if (string.Equals(product.SatProductServiceCode, "01010101", StringComparison.Ordinal))
+        {
+            product.SatProductServiceCode = StandardProductSatProductServiceCode;
+            product.UpdatedAtUtc = DateTime.UtcNow;
         }
 
         await db.SaveChangesAsync();
