@@ -199,6 +199,7 @@ public class Sprint0HardeningApiTests
     {
         var seed = await factory.SeedStandardFiscalMasterDataAsync();
         factory.LegacyOrderReader.Orders[legacyOrderId] = CreateLegacyOrder(legacyOrderId, "SKU-1", 100m);
+        var context = $"legacyOrderId={legacyOrderId}; sku=SKU-1; uuid=UUID-{legacyOrderId}; receiverIdOverride=<seed>";
         factory.FiscalStampingGateway.ResponseFactory = _ => new FiscalStampingGatewayResult
         {
             Outcome = FiscalStampingGatewayOutcome.Stamped,
@@ -211,19 +212,39 @@ public class Sprint0HardeningApiTests
             XmlHash = "XML-HASH-FISCAL"
         };
 
-        var importBody = await (await client.PostAsync($"/api/orders/{legacyOrderId}/import", null))
-            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+        var importResponse = await client.PostAsync($"/api/orders/{legacyOrderId}/import", null);
+        var importResult = await IntegrationHttpTestDiagnostics.ReadJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>(
+            importResponse,
+            HttpStatusCode.OK,
+            "Import legacy order",
+            context);
+        var salesOrderId = IntegrationHttpTestDiagnostics.Require(
+            importResult.Value.SalesOrderId,
+            nameof(importResult.Value.SalesOrderId),
+            "Import legacy order",
+            context,
+            importResult.Body);
 
-        var billingBody = await (await client.PostAsJsonAsync(
-                $"/api/sales-orders/{importBody!.SalesOrderId}/billing-documents",
+        var billingResponse = await client.PostAsJsonAsync(
+                $"/api/sales-orders/{salesOrderId}/billing-documents",
                 new SalesOrdersEndpoints.CreateBillingDocumentRequest
                 {
                     DocumentType = "I"
-                }))
-            .Content.ReadFromJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>();
+                });
+        var billingResult = await IntegrationHttpTestDiagnostics.ReadJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>(
+            billingResponse,
+            HttpStatusCode.OK,
+            "Create billing document",
+            context);
+        var billingDocumentId = IntegrationHttpTestDiagnostics.Require(
+            billingResult.Value.BillingDocumentId,
+            nameof(billingResult.Value.BillingDocumentId),
+            "Create billing document",
+            context,
+            billingResult.Body);
 
-        var fiscalBody = await (await client.PostAsJsonAsync(
-                $"/api/billing-documents/{billingBody!.BillingDocumentId}/fiscal-documents",
+        var fiscalResponse = await client.PostAsJsonAsync(
+                $"/api/billing-documents/{billingDocumentId}/fiscal-documents",
                 new BillingDocumentsEndpoints.PrepareFiscalDocumentRequest
                 {
                     FiscalReceiverId = seed.ReceiverId,
@@ -233,15 +254,28 @@ public class Sprint0HardeningApiTests
                     PaymentCondition = "CREDITO",
                     IsCreditSale = true,
                     CreditDays = 7
-                }))
-            .Content.ReadFromJsonAsync<BillingDocumentsEndpoints.PrepareFiscalDocumentResponse>();
+                });
+        var fiscalResult = await IntegrationHttpTestDiagnostics.ReadJsonAsync<BillingDocumentsEndpoints.PrepareFiscalDocumentResponse>(
+            fiscalResponse,
+            HttpStatusCode.OK,
+            "Prepare fiscal document",
+            context);
 
-        var fiscalDocumentId = fiscalBody!.FiscalDocumentId!.Value;
+        var fiscalDocumentId = IntegrationHttpTestDiagnostics.Require(
+            fiscalResult.Value.FiscalDocumentId,
+            nameof(fiscalResult.Value.FiscalDocumentId),
+            "Prepare fiscal document",
+            context,
+            fiscalResult.Body);
         var stampResponse = await client.PostAsJsonAsync(
             $"/api/fiscal-documents/{fiscalDocumentId}/stamp",
             new FiscalDocumentsEndpoints.StampFiscalDocumentRequest());
 
-        Assert.Equal(HttpStatusCode.OK, stampResponse.StatusCode);
+        await IntegrationHttpTestDiagnostics.ReadJsonAsync<FiscalDocumentsEndpoints.StampFiscalDocumentResponse>(
+            stampResponse,
+            HttpStatusCode.OK,
+            "Stamp fiscal document",
+            $"{context}; fiscalDocumentId={fiscalDocumentId}");
         return fiscalDocumentId;
     }
 

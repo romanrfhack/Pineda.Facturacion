@@ -523,16 +523,38 @@ public class AuthApiTests
     {
         var seed = await factory.SeedStandardFiscalMasterDataAsync();
         factory.LegacyOrderReader.Orders[legacyOrderId] = CreateLegacyOrder(legacyOrderId);
+        var context = $"legacyOrderId={legacyOrderId}; sku=SKU-1; uuid=<configured-by-test>; receiverIdOverride=<seed>";
 
-        var importBody = await (await client.PostAsync($"/api/orders/{legacyOrderId}/import", null))
-            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+        var importResponse = await client.PostAsync($"/api/orders/{legacyOrderId}/import", null);
+        var importResult = await IntegrationHttpTestDiagnostics.ReadJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>(
+            importResponse,
+            HttpStatusCode.OK,
+            "Import legacy order",
+            context);
+        var salesOrderId = IntegrationHttpTestDiagnostics.Require(
+            importResult.Value.SalesOrderId,
+            nameof(importResult.Value.SalesOrderId),
+            "Import legacy order",
+            context,
+            importResult.Body);
 
-        var billingBody = await (await client.PostAsJsonAsync($"/api/sales-orders/{importBody!.SalesOrderId}/billing-documents", new SalesOrdersEndpoints.CreateBillingDocumentRequest
+        var billingResponse = await client.PostAsJsonAsync($"/api/sales-orders/{salesOrderId}/billing-documents", new SalesOrdersEndpoints.CreateBillingDocumentRequest
         {
             DocumentType = "I"
-        })).Content.ReadFromJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>();
+        });
+        var billingResult = await IntegrationHttpTestDiagnostics.ReadJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>(
+            billingResponse,
+            HttpStatusCode.OK,
+            "Create billing document",
+            context);
+        var billingDocumentId = IntegrationHttpTestDiagnostics.Require(
+            billingResult.Value.BillingDocumentId,
+            nameof(billingResult.Value.BillingDocumentId),
+            "Create billing document",
+            context,
+            billingResult.Body);
 
-        var fiscalBody = await (await client.PostAsJsonAsync($"/api/billing-documents/{billingBody!.BillingDocumentId}/fiscal-documents", new BillingDocumentsEndpoints.PrepareFiscalDocumentRequest
+        var fiscalResponse = await client.PostAsJsonAsync($"/api/billing-documents/{billingDocumentId}/fiscal-documents", new BillingDocumentsEndpoints.PrepareFiscalDocumentRequest
         {
             FiscalReceiverId = seed.ReceiverId,
             IssuerProfileId = seed.IssuerId,
@@ -541,9 +563,19 @@ public class AuthApiTests
             PaymentCondition = "CREDITO",
             IsCreditSale = true,
             CreditDays = 7
-        })).Content.ReadFromJsonAsync<BillingDocumentsEndpoints.PrepareFiscalDocumentResponse>();
+        });
+        var fiscalResult = await IntegrationHttpTestDiagnostics.ReadJsonAsync<BillingDocumentsEndpoints.PrepareFiscalDocumentResponse>(
+            fiscalResponse,
+            HttpStatusCode.OK,
+            "Prepare fiscal document",
+            context);
 
-        return fiscalBody!.FiscalDocumentId!.Value;
+        return IntegrationHttpTestDiagnostics.Require(
+            fiscalResult.Value.FiscalDocumentId,
+            nameof(fiscalResult.Value.FiscalDocumentId),
+            "Prepare fiscal document",
+            context,
+            fiscalResult.Body);
     }
 
     private static MvpApiFactory CreateTrustedProxyFactory()
@@ -568,7 +600,11 @@ public class AuthApiTests
     {
         var fiscalDocumentId = await PrepareFiscalDocumentThroughApiAsync(factory, client, legacyOrderId);
         var stampResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/stamp", new FiscalDocumentsEndpoints.StampFiscalDocumentRequest());
-        Assert.Equal(HttpStatusCode.OK, stampResponse.StatusCode);
+        await IntegrationHttpTestDiagnostics.ReadJsonAsync<FiscalDocumentsEndpoints.StampFiscalDocumentResponse>(
+            stampResponse,
+            HttpStatusCode.OK,
+            "Stamp fiscal document",
+            $"legacyOrderId={legacyOrderId}; sku=SKU-1; uuid=<configured-by-test>; receiverIdOverride=<seed>; fiscalDocumentId={fiscalDocumentId}");
         return fiscalDocumentId;
     }
 }

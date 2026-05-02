@@ -307,10 +307,18 @@ public class MvpLifecycleApiTests
             IsCreditSale = true,
             CreditDays = 7
         });
-        Assert.Equal(HttpStatusCode.OK, fiscalResponse.StatusCode);
-        var fiscalBody = await fiscalResponse.Content.ReadFromJsonAsync<BillingDocumentsEndpoints.PrepareFiscalDocumentResponse>();
-        Assert.NotNull(fiscalBody);
-        Assert.NotNull(fiscalBody!.FiscalDocumentId);
+        var fiscalBodyResult = await IntegrationHttpTestDiagnostics.ReadJsonAsync<BillingDocumentsEndpoints.PrepareFiscalDocumentResponse>(
+            fiscalResponse,
+            HttpStatusCode.OK,
+            "Prepare fiscal document",
+            "legacyOrderId=LEG-1001; sku=SKU-1; receiverIdOverride=<none>; uuid=<none>");
+        var fiscalBody = fiscalBodyResult.Value;
+        IntegrationHttpTestDiagnostics.Require(
+            fiscalBody.FiscalDocumentId,
+            nameof(fiscalBody.FiscalDocumentId),
+            "Prepare fiscal document",
+            "legacyOrderId=LEG-1001; sku=SKU-1; receiverIdOverride=<none>; uuid=<none>",
+            fiscalBodyResult.Body);
 
         var getFiscalResponse = await client.GetAsync($"/api/fiscal-documents/{fiscalBody.FiscalDocumentId}");
         Assert.Equal(HttpStatusCode.OK, getFiscalResponse.StatusCode);
@@ -4865,15 +4873,38 @@ public class MvpLifecycleApiTests
             XmlHash = "XML-HASH-FISCAL"
         };
 
-        var importBody = await (await client.PostAsync($"/api/orders/{legacyOrderId}/import", null))
-            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+        var context = $"legacyOrderId={legacyOrderId}; sku={sku}; uuid={uuid}; receiverIdOverride={receiverIdOverride?.ToString() ?? "<seed>"}";
 
-        var billingBody = await (await client.PostAsJsonAsync($"/api/sales-orders/{importBody!.SalesOrderId}/billing-documents", new SalesOrdersEndpoints.CreateBillingDocumentRequest
+        var importResponse = await client.PostAsync($"/api/orders/{legacyOrderId}/import", null);
+        var importResult = await IntegrationHttpTestDiagnostics.ReadJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>(
+            importResponse,
+            HttpStatusCode.OK,
+            "Import legacy order",
+            context);
+        var salesOrderId = IntegrationHttpTestDiagnostics.Require(
+            importResult.Value.SalesOrderId,
+            nameof(importResult.Value.SalesOrderId),
+            "Import legacy order",
+            context,
+            importResult.Body);
+
+        var billingResponse = await client.PostAsJsonAsync($"/api/sales-orders/{salesOrderId}/billing-documents", new SalesOrdersEndpoints.CreateBillingDocumentRequest
         {
             DocumentType = "I"
-        })).Content.ReadFromJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>();
+        });
+        var billingResult = await IntegrationHttpTestDiagnostics.ReadJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>(
+            billingResponse,
+            HttpStatusCode.OK,
+            "Create billing document",
+            context);
+        var billingDocumentId = IntegrationHttpTestDiagnostics.Require(
+            billingResult.Value.BillingDocumentId,
+            nameof(billingResult.Value.BillingDocumentId),
+            "Create billing document",
+            context,
+            billingResult.Body);
 
-        var fiscalBody = await (await client.PostAsJsonAsync($"/api/billing-documents/{billingBody!.BillingDocumentId}/fiscal-documents", new BillingDocumentsEndpoints.PrepareFiscalDocumentRequest
+        var fiscalResponse = await client.PostAsJsonAsync($"/api/billing-documents/{billingDocumentId}/fiscal-documents", new BillingDocumentsEndpoints.PrepareFiscalDocumentRequest
         {
             FiscalReceiverId = receiverIdOverride ?? seed.ReceiverId,
             IssuerProfileId = seed.IssuerId,
@@ -4882,16 +4913,30 @@ public class MvpLifecycleApiTests
             PaymentCondition = "CREDITO",
             IsCreditSale = true,
             CreditDays = 7
-        })).Content.ReadFromJsonAsync<BillingDocumentsEndpoints.PrepareFiscalDocumentResponse>();
+        });
+        var fiscalResult = await IntegrationHttpTestDiagnostics.ReadJsonAsync<BillingDocumentsEndpoints.PrepareFiscalDocumentResponse>(
+            fiscalResponse,
+            HttpStatusCode.OK,
+            "Prepare fiscal document",
+            context);
 
-        return fiscalBody!.FiscalDocumentId!.Value;
+        return IntegrationHttpTestDiagnostics.Require(
+            fiscalResult.Value.FiscalDocumentId,
+            nameof(fiscalResult.Value.FiscalDocumentId),
+            "Prepare fiscal document",
+            context,
+            fiscalResult.Body);
     }
 
     private static async Task<long> PrepareStampedFiscalDocumentThroughApiAsync(MvpApiFactory factory, HttpClient client, string legacyOrderId, long? receiverIdOverride = null, string sku = "SKU-1", string uuid = "UUID-FISCAL-1")
     {
         var fiscalDocumentId = await PrepareFiscalDocumentThroughApiAsync(factory, client, legacyOrderId, receiverIdOverride, sku, uuid);
         var stampResponse = await client.PostAsJsonAsync($"/api/fiscal-documents/{fiscalDocumentId}/stamp", new FiscalDocumentsEndpoints.StampFiscalDocumentRequest());
-        Assert.Equal(HttpStatusCode.OK, stampResponse.StatusCode);
+        await IntegrationHttpTestDiagnostics.ReadJsonAsync<FiscalDocumentsEndpoints.StampFiscalDocumentResponse>(
+            stampResponse,
+            HttpStatusCode.OK,
+            "Stamp fiscal document",
+            $"legacyOrderId={legacyOrderId}; sku={sku}; uuid={uuid}; receiverIdOverride={receiverIdOverride?.ToString() ?? "<seed>"}; fiscalDocumentId={fiscalDocumentId}");
         return fiscalDocumentId;
     }
 
@@ -4908,6 +4953,7 @@ public class MvpLifecycleApiTests
 
 internal sealed class MvpApiFactory : WebApplicationFactory<Program>, IAsyncDisposable
 {
+    private const string StandardProductSatProductServiceCode = "40161513";
     private readonly string _databaseName = $"mvp-api-tests-{Guid.NewGuid():N}";
     private readonly IReadOnlyDictionary<string, string?> _configurationOverrides;
     private readonly string _environmentName;
@@ -5154,7 +5200,7 @@ internal sealed class MvpApiFactory : WebApplicationFactory<Program>, IAsyncDisp
                 InternalCode = "SKU-1",
                 Description = "Product SKU-1",
                 NormalizedDescription = "PRODUCT SKU-1",
-                SatProductServiceCode = "01010101",
+                SatProductServiceCode = StandardProductSatProductServiceCode,
                 SatUnitCode = "H87",
                 TaxObjectCode = "02",
                 VatRate = 0.16m,
@@ -5164,6 +5210,11 @@ internal sealed class MvpApiFactory : WebApplicationFactory<Program>, IAsyncDisp
                 UpdatedAtUtc = DateTime.UtcNow
             };
             db.Add(product);
+        }
+        else if (string.Equals(product.SatProductServiceCode, "01010101", StringComparison.Ordinal))
+        {
+            product.SatProductServiceCode = StandardProductSatProductServiceCode;
+            product.UpdatedAtUtc = DateTime.UtcNow;
         }
 
         await db.SaveChangesAsync();
