@@ -824,6 +824,100 @@ public sealed class SatCatalogImportAndAssignmentTests
     }
 
     [Fact]
+    public async Task ProductFiscalProfileResolver_GenericConfirmedProfileDoesNotStopSpecificLegacySuggestion()
+    {
+        await using var dbContext = CreateDbContext();
+        await SeedSatCatalogEntriesAsync(dbContext);
+        await ImportSwitchLegacyMappingAsync(dbContext);
+        var now = DateTime.UtcNow;
+        dbContext.ProductFiscalProfiles.Add(new ProductFiscalProfile
+        {
+            InternalCode = "SW-1",
+            Description = "Switch generico historico",
+            NormalizedDescription = "SWITCH GENERICO HISTORICO",
+            SatProductServiceCode = ProductFiscalAssignmentConventions.GenericSatProductServiceCode,
+            SatUnitCode = "H87",
+            TaxObjectCode = "02",
+            VatRate = 0.16m,
+            DefaultUnitText = "PIEZA",
+            IsActive = true,
+            CreatedAtUtc = now.AddDays(-10),
+            UpdatedAtUtc = now.AddDays(-10)
+        });
+        dbContext.ProductFiscalAssignments.Add(new ProductFiscalAssignment
+        {
+            InternalCode = "SW-1",
+            SatProductServiceCode = ProductFiscalAssignmentConventions.GenericSatProductServiceCode,
+            SatUnitCode = "H87",
+            TaxObjectCode = "02",
+            VatRate = 0.16m,
+            DefaultUnitText = "PIEZA",
+            Source = ProductFiscalAssignmentConventions.ManualSource,
+            Confidence = 1.0000m,
+            ReviewStatus = ProductFiscalAssignmentConventions.BootstrapReviewStatus,
+            ValidFromUtc = now.AddDays(-9),
+            CreatedAtUtc = now.AddDays(-9),
+            UpdatedAtUtc = now.AddDays(-9)
+        });
+        await dbContext.SaveChangesAsync();
+        var resolver = CreateResolver(dbContext);
+
+        var result = await resolver.ResolveAsync(new ProductFiscalProfileResolutionRequest
+        {
+            InternalCode = "SW-1",
+            Description = "Switch de ignición",
+            BillingDocumentItemVatRate = 0.16m
+        }, now);
+
+        Assert.Equal(ProductFiscalProfileResolutionStatus.Suggested, result.Status);
+        Assert.Equal(ProductFiscalProfileResolver.SourceLegacyMapping, result.Source);
+        Assert.Null(result.ResolvedProfile);
+        Assert.False(result.ShouldPersistEffectiveAssignment);
+        Assert.Equal("25173900", Assert.Single(result.Candidates).SatProductServiceCode);
+        Assert.DoesNotContain(
+            result.Candidates,
+            x => x.SatProductServiceCode == ProductFiscalAssignmentConventions.GenericSatProductServiceCode
+                && !x.RequiresExplicitConfirmation);
+    }
+
+    [Fact]
+    public async Task ProductFiscalProfileResolver_GenericExistingProfileDoesNotStopUniqueInternalCodeLegacySuggestion()
+    {
+        await using var dbContext = CreateDbContext();
+        await SeedSatCatalogEntriesAsync(dbContext);
+        await ImportSwitchLegacyMappingAsync(dbContext);
+        var now = DateTime.UtcNow;
+        dbContext.ProductFiscalProfiles.Add(new ProductFiscalProfile
+        {
+            InternalCode = "SW-1",
+            Description = "Switch generico historico",
+            NormalizedDescription = "SWITCH GENERICO HISTORICO",
+            SatProductServiceCode = ProductFiscalAssignmentConventions.GenericSatProductServiceCode,
+            SatUnitCode = "H87",
+            TaxObjectCode = "02",
+            VatRate = 0.16m,
+            DefaultUnitText = "PIEZA",
+            IsActive = true,
+            CreatedAtUtc = now.AddDays(-10),
+            UpdatedAtUtc = now.AddDays(-10)
+        });
+        await dbContext.SaveChangesAsync();
+        var resolver = CreateResolver(dbContext);
+
+        var result = await resolver.ResolveAsync(new ProductFiscalProfileResolutionRequest
+        {
+            InternalCode = "SW-1",
+            Description = "Descripcion capturada distinta",
+            BillingDocumentItemVatRate = 0.16m
+        }, now);
+
+        Assert.Equal(ProductFiscalProfileResolutionStatus.Suggested, result.Status);
+        Assert.Equal(ProductFiscalProfileResolver.SourceLegacyMapping, result.Source);
+        Assert.Equal("25173900", Assert.Single(result.Candidates).SatProductServiceCode);
+        Assert.False(result.ShouldPersistEffectiveAssignment);
+    }
+
+    [Fact]
     public async Task ProductFiscalProfileResolver_DoesNotAutoAssignGenericSatCodeFromLegacyMapping()
     {
         await using var dbContext = CreateDbContext();
@@ -842,11 +936,50 @@ public sealed class SatCatalogImportAndAssignmentTests
             BillingDocumentItemVatRate = 0.16m
         }, DateTime.UtcNow);
 
-        Assert.Equal(ProductFiscalProfileResolutionStatus.Suggested, result.Status);
+        Assert.Equal(ProductFiscalProfileResolutionStatus.Unresolved, result.Status);
         Assert.Null(result.ResolvedProfile);
         Assert.False(result.ShouldPersistEffectiveAssignment);
         Assert.Equal("01010101", Assert.Single(result.Candidates).SatProductServiceCode);
         Assert.True(result.Candidates[0].RequiresExplicitConfirmation);
+    }
+
+    [Fact]
+    public async Task ProductFiscalProfileResolver_ReturnsUnresolved_WhenOnlyExistingGenericProfileExists()
+    {
+        await using var dbContext = CreateDbContext();
+        await SeedSatCatalogEntriesAsync(dbContext);
+        var now = DateTime.UtcNow;
+        dbContext.ProductFiscalProfiles.Add(new ProductFiscalProfile
+        {
+            InternalCode = "GEN-ONLY",
+            Description = "Producto generico historico",
+            NormalizedDescription = "PRODUCTO GENERICO HISTORICO",
+            SatProductServiceCode = ProductFiscalAssignmentConventions.GenericSatProductServiceCode,
+            SatUnitCode = "H87",
+            TaxObjectCode = "02",
+            VatRate = 0.16m,
+            DefaultUnitText = "PIEZA",
+            IsActive = true,
+            CreatedAtUtc = now.AddDays(-10),
+            UpdatedAtUtc = now.AddDays(-10)
+        });
+        await dbContext.SaveChangesAsync();
+        var resolver = CreateResolver(dbContext);
+
+        var result = await resolver.ResolveAsync(new ProductFiscalProfileResolutionRequest
+        {
+            InternalCode = "GEN-ONLY",
+            Description = "Producto sin alternativa fiscal",
+            BillingDocumentItemVatRate = 0.16m
+        }, now);
+
+        Assert.Equal(ProductFiscalProfileResolutionStatus.Unresolved, result.Status);
+        Assert.Null(result.ResolvedProfile);
+        Assert.False(result.ShouldPersistEffectiveAssignment);
+        Assert.DoesNotContain(
+            result.Candidates,
+            x => x.SatProductServiceCode == ProductFiscalAssignmentConventions.GenericSatProductServiceCode
+                && !x.RequiresExplicitConfirmation);
     }
 
     [Fact]
@@ -877,6 +1010,64 @@ public sealed class SatCatalogImportAndAssignmentTests
         Assert.Equal("25173900", candidate.SatProductServiceCode);
         Assert.Equal("fuzzyDescription", candidate.MatchKind);
         Assert.True(candidate.RequiresExplicitConfirmation);
+    }
+
+    [Fact]
+    public async Task ProductFiscalProfileResolver_ReturnsFuzzyGenericLegacyMappingOnlyAsUnresolvedCandidate()
+    {
+        await using var dbContext = CreateDbContext();
+        await SeedSatCatalogEntriesAsync(dbContext);
+        await CreateLegacyMappingImportService(dbContext).ExecuteAsync(new ImportLegacyFiscalProductMappingsFromCsvCommand
+        {
+            SourceFileName = "fuzzy-generic.csv",
+            FileContent = CreateLegacyCsvBytes("1,Producto generico historico,01010101,H87,GEN-FUZZY,,")
+        });
+        var resolver = CreateResolver(dbContext);
+
+        var result = await resolver.ResolveAsync(new ProductFiscalProfileResolutionRequest
+        {
+            InternalCode = "GEN-FUZZY-X",
+            Description = "Producto generico",
+            BillingDocumentItemVatRate = 0.16m
+        }, DateTime.UtcNow);
+
+        Assert.Equal(ProductFiscalProfileResolutionStatus.Unresolved, result.Status);
+        Assert.Null(result.ResolvedProfile);
+        Assert.False(result.ShouldPersistEffectiveAssignment);
+        var candidate = Assert.Single(result.Candidates);
+        Assert.Equal(ProductFiscalAssignmentConventions.GenericSatProductServiceCode, candidate.SatProductServiceCode);
+        Assert.True(candidate.RequiresExplicitConfirmation);
+    }
+
+    [Fact]
+    public async Task ProductFiscalProfileResolver_PrefersSpecificLegacyCandidateOverGenericCompanion()
+    {
+        await using var dbContext = CreateDbContext();
+        await SeedSatCatalogEntriesAsync(dbContext);
+        await CreateLegacyMappingImportService(dbContext).ExecuteAsync(new ImportLegacyFiscalProductMappingsFromCsvCommand
+        {
+            SourceFileName = "specific-and-generic.csv",
+            FileContent = CreateLegacyCsvBytes(
+                "1,Switch de ignición,01010101,H87,SW-MIX,,",
+                "2,Switch de ignición,25173900,H87,SW-MIX,,")
+        });
+        var resolver = CreateResolver(dbContext);
+
+        var result = await resolver.ResolveAsync(new ProductFiscalProfileResolutionRequest
+        {
+            InternalCode = "SW-MIX",
+            Description = "Switch de ignición",
+            BillingDocumentItemVatRate = 0.16m
+        }, DateTime.UtcNow);
+
+        Assert.Equal(ProductFiscalProfileResolutionStatus.Resolved, result.Status);
+        Assert.True(result.ShouldPersistEffectiveAssignment);
+        Assert.Equal("25173900", result.ResolvedProfile!.SatProductServiceCode);
+        Assert.Equal("25173900", result.Candidates[0].SatProductServiceCode);
+        Assert.Contains(
+            result.Candidates,
+            x => x.SatProductServiceCode == ProductFiscalAssignmentConventions.GenericSatProductServiceCode
+                && x.RequiresExplicitConfirmation);
     }
 
     [Fact]
@@ -915,6 +1106,62 @@ public sealed class SatCatalogImportAndAssignmentTests
         Assert.Equal(ProductFiscalProfileResolutionStatus.Resolved, second.Status);
         Assert.Equal(ProductFiscalProfileResolver.SourceExistingProfile, second.Source);
         Assert.Equal("25173900", second.ResolvedProfile!.SatProductServiceCode);
+    }
+
+    [Fact]
+    public async Task ProductFiscalProfileResolver_UsesNonGenericProfileAfterUserSavesCorrection()
+    {
+        await using var dbContext = CreateDbContext();
+        await SeedSatCatalogEntriesAsync(dbContext);
+        var now = DateTime.UtcNow;
+        dbContext.ProductFiscalProfiles.Add(new ProductFiscalProfile
+        {
+            Id = 25,
+            InternalCode = "SW-SAVE",
+            Description = "Switch generico historico",
+            NormalizedDescription = "SWITCH GENERICO HISTORICO",
+            SatProductServiceCode = ProductFiscalAssignmentConventions.GenericSatProductServiceCode,
+            SatUnitCode = "H87",
+            TaxObjectCode = "02",
+            VatRate = 0.16m,
+            DefaultUnitText = "PIEZA",
+            IsActive = true,
+            CreatedAtUtc = now.AddDays(-10),
+            UpdatedAtUtc = now.AddDays(-10)
+        });
+        await dbContext.SaveChangesAsync();
+        var productRepository = new ProductFiscalProfileRepository(dbContext);
+        var updateService = new UpdateProductFiscalProfileService(
+            productRepository,
+            dbContext,
+            new SatProductServiceCatalogRepository(dbContext),
+            new SatClaveUnidadRepository(dbContext));
+
+        var update = await updateService.ExecuteAsync(new UpdateProductFiscalProfileCommand
+        {
+            Id = 25,
+            InternalCode = "SW-SAVE",
+            Description = "Switch de ignición",
+            SatProductServiceCode = "25173900",
+            SatUnitCode = "H87",
+            TaxObjectCode = "02",
+            VatRate = 0.16m,
+            DefaultUnitText = "PIEZA",
+            IsActive = true
+        });
+        var resolver = CreateResolver(dbContext);
+
+        var result = await resolver.ResolveAsync(new ProductFiscalProfileResolutionRequest
+        {
+            InternalCode = "SW-SAVE",
+            Description = "Switch de ignición",
+            BillingDocumentItemVatRate = 0.16m
+        }, DateTime.UtcNow.AddMinutes(1));
+
+        Assert.True(update.IsSuccess);
+        Assert.Equal(ProductFiscalProfileResolutionStatus.Resolved, result.Status);
+        Assert.Equal(ProductFiscalProfileResolver.SourceConfirmedProfile, result.Source);
+        Assert.Equal("25173900", result.ResolvedProfile!.SatProductServiceCode);
     }
 
     private static ImportOfficialSatCatalogService CreateImportService(BillingDbContext dbContext)

@@ -129,6 +129,47 @@ describe('missing-product-fiscal-profile helper', () => {
     expect(context?.draft.internalCode).toBe('GP-149');
   });
 
+  it('keeps generic SAT review messages when the backend provides them', () => {
+    const context = resolveMissingProductFiscalProfileContext({
+      outcome: 'MissingProductFiscalProfile',
+      isSuccess: false,
+      errorMessage: 'No active product fiscal profile exists.',
+      billingDocumentId: 3,
+      fiscalDocumentId: null,
+      status: null,
+      missingProductFiscalProfile: {
+        billingDocumentItemId: 10,
+        lineNumber: 1,
+        internalCode: 'MTE-4259',
+        description: 'SWITCH DE IGNICION',
+        existingProfileStatus: 'Active',
+        existingProductFiscalProfileId: 33,
+        canUseExplicitGeneric: true,
+        reviewMessages: [
+          'El perfil anterior usaba la clave genérica 01010101.',
+          'Se encontró una clave SAT más específica en el historial fiscal importado.',
+          'Valida la sugerencia antes de continuar.',
+        ],
+        prefill: {
+          satProductServiceCode: '25173900',
+          satUnitCode: 'H87',
+          taxObjectCode: '02',
+          vatRate: 0.16,
+          defaultUnitText: 'PIEZA',
+          isActive: true,
+          requiresExplicitProductServiceConfirmation: false,
+        },
+        suggestions: [],
+      },
+    });
+
+    expect(context?.reviewMessages).toEqual([
+      'El perfil anterior usaba la clave genérica 01010101.',
+      'Se encontró una clave SAT más específica en el historial fiscal importado.',
+      'Valida la sugerencia antes de continuar.',
+    ]);
+  });
+
   it('extracts recovery context from HttpErrorResponse-like payload without parsing the message', () => {
     expect(
       extractMissingProductFiscalProfileContext({

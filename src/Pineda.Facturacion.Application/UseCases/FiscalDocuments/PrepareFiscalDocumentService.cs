@@ -634,7 +634,8 @@ public class PrepareFiscalDocumentService
         var autoPrefillSuggestion = suggestions.FirstOrDefault(x =>
             !x.RequiresExplicitConfirmation
             && x.IsActive
-            && !string.IsNullOrWhiteSpace(x.SatProductServiceCode));
+            && !string.IsNullOrWhiteSpace(x.SatProductServiceCode)
+            && !ProductFiscalAssignmentConventions.IsGenericSatProductServiceCode(x.SatProductServiceCode));
 
         return new PrepareFiscalDocumentMissingProductFiscalProfile
         {
@@ -647,6 +648,10 @@ public class PrepareFiscalDocumentService
             ExistingProfileStatus = existingProfileStatus,
             ExistingProductFiscalProfileId = existingProfile?.Id,
             CanUseExplicitGeneric = true,
+            ReviewMessages = BuildMissingProductFiscalProfileReviewMessages(
+                existingProfile,
+                effectiveAssignment,
+                suggestions),
             Prefill = BuildMissingProductFiscalProfilePrefill(
                 billingDocumentItem,
                 existingProfile,
@@ -707,8 +712,13 @@ public class PrepareFiscalDocumentService
                     Reason = productCandidate.Reason,
                     IsActive = productCandidate.IsActive && (pairedUnit?.IsActive ?? true),
                     RequiresExplicitConfirmation = productCandidate.RequiresExplicitConfirmation
+                        || ProductFiscalAssignmentConventions.IsGenericSatProductServiceCode(productCandidate.Code)
                 };
             })
+            .OrderBy(x => ProductFiscalAssignmentConventions.IsGenericSatProductServiceCode(x.SatProductServiceCode))
+            .ThenByDescending(x => x.Score)
+            .ThenByDescending(x => x.Confidence)
+            .ThenBy(x => x.SatProductServiceCode, StringComparer.Ordinal)
             .ToList();
     }
 
@@ -744,8 +754,9 @@ public class PrepareFiscalDocumentService
         PrepareFiscalDocumentMissingProductFiscalProfileSuggestion? autoPrefillSuggestion)
     {
         if (existingProfile is not null
-            && existingProfileStatus is PrepareFiscalDocumentExistingProductFiscalProfileStatus.Active
+            && (existingProfileStatus is PrepareFiscalDocumentExistingProductFiscalProfileStatus.Active
                 or PrepareFiscalDocumentExistingProductFiscalProfileStatus.Inactive)
+            && !ProductFiscalAssignmentConventions.IsGenericSatProductServiceCode(existingProfile.SatProductServiceCode))
         {
             return new PrepareFiscalDocumentMissingProductFiscalProfilePrefill
             {
@@ -778,6 +789,7 @@ public class PrepareFiscalDocumentService
 
         var suggestedUnit = suggestionResult?.SuggestedUnit;
         var fallbackUnitCode = NormalizeOptionalCode(billingDocumentItem.SatUnitCode)
+            ?? existingProfile?.SatUnitCode
             ?? suggestedUnit?.Code
             ?? "H87";
 
@@ -785,9 +797,13 @@ public class PrepareFiscalDocumentService
         {
             SatProductServiceCode = string.Empty,
             SatUnitCode = fallbackUnitCode,
-            TaxObjectCode = NormalizeOptionalCode(billingDocumentItem.TaxObjectCode) ?? "02",
-            VatRate = billingDocumentItem.TaxRate > 0 ? billingDocumentItem.TaxRate : 0.16m,
-            DefaultUnitText = ResolveDefaultUnitText(null, suggestedUnit?.Description, fallbackUnitCode),
+            TaxObjectCode = NormalizeOptionalCode(billingDocumentItem.TaxObjectCode)
+                ?? existingProfile?.TaxObjectCode
+                ?? "02",
+            VatRate = billingDocumentItem.TaxRate > 0
+                ? billingDocumentItem.TaxRate
+                : existingProfile?.VatRate ?? 0.16m,
+            DefaultUnitText = ResolveDefaultUnitText(existingProfile?.DefaultUnitText, suggestedUnit?.Description, fallbackUnitCode),
             IsActive = true,
             RequiresExplicitProductServiceConfirmation = true
         };
@@ -829,6 +845,36 @@ public class PrepareFiscalDocumentService
             { IsActive: true } => PrepareFiscalDocumentExistingProductFiscalProfileStatus.Active,
             _ => PrepareFiscalDocumentExistingProductFiscalProfileStatus.Inactive
         };
+    }
+
+    private static IReadOnlyList<string> BuildMissingProductFiscalProfileReviewMessages(
+        ProductFiscalProfile? existingProfile,
+        ProductFiscalAssignment? effectiveAssignment,
+        IReadOnlyList<PrepareFiscalDocumentMissingProductFiscalProfileSuggestion> suggestions)
+    {
+        var messages = new List<string>();
+        var hasHistoricalGeneric = ProductFiscalAssignmentConventions.IsGenericSatProductServiceCode(existingProfile?.SatProductServiceCode)
+            || ProductFiscalAssignmentConventions.IsGenericSatProductServiceCode(effectiveAssignment?.SatProductServiceCode);
+
+        if (hasHistoricalGeneric)
+        {
+            messages.Add("El perfil anterior usaba la clave genérica 01010101.");
+        }
+
+        if (suggestions.Any(x =>
+                x.Source == ProductFiscalProfileResolver.SourceLegacyMapping
+                && !ProductFiscalAssignmentConventions.IsGenericSatProductServiceCode(x.SatProductServiceCode)))
+        {
+            messages.Add("Se encontró una clave SAT más específica en el historial fiscal importado.");
+        }
+
+        if (hasHistoricalGeneric
+            && suggestions.Any(x => !ProductFiscalAssignmentConventions.IsGenericSatProductServiceCode(x.SatProductServiceCode)))
+        {
+            messages.Add("Valida la sugerencia antes de continuar.");
+        }
+
+        return messages;
     }
 
     private static string? NormalizeOptionalCode(string? value)

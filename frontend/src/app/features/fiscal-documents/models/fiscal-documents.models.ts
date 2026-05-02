@@ -208,6 +208,7 @@ export interface MissingProductFiscalProfileResponse {
   existingProfileStatus: 'Active' | 'Inactive' | 'None' | string;
   existingProductFiscalProfileId?: number | null;
   canUseExplicitGeneric: boolean;
+  reviewMessages?: string[] | null;
   prefill: MissingProductFiscalProfilePrefillResponse;
   suggestions?: ProductFiscalProfileRecoverySuggestion[] | null;
 }

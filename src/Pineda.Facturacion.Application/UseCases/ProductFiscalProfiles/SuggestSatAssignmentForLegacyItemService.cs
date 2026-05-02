@@ -98,7 +98,7 @@ public sealed class SuggestSatAssignmentForLegacyItemService
             Score = 1.0000m,
             IsActive = product?.IsActive ?? false,
             Reason = "Asignacion efectiva vigente para el mismo codigo interno.",
-            RequiresExplicitConfirmation = false
+            RequiresExplicitConfirmation = ProductFiscalAssignmentConventions.IsGenericSatProductServiceCode(effectiveAssignment.SatProductServiceCode)
         });
 
         AddCandidate(unitCandidates, unitCodes, new SatAssignmentSuggestionItem
@@ -146,7 +146,7 @@ public sealed class SuggestSatAssignmentForLegacyItemService
             Reason = existingProfile.IsActive
                 ? "Perfil fiscal actual encontrado para el mismo codigo interno."
                 : "Perfil fiscal actual encontrado para el mismo codigo interno, pero el maestro esta inactivo.",
-            RequiresExplicitConfirmation = false
+            RequiresExplicitConfirmation = ProductFiscalAssignmentConventions.IsGenericSatProductServiceCode(existingProfile.SatProductServiceCode)
         });
 
         AddCandidate(unitCandidates, unitCodes, new SatAssignmentSuggestionItem
@@ -197,7 +197,7 @@ public sealed class SuggestSatAssignmentForLegacyItemService
                     Score = 0.9600m,
                     IsActive = product.IsActive,
                     Reason = "Hint SAT persistido en billing_document_item.",
-                    RequiresExplicitConfirmation = false
+                    RequiresExplicitConfirmation = ProductFiscalAssignmentConventions.IsGenericSatProductServiceCode(product.Code)
                 });
             }
         }
@@ -256,7 +256,7 @@ public sealed class SuggestSatAssignmentForLegacyItemService
                     Score = 0.9200m,
                     IsActive = product.IsActive,
                     Reason = "Clave SAT recuperada desde un snapshot o importacion historica.",
-                    RequiresExplicitConfirmation = false
+                    RequiresExplicitConfirmation = ProductFiscalAssignmentConventions.IsGenericSatProductServiceCode(product.Code)
                 });
             }
         }
@@ -352,6 +352,13 @@ public sealed class SuggestSatAssignmentForLegacyItemService
 
     private static int CompareCandidates(SatAssignmentSuggestionItem left, SatAssignmentSuggestionItem right)
     {
+        var leftIsGeneric = ProductFiscalAssignmentConventions.IsGenericSatProductServiceCode(left.Code);
+        var rightIsGeneric = ProductFiscalAssignmentConventions.IsGenericSatProductServiceCode(right.Code);
+        if (leftIsGeneric != rightIsGeneric)
+        {
+            return leftIsGeneric ? 1 : -1;
+        }
+
         var byScore = right.Score.CompareTo(left.Score);
         if (byScore != 0)
         {
