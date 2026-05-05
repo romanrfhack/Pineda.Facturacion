@@ -18,6 +18,9 @@ public sealed class AuthBootstrapHostedService : IHostedService
         await using var scope = _serviceProvider.CreateAsyncScope();
         var bootstrapService = scope.ServiceProvider.GetRequiredService<IdentityBootstrapService>();
         await bootstrapService.ExecuteAsync(cancellationToken);
+
+        var devSeedService = scope.ServiceProvider.GetRequiredService<DevIdentitySeedService>();
+        await devSeedService.ExecuteAsync(cancellationToken);
     }
 
     public Task StopAsync(CancellationToken cancellationToken)
