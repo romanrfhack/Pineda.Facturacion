@@ -12,6 +12,7 @@ using Pineda.Facturacion.Application.UseCases.IssuerProfiles;
 using Pineda.Facturacion.Application.UseCases.Orders;
 using Pineda.Facturacion.Application.UseCases.PaymentComplements;
 using Pineda.Facturacion.Application.UseCases.ProductFiscalProfiles;
+using Pineda.Facturacion.Application.UseCases.Reports;
 using Pineda.Facturacion.Application.UseCases.SatCatalogs;
 using Pineda.Facturacion.Application.UseCases.SatClaveUnidad;
 using Pineda.Facturacion.Application.UseCases.SatProductServices;
@@ -32,6 +33,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<SearchLegacyOrdersService>();
         services.AddScoped<CreateBulkBillingDocumentService>();
         services.AddScoped<ListAuditEventsService>();
+        services.AddScoped<SearchStampedLegacyNotesReportService>();
+        services.AddScoped<ExportStampedLegacyNotesReportService>();
         services.AddScoped<LoginService>();
         services.AddScoped<GetCurrentUserService>();
         services.AddScoped<CreateBillingDocumentService>();

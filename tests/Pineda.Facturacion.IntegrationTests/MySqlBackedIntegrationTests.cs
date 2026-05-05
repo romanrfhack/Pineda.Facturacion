@@ -23,6 +23,7 @@ using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Contracts.Pac;
 using Pineda.Facturacion.Application.Models.Legacy;
 using Pineda.Facturacion.Application.Security;
+using Pineda.Facturacion.Application.UseCases.Reports;
 using Pineda.Facturacion.Domain.Entities;
 using Pineda.Facturacion.Domain.Enums;
 using Pineda.Facturacion.Infrastructure.BillingWrite.Persistence;
@@ -575,6 +576,154 @@ public sealed class MySqlBackedIntegrationTests
         Assert.Null(lookup.Value.FiscalUuid);
     }
 
+    [MySqlFact]
+    public async Task StampedLegacyNotesReportRepository_TranslatesAndExecutes_AgainstRealMySqlProvider()
+    {
+        await _fixture.ResetDatabaseAsync();
+
+        var (fromUtc, toUtcExclusive) = MexicoLocalDateRangeConverter.ToUtcRange(
+            new DateOnly(2026, 5, 4),
+            new DateOnly(2026, 5, 4));
+
+        await using (var db = _fixture.CreateDbContext())
+        {
+            db.IssuerProfiles.Add(CreateIssuerProfileEntity(1));
+            db.FiscalReceivers.Add(CreateFiscalReceiver(1));
+
+            SeedStampedLegacyNotesReportDocument(
+                db,
+                scenarioId: 1,
+                fiscalStatus: FiscalDocumentStatus.Stamped,
+                stampStatus: FiscalStampStatus.Succeeded,
+                stampedAtUtc: fromUtc,
+                uuid: "UUID-REPORT-VALID",
+                notes:
+                [
+                    new StampedLegacyNotesReportNoteSeed(
+                        "LEG-REPORT-VALID-A",
+                        "REF-VALID-A",
+                        [new StampedLegacyNotesReportLineSeed(100m, 16m), new StampedLegacyNotesReportLineSeed(50m, 8m)]),
+                    new StampedLegacyNotesReportNoteSeed(
+                        "LEG-REPORT-VALID-B",
+                        "REF-VALID-B",
+                        [new StampedLegacyNotesReportLineSeed(200m, 32m)])
+                ]);
+
+            SeedStampedLegacyNotesReportDocument(
+                db,
+                scenarioId: 2,
+                fiscalStatus: FiscalDocumentStatus.CancellationRejected,
+                stampStatus: FiscalStampStatus.Succeeded,
+                stampedAtUtc: fromUtc.AddHours(2),
+                uuid: "UUID-REPORT-CANCELLATION-REJECTED",
+                cancellationStatus: FiscalCancellationStatus.Rejected,
+                notes: [new StampedLegacyNotesReportNoteSeed("LEG-REPORT-CANCELLATION-REJECTED", "REF-CR", [new StampedLegacyNotesReportLineSeed(10m, 1.6m)])]);
+
+            SeedStampedLegacyNotesReportDocument(
+                db,
+                scenarioId: 3,
+                fiscalStatus: FiscalDocumentStatus.Stamped,
+                stampStatus: FiscalStampStatus.Succeeded,
+                stampedAtUtc: toUtcExclusive,
+                uuid: "UUID-REPORT-END-EXCLUDED",
+                notes: [new StampedLegacyNotesReportNoteSeed("LEG-REPORT-END-EXCLUDED", "REF-END", [new StampedLegacyNotesReportLineSeed(10m, 1.6m)])]);
+
+            SeedStampedLegacyNotesReportDocument(
+                db,
+                scenarioId: 4,
+                fiscalStatus: FiscalDocumentStatus.Cancelled,
+                stampStatus: FiscalStampStatus.Succeeded,
+                stampedAtUtc: fromUtc.AddHours(3),
+                uuid: "UUID-REPORT-CANCELLED",
+                notes: [new StampedLegacyNotesReportNoteSeed("LEG-REPORT-CANCELLED", "REF-CANCELLED", [new StampedLegacyNotesReportLineSeed(10m, 1.6m)])]);
+
+            SeedStampedLegacyNotesReportDocument(
+                db,
+                scenarioId: 5,
+                fiscalStatus: FiscalDocumentStatus.CancellationRequested,
+                stampStatus: FiscalStampStatus.Succeeded,
+                stampedAtUtc: fromUtc.AddHours(4),
+                uuid: "UUID-REPORT-CANCELLATION-REQUESTED",
+                notes: [new StampedLegacyNotesReportNoteSeed("LEG-REPORT-CANCELLATION-REQUESTED", "REF-CQ", [new StampedLegacyNotesReportLineSeed(10m, 1.6m)])]);
+
+            SeedStampedLegacyNotesReportDocument(
+                db,
+                scenarioId: 6,
+                fiscalStatus: FiscalDocumentStatus.Stamped,
+                stampStatus: FiscalStampStatus.Succeeded,
+                stampedAtUtc: fromUtc.AddHours(5),
+                uuid: "UUID-REPORT-CANCELLED-RECORD",
+                cancellationStatus: FiscalCancellationStatus.Cancelled,
+                notes: [new StampedLegacyNotesReportNoteSeed("LEG-REPORT-CANCELLED-RECORD", "REF-FC", [new StampedLegacyNotesReportLineSeed(10m, 1.6m)])]);
+
+            SeedStampedLegacyNotesReportDocument(
+                db,
+                scenarioId: 7,
+                fiscalStatus: FiscalDocumentStatus.Stamped,
+                stampStatus: FiscalStampStatus.Rejected,
+                stampedAtUtc: fromUtc.AddHours(6),
+                uuid: "UUID-REPORT-REJECTED-STAMP",
+                notes: [new StampedLegacyNotesReportNoteSeed("LEG-REPORT-REJECTED-STAMP", "REF-RS", [new StampedLegacyNotesReportLineSeed(10m, 1.6m)])]);
+
+            SeedStampedLegacyNotesReportDocument(
+                db,
+                scenarioId: 8,
+                fiscalStatus: FiscalDocumentStatus.Stamped,
+                stampStatus: FiscalStampStatus.Succeeded,
+                stampedAtUtc: fromUtc.AddHours(7),
+                uuid: "   ",
+                notes: [new StampedLegacyNotesReportNoteSeed("LEG-REPORT-NO-UUID", "REF-NU", [new StampedLegacyNotesReportLineSeed(10m, 1.6m)])]);
+
+            SeedStampedLegacyNotesReportDocument(
+                db,
+                scenarioId: 9,
+                fiscalStatus: FiscalDocumentStatus.Stamped,
+                stampStatus: FiscalStampStatus.Succeeded,
+                stampedAtUtc: null,
+                uuid: "UUID-REPORT-NO-DATE",
+                notes: [new StampedLegacyNotesReportNoteSeed("LEG-REPORT-NO-DATE", "REF-ND", [new StampedLegacyNotesReportLineSeed(10m, 1.6m)])]);
+
+            await db.SaveChangesAsync();
+        }
+
+        var interceptor = new SqlCaptureCommandInterceptor();
+        await using var queryDb = CreateLoggedDbContext(_fixture.DatabaseConnectionString, interceptor);
+        var repository = new StampedLegacyNotesReportRepository(queryDb);
+
+        var result = await repository.SearchAsync(new StampedLegacyNotesReportQuery
+        {
+            FromUtc = fromUtc,
+            ToUtcExclusive = toUtcExclusive,
+            Page = 1,
+            PageSize = 50
+        });
+
+        Assert.Equal(3, result.TotalCount);
+        Assert.Equal(["LEG-REPORT-CANCELLATION-REJECTED", "LEG-REPORT-VALID-A", "LEG-REPORT-VALID-B"], result.Items.Select(x => x.LegacyOrderId).Order());
+
+        var firstNote = Assert.Single(result.Items, x => x.LegacyOrderId == "LEG-REPORT-VALID-A");
+        Assert.Equal(2, firstNote.ItemCount);
+        Assert.Equal(174m, firstNote.NoteAmountInCfdi);
+        Assert.Equal(fromUtc, firstNote.StampedAtUtc);
+
+        var secondNote = Assert.Single(result.Items, x => x.LegacyOrderId == "LEG-REPORT-VALID-B");
+        Assert.Equal(1, secondNote.ItemCount);
+        Assert.Equal(232m, secondNote.NoteAmountInCfdi);
+
+        Assert.Contains(result.Items, x => x.LegacyOrderId == "LEG-REPORT-CANCELLATION-REJECTED" && x.FiscalStatus == nameof(FiscalDocumentStatus.CancellationRejected));
+        Assert.DoesNotContain(result.Items, x => x.LegacyOrderId == "LEG-REPORT-END-EXCLUDED");
+        Assert.DoesNotContain(result.Items, x => x.LegacyOrderId == "LEG-REPORT-CANCELLED");
+        Assert.DoesNotContain(result.Items, x => x.LegacyOrderId == "LEG-REPORT-CANCELLATION-REQUESTED");
+        Assert.DoesNotContain(result.Items, x => x.LegacyOrderId == "LEG-REPORT-CANCELLED-RECORD");
+        Assert.DoesNotContain(result.Items, x => x.LegacyOrderId == "LEG-REPORT-REJECTED-STAMP");
+        Assert.DoesNotContain(result.Items, x => x.LegacyOrderId == "LEG-REPORT-NO-UUID");
+        Assert.DoesNotContain(result.Items, x => x.LegacyOrderId == "LEG-REPORT-NO-DATE");
+
+        Assert.Contains(interceptor.Commands, sql =>
+            sql.Contains("fiscal_stamp", StringComparison.OrdinalIgnoreCase)
+            && sql.Contains("stamped_at_utc", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static async Task<long> PrepareStampedFiscalDocumentThroughApiAsync(
         MySqlApiFactory factory,
         HttpClient client,
@@ -938,6 +1087,214 @@ public sealed class MySqlBackedIntegrationTests
             UpdatedAtUtc = new DateTime(2026, 4, 10, 1, 0, 0, DateTimeKind.Utc)
         };
     }
+
+    private static void SeedStampedLegacyNotesReportDocument(
+        BillingDbContext db,
+        long scenarioId,
+        FiscalDocumentStatus fiscalStatus,
+        FiscalStampStatus stampStatus,
+        DateTime? stampedAtUtc,
+        string uuid,
+        IReadOnlyList<StampedLegacyNotesReportNoteSeed> notes,
+        FiscalCancellationStatus? cancellationStatus = null)
+    {
+        var now = new DateTime(2026, 5, 4, 0, 0, 0, DateTimeKind.Utc);
+        var billingDocumentId = 60_000 + scenarioId;
+        var fiscalDocumentId = 70_000 + scenarioId;
+        var fiscalStampId = 80_000 + scenarioId;
+        var total = notes.SelectMany(x => x.Lines).Sum(x => x.LineTotal + x.TaxAmount);
+        var firstSalesOrderId = 100_000 + (scenarioId * 1_000);
+
+        db.BillingDocuments.Add(new BillingDocument
+        {
+            Id = billingDocumentId,
+            SalesOrderId = firstSalesOrderId,
+            DocumentType = "I",
+            Series = $"R{scenarioId}",
+            Folio = scenarioId.ToString(CultureInfo.InvariantCulture),
+            Status = BillingDocumentStatus.Stamped,
+            PaymentCondition = "CREDITO",
+            CurrencyCode = "MXN",
+            PaymentMethodSat = "PPD",
+            PaymentFormSat = "99",
+            IssuedAtUtc = now,
+            Subtotal = total,
+            DiscountTotal = 0m,
+            TaxTotal = notes.SelectMany(x => x.Lines).Sum(x => x.TaxAmount),
+            Total = total,
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now
+        });
+
+        db.FiscalDocuments.Add(new FiscalDocument
+        {
+            Id = fiscalDocumentId,
+            BillingDocumentId = billingDocumentId,
+            IssuerProfileId = 1,
+            FiscalReceiverId = 1,
+            Status = fiscalStatus,
+            CfdiVersion = "4.0",
+            DocumentType = "I",
+            Series = $"R{scenarioId}",
+            Folio = scenarioId.ToString(CultureInfo.InvariantCulture),
+            IssuedAtUtc = now,
+            CurrencyCode = "MXN",
+            PaymentMethodSat = "PPD",
+            PaymentFormSat = "99",
+            PaymentCondition = "CREDITO",
+            IsCreditSale = true,
+            CreditDays = 7,
+            IssuerRfc = "AAA010101AAA",
+            IssuerLegalName = "Issuer One",
+            IssuerFiscalRegimeCode = "601",
+            IssuerPostalCode = "01000",
+            PacEnvironment = "Sandbox",
+            CertificateReference = "CERT",
+            PrivateKeyReference = "KEY",
+            PrivateKeyPasswordReference = "PWD",
+            ReceiverRfc = "BBB010101BBB",
+            ReceiverLegalName = "Receiver One",
+            ReceiverFiscalRegimeCode = "601",
+            ReceiverCfdiUseCode = "G03",
+            ReceiverPostalCode = "01000",
+            Subtotal = total,
+            DiscountTotal = 0m,
+            TaxTotal = notes.SelectMany(x => x.Lines).Sum(x => x.TaxAmount),
+            Total = total,
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now
+        });
+
+        db.FiscalStamps.Add(new FiscalStamp
+        {
+            Id = fiscalStampId,
+            FiscalDocumentId = fiscalDocumentId,
+            ProviderName = "FacturaloPlus",
+            ProviderOperation = "stamp",
+            Status = stampStatus,
+            Uuid = uuid,
+            StampedAtUtc = stampedAtUtc,
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now
+        });
+
+        if (cancellationStatus.HasValue)
+        {
+            db.FiscalCancellations.Add(new FiscalCancellation
+            {
+                Id = 90_000 + scenarioId,
+                FiscalDocumentId = fiscalDocumentId,
+                FiscalStampId = fiscalStampId,
+                Status = cancellationStatus.Value,
+                CancellationReasonCode = "02",
+                ProviderName = "FacturaloPlus",
+                ProviderOperation = "cancel",
+                RequestedAtUtc = now,
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now
+            });
+        }
+
+        var globalLineIndex = 0;
+        for (var noteIndex = 0; noteIndex < notes.Count; noteIndex++)
+        {
+            var note = notes[noteIndex];
+            var legacyImportRecordId = 110_000 + (scenarioId * 1_000) + noteIndex;
+            var salesOrderId = firstSalesOrderId + noteIndex;
+            var noteTotal = note.Lines.Sum(x => x.LineTotal + x.TaxAmount);
+            var noteTaxTotal = note.Lines.Sum(x => x.TaxAmount);
+
+            db.LegacyImportRecords.Add(new LegacyImportRecord
+            {
+                Id = legacyImportRecordId,
+                SourceSystem = "legacy",
+                SourceTable = "pedidos",
+                SourceDocumentId = note.LegacyOrderId,
+                SourceDocumentType = "F",
+                SourceHash = $"HASH-{note.LegacyOrderId}",
+                ImportStatus = ImportStatus.Imported,
+                ImportedAtUtc = now,
+                LastSeenAtUtc = now,
+                BillingDocumentId = billingDocumentId
+            });
+
+            db.SalesOrders.Add(new SalesOrder
+            {
+                Id = salesOrderId,
+                LegacyImportRecordId = legacyImportRecordId,
+                LegacyOrderNumber = note.LegacyOrderNumber,
+                CustomerLegacyId = "100",
+                CustomerName = "Receiver One",
+                CustomerRfc = "BBB010101BBB",
+                PaymentCondition = "CREDITO",
+                CurrencyCode = "MXN",
+                Subtotal = note.Lines.Sum(x => x.LineTotal),
+                DiscountTotal = 0m,
+                TaxTotal = noteTaxTotal,
+                Total = noteTotal,
+                SnapshotTakenAtUtc = now,
+                Status = SalesOrderStatus.Billed
+            });
+
+            for (var lineIndex = 0; lineIndex < note.Lines.Count; lineIndex++)
+            {
+                var line = note.Lines[lineIndex];
+                var salesOrderItemId = 120_000 + (scenarioId * 1_000) + globalLineIndex;
+                var billingDocumentItemId = 130_000 + (scenarioId * 1_000) + globalLineIndex;
+
+                db.SalesOrderItems.Add(new SalesOrderItem
+                {
+                    Id = salesOrderItemId,
+                    SalesOrderId = salesOrderId,
+                    LineNumber = lineIndex + 1,
+                    LegacyArticleId = $"SKU-{scenarioId}-{lineIndex + 1}",
+                    Sku = $"SKU-{scenarioId}-{lineIndex + 1}",
+                    Description = $"Report item {scenarioId}-{lineIndex + 1}",
+                    UnitCode = "H87",
+                    UnitName = "Pieza",
+                    Quantity = 1m,
+                    UnitPrice = line.LineTotal,
+                    DiscountAmount = 0m,
+                    TaxRate = 0.16m,
+                    TaxAmount = line.TaxAmount,
+                    LineTotal = line.LineTotal,
+                    SatProductServiceCode = "40161513",
+                    SatUnitCode = "H87"
+                });
+
+                db.BillingDocumentItems.Add(new BillingDocumentItem
+                {
+                    Id = billingDocumentItemId,
+                    BillingDocumentId = billingDocumentId,
+                    SalesOrderId = salesOrderId,
+                    SalesOrderItemId = salesOrderItemId,
+                    SourceSalesOrderLineNumber = lineIndex + 1,
+                    SourceLegacyOrderId = $"{note.LegacyOrderId}-{note.LegacyOrderNumber}",
+                    LineNumber = globalLineIndex + 1,
+                    ProductInternalCode = $"SKU-{scenarioId}-{lineIndex + 1}",
+                    Description = $"Report item {scenarioId}-{lineIndex + 1}",
+                    Quantity = 1m,
+                    UnitPrice = line.LineTotal,
+                    DiscountAmount = 0m,
+                    TaxRate = 0.16m,
+                    TaxAmount = line.TaxAmount,
+                    LineTotal = line.LineTotal,
+                    SatProductServiceCode = "40161513",
+                    SatUnitCode = "H87",
+                    TaxObjectCode = "02"
+                });
+
+                globalLineIndex++;
+            }
+        }
+    }
+
+    private sealed record StampedLegacyNotesReportNoteSeed(
+        string LegacyOrderId,
+        string LegacyOrderNumber,
+        IReadOnlyList<StampedLegacyNotesReportLineSeed> Lines);
+
+    private sealed record StampedLegacyNotesReportLineSeed(decimal LineTotal, decimal TaxAmount);
 
     private static BillingDbContext CreateLoggedDbContext(string connectionString, DbCommandInterceptor interceptor)
     {

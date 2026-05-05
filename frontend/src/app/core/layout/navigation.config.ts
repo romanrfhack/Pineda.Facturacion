@@ -49,5 +49,11 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
     iconText: 'AU',
     route: '/app/audit',
     roles: [AppRole.Admin, AppRole.FiscalSupervisor, AppRole.Auditor]
+  },
+  {
+    label: 'Notas timbradas',
+    iconText: 'NT',
+    route: '/app/reports/stamped-legacy-notes',
+    roles: [AppRole.Admin, AppRole.FiscalSupervisor, AppRole.Auditor]
   }
 ];

@@ -59,6 +59,11 @@ export const routes: Routes = [
         path: 'audit',
         canMatch: [roleGuard([AppRole.Admin, AppRole.FiscalSupervisor, AppRole.Auditor])],
         loadChildren: () => import('./features/audit/audit.routes').then((m) => m.AUDIT_ROUTES)
+      },
+      {
+        path: 'reports',
+        canMatch: [roleGuard([AppRole.Admin, AppRole.FiscalSupervisor, AppRole.Auditor])],
+        loadChildren: () => import('./features/reports/reports.routes').then((m) => m.REPORT_ROUTES)
       }
     ]
   },
