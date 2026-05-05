@@ -284,6 +284,7 @@ app.MapFiscalImportEndpoints();
 app.MapFiscalDocumentsEndpoints();
 app.MapAccountsReceivableEndpoints();
 app.MapPaymentComplementsEndpoints();
+app.MapReportsEndpoints();
 
 app.Run();
 

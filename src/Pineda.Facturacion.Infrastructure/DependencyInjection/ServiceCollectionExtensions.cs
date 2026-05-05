@@ -6,6 +6,7 @@ using Pineda.Facturacion.Application.Abstractions.Documents;
 using Pineda.Facturacion.Application.Abstractions.FiscalReceivers;
 using Pineda.Facturacion.Application.Abstractions.Hashing;
 using Pineda.Facturacion.Application.Abstractions.Importing;
+using Pineda.Facturacion.Application.Abstractions.Reports;
 using Pineda.Facturacion.Application.Abstractions.Security;
 using Pineda.Facturacion.Application.Abstractions.Storage;
 using Pineda.Facturacion.Infrastructure.Communication;
@@ -66,6 +67,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<SatProductServiceCatalogSeedSource>();
         services.AddSingleton<ISatCatalogDescriptionProvider, SatCatalogDescriptionProvider>();
         services.AddSingleton<IExcelWorksheetReader, ClosedXmlWorksheetReader>();
+        services.AddSingleton<IStampedLegacyNotesReportExcelExporter, StampedLegacyNotesReportExcelExporter>();
         services.AddSingleton<ILoginAttemptThrottleService, InMemoryLoginAttemptThrottleService>();
         services.AddScoped<IFiscalDocumentPdfRenderer, FiscalDocumentPdfRenderer>();
         services.AddScoped<IReceivablesSummaryPdfRenderer, ReceivablesSummaryPdfRenderer>();
