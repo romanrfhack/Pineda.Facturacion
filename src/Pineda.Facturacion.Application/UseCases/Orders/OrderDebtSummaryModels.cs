@@ -116,7 +116,7 @@ public sealed class OrderDebtSummarySelection
 {
     public int OrderCount { get; init; }
 
-    public decimal Total { get; init; }
+    public decimal? Total { get; init; }
 
     public IReadOnlyList<OrderDebtSummaryTotalByCurrency> TotalsByCurrency { get; init; } = [];
 }

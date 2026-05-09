@@ -101,7 +101,7 @@ public static class OrderDebtSummaryComposer
         return new OrderDebtSummarySelection
         {
             OrderCount = orders.Count,
-            Total = orders.Sum(order => order.Total),
+            Total = totals.Length == 1 ? totals[0].Total : null,
             TotalsByCurrency = totals
         };
     }

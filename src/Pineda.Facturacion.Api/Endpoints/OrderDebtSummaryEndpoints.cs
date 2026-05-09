@@ -226,7 +226,7 @@ public sealed class OrderDebtSummarySelectionResponse
 {
     public int OrderCount { get; init; }
 
-    public decimal Total { get; init; }
+    public decimal? Total { get; init; }
 
     public List<OrderDebtSummaryTotalByCurrencyResponse> TotalsByCurrency { get; init; } = [];
 }

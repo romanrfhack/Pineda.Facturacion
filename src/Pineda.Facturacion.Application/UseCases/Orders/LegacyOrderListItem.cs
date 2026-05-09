@@ -8,6 +8,12 @@ public sealed class LegacyOrderListItem
 
     public string CustomerName { get; init; } = string.Empty;
 
+    public string CustomerLegacyId { get; init; } = string.Empty;
+
+    public string? CustomerRfc { get; init; }
+
+    public string CurrencyCode { get; init; } = "MXN";
+
     public decimal Total { get; init; }
 
     public string? LegacyOrderType { get; init; }

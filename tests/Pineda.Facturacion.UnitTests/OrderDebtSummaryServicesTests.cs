@@ -129,31 +129,226 @@ public class OrderDebtSummaryServicesTests
         Assert.Contains("LEG-404", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task PreviewOrderDebtSummary_BlocksOrdersFromDifferentRfcs()
+    {
+        var service = new PreviewOrderDebtSummaryService(
+            CreateFactory(
+                CreateLegacyOrder("LEG-1001", "PED-1001", total: 116m, customerRfc: "AAA010101AAA"),
+                CreateLegacyOrder("LEG-1002", "PED-1002", total: 300m, customerRfc: "BBB010101BBB")));
+
+        var result = await service.ExecuteAsync(new OrderDebtSummaryCommand
+        {
+            ReceiverId = 77,
+            LegacyOrderIds = ["LEG-1001", "LEG-1002"],
+            To = ["cliente@example.com"],
+            Subject = "Resumen",
+            Message = "Mensaje",
+            Format = "html"
+        });
+
+        Assert.Equal(OrderDebtSummaryOutcome.ValidationFailed, result.Outcome);
+        Assert.Equal(OrderDebtSummaryDocumentFactory.MixedCustomersErrorMessage, result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task PreviewOrderDebtSummary_BlocksOrdersWithoutRfcFromDifferentLegacyCustomers()
+    {
+        var service = new PreviewOrderDebtSummaryService(
+            CreateFactory(
+                CreateLegacyOrder("LEG-1001", "PED-1001", total: 116m, customerRfc: "", customerLegacyId: "C-1"),
+                CreateLegacyOrder("LEG-1002", "PED-1002", total: 300m, customerRfc: "", customerLegacyId: "C-2")));
+
+        var result = await service.ExecuteAsync(new OrderDebtSummaryCommand
+        {
+            ReceiverId = 77,
+            LegacyOrderIds = ["LEG-1001", "LEG-1002"],
+            To = ["cliente@example.com"],
+            Subject = "Resumen",
+            Message = "Mensaje",
+            Format = "html"
+        });
+
+        Assert.Equal(OrderDebtSummaryOutcome.ValidationFailed, result.Outcome);
+        Assert.Equal(OrderDebtSummaryDocumentFactory.MixedCustomersErrorMessage, result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task SendOrderDebtSummary_BlocksOrdersFromDifferentRfcs()
+    {
+        var emailSender = new FakeEmailSender();
+        var service = new SendOrderDebtSummaryService(
+            CreateFactory(
+                CreateLegacyOrder("LEG-1001", "PED-1001", total: 116m, customerRfc: "AAA010101AAA"),
+                CreateLegacyOrder("LEG-1002", "PED-1002", total: 300m, customerRfc: "BBB010101BBB")),
+            emailSender,
+            new FakeAuditEventRepository(),
+            new FakeCurrentUserAccessor(),
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new OrderDebtSummaryCommand
+        {
+            ReceiverId = 77,
+            LegacyOrderIds = ["LEG-1001", "LEG-1002"],
+            To = ["cliente@example.com"],
+            Subject = "Resumen",
+            Message = "Mensaje",
+            Format = "html"
+        });
+
+        Assert.Equal(OrderDebtSummaryOutcome.ValidationFailed, result.Outcome);
+        Assert.Equal(OrderDebtSummaryDocumentFactory.MixedCustomersErrorMessage, result.ErrorMessage);
+        Assert.Null(emailSender.LastMessage);
+    }
+
+    [Fact]
+    public async Task PreviewOrderDebtSummary_BlocksReceiverWithDifferentRfc()
+    {
+        var service = new PreviewOrderDebtSummaryService(
+            CreateFactoryForOrders(
+                [CreateLegacyOrder("LEG-1001", "PED-1001", total: 116m, customerRfc: "AAA010101AAA")],
+                receiver: CreateReceiver("XYZ010101XYZ")));
+
+        var result = await service.ExecuteAsync(new OrderDebtSummaryCommand
+        {
+            ReceiverId = 77,
+            LegacyOrderIds = ["LEG-1001"],
+            To = ["cliente@example.com"],
+            Subject = "Resumen",
+            Message = "Mensaje",
+            Format = "html"
+        });
+
+        Assert.Equal(OrderDebtSummaryOutcome.ValidationFailed, result.Outcome);
+        Assert.Equal(OrderDebtSummaryDocumentFactory.ReceiverRfcMismatchErrorMessage, result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task SendOrderDebtSummary_BlocksReceiverWithDifferentRfc()
+    {
+        var emailSender = new FakeEmailSender();
+        var service = new SendOrderDebtSummaryService(
+            CreateFactoryForOrders(
+                [CreateLegacyOrder("LEG-1001", "PED-1001", total: 116m, customerRfc: "AAA010101AAA")],
+                receiver: CreateReceiver("XYZ010101XYZ")),
+            emailSender,
+            new FakeAuditEventRepository(),
+            new FakeCurrentUserAccessor(),
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new OrderDebtSummaryCommand
+        {
+            ReceiverId = 77,
+            LegacyOrderIds = ["LEG-1001"],
+            To = ["cliente@example.com"],
+            Subject = "Resumen",
+            Message = "Mensaje",
+            Format = "html"
+        });
+
+        Assert.Equal(OrderDebtSummaryOutcome.ValidationFailed, result.Outcome);
+        Assert.Equal(OrderDebtSummaryDocumentFactory.ReceiverRfcMismatchErrorMessage, result.ErrorMessage);
+        Assert.Null(emailSender.LastMessage);
+    }
+
+    [Fact]
+    public async Task PreviewOrderDebtSummary_KeepsGlobalTotal_WhenSingleCurrency()
+    {
+        var service = new PreviewOrderDebtSummaryService(
+            CreateFactory(
+                CreateLegacyOrder("LEG-1001", "PED-1001", total: 116m, currencyCode: "MXN"),
+                CreateLegacyOrder("LEG-1002", "PED-1002", total: 300m, currencyCode: "MXN")));
+
+        var result = await service.ExecuteAsync(new OrderDebtSummaryCommand
+        {
+            ReceiverId = 77,
+            LegacyOrderIds = ["LEG-1001", "LEG-1002"],
+            To = ["cliente@example.com"],
+            Subject = "Resumen",
+            Message = "Mensaje",
+            Format = "html"
+        });
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(416m, result.Document!.Selection.Total);
+        Assert.Collection(
+            result.Document.Selection.TotalsByCurrency,
+            total =>
+            {
+                Assert.Equal("MXN", total.CurrencyCode);
+                Assert.Equal(2, total.OrderCount);
+                Assert.Equal(416m, total.Total);
+            });
+    }
+
+    [Fact]
+    public async Task PreviewOrderDebtSummary_DoesNotExposeGlobalTotal_WhenMultipleCurrencies()
+    {
+        var service = new PreviewOrderDebtSummaryService(
+            CreateFactory(
+                CreateLegacyOrder("LEG-1001", "PED-1001", total: 116m, currencyCode: "MXN"),
+                CreateLegacyOrder("LEG-1002", "PED-1002", total: 50m, currencyCode: "USD")));
+
+        var result = await service.ExecuteAsync(new OrderDebtSummaryCommand
+        {
+            ReceiverId = 77,
+            LegacyOrderIds = ["LEG-1001", "LEG-1002"],
+            To = ["cliente@example.com"],
+            Subject = "Resumen",
+            Message = "Mensaje",
+            Format = "html"
+        });
+
+        Assert.True(result.IsSuccess);
+        Assert.Null(result.Document!.Selection.Total);
+        Assert.Collection(
+            result.Document.Selection.TotalsByCurrency,
+            total =>
+            {
+                Assert.Equal("MXN", total.CurrencyCode);
+                Assert.Equal(1, total.OrderCount);
+                Assert.Equal(116m, total.Total);
+            },
+            total =>
+            {
+                Assert.Equal("USD", total.CurrencyCode);
+                Assert.Equal(1, total.OrderCount);
+                Assert.Equal(50m, total.Total);
+            });
+        Assert.Contains("116.00 MXN", result.Html, StringComparison.Ordinal);
+        Assert.Contains("50.00 USD", result.Html, StringComparison.Ordinal);
+    }
+
     private static OrderDebtSummaryDocumentFactory CreateFactory(
         LegacyOrderReadModel firstOrder,
         LegacyOrderReadModel? secondOrder = null,
         params ImportedLegacyOrderLookupModel[] lookups)
     {
-        var legacyReader = new FakeLegacyOrderReader();
-        legacyReader.Results[firstOrder.LegacyOrderId] = firstOrder;
+        var orders = new List<LegacyOrderReadModel> { firstOrder };
         if (secondOrder is not null)
         {
-            legacyReader.Results[secondOrder.LegacyOrderId] = secondOrder;
+            orders.Add(secondOrder);
+        }
+
+        return CreateFactoryForOrders(orders, null, lookups);
+    }
+
+    private static OrderDebtSummaryDocumentFactory CreateFactoryForOrders(
+        IReadOnlyCollection<LegacyOrderReadModel> orders,
+        FiscalReceiver? receiver = null,
+        params ImportedLegacyOrderLookupModel[] lookups)
+    {
+        var legacyReader = new FakeLegacyOrderReader();
+        foreach (var order in orders)
+        {
+            legacyReader.Results[order.LegacyOrderId] = order;
         }
 
         return new OrderDebtSummaryDocumentFactory(
             legacyReader,
             new FakeFiscalReceiverRepository
             {
-                ExistingById = new FiscalReceiver
-                {
-                    Id = 77,
-                    Rfc = "AAA010101AAA",
-                    LegalName = "Cliente Uno",
-                    Email = "cliente@example.com",
-                    FiscalRegimeCode = "601",
-                    PostalCode = "01000"
-                }
+                ExistingById = receiver ?? CreateReceiver("AAA010101AAA")
             },
             new FakeIssuerProfileRepository
             {
@@ -174,7 +369,11 @@ public class OrderDebtSummaryServicesTests
     private static LegacyOrderReadModel CreateLegacyOrder(
         string legacyOrderId,
         string legacyOrderNumber,
-        decimal total)
+        decimal total,
+        string customerRfc = "AAA010101AAA",
+        string customerLegacyId = "C-1",
+        string customerName = "Cliente Uno",
+        string currencyCode = "MXN")
     {
         return new LegacyOrderReadModel
         {
@@ -182,12 +381,25 @@ public class OrderDebtSummaryServicesTests
             OrderDateUtc = new DateTime(2026, 5, 8, 0, 0, 0, DateTimeKind.Utc),
             LegacyOrderNumber = legacyOrderNumber,
             LegacyOrderType = "Nota",
-            CustomerLegacyId = "C-1",
-            CustomerName = "Cliente Uno",
-            CustomerRfc = "AAA010101AAA",
+            CustomerLegacyId = customerLegacyId,
+            CustomerName = customerName,
+            CustomerRfc = customerRfc,
             PaymentCondition = "Contado",
-            CurrencyCode = "MXN",
+            CurrencyCode = currencyCode,
             Total = total
+        };
+    }
+
+    private static FiscalReceiver CreateReceiver(string rfc)
+    {
+        return new FiscalReceiver
+        {
+            Id = 77,
+            Rfc = rfc,
+            LegalName = "Cliente Uno",
+            Email = "cliente@example.com",
+            FiscalRegimeCode = "601",
+            PostalCode = "01000"
         };
     }
 

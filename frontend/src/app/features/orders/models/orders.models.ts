@@ -53,6 +53,8 @@ export interface LegacyOrderListItem {
   legacyOrderId: string;
   orderDateUtc: string;
   customerName: string;
+  customerLegacyId?: string | null;
+  customerRfc?: string | null;
   total: number;
   currencyCode?: string | null;
   legacyOrderType?: string | null;
@@ -165,7 +167,7 @@ export interface OrderDebtSummaryTotalByCurrencyResponse {
 
 export interface OrderDebtSummarySelectionResponse {
   orderCount: number;
-  total: number;
+  total?: number | null;
   totalsByCurrency: OrderDebtSummaryTotalByCurrencyResponse[];
 }
 

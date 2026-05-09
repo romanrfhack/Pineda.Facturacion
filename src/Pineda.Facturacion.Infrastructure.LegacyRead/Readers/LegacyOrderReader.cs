@@ -299,12 +299,15 @@ public class LegacyOrderReader : ILegacyOrderReader
                 p.{Q(schema.Orders["noPedido"])} AS LegacyOrderId,
                 p.{Q(schema.OrderDateColumn)} AS OrderDateUtc,
                 p.{Q(schema.Orders["TipoPedido"])} AS LegacyOrderType,
+                p.{Q(schema.Orders["noCliente"])} AS CustomerLegacyId,
                 COALESCE(
                     NULLIF(TRIM(c.{Q(schema.Customers["XRazonSocial"])}), ''),
                     NULLIF(TRIM(CONCAT_WS(' ', NULLIF(c.{Q(schema.Customers["Nombre"])}, ''), NULLIF(c.{Q(schema.Customers["Paterno"])}, ''), NULLIF(c.{Q(schema.Customers["Materno"])}, ''))), ''),
                     NULLIF(TRIM(c.{Q(schema.Customers["Cliente"])}), ''),
                     CONCAT('Cliente ', p.{Q(schema.Orders["noCliente"])})
                 ) AS CustomerName,
+                c.{Q(schema.Customers["RFC"])} AS CustomerRfc,
+                'MXN' AS CurrencyCode,
                 p.{Q(schema.Orders["MontoPedido"])} AS Total
             FROM {Q(schema.Orders.ActualName)} p
             INNER JOIN {Q(schema.Customers.ActualName)} c
@@ -387,6 +390,9 @@ public class LegacyOrderReader : ILegacyOrderReader
                 LegacyOrderId = GetRequiredString(reader, "LegacyOrderId"),
                 OrderDateUtc = GetRequiredDateTime(reader, "OrderDateUtc"),
                 CustomerName = GetRequiredString(reader, "CustomerName"),
+                CustomerLegacyId = GetRequiredString(reader, "CustomerLegacyId"),
+                CustomerRfc = GetNullableString(reader, "CustomerRfc"),
+                CurrencyCode = GetRequiredString(reader, "CurrencyCode"),
                 Total = GetRequiredDecimal(reader, "Total"),
                 LegacyOrderType = GetNullableString(reader, "LegacyOrderType")
             });

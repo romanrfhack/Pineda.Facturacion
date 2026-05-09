@@ -1,10 +1,16 @@
 using Pineda.Facturacion.Application.Abstractions.Legacy;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
+using Pineda.Facturacion.Application.Models.Legacy;
+using Pineda.Facturacion.Domain.Entities;
 
 namespace Pineda.Facturacion.Application.UseCases.Orders;
 
 public sealed class OrderDebtSummaryDocumentFactory
 {
+    internal const string MixedCustomersErrorMessage = "No se puede enviar el resumen porque la selección contiene órdenes de distintos clientes. Selecciona únicamente órdenes del mismo cliente.";
+    internal const string ReceiverRfcMismatchErrorMessage = "El RFC del receptor seleccionado no coincide con el RFC de las órdenes seleccionadas.";
+    internal const string CustomerIdentityUnavailableErrorMessage = "No se puede enviar el resumen porque no hay datos suficientes para validar que todas las órdenes pertenezcan al mismo cliente.";
+
     private readonly ILegacyOrderReader _legacyOrderReader;
     private readonly IFiscalReceiverRepository _receiverRepository;
     private readonly IIssuerProfileRepository _issuerProfileRepository;
@@ -61,7 +67,7 @@ public sealed class OrderDebtSummaryDocumentFactory
             return ValidationFailure("Selecciona al menos una orden para continuar.");
         }
 
-        var legacyOrders = new List<Pineda.Facturacion.Application.Models.Legacy.LegacyOrderReadModel>(requestedOrderIds.Length);
+        var legacyOrders = new List<LegacyOrderReadModel>(requestedOrderIds.Length);
         var missingOrderIds = new List<string>();
         foreach (var legacyOrderId in requestedOrderIds)
         {
@@ -78,6 +84,12 @@ public sealed class OrderDebtSummaryDocumentFactory
         if (missingOrderIds.Count > 0)
         {
             return ValidationFailure($"Algunas órdenes seleccionadas ya no están disponibles: {string.Join(", ", missingOrderIds)}.");
+        }
+
+        var customerValidationError = ValidateCustomerSelection(legacyOrders, receiver);
+        if (customerValidationError is not null)
+        {
+            return ValidationFailure(customerValidationError);
         }
 
         var lookup = await _importedLegacyOrderLookupRepository.GetByLegacyOrderIdsAsync(requestedOrderIds, cancellationToken);
@@ -196,6 +208,106 @@ public sealed class OrderDebtSummaryDocumentFactory
         }
 
         return invalid;
+    }
+
+    private static string? ValidateCustomerSelection(
+        IReadOnlyCollection<LegacyOrderReadModel> orders,
+        FiscalReceiver receiver)
+    {
+        var orderRfcs = orders
+            .Select(order => NormalizeRfc(order.CustomerRfc))
+            .Where(rfc => rfc is not null)
+            .Cast<string>()
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        if (orderRfcs.Length > 1)
+        {
+            return MixedCustomersErrorMessage;
+        }
+
+        var anyMissingRfc = orders.Any(order => NormalizeRfc(order.CustomerRfc) is null);
+        if (anyMissingRfc)
+        {
+            var legacyCustomerIds = orders
+                .Select(order => NormalizeStableCustomerId(order.CustomerLegacyId))
+                .ToArray();
+
+            if (legacyCustomerIds.All(customerId => customerId is not null))
+            {
+                if (legacyCustomerIds.Cast<string>().Distinct(StringComparer.Ordinal).Count() > 1)
+                {
+                    return MixedCustomersErrorMessage;
+                }
+            }
+            else
+            {
+                var customerNames = orders
+                    .Select(order => NormalizeCustomerName(order.CustomerName))
+                    .ToArray();
+
+                if (customerNames.Any(customerName => customerName is null))
+                {
+                    return CustomerIdentityUnavailableErrorMessage;
+                }
+
+                if (customerNames.Cast<string>().Distinct(StringComparer.Ordinal).Count() > 1)
+                {
+                    return MixedCustomersErrorMessage;
+                }
+            }
+        }
+
+        if (orderRfcs.Length == 1)
+        {
+            var receiverRfc = NormalizeRfc(receiver.Rfc);
+            if (!string.Equals(orderRfcs[0], receiverRfc, StringComparison.Ordinal))
+            {
+                return ReceiverRfcMismatchErrorMessage;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? NormalizeRfc(string? value)
+    {
+        var candidate = RemoveWhitespace(value);
+        return string.IsNullOrWhiteSpace(candidate) ? null : candidate.ToUpperInvariant();
+    }
+
+    private static string? NormalizeStableCustomerId(string? value)
+    {
+        var candidate = RemoveWhitespace(value);
+        if (string.IsNullOrWhiteSpace(candidate) || string.Equals(candidate, "0", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return candidate.ToUpperInvariant();
+    }
+
+    private static string? NormalizeCustomerName(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var normalized = string.Join(
+            " ",
+            value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        return string.IsNullOrWhiteSpace(normalized) ? null : normalized.ToUpperInvariant();
+    }
+
+    private static string RemoveWhitespace(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        return new string(value.Where(character => !char.IsWhiteSpace(character)).ToArray());
     }
 }
 

@@ -273,6 +273,8 @@ describe('OrdersOperationsPageComponent', () => {
       legacyOrderId: overrides.legacyOrderId ?? 'LEG-1001',
       orderDateUtc: overrides.orderDateUtc ?? '2026-03-23T10:00:00Z',
       customerName: overrides.customerName ?? 'Cliente Uno',
+      customerLegacyId: overrides.customerLegacyId ?? 'C-1',
+      customerRfc: overrides.customerRfc ?? 'AAA010101AAA',
       total: 'total' in overrides ? overrides.total as number : 116,
       currencyCode: overrides.currencyCode,
       legacyOrderType: overrides.legacyOrderType ?? 'F',
@@ -480,6 +482,7 @@ describe('OrdersOperationsPageComponent', () => {
     expect(fixture.componentInstance['selectedOrdersHaveBillingConflicts']()).toBe(true);
     expect(fixture.componentInstance['canCreateBillingFromSelection']()).toBe(false);
     expect(fixture.nativeElement.textContent).toContain('Solo resumen');
+    expect(fixture.nativeElement.textContent).toContain('La selección contiene órdenes ya asociadas a facturación. Puedes enviarlas en resumen, pero para crear un documento de facturación debes quitarlas de la selección.');
   });
 
   it('offers selecting all filtered orders and sends the filter snapshot on confirmation', async () => {

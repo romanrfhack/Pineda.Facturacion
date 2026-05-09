@@ -207,7 +207,7 @@ type SummaryStep = 1 | 2 | 3;
                 <section class="final-summary">
                   <article><strong>Destinatarios</strong><span>{{ currentPreview.finalSummary?.to?.join(', ') || 'Sin destinatario' }}</span></article>
                   <article><strong>Órdenes</strong><span>{{ currentPreview.finalSummary?.orderCount ?? selectionSummary().count }}</span></article>
-                  <article><strong>Total</strong><span>{{ formatPreviewTotals(currentPreview.finalSummary?.totalsByCurrency || []) }}</span></article>
+                  <article><strong>{{ previewTotalsLabel(currentPreview.finalSummary?.totalsByCurrency || []) }}</strong><span>{{ formatPreviewTotals(currentPreview.finalSummary?.totalsByCurrency || []) }}</span></article>
                   <article><strong>Formato</strong><span>{{ formatLabel(currentPreview.finalSummary?.format || format) }}</span></article>
                 </section>
 
@@ -378,7 +378,9 @@ export class SendOrderDebtSummaryModalComponent {
   }
 
   protected canLeaveSelection(): boolean {
-    return this.selectedOrders().length > 0 && !!this.selectedReceiver();
+    return this.selectedOrders().length > 0
+      && !!this.selectedReceiver()
+      && this.getCustomerSelectionValidationError() === null;
   }
 
   protected async goToStep(step: SummaryStep): Promise<void> {
@@ -407,7 +409,7 @@ export class SendOrderDebtSummaryModalComponent {
       return;
     }
 
-    if (this.step() === 2 && this.validateEmailConfiguration()) {
+    if (this.step() === 2 && this.validateSelection() && this.validateEmailConfiguration()) {
       await this.generatePreview();
     }
   }
@@ -480,7 +482,7 @@ export class SendOrderDebtSummaryModalComponent {
   }
 
   protected async send(): Promise<void> {
-    if (this.sending() || !this.preview()?.success || !this.validateEmailConfiguration()) {
+    if (this.sending() || !this.preview()?.success || !this.validateSelection() || !this.validateEmailConfiguration()) {
       return;
     }
 
@@ -504,6 +506,10 @@ export class SendOrderDebtSummaryModalComponent {
 
   protected formatPreviewTotals(totals: readonly OrderDebtSummaryTotalByCurrencyResponse[]): string {
     return this.formatTotals(totals);
+  }
+
+  protected previewTotalsLabel(totals: readonly OrderDebtSummaryTotalByCurrencyResponse[]): string {
+    return totals.length > 1 ? 'Totales por moneda' : 'Total';
   }
 
   protected formatLabel(format: string): string {
@@ -564,6 +570,12 @@ export class SendOrderDebtSummaryModalComponent {
       return false;
     }
 
+    const customerValidationError = this.getCustomerSelectionValidationError();
+    if (customerValidationError) {
+      this.errorMessage.set(customerValidationError);
+      return false;
+    }
+
     this.errorMessage.set(null);
     return true;
   }
@@ -609,6 +621,47 @@ export class SendOrderDebtSummaryModalComponent {
     };
   }
 
+  private getCustomerSelectionValidationError(): string | null {
+    const orders = this.selectedOrders();
+    const selectedReceiver = this.selectedReceiver();
+    if (!orders.length || !selectedReceiver) {
+      return null;
+    }
+
+    const orderRfcs = distinctValues(orders.map((order) => normalizeRfc(order.customerRfc)));
+    if (orderRfcs.length > 1) {
+      return MIXED_CUSTOMERS_ERROR_MESSAGE;
+    }
+
+    const anyMissingRfc = orders.some((order) => normalizeRfc(order.customerRfc) === null);
+    if (anyMissingRfc) {
+      const customerIds = orders.map((order) => normalizeStableCustomerId(order.customerLegacyId));
+      if (customerIds.every((customerId) => customerId !== null)) {
+        if (distinctValues(customerIds).length > 1) {
+          return MIXED_CUSTOMERS_ERROR_MESSAGE;
+        }
+      } else {
+        const customerNames = orders.map((order) => normalizeCustomerName(order.customerName));
+        if (customerNames.some((customerName) => customerName === null)) {
+          return CUSTOMER_IDENTITY_UNAVAILABLE_ERROR_MESSAGE;
+        }
+
+        if (distinctValues(customerNames).length > 1) {
+          return MIXED_CUSTOMERS_ERROR_MESSAGE;
+        }
+      }
+    }
+
+    if (orderRfcs.length === 1) {
+      const receiverRfc = normalizeRfc(selectedReceiver.rfc);
+      if (orderRfcs[0] !== receiverRfc) {
+        return RECEIVER_RFC_MISMATCH_ERROR_MESSAGE;
+      }
+    }
+
+    return null;
+  }
+
   private formatTotals(totals: readonly { currencyCode: string; total?: number; amount?: number }[]): string {
     if (!totals.length) {
       return '0.00 MXN';
@@ -644,4 +697,27 @@ function splitRecipients(value: string): string[] {
 
 function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+const MIXED_CUSTOMERS_ERROR_MESSAGE = 'No se puede enviar el resumen porque la selección contiene órdenes de distintos clientes. Selecciona únicamente órdenes del mismo cliente.';
+const RECEIVER_RFC_MISMATCH_ERROR_MESSAGE = 'El RFC del receptor seleccionado no coincide con el RFC de las órdenes seleccionadas.';
+const CUSTOMER_IDENTITY_UNAVAILABLE_ERROR_MESSAGE = 'No se puede enviar el resumen porque no hay datos suficientes para validar que todas las órdenes pertenezcan al mismo cliente.';
+
+function distinctValues(values: readonly (string | null)[]): string[] {
+  return Array.from(new Set(values.filter((value): value is string => value !== null)));
+}
+
+function normalizeRfc(value: string | null | undefined): string | null {
+  const normalized = (value ?? '').replace(/\s+/g, '').toUpperCase();
+  return normalized ? normalized : null;
+}
+
+function normalizeStableCustomerId(value: string | null | undefined): string | null {
+  const normalized = (value ?? '').replace(/\s+/g, '').toUpperCase();
+  return normalized && normalized !== '0' ? normalized : null;
+}
+
+function normalizeCustomerName(value: string | null | undefined): string | null {
+  const normalized = (value ?? '').trim().replace(/\s+/g, ' ').toUpperCase();
+  return normalized ? normalized : null;
 }

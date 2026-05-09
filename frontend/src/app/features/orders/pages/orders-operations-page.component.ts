@@ -36,6 +36,8 @@ interface OrdersBulkSelectionSummary {
   legacyOrderId: string;
   orderDateUtc: string;
   customerName: string;
+  customerLegacyId?: string | null;
+  customerRfc?: string | null;
   total: number;
   currencyCode: string;
   legacyOrderType?: string | null;
@@ -196,6 +198,7 @@ interface OrdersBulkSelectionSummary {
                 <button
                   type="button"
                   (click)="openBulkCreateModal()"
+                  [title]="billingCreateDisabledReason() ?? ''"
                   [disabled]="loadingBulkBilling() || loadingOrders() || !canCreateBillingFromSelection()">
                   {{ loadingBulkBilling() ? 'Creando...' : 'Crear documento de facturación' }}
                 </button>
@@ -211,7 +214,7 @@ interface OrdersBulkSelectionSummary {
 
             @if (selectedOrdersHaveBillingConflicts()) {
               <p class="helper">
-                La selección incluye órdenes ya asociadas a facturación. Puedes usarlas para el resumen de adeudos, pero debes quitarlas para crear un documento nuevo.
+                La selección contiene órdenes ya asociadas a facturación. Puedes enviarlas en resumen, pero para crear un documento de facturación debes quitarlas de la selección.
               </p>
             }
           </section>
@@ -793,6 +796,8 @@ export class OrdersOperationsPageComponent implements OnInit {
         legacyOrderId,
         orderDateUtc: '',
         customerName: '',
+        customerLegacyId: null,
+        customerRfc: null,
         total: 0,
         currencyCode: DEFAULT_ORDER_CURRENCY,
         legacyOrderType: null,
@@ -823,6 +828,21 @@ export class OrdersOperationsPageComponent implements OnInit {
       && this.selectedOrdersTotalsReady()
       && !this.selectedOrdersHaveBillingConflicts()
       && this.selectedOrdersCount() <= MAX_BULK_BILLING_ORDERS);
+  protected readonly billingCreateDisabledReason = computed(() => {
+    if (this.selectedOrdersHaveBillingConflicts()) {
+      return 'La selección contiene órdenes ya asociadas a facturación. Puedes enviarlas en resumen, pero para crear un documento de facturación debes quitarlas de la selección.';
+    }
+
+    if (!this.selectedOrdersTotalsReady()) {
+      return 'Espera a que termine de cargarse el detalle completo de la selección.';
+    }
+
+    if (this.selectedOrdersCount() > MAX_BULK_BILLING_ORDERS) {
+      return `Puedes seleccionar hasta ${MAX_BULK_BILLING_ORDERS} órdenes a la vez.`;
+    }
+
+    return null;
+  });
   protected readonly bulkSelectedSample = computed(() => {
     if (this.bulkSelectionMode() === 'filtered') {
       return this.visibleOrders()
@@ -1039,7 +1059,7 @@ export class OrdersOperationsPageComponent implements OnInit {
     }
 
     if (this.selectedOrdersHaveBillingConflicts()) {
-      this.bulkActionError.set('La selección incluye órdenes ya asociadas a facturación. Retíralas para crear un documento nuevo.');
+      this.bulkActionError.set('La selección contiene órdenes ya asociadas a facturación. Puedes enviarlas en resumen, pero para crear un documento de facturación debes quitarlas de la selección.');
       return;
     }
 
@@ -1608,7 +1628,7 @@ export class OrdersOperationsPageComponent implements OnInit {
     filters?: CreateBulkBillingDocumentFiltersRequest;
   } | null {
     if (this.selectedOrdersHaveBillingConflicts()) {
-      this.bulkCreateModalError.set('La selección incluye órdenes ya asociadas a facturación.');
+      this.bulkCreateModalError.set('La selección contiene órdenes ya asociadas a facturación. Puedes enviarlas en resumen, pero para crear un documento de facturación debes quitarlas de la selección.');
       return null;
     }
 
@@ -1706,6 +1726,8 @@ function toOrderSelectionSummary(order: LegacyOrderListItem): OrdersBulkSelectio
     legacyOrderId: order.legacyOrderId,
     orderDateUtc: order.orderDateUtc,
     customerName: order.customerName,
+    customerLegacyId: order.customerLegacyId ?? null,
+    customerRfc: order.customerRfc ?? null,
     total: Number.isFinite(order.total) ? order.total : 0,
     currencyCode: normalizeOrderCurrency(order.currencyCode),
     legacyOrderType: order.legacyOrderType ?? null,
