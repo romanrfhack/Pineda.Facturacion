@@ -50,6 +50,10 @@ internal static class RuntimeSafetyValidator
             configuration,
             enabledKey: "Bootstrap:SeedDefaultTestUsers",
             secretKey: "Bootstrap:DefaultTestUserPassword");
+        ValidateConditionalSecret(
+            configuration,
+            enabledKey: "Auth:DevUsers:Enabled",
+            secretKey: "Auth:DevUsers:DefaultPassword");
     }
 
     private static void ValidateSandboxRuntime(IConfiguration configuration, IHostEnvironment environment)
@@ -75,6 +79,7 @@ internal static class RuntimeSafetyValidator
         }
 
         EnsureDisabled(configuration, "Auth:BootstrapAdmin:Enabled");
+        EnsureDisabled(configuration, "Auth:DevUsers:Enabled");
         EnsureDisabled(configuration, "Bootstrap:ApplyMigrationsOnStartup");
         EnsureDisabled(configuration, "Bootstrap:ApplyStandardVat16BackfillOnStartup");
         EnsureDisabled(configuration, "Bootstrap:SeedDefaultTestUsers");

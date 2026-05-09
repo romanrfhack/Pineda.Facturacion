@@ -5,6 +5,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { OrdersOperationsPageComponent } from './orders-operations-page.component';
 import { OrdersApiService } from '../infrastructure/orders-api.service';
 import { FeedbackService } from '../../../core/ui/feedback.service';
+import { FiscalReceiversApiService } from '../../catalogs/infrastructure/fiscal-receivers-api.service';
 import { LegacyOrderListItem, SearchLegacyOrdersResponse } from '../models/orders.models';
 
 describe('OrdersOperationsPageComponent', () => {
@@ -222,12 +223,28 @@ describe('OrdersOperationsPageComponent', () => {
     const api = { ...createApi(), ...normalizedOptions.apiOverrides };
     const feedback = { show: vi.fn() };
     const router = { navigate: vi.fn().mockResolvedValue(true) };
+    const fiscalReceiversApi = {
+      search: vi.fn().mockReturnValue(of([])),
+      getByRfc: vi.fn().mockReturnValue(of({
+        id: 77,
+        rfc: 'AAA010101AAA',
+        legalName: 'Cliente Uno',
+        postalCode: '01000',
+        fiscalRegimeCode: '601',
+        cfdiUseCodeDefault: 'G03',
+        isActive: true,
+        email: 'cliente@example.com',
+        createdAtUtc: '2026-03-23T10:00:00Z',
+        updatedAtUtc: '2026-03-23T10:00:00Z'
+      }))
+    };
 
     await TestBed.configureTestingModule({
       imports: [OrdersOperationsPageComponent],
       providers: [
         { provide: OrdersApiService, useValue: api },
         { provide: FeedbackService, useValue: feedback },
+        { provide: FiscalReceiversApiService, useValue: fiscalReceiversApi },
         { provide: Router, useValue: router },
         {
           provide: ActivatedRoute,
@@ -256,6 +273,8 @@ describe('OrdersOperationsPageComponent', () => {
       legacyOrderId: overrides.legacyOrderId ?? 'LEG-1001',
       orderDateUtc: overrides.orderDateUtc ?? '2026-03-23T10:00:00Z',
       customerName: overrides.customerName ?? 'Cliente Uno',
+      customerLegacyId: overrides.customerLegacyId ?? 'C-1',
+      customerRfc: overrides.customerRfc ?? 'AAA010101AAA',
       total: 'total' in overrides ? overrides.total as number : 116,
       currencyCode: overrides.currencyCode,
       legacyOrderType: overrides.legacyOrderType ?? 'F',
@@ -415,7 +434,7 @@ describe('OrdersOperationsPageComponent', () => {
     ]);
   });
 
-  it('selects only the eligible visible orders from the current page', async () => {
+  it('allows selecting visible orders already associated to billing and blocks only the mass billing action', async () => {
     const { fixture } = await configure({
       searchLegacyOrders: vi.fn().mockReturnValue(of({
         isSuccess: true,
@@ -459,8 +478,11 @@ describe('OrdersOperationsPageComponent', () => {
     fixture.componentInstance['toggleVisibleSelection'](true);
     fixture.detectChanges();
 
-    expect(fixture.componentInstance['selectedOrdersCount']()).toBe(1);
-    expect(fixture.nativeElement.textContent).toContain('Ya asociada al documento #44.');
+    expect(fixture.componentInstance['selectedOrdersCount']()).toBe(2);
+    expect(fixture.componentInstance['selectedOrdersHaveBillingConflicts']()).toBe(true);
+    expect(fixture.componentInstance['canCreateBillingFromSelection']()).toBe(false);
+    expect(fixture.nativeElement.textContent).toContain('Solo resumen');
+    expect(fixture.nativeElement.textContent).toContain('La selección contiene órdenes ya asociadas a facturación. Puedes enviarlas en resumen, pero para crear un documento de facturación debes quitarlas de la selección.');
   });
 
   it('offers selecting all filtered orders and sends the filter snapshot on confirmation', async () => {
@@ -475,45 +497,21 @@ describe('OrdersOperationsPageComponent', () => {
       legacyOrderIds: ['LEG-1001', 'LEG-1002'],
       orderErrors: []
     }));
+    const firstPageOrders = Array.from({ length: 10 }, (_, index) =>
+      createLegacyOrder({ legacyOrderId: `LEG-10${index}`, total: 116 + index }));
+    const secondPageOrders = [
+      createLegacyOrder({ legacyOrderId: 'LEG-2001', total: 58 }),
+      createLegacyOrder({ legacyOrderId: 'LEG-2002', total: 75 })
+    ];
+    const searchLegacyOrders = vi
+      .fn()
+      .mockReturnValueOnce(of(createSearchResponse(firstPageOrders, { totalCount: 12, totalPages: 2 })))
+      .mockReturnValueOnce(of(createSearchResponse(firstPageOrders, { totalCount: 12, totalPages: 2 })))
+      .mockReturnValueOnce(of(createSearchResponse(firstPageOrders, { totalCount: 12, totalPages: 2 })))
+      .mockReturnValueOnce(of(createSearchResponse(secondPageOrders, { totalCount: 12, totalPages: 2, page: 2 })));
     const { fixture, api, router, feedback } = await configure({
       apiOverrides: {
-        searchLegacyOrders: vi.fn().mockReturnValue(of({
-          isSuccess: true,
-          items: [
-            {
-              legacyOrderId: 'LEG-1001',
-              orderDateUtc: '2026-03-23T10:00:00Z',
-              customerName: 'Cliente Uno',
-              total: 116,
-              legacyOrderType: 'F',
-              isImported: false,
-              salesOrderId: null,
-              billingDocumentId: null,
-              billingDocumentStatus: null,
-              fiscalDocumentId: null,
-              fiscalDocumentStatus: null,
-              importStatus: null
-            },
-            {
-              legacyOrderId: 'LEG-1002',
-              orderDateUtc: '2026-03-23T09:00:00Z',
-              customerName: 'Cliente Uno',
-              total: 58,
-              legacyOrderType: 'F',
-              isImported: false,
-              salesOrderId: null,
-              billingDocumentId: null,
-              billingDocumentStatus: null,
-              fiscalDocumentId: null,
-              fiscalDocumentStatus: null,
-              importStatus: null
-            }
-          ],
-          totalCount: 12,
-          totalPages: 2,
-          page: 1,
-          pageSize: 10
-        })),
+        searchLegacyOrders,
         createBulkBillingDocument
       }
     });

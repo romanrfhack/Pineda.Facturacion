@@ -98,4 +98,39 @@ describe('OrdersApiService', () => {
     });
     httpTesting.verify();
   });
+
+  it('uses the order debt summary preview and send routes', () => {
+    const service = TestBed.inject(OrdersApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+    const request = {
+      legacyOrderIds: ['LEG-1001'],
+      receiverId: 77,
+      to: ['cliente@example.com'],
+      cc: [],
+      bcc: [],
+      subject: 'Resumen',
+      message: 'Mensaje',
+      format: 'html' as const,
+      options: {
+        includeOrderTable: true,
+        includeTotals: true,
+        includeReceiverFiscalData: true,
+        includeIssuerData: true,
+        includePaymentInstructions: true,
+        includeBillingStatus: true
+      }
+    };
+
+    service.previewOrderDebtSummary(request).subscribe();
+    let req = httpTesting.expectOne('/api/orders/debt-summary/preview');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual(request);
+    req.flush({ outcome: 'Found', success: true });
+
+    service.sendOrderDebtSummary(request).subscribe();
+    req = httpTesting.expectOne('/api/orders/debt-summary/send');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual(request);
+    httpTesting.verify();
+  });
 });

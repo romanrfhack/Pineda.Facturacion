@@ -134,6 +134,9 @@ public static class OrdersEndpoints
                 LegacyOrderId = item.LegacyOrderId,
                 OrderDateUtc = item.OrderDateUtc,
                 CustomerName = item.CustomerName,
+                CustomerLegacyId = item.CustomerLegacyId,
+                CustomerRfc = item.CustomerRfc,
+                CurrencyCode = item.CurrencyCode,
                 Total = item.Total,
                 LegacyOrderType = item.LegacyOrderType,
                 IsImported = item.IsImported,
@@ -598,6 +601,12 @@ public static class OrdersEndpoints
         public DateTime OrderDateUtc { get; init; }
 
         public string CustomerName { get; init; } = string.Empty;
+
+        public string CustomerLegacyId { get; init; } = string.Empty;
+
+        public string? CustomerRfc { get; init; }
+
+        public string CurrencyCode { get; init; } = "MXN";
 
         public decimal Total { get; init; }
 

@@ -53,6 +53,8 @@ export interface LegacyOrderListItem {
   legacyOrderId: string;
   orderDateUtc: string;
   customerName: string;
+  customerLegacyId?: string | null;
+  customerRfc?: string | null;
   total: number;
   currencyCode?: string | null;
   legacyOrderType?: string | null;
@@ -132,6 +134,70 @@ export interface CreateBulkBillingDocumentResponse {
   associatedOrderCount: number;
   legacyOrderIds: string[];
   orderErrors: CreateBulkBillingDocumentOrderError[];
+}
+
+export type OrderDebtSummaryFormat = 'html';
+
+export interface OrderDebtSummaryIncludeOptionsRequest {
+  includeOrderTable: boolean;
+  includeTotals: boolean;
+  includeReceiverFiscalData: boolean;
+  includeIssuerData: boolean;
+  includePaymentInstructions: boolean;
+  includeBillingStatus: boolean;
+}
+
+export interface OrderDebtSummaryRequest {
+  legacyOrderIds: string[];
+  receiverId: number;
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  message: string;
+  format: OrderDebtSummaryFormat;
+  options: OrderDebtSummaryIncludeOptionsRequest;
+}
+
+export interface OrderDebtSummaryTotalByCurrencyResponse {
+  currencyCode: string;
+  orderCount: number;
+  total: number;
+}
+
+export interface OrderDebtSummarySelectionResponse {
+  orderCount: number;
+  total?: number | null;
+  totalsByCurrency: OrderDebtSummaryTotalByCurrencyResponse[];
+}
+
+export interface OrderDebtSummaryFinalResponse {
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  orderCount: number;
+  format: string;
+  totalsByCurrency: OrderDebtSummaryTotalByCurrencyResponse[];
+}
+
+export interface OrderDebtSummaryPreviewResponse {
+  outcome: string;
+  success: boolean;
+  errorMessage?: string | null;
+  html?: string | null;
+  summary?: OrderDebtSummarySelectionResponse | null;
+  finalSummary?: OrderDebtSummaryFinalResponse | null;
+}
+
+export interface SendOrderDebtSummaryResponse {
+  success: boolean;
+  outcome: string;
+  errorMessage?: string | null;
+  sentAt?: string | null;
+  historyId?: string | null;
+  emailProviderMessageId?: string | null;
+  summary?: OrderDebtSummarySelectionResponse | null;
 }
 
 export interface ImportLegacyOrderPreviewResponse {

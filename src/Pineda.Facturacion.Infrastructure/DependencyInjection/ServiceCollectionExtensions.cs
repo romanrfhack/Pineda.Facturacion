@@ -42,6 +42,9 @@ public static class ServiceCollectionExtensions
             services.AddOptions<BootstrapSeedOptions>()
                 .Bind(configuration.GetSection(BootstrapSeedOptions.SectionName));
 
+            services.AddOptions<DevIdentitySeedOptions>()
+                .Bind(configuration.GetSection(DevIdentitySeedOptions.SectionName));
+
             services.AddOptions<SmtpEmailOptions>()
                 .Bind(configuration.GetSection(SmtpEmailOptions.SectionName));
 
@@ -79,6 +82,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ICurrentUserAccessor, CurrentUserAccessor>();
         services.AddScoped<IAuditService, AuditService>();
         services.AddScoped<IdentityBootstrapService>();
+        services.AddScoped<DevIdentitySeedService>();
         services.AddScoped<InitialProductionIdentitySeedService>();
         services.AddHostedService<DatabaseBootstrapHostedService>();
         services.AddHostedService<StandardVat16BackfillHostedService>();
