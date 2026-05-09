@@ -4,6 +4,8 @@ public class LegacyOrderReadModel
 {
     public string LegacyOrderId { get; set; } = string.Empty;
 
+    public DateTime OrderDateUtc { get; set; }
+
     public string LegacyOrderNumber { get; set; } = string.Empty;
 
     public string? LegacyOrderType { get; set; }

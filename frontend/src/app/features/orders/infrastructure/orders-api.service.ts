@@ -10,10 +10,13 @@ import {
   ImportLegacyOrderPreviewResponse,
   ImportLegacyOrderRevisionHistoryResponse,
   ImportLegacyOrderResponse,
+  OrderDebtSummaryPreviewResponse,
+  OrderDebtSummaryRequest,
   ReimportLegacyOrderRequest,
   ReimportLegacyOrderResponse,
   SearchLegacyOrdersRequest,
-  SearchLegacyOrdersResponse
+  SearchLegacyOrdersResponse,
+  SendOrderDebtSummaryResponse,
 } from '../models/orders.models';
 
 @Injectable({ providedIn: 'root' })
@@ -69,5 +72,13 @@ export class OrdersApiService {
 
   createBulkBillingDocument(request: CreateBulkBillingDocumentRequest): Observable<CreateBulkBillingDocumentResponse> {
     return this.http.post<CreateBulkBillingDocumentResponse>(buildApiUrl('/orders/billing-documents'), request);
+  }
+
+  previewOrderDebtSummary(request: OrderDebtSummaryRequest): Observable<OrderDebtSummaryPreviewResponse> {
+    return this.http.post<OrderDebtSummaryPreviewResponse>(buildApiUrl('/orders/debt-summary/preview'), request);
+  }
+
+  sendOrderDebtSummary(request: OrderDebtSummaryRequest): Observable<SendOrderDebtSummaryResponse> {
+    return this.http.post<SendOrderDebtSummaryResponse>(buildApiUrl('/orders/debt-summary/send'), request);
   }
 }

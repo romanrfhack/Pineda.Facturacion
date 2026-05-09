@@ -84,6 +84,7 @@ public class LegacyOrderReader : ILegacyOrderReader
         return new LegacyOrderReadModel
         {
             LegacyOrderId = GetRequiredString(reader, "LegacyOrderId"),
+            OrderDateUtc = GetRequiredDateTime(reader, "OrderDateUtc"),
             LegacyOrderNumber = GetRequiredString(reader, "LegacyOrderNumber"),
             LegacyOrderType = GetNullableString(reader, "LegacyOrderType"),
             CustomerLegacyId = GetRequiredString(reader, "CustomerLegacyId"),
@@ -210,6 +211,7 @@ public class LegacyOrderReader : ILegacyOrderReader
         return $"""
             SELECT
                 p.{Q(schema.Orders["noPedido"])} AS LegacyOrderId,
+                p.{Q(schema.OrderDateColumn)} AS OrderDateUtc,
                 p.{Q(schema.Orders["refPedido"])} AS LegacyOrderNumber,
                 p.{Q(schema.Orders["TipoPedido"])} AS LegacyOrderType,
                 p.{Q(schema.Orders["noCliente"])} AS CustomerLegacyId,

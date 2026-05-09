@@ -32,6 +32,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ListLegacyImportRevisionsService>();
         services.AddScoped<SearchLegacyOrdersService>();
         services.AddScoped<CreateBulkBillingDocumentService>();
+        services.AddScoped<OrderDebtSummaryDocumentFactory>();
+        services.AddScoped<PreviewOrderDebtSummaryService>();
+        services.AddScoped<SendOrderDebtSummaryService>();
         services.AddScoped<ListAuditEventsService>();
         services.AddScoped<SearchStampedLegacyNotesReportService>();
         services.AddScoped<ExportStampedLegacyNotesReportService>();

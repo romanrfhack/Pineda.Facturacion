@@ -274,6 +274,7 @@ if (app.Environment.IsEnvironment("Testing"))
 app.MapAuthEndpoints();
 app.MapAuditEventsEndpoints();
 app.MapOrdersEndpoints();
+app.MapOrderDebtSummaryEndpoints();
 app.MapSalesOrdersEndpoints();
 app.MapBillingDocumentsEndpoints();
 app.MapIssuerProfileEndpoints();

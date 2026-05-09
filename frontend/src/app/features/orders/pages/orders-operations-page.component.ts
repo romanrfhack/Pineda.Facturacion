@@ -16,7 +16,8 @@ import {
   ImportLegacyOrderRevisionHistoryResponse,
   LegacyOrderListItem,
   ReimportLegacyOrderResponse,
-  SearchLegacyOrdersResponse
+  SearchLegacyOrdersResponse,
+  SendOrderDebtSummaryResponse,
 } from '../models/orders.models';
 import { BillingDocumentCardComponent } from '../components/billing-document-card.component';
 import { FeedbackService } from '../../../core/ui/feedback.service';
@@ -25,6 +26,7 @@ import { StatusBadgeComponent } from '../../../shared/components/status-badge.co
 import { extractImportLegacyOrderConflict, ImportLegacyOrderConflictViewModel } from '../application/import-legacy-order-conflict';
 import { adaptImportLegacyOrderPreview, ImportLegacyOrderPreviewViewModel } from '../application/import-legacy-order-preview';
 import { DEFAULT_ORDER_CURRENCY, normalizeOrderCurrency, summarizeOrderSelection } from '../application/order-selection-summary';
+import { SendOrderDebtSummaryButtonComponent } from '../components/send-order-debt-summary-button.component';
 
 type QuickRange = '' | 'today' | 'yesterday' | 'last7' | 'custom';
 type PresetQuickRange = Exclude<QuickRange, '' | 'custom'>;
@@ -32,14 +34,23 @@ type BulkSelectionMode = 'explicit' | 'filtered';
 
 interface OrdersBulkSelectionSummary {
   legacyOrderId: string;
+  orderDateUtc: string;
   customerName: string;
   total: number;
   currencyCode: string;
+  legacyOrderType?: string | null;
+  isImported: boolean;
+  salesOrderId?: number | null;
+  billingDocumentId?: number | null;
+  billingDocumentStatus?: string | null;
+  fiscalDocumentId?: number | null;
+  fiscalDocumentStatus?: string | null;
+  importStatus?: string | null;
 }
 
 @Component({
   selector: 'app-orders-operations-page',
-  imports: [FormsModule, CurrencyPipe, DatePipe, BillingDocumentCardComponent, StatusBadgeComponent],
+  imports: [FormsModule, CurrencyPipe, DatePipe, BillingDocumentCardComponent, StatusBadgeComponent, SendOrderDebtSummaryButtonComponent],
   template: `
     <section class="page">
       <header>
@@ -178,10 +189,14 @@ interface OrdersBulkSelectionSummary {
 
             @if (selectedOrdersCount() > 0) {
               <div class="actions">
+                <app-send-order-debt-summary-button
+                  [selectedOrders]="selectedOrdersForDebtSummary()"
+                  [disabled]="loadingSelectionSummary() || selectedOrdersCount() === 0"
+                  (summarySent)="handleOrderDebtSummarySent($event)" />
                 <button
                   type="button"
                   (click)="openBulkCreateModal()"
-                  [disabled]="loadingBulkBilling() || loadingOrders() || selectedOrdersCount() === 0">
+                  [disabled]="loadingBulkBilling() || loadingOrders() || !canCreateBillingFromSelection()">
                   {{ loadingBulkBilling() ? 'Creando...' : 'Crear documento de facturación' }}
                 </button>
                 <button
@@ -192,6 +207,12 @@ interface OrdersBulkSelectionSummary {
                   Limpiar selección
                 </button>
               </div>
+            }
+
+            @if (selectedOrdersHaveBillingConflicts()) {
+              <p class="helper">
+                La selección incluye órdenes ya asociadas a facturación. Puedes usarlas para el resumen de adeudos, pero debes quitarlas para crear un documento nuevo.
+              </p>
             }
           </section>
 
@@ -204,7 +225,7 @@ interface OrdersBulkSelectionSummary {
                       type="checkbox"
                       [checked]="allVisibleSelected()"
                       (change)="toggleVisibleSelection($any($event.target).checked)"
-                      [disabled]="loadingBulkBilling() || !eligibleVisibleOrders().length" />
+                      [disabled]="loadingBulkBilling() || !(ordersPage()?.items?.length)" />
                   </th>
                   <th>Id orden legacy</th>
                   <th>Fecha</th>
@@ -220,18 +241,16 @@ interface OrdersBulkSelectionSummary {
                     [class.selected]="selectedLegacyOrderId() === order.legacyOrderId"
                     [class.bulk-selected]="isOrderSelected(order)">
                     <td class="selection-col">
-                      @if (getOrderSelectionBlockReason(order); as selectionBlockReason) {
-                        <div class="selection-disabled">
-                          <input type="checkbox" disabled />
-                          <span>{{ selectionBlockReason }}</span>
-                        </div>
-                      } @else {
+                      <div class="selection-disabled">
                         <input
                           type="checkbox"
                           [checked]="isOrderSelected(order)"
                           (change)="toggleOrderSelection(order, $any($event.target).checked)"
                           [disabled]="loadingBulkBilling() || bulkSelectionMode() === 'filtered'" />
-                      }
+                        @if (getOrderBillingConflictReason(order); as selectionBlockReason) {
+                          <span>{{ selectionBlockReason }}</span>
+                        }
+                      </div>
                     </td>
                     <td>{{ order.legacyOrderId }}</td>
                     <td>{{ order.orderDateUtc | date:'dd/MM/yyyy HH:mm' }}</td>
@@ -686,7 +705,7 @@ interface OrdersBulkSelectionSummary {
     tr.selected { background:#f7f1e3; }
     tr.bulk-selected { background:#fffaf0; }
     .selection-col { width:84px; }
-    .selection-disabled { display:grid; gap:0.25rem; font-size:0.78rem; color:#7a2020; }
+    .selection-disabled { display:grid; gap:0.25rem; font-size:0.78rem; color:#5f6b76; }
     .selection-disabled input { width:auto; margin:0; }
     .pager { display:flex; justify-content:space-between; gap:1rem; align-items:center; flex-wrap:wrap; }
     .conflict-panel { border:1px solid #e6c981; border-radius:0.9rem; background:#fff8ea; padding:1rem; display:grid; gap:1rem; }
@@ -756,14 +775,13 @@ export class OrdersOperationsPageComponent implements OnInit {
   protected readonly bulkCreateOrderErrors = signal<CreateBulkBillingDocumentOrderError[]>([]);
   protected readonly billingButtonLabel = computed(() =>
     this.billingDocument()?.billingDocumentId ? 'Abrir documento de facturación' : 'Crear documento de facturación');
-  protected readonly eligibleVisibleOrders = computed(() =>
-    this.ordersPage()?.items.filter((order) => this.getOrderSelectionBlockReason(order) === null) ?? []);
+  protected readonly visibleOrders = computed(() => this.ordersPage()?.items ?? []);
   protected readonly selectedOrdersCount = computed(() =>
     this.bulkSelectionMode() === 'filtered'
       ? this.ordersPage()?.totalCount ?? 0
       : this.selectedLegacyOrderIds().length);
   protected readonly selectedVisibleOrdersCount = computed(() =>
-    this.eligibleVisibleOrders().filter((order) => this.isOrderSelected(order)).length);
+    this.visibleOrders().filter((order) => this.isOrderSelected(order)).length);
   protected readonly selectedOrderSummaryItems = computed(() => {
     if (this.bulkSelectionMode() === 'filtered') {
       return Object.values(this.selectedOrderSummaries());
@@ -773,9 +791,18 @@ export class OrdersOperationsPageComponent implements OnInit {
     return this.selectedLegacyOrderIds().map((legacyOrderId) =>
       summaries[legacyOrderId] ?? {
         legacyOrderId,
+        orderDateUtc: '',
         customerName: '',
         total: 0,
-        currencyCode: DEFAULT_ORDER_CURRENCY
+        currencyCode: DEFAULT_ORDER_CURRENCY,
+        legacyOrderType: null,
+        isImported: false,
+        salesOrderId: null,
+        billingDocumentId: null,
+        billingDocumentStatus: null,
+        fiscalDocumentId: null,
+        fiscalDocumentStatus: null,
+        importStatus: null
       });
   });
   protected readonly selectedOrdersSelectionSummary = computed(() =>
@@ -784,15 +811,22 @@ export class OrdersOperationsPageComponent implements OnInit {
     this.selectedOrdersCount() === 0
       || this.bulkSelectionMode() !== 'filtered'
       || this.selectedOrderSummaryItems().length >= this.selectedOrdersCount());
+  protected readonly selectedOrdersForDebtSummary = computed(() =>
+    this.selectedOrderSummaryItems().map((summary) => ({
+      ...summary,
+      currencyCode: normalizeOrderCurrency(summary.currencyCode)
+    })));
+  protected readonly selectedOrdersHaveBillingConflicts = computed(() =>
+    this.selectedOrdersForDebtSummary().some((order) => !!order.billingDocumentId));
+  protected readonly canCreateBillingFromSelection = computed(() =>
+    this.selectedOrdersCount() > 0
+      && this.selectedOrdersTotalsReady()
+      && !this.selectedOrdersHaveBillingConflicts()
+      && this.selectedOrdersCount() <= MAX_BULK_BILLING_ORDERS);
   protected readonly bulkSelectedSample = computed(() => {
     if (this.bulkSelectionMode() === 'filtered') {
-      return this.eligibleVisibleOrders()
-        .map((order) => ({
-          legacyOrderId: order.legacyOrderId,
-          customerName: order.customerName,
-          total: order.total,
-          currencyCode: normalizeOrderCurrency(order.currencyCode)
-        }))
+      return this.visibleOrders()
+        .map((order) => toOrderSelectionSummary(order))
         .slice(0, 5);
     }
 
@@ -846,21 +880,17 @@ export class OrdersOperationsPageComponent implements OnInit {
   }
 
   protected allVisibleSelected(): boolean {
-    const eligibleVisible = this.eligibleVisibleOrders();
-    return eligibleVisible.length > 0 && eligibleVisible.every((order) => this.isOrderSelected(order));
+    const visibleOrders = this.visibleOrders();
+    return visibleOrders.length > 0 && visibleOrders.every((order) => this.isOrderSelected(order));
   }
 
   protected isOrderSelected(order: LegacyOrderListItem): boolean {
-    if (this.getOrderSelectionBlockReason(order)) {
-      return false;
-    }
-
     return this.bulkSelectionMode() === 'filtered'
       || this.selectedLegacyOrderIds().includes(order.legacyOrderId);
   }
 
   protected toggleOrderSelection(order: LegacyOrderListItem, checked: boolean): void {
-    if (this.getOrderSelectionBlockReason(order) || this.bulkSelectionMode() === 'filtered') {
+    if (this.bulkSelectionMode() === 'filtered') {
       return;
     }
 
@@ -893,19 +923,19 @@ export class OrdersOperationsPageComponent implements OnInit {
       return;
     }
 
-    const eligibleVisible = this.eligibleVisibleOrders();
+    const visibleOrders = this.visibleOrders();
     if (checked) {
       this.selectedLegacyOrderIds.set([
         ...new Set([
           ...this.selectedLegacyOrderIds(),
-          ...eligibleVisible.map((order) => order.legacyOrderId)
+          ...visibleOrders.map((order) => order.legacyOrderId)
         ])
       ]);
-      this.rememberSelectedOrderSummaries(eligibleVisible);
+      this.rememberSelectedOrderSummaries(visibleOrders);
       return;
     }
 
-    const visibleIds = new Set(eligibleVisible.map((order) => order.legacyOrderId));
+    const visibleIds = new Set(visibleOrders.map((order) => order.legacyOrderId));
     this.selectedLegacyOrderIds.set(this.selectedLegacyOrderIds().filter((legacyOrderId) => !visibleIds.has(legacyOrderId)));
 
     const nextSummaries = { ...this.selectedOrderSummaries() };
@@ -1000,6 +1030,16 @@ export class OrdersOperationsPageComponent implements OnInit {
 
   protected openBulkCreateModal(): void {
     if (this.selectedOrdersCount() === 0) {
+      return;
+    }
+
+    if (!this.selectedOrdersTotalsReady()) {
+      this.bulkActionError.set('Espera a que termine de cargarse el detalle completo de la selección.');
+      return;
+    }
+
+    if (this.selectedOrdersHaveBillingConflicts()) {
+      this.bulkActionError.set('La selección incluye órdenes ya asociadas a facturación. Retíralas para crear un documento nuevo.');
       return;
     }
 
@@ -1472,12 +1512,7 @@ export class OrdersOperationsPageComponent implements OnInit {
         }
 
         const updated = updater(order);
-        updatedSummary = {
-          legacyOrderId: updated.legacyOrderId,
-          customerName: updated.customerName,
-          total: updated.total,
-          currencyCode: normalizeOrderCurrency(updated.currencyCode)
-        };
+        updatedSummary = toOrderSelectionSummary(updated);
         return updated;
       })
     });
@@ -1492,6 +1527,16 @@ export class OrdersOperationsPageComponent implements OnInit {
         [legacyOrderId]: updatedSummary
       });
     }
+  }
+
+  protected handleOrderDebtSummarySent(response: SendOrderDebtSummaryResponse): void {
+    const orderCount = response.summary?.orderCount ?? this.selectedOrdersCount();
+    this.feedbackService.show(
+      'success',
+      orderCount === 1
+        ? 'Resumen de adeudos enviado con 1 orden.'
+        : `Resumen de adeudos enviado con ${orderCount} órdenes.`
+    );
   }
 
   private hydrateFiltersFromQueryParams(params: ParamMap): void {
@@ -1524,9 +1569,9 @@ export class OrdersOperationsPageComponent implements OnInit {
     }
   }
 
-  protected getOrderSelectionBlockReason(order: LegacyOrderListItem): string | null {
+  protected getOrderBillingConflictReason(order: LegacyOrderListItem): string | null {
     if (order.billingDocumentId) {
-      return `Ya asociada al documento #${order.billingDocumentId}.`;
+      return `Ya asociada al documento #${order.billingDocumentId}. Solo resumen.`;
     }
 
     return null;
@@ -1562,6 +1607,11 @@ export class OrdersOperationsPageComponent implements OnInit {
     legacyOrderIds?: string[];
     filters?: CreateBulkBillingDocumentFiltersRequest;
   } | null {
+    if (this.selectedOrdersHaveBillingConflicts()) {
+      this.bulkCreateModalError.set('La selección incluye órdenes ya asociadas a facturación.');
+      return null;
+    }
+
     if (this.bulkSelectionMode() === 'filtered') {
       const filters = this.bulkSelectionFilters() ?? this.buildCurrentBulkFilters();
       if (!filters) {
@@ -1600,12 +1650,7 @@ export class OrdersOperationsPageComponent implements OnInit {
     const nextSummaries = { ...this.selectedOrderSummaries() };
     for (const order of orders) {
       if (this.bulkSelectionMode() === 'filtered' || this.selectedLegacyOrderIds().includes(order.legacyOrderId)) {
-        nextSummaries[order.legacyOrderId] = {
-          legacyOrderId: order.legacyOrderId,
-          customerName: order.customerName,
-          total: Number.isFinite(order.total) ? order.total : 0,
-          currencyCode: normalizeOrderCurrency(order.currencyCode)
-        };
+        nextSummaries[order.legacyOrderId] = toOrderSelectionSummary(order);
       }
     }
 
@@ -1654,6 +1699,24 @@ export class OrdersOperationsPageComponent implements OnInit {
 
     await this.router.navigate(['/app/fiscal-documents'], { queryParams: { billingDocumentId } });
   }
+}
+
+function toOrderSelectionSummary(order: LegacyOrderListItem): OrdersBulkSelectionSummary {
+  return {
+    legacyOrderId: order.legacyOrderId,
+    orderDateUtc: order.orderDateUtc,
+    customerName: order.customerName,
+    total: Number.isFinite(order.total) ? order.total : 0,
+    currencyCode: normalizeOrderCurrency(order.currencyCode),
+    legacyOrderType: order.legacyOrderType ?? null,
+    isImported: order.isImported,
+    salesOrderId: order.salesOrderId ?? null,
+    billingDocumentId: order.billingDocumentId ?? null,
+    billingDocumentStatus: order.billingDocumentStatus ?? null,
+    fiscalDocumentId: order.fiscalDocumentId ?? null,
+    fiscalDocumentStatus: order.fiscalDocumentStatus ?? null,
+    importStatus: order.importStatus ?? null
+  };
 }
 
 function extractErrorMessage(error: unknown): string {
