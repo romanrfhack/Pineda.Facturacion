@@ -8,6 +8,7 @@ import { AccountsReceivableNewPaymentPageComponent } from './accounts-receivable
 
 describe('AccountsReceivableNewPaymentPageComponent', () => {
   const queryParams$ = new ReplaySubject<ReturnType<typeof convertToParamMap>>(1);
+  const feedbackService = { show: vi.fn() };
   const api = {
     getInvoiceById: vi.fn(),
     getInvoiceByFiscalDocumentId: vi.fn(),
@@ -16,6 +17,7 @@ describe('AccountsReceivableNewPaymentPageComponent', () => {
   };
 
   beforeEach(() => {
+    feedbackService.show.mockReset();
     queryParams$.next(convertToParamMap({ invoiceId: '2' }));
     api.getInvoiceById.mockReturnValue(of(createInvoice()));
     api.getInvoiceByFiscalDocumentId.mockReturnValue(of(createInvoice()));
@@ -58,7 +60,7 @@ describe('AccountsReceivableNewPaymentPageComponent', () => {
       providers: [
         provideRouter([]),
         { provide: AccountsReceivableApiService, useValue: api },
-        { provide: FeedbackService, useValue: { show: vi.fn() } },
+        { provide: FeedbackService, useValue: feedbackService },
         {
           provide: FiscalReceiverSatCatalogService,
           useValue: {
@@ -123,8 +125,17 @@ describe('AccountsReceivableNewPaymentPageComponent', () => {
         receivedFromFiscalReceiverId: 77,
       }),
     );
+    expect(feedbackService.show).toHaveBeenCalledWith('success', 'Pago registrado.');
+    expect(feedbackService.show).not.toHaveBeenCalledWith(
+      'error',
+      'No se pudo completar la operación.',
+    );
     expect(navigateSpy).toHaveBeenCalledWith(['/app/accounts-receivable'], {
       queryParams: { paymentId: 6, invoiceId: 2 },
+      state: {
+        accountsReceivablePaymentCreated: true,
+        accountsReceivableCreatedPaymentId: 6,
+      },
     });
   });
 
@@ -152,9 +163,47 @@ describe('AccountsReceivableNewPaymentPageComponent', () => {
         amount: 1722.01,
       }),
     );
+    expect(feedbackService.show).toHaveBeenCalledWith('success', 'Pago registrado.');
+    expect(feedbackService.show).not.toHaveBeenCalledWith(
+      'error',
+      'No se pudo completar la operación.',
+    );
     expect(navigateSpy).toHaveBeenCalledWith(['/app/accounts-receivable'], {
       queryParams: { paymentId: 6 },
+      state: {
+        accountsReceivablePaymentCreated: true,
+        accountsReceivableCreatedPaymentId: 6,
+      },
     });
+  });
+
+  it('keeps the creation success toast and shows a specific warning when navigation to the detail fails', async () => {
+    queryParams$.next(convertToParamMap({ fiscalReceiverId: '77' }));
+    const router = TestBed.inject(Router);
+    vi.spyOn(router, 'navigate').mockRejectedValue(new Error('navigation failed'));
+
+    const fixture = TestBed.createComponent(AccountsReceivableNewPaymentPageComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    await fixture.componentInstance['createPayment']({
+      paymentDateUtc: '2026-04-03T10:00',
+      paymentFormSat: '03',
+      amount: 1722.01,
+      reference: 'DEP-WS',
+      notes: null,
+    });
+
+    expect(feedbackService.show).toHaveBeenNthCalledWith(1, 'success', 'Pago registrado.');
+    expect(feedbackService.show).toHaveBeenNthCalledWith(
+      2,
+      'warning',
+      'El pago fue registrado, pero no se pudo cargar el detalle.',
+    );
+    expect(feedbackService.show).not.toHaveBeenCalledWith(
+      'error',
+      'No se pudo completar la operación.',
+    );
   });
 });
 

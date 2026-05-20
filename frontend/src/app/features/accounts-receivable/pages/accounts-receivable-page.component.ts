@@ -2033,6 +2033,7 @@ export class AccountsReceivablePageComponent {
       this.isPendingRemainderRepBlockReason(currentPayment.repBlockReason)
     );
   });
+  private readonly recentlyCreatedPaymentId = signal<number | null>(null);
 
   protected canMutatePayment(
     payment: AccountsReceivablePaymentSummaryItemResponse | AccountsReceivablePaymentResponse | null,
@@ -2132,11 +2133,17 @@ export class AccountsReceivablePageComponent {
       const fiscalDocumentId = parseNumber(params.get('fiscalDocumentId'));
       const paymentId = parseNumber(params.get('paymentId'));
       const receiverWorkspaceId = parseNumber(params.get('fiscalReceiverId'));
+      const createdPaymentId = extractCreatedPaymentIdFromNavigationState(
+        this.router.getCurrentNavigation()?.extras.state ?? globalThis.history?.state,
+      );
 
       this.accountsReceivableInvoiceId.set(accountsReceivableInvoiceId);
       this.fiscalDocumentId.set(fiscalDocumentId);
       this.paymentId.set(paymentId);
       this.receiverWorkspaceId.set(receiverWorkspaceId);
+      this.recentlyCreatedPaymentId.set(
+        paymentId !== null && createdPaymentId === paymentId ? paymentId : null,
+      );
 
       if (accountsReceivableInvoiceId !== null || fiscalDocumentId !== null || paymentId !== null) {
         this.receiverWorkspace.set(null);
@@ -2152,7 +2159,10 @@ export class AccountsReceivablePageComponent {
         }
 
         if (paymentId !== null) {
-          void this.loadPayment(paymentId);
+          void this.loadPayment(paymentId, {
+            showDetailError: true,
+            showPendingInvoicesError: true,
+          });
         } else {
           this.payment.set(null);
         }
@@ -2544,31 +2554,57 @@ export class AccountsReceivablePageComponent {
         await firstValueFrom(this.api.getInvoiceByFiscalDocumentId(fiscalDocumentId)),
       );
       this.accountsReceivableInvoiceId.set(this.invoice()?.id ?? null);
-      await this.loadEligibleReceiverInvoices();
     } catch {
       this.invoice.set(null);
       this.eligibleReceiverInvoices.set([]);
+      return;
     }
+
+    await this.loadEligibleReceiverInvoices();
   }
 
   private async loadInvoiceById(accountsReceivableInvoiceId: number): Promise<void> {
     try {
       this.invoice.set(await firstValueFrom(this.api.getInvoiceById(accountsReceivableInvoiceId)));
-      await this.loadEligibleReceiverInvoices();
     } catch {
       this.invoice.set(null);
       this.eligibleReceiverInvoices.set([]);
+      return;
     }
+
+    await this.loadEligibleReceiverInvoices();
   }
 
-  private async loadPayment(paymentId: number): Promise<void> {
+  private async loadPayment(
+    paymentId: number,
+    options: {
+      showDetailError?: boolean;
+      showPendingInvoicesError?: boolean;
+    } = {},
+  ): Promise<void> {
+    const paymentWasJustCreated = this.consumeRecentlyCreatedPaymentContext(paymentId);
+
     try {
       this.payment.set(await firstValueFrom(this.api.getPaymentById(paymentId)));
-      await this.loadEligibleReceiverInvoices();
     } catch {
       this.payment.set(null);
-      await this.loadEligibleReceiverInvoices();
+      this.eligibleReceiverInvoices.set([]);
+
+      if (options.showDetailError) {
+        this.feedbackService.show(
+          paymentWasJustCreated ? 'warning' : 'error',
+          paymentWasJustCreated
+            ? 'El pago fue registrado, pero no se pudo cargar el detalle.'
+            : 'No se pudo cargar el detalle del pago.',
+        );
+      }
+
+      return;
     }
+
+    await this.loadEligibleReceiverInvoices({
+      showError: options.showPendingInvoicesError,
+    });
   }
 
   private async reloadCurrentInvoice(): Promise<void> {
@@ -2593,7 +2629,9 @@ export class AccountsReceivablePageComponent {
     }
   }
 
-  private async loadEligibleReceiverInvoices(): Promise<void> {
+  private async loadEligibleReceiverInvoices(
+    options: { showError?: boolean } = {},
+  ): Promise<void> {
     const currentInvoice = this.invoice();
     const currentPayment = this.payment();
     const fiscalReceiverId =
@@ -2603,32 +2641,49 @@ export class AccountsReceivablePageComponent {
       return;
     }
 
-    const response = await firstValueFrom(
-      this.api.searchPortfolio({
-        fiscalReceiverId,
-        hasPendingBalance: true,
-      }),
-    );
+    try {
+      const response = await firstValueFrom(
+        this.api.searchPortfolio({
+          fiscalReceiverId,
+          hasPendingBalance: true,
+        }),
+      );
 
-    const appliedInvoiceIdsWithoutContext = !currentInvoice
-      ? new Set(
-          (currentPayment?.applications ?? []).map(
-            (application) => application.accountsReceivableInvoiceId,
-          ),
-        )
-      : null;
+      const appliedInvoiceIdsWithoutContext = !currentInvoice
+        ? new Set(
+            (currentPayment?.applications ?? []).map(
+              (application) => application.accountsReceivableInvoiceId,
+            ),
+          )
+        : null;
 
-    const items = response.items.filter(
-      (item) =>
-        item.accountsReceivableInvoiceId !== currentInvoice?.id &&
-        item.fiscalReceiverId === fiscalReceiverId &&
-        item.outstandingBalance > 0 &&
-        item.status !== 'Cancelled' &&
-        item.status !== 'Paid' &&
-        !(appliedInvoiceIdsWithoutContext?.has(item.accountsReceivableInvoiceId) ?? false),
-    );
+      const items = response.items.filter(
+        (item) =>
+          item.accountsReceivableInvoiceId !== currentInvoice?.id &&
+          item.fiscalReceiverId === fiscalReceiverId &&
+          item.outstandingBalance > 0 &&
+          item.status !== 'Cancelled' &&
+          item.status !== 'Paid' &&
+          !(appliedInvoiceIdsWithoutContext?.has(item.accountsReceivableInvoiceId) ?? false),
+      );
 
-    this.eligibleReceiverInvoices.set(items);
+      this.eligibleReceiverInvoices.set(items);
+    } catch {
+      this.eligibleReceiverInvoices.set([]);
+
+      if (options.showError) {
+        this.feedbackService.show('warning', 'No se pudieron cargar las facturas pendientes.');
+      }
+    }
+  }
+
+  private consumeRecentlyCreatedPaymentContext(paymentId: number): boolean {
+    if (this.recentlyCreatedPaymentId() !== paymentId) {
+      return false;
+    }
+
+    this.recentlyCreatedPaymentId.set(null);
+    return true;
   }
 
   private isPendingRemainderRepBlockReason(reason: string | null | undefined): boolean {
@@ -2728,6 +2783,29 @@ function parseNullableBoolean(value: string): boolean | null {
   }
 
   return null;
+}
+
+function extractCreatedPaymentIdFromNavigationState(state: unknown): number | null {
+  if (
+    !state ||
+    typeof state !== 'object' ||
+    !('accountsReceivablePaymentCreated' in state) ||
+    !('accountsReceivableCreatedPaymentId' in state)
+  ) {
+    return null;
+  }
+
+  const navigationState = state as {
+    accountsReceivablePaymentCreated?: unknown;
+    accountsReceivableCreatedPaymentId?: unknown;
+  };
+  const createdPaymentId = navigationState.accountsReceivableCreatedPaymentId;
+
+  return navigationState.accountsReceivablePaymentCreated === true &&
+    typeof createdPaymentId === 'number' &&
+    Number.isFinite(createdPaymentId)
+    ? createdPaymentId
+    : null;
 }
 
 function extractErrorMessage(error: unknown): string {
