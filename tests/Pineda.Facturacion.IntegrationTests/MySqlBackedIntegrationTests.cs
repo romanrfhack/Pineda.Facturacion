@@ -485,14 +485,11 @@ public sealed class MySqlBackedIntegrationTests
         await _fixture.ResetDatabaseAsync();
         const long paymentId = 7003;
         const long invoiceId = 8003;
+        const long applicationId = 9003;
 
         await using (var seedDb = _fixture.CreateDbContext())
         {
-            seedDb.AccountsReceivablePayments.Add(CreateAccountsReceivablePayment(paymentId, 100m));
-            seedDb.AccountsReceivableInvoices.Add(CreateAccountsReceivableInvoice(invoiceId, 100m));
-            seedDb.AccountsReceivablePaymentApplications.Add(
-                CreateAccountsReceivablePaymentApplication(9003, paymentId, invoiceId, 40m));
-            await seedDb.SaveChangesAsync();
+            await SeedAppliedAccountsReceivablePaymentFixtureAsync(seedDb, paymentId, invoiceId, applicationId, 3003);
         }
 
         await using (var db = _fixture.CreateDbContext())
@@ -508,7 +505,15 @@ public sealed class MySqlBackedIntegrationTests
 
         await using var verifyDb = _fixture.CreateDbContext();
         var payment = await verifyDb.AccountsReceivablePayments.SingleAsync(x => x.Id == paymentId);
+        var invoice = await verifyDb.AccountsReceivableInvoices.SingleAsync(x => x.Id == invoiceId);
+        var application = await verifyDb.AccountsReceivablePaymentApplications.SingleAsync(x => x.Id == applicationId);
         Assert.Equal(100m, payment.Amount);
+        Assert.Equal(AccountsReceivableInvoiceStatus.PartiallyPaid, invoice.Status);
+        Assert.Equal(40m, invoice.PaidTotal);
+        Assert.Equal(60m, invoice.OutstandingBalance);
+        Assert.Equal(paymentId, application.AccountsReceivablePaymentId);
+        Assert.Equal(invoiceId, application.AccountsReceivableInvoiceId);
+        Assert.Equal(40m, application.AppliedAmount);
     }
 
     [MySqlFact]
@@ -517,14 +522,11 @@ public sealed class MySqlBackedIntegrationTests
         await _fixture.ResetDatabaseAsync();
         const long paymentId = 7004;
         const long invoiceId = 8004;
+        const long applicationId = 9004;
 
         await using (var seedDb = _fixture.CreateDbContext())
         {
-            seedDb.AccountsReceivablePayments.Add(CreateAccountsReceivablePayment(paymentId, 100m));
-            seedDb.AccountsReceivableInvoices.Add(CreateAccountsReceivableInvoice(invoiceId, 100m));
-            seedDb.AccountsReceivablePaymentApplications.Add(
-                CreateAccountsReceivablePaymentApplication(9004, paymentId, invoiceId, 40m));
-            await seedDb.SaveChangesAsync();
+            await SeedAppliedAccountsReceivablePaymentFixtureAsync(seedDb, paymentId, invoiceId, applicationId, 3004);
         }
 
         await using (var db = _fixture.CreateDbContext())
@@ -537,6 +539,8 @@ public sealed class MySqlBackedIntegrationTests
 
         await using var verifyDb = _fixture.CreateDbContext();
         Assert.True(await verifyDb.AccountsReceivablePayments.AnyAsync(x => x.Id == paymentId));
+        Assert.True(await verifyDb.AccountsReceivableInvoices.AnyAsync(x => x.Id == invoiceId));
+        Assert.True(await verifyDb.AccountsReceivablePaymentApplications.AnyAsync(x => x.Id == applicationId));
     }
 
     [MySqlFact]
@@ -1162,13 +1166,24 @@ public sealed class MySqlBackedIntegrationTests
         };
     }
 
-    private static AccountsReceivableInvoice CreateAccountsReceivableInvoice(long id, decimal total)
+    private static AccountsReceivableInvoice CreateAccountsReceivableInvoice(
+        long id,
+        decimal total,
+        long billingDocumentId,
+        long fiscalDocumentId,
+        long fiscalStampId,
+        long fiscalReceiverId,
+        decimal paidTotal = 0m)
     {
+        var outstandingBalance = total - paidTotal;
         return new AccountsReceivableInvoice
         {
             Id = id,
-            FiscalReceiverId = null,
-            Status = AccountsReceivableInvoiceStatus.Open,
+            BillingDocumentId = billingDocumentId,
+            FiscalDocumentId = fiscalDocumentId,
+            FiscalStampId = fiscalStampId,
+            FiscalReceiverId = fiscalReceiverId,
+            Status = paidTotal > 0m ? AccountsReceivableInvoiceStatus.PartiallyPaid : AccountsReceivableInvoiceStatus.Open,
             PaymentMethodSat = "PPD",
             PaymentFormSatInitial = "99",
             IsCreditSale = true,
@@ -1177,11 +1192,52 @@ public sealed class MySqlBackedIntegrationTests
             DueAtUtc = new DateTime(2026, 5, 31, 0, 0, 0, DateTimeKind.Utc),
             CurrencyCode = "MXN",
             Total = total,
-            PaidTotal = 0m,
-            OutstandingBalance = total,
+            PaidTotal = paidTotal,
+            OutstandingBalance = outstandingBalance,
             CreatedAtUtc = new DateTime(2026, 5, 1, 0, 0, 0, DateTimeKind.Utc),
             UpdatedAtUtc = new DateTime(2026, 5, 1, 0, 0, 0, DateTimeKind.Utc)
         };
+    }
+
+    private static async Task SeedAppliedAccountsReceivablePaymentFixtureAsync(
+        BillingDbContext db,
+        long paymentId,
+        long invoiceId,
+        long applicationId,
+        long scenarioId)
+    {
+        const long issuerProfileId = 1;
+        const long fiscalReceiverId = 1;
+        const decimal total = 100m;
+        const decimal appliedAmount = 40m;
+
+        var importRecordId = 10_000 + scenarioId;
+        var salesOrderId = 20_000 + scenarioId;
+        var billingDocumentId = 30_000 + scenarioId;
+        var fiscalDocumentId = 40_000 + scenarioId;
+        var fiscalStampId = 50_000 + scenarioId;
+
+        db.IssuerProfiles.Add(CreateIssuerProfileEntity(issuerProfileId));
+        db.FiscalReceivers.Add(CreateFiscalReceiver(fiscalReceiverId));
+        db.LegacyImportRecords.Add(CreateImportRecord(importRecordId, $"LEG-AR-{scenarioId}", billingDocumentId));
+        db.SalesOrders.Add(CreateSalesOrder(salesOrderId, importRecordId));
+        db.BillingDocuments.Add(CreateBillingDocument(billingDocumentId, salesOrderId));
+        db.FiscalDocuments.Add(CreateFiscalDocument(fiscalDocumentId, billingDocumentId, FiscalDocumentStatus.Stamped));
+        db.FiscalStamps.Add(CreateFiscalStamp(fiscalStampId, fiscalDocumentId, $"UUID-AR-{scenarioId}"));
+        db.AccountsReceivablePayments.Add(CreateAccountsReceivablePayment(paymentId, total));
+        db.AccountsReceivableInvoices.Add(
+            CreateAccountsReceivableInvoice(
+                invoiceId,
+                total,
+                billingDocumentId,
+                fiscalDocumentId,
+                fiscalStampId,
+                fiscalReceiverId,
+                paidTotal: appliedAmount));
+        db.AccountsReceivablePaymentApplications.Add(
+            CreateAccountsReceivablePaymentApplication(applicationId, paymentId, invoiceId, appliedAmount));
+
+        await db.SaveChangesAsync();
     }
 
     private static AccountsReceivablePaymentApplication CreateAccountsReceivablePaymentApplication(
