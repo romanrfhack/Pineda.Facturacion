@@ -88,6 +88,10 @@ describe('PaymentCreateFormComponent', () => {
     const emitSpy = vi.spyOn(fixture.componentInstance.submit, 'emit');
     const amountInput = fixture.debugElement.query(By.css('input[name="amount"]')).nativeElement as HTMLInputElement;
     const form = fixture.debugElement.query(By.css('form')).nativeElement as HTMLFormElement;
+    const amountLabel = amountInput.closest('label') as HTMLLabelElement;
+    const operationalBalanceBadge = fixture.debugElement.query(
+      By.css('[data-testid="payment-create-operational-balance"]'),
+    )?.nativeElement as HTMLElement | undefined;
 
     amountInput.value = '1190.00';
     amountInput.dispatchEvent(new Event('input'));
@@ -98,6 +102,9 @@ describe('PaymentCreateFormComponent', () => {
 
     expect(emitSpy).toHaveBeenCalledWith(expect.objectContaining({ amount: 1190 }));
     expect(fixture.nativeElement.textContent).not.toContain('excede el saldo pendiente');
+    expect(amountLabel.textContent).not.toContain('Saldo pendiente operativo');
+    expect(operationalBalanceBadge?.textContent).toContain('Saldo pendiente operativo:');
+    expect(operationalBalanceBadge?.textContent).toContain('1190.00 MXN');
   });
 
   it('allows submission when the payment amount exceeds the operational outstanding balance and shows informative guidance', async () => {

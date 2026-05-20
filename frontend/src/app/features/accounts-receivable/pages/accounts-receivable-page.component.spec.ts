@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
+import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
 import { of, ReplaySubject, throwError } from 'rxjs';
 import { AccountsReceivablePageComponent } from './accounts-receivable-page.component';
 import { AccountsReceivableApiService } from '../infrastructure/accounts-receivable-api.service';
@@ -342,8 +342,67 @@ describe('AccountsReceivablePageComponent', () => {
       hasPendingBalance: true,
     });
     expect(api.getInvoiceById).not.toHaveBeenCalled();
+    expect(feedbackService.show).not.toHaveBeenCalled();
     expect(fixture.nativeElement.textContent).not.toContain('Crear pago');
     expect(fixture.nativeElement.textContent).not.toContain('Aplicar pago a esta cuenta');
+  });
+
+  it('shows a specific warning when the freshly created payment detail cannot be loaded', async () => {
+    queryParams$.next(convertToParamMap({ paymentId: '6' }));
+    api.getInvoiceById.mockClear();
+    api.searchPortfolio.mockClear();
+    api.getPaymentById.mockReset().mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 500 })),
+    );
+    const angularRouter = TestBed.inject(Router);
+    vi.spyOn(angularRouter, 'getCurrentNavigation').mockReturnValue({
+      extras: {
+        state: {
+          accountsReceivablePaymentCreated: true,
+          accountsReceivableCreatedPaymentId: 6,
+        },
+      },
+    } as never);
+
+    const fixture = TestBed.createComponent(AccountsReceivablePageComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(feedbackService.show).toHaveBeenCalledWith(
+      'warning',
+      'El pago fue registrado, pero no se pudo cargar el detalle.',
+    );
+    expect(feedbackService.show).not.toHaveBeenCalledWith(
+      'error',
+      'No se pudo completar la operación.',
+    );
+    expect(api.searchPortfolio).not.toHaveBeenCalled();
+    expect(fixture.componentInstance['payment']()).toBeNull();
+  });
+
+  it('keeps the payment visible and shows a specific warning when pending invoices cannot be loaded', async () => {
+    queryParams$.next(convertToParamMap({ paymentId: '6' }));
+    api.getInvoiceById.mockClear();
+    api.searchPortfolio.mockReset().mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 500 })),
+    );
+
+    const fixture = TestBed.createComponent(AccountsReceivablePageComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    await vi.waitFor(() => {
+      expect(fixture.componentInstance['payment']()?.id).toBe(6);
+      expect(fixture.componentInstance['eligibleReceiverInvoices']()).toEqual([]);
+      expect(feedbackService.show).toHaveBeenCalledWith(
+        'warning',
+        'No se pudieron cargar las facturas pendientes.',
+      );
+    });
+    expect(feedbackService.show).not.toHaveBeenCalledWith(
+      'error',
+      'No se pudo completar la operación.',
+    );
   });
 
   it('renders the customer credit balance action when a payment has pending remainder allocation', async () => {

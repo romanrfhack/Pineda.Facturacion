@@ -236,7 +236,11 @@ export class AccountsReceivableNewPaymentPageComponent {
     const currentInvoice = this.invoice();
     const currentReceiverWorkspace = this.receiverWorkspace();
 
-    await this.run(async () => {
+    this.loading.set(true);
+    let createdPaymentId: number | null = null;
+    let detailQueryParams: Record<string, number> | null = null;
+
+    try {
       const response = await firstValueFrom(
         this.api.createPayment({
           ...request,
@@ -253,14 +257,41 @@ export class AccountsReceivableNewPaymentPageComponent {
         return;
       }
 
+      createdPaymentId = response.payment.id;
+      detailQueryParams = currentInvoice
+        ? { paymentId: createdPaymentId, invoiceId: currentInvoice.id }
+        : { paymentId: createdPaymentId };
+
       this.feedbackService.show('success', 'Pago registrado.');
-      const detailQueryParams = currentInvoice
-        ? { paymentId: response.payment.id, invoiceId: currentInvoice.id }
-        : { paymentId: response.payment.id };
-      await this.router.navigate(['/app/accounts-receivable'], {
+    } catch (error) {
+      this.feedbackService.show('error', extractApiErrorMessage(error));
+      return;
+    } finally {
+      if (createdPaymentId === null || detailQueryParams === null) {
+        this.loading.set(false);
+      }
+    }
+
+    try {
+      const navigated = await this.router.navigate(['/app/accounts-receivable'], {
         queryParams: detailQueryParams,
+        state: {
+          accountsReceivablePaymentCreated: true,
+          accountsReceivableCreatedPaymentId: createdPaymentId,
+        },
       });
-    });
+
+      if (!navigated) {
+        this.feedbackService.show(
+          'warning',
+          'El pago fue registrado, pero no se pudo cargar el detalle.',
+        );
+      }
+    } catch {
+      this.feedbackService.show('warning', 'El pago fue registrado, pero no se pudo cargar el detalle.');
+    } finally {
+      this.loading.set(false);
+    }
   }
 
   private async loadContext(): Promise<void> {

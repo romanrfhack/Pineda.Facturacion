@@ -140,6 +140,34 @@ describe('AccountsReceivableApiService', () => {
     httpTesting.verify();
   });
 
+  it('preserves the paged invoice response shape when querying pending invoices for a receiver', () => {
+    const service = TestBed.inject(AccountsReceivableApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+    let response: { items: Array<{ accountsReceivableInvoiceId: number }> } | undefined;
+
+    service
+      .searchPortfolio({
+        fiscalReceiverId: 868,
+        hasPendingBalance: true,
+      })
+      .subscribe((value) => {
+        response = value;
+      });
+
+    const req = httpTesting.expectOne(
+      '/api/accounts-receivable/invoices?fiscalReceiverId=868&hasPendingBalance=true',
+    );
+    expect(req.request.method).toBe('GET');
+    req.flush({
+      items: [{ accountsReceivableInvoiceId: 11 }],
+    });
+
+    expect(response).toEqual({
+      items: [{ accountsReceivableInvoiceId: 11 }],
+    });
+    httpTesting.verify();
+  });
+
   it('uses receiver summary routes for candidates, preview and send', () => {
     const service = TestBed.inject(AccountsReceivableApiService);
     const httpTesting = TestBed.inject(HttpTestingController);
