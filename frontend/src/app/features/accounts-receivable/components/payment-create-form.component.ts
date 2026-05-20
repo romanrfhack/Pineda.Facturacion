@@ -15,63 +15,84 @@ export function formatDateTimeLocalValue(date: Date): string {
   imports: [FormsModule],
   template: `
     <section class="panel">
-      <h3>Crear pago</h3>
-      <form class="form-grid" #paymentForm="ngForm" (ngSubmit)="handleSubmit()">
-        <label>
-          <span>Fecha de pago</span>
-          <input class="field-control" [(ngModel)]="model.paymentDateUtc" name="paymentDateUtc" type="datetime-local" required />
-        </label>
+      <div class="panel-header">
+        <h3>Crear pago</h3>
+        @if (normalizedMaxOperationalAmount() != null) {
+          <p class="support-badge" data-testid="payment-create-operational-balance">
+            <span>Saldo pendiente operativo:</span>
+            <strong>{{ normalizedMaxOperationalAmount()!.toFixed(2) }} MXN</strong>
+          </p>
+        }
+      </div>
+      <form class="create-payment-form" #paymentForm="ngForm" (ngSubmit)="handleSubmit()">
+        <div class="form-grid">
+          <label>
+            <span>Fecha de pago</span>
+            <input class="field-control" [(ngModel)]="model.paymentDateUtc" name="paymentDateUtc" type="datetime-local" required />
+          </label>
 
-        <label>
-          <span>Forma de pago SAT</span>
-          <select
-            class="field-control payment-form-select"
-            [(ngModel)]="model.paymentFormSat"
-            name="paymentFormSat"
-            [title]="selectedPaymentFormLabel()"
-            [disabled]="loading() || loadingCatalog() || !paymentFormOptions().length"
-            required>
-            <option value="">Selecciona forma de pago</option>
-            @for (option of paymentFormOptions(); track option.code) {
-              <option [value]="option.code" [title]="option.code + ' - ' + option.description">
-                {{ option.code }} - {{ option.description }}
-              </option>
-            }
-          </select>
+          <label>
+            <span>Forma de pago SAT</span>
+            <select
+              class="field-control payment-form-select"
+              [(ngModel)]="model.paymentFormSat"
+              name="paymentFormSat"
+              [title]="selectedPaymentFormLabel()"
+              [disabled]="loading() || loadingCatalog() || !paymentFormOptions().length"
+              required>
+              <option value="">Selecciona forma de pago</option>
+              @for (option of paymentFormOptions(); track option.code) {
+                <option [value]="option.code" [title]="option.code + ' - ' + option.description">
+                  {{ option.code }} - {{ option.description }}
+                </option>
+              }
+            </select>
+          </label>
+
+          <label>
+            <span>Monto</span>
+            <input class="field-control" data-testid="payment-create-amount" [(ngModel)]="model.amount" name="amount" type="number" min="0.01" step="0.01" required />
+          </label>
+          <label><span>Referencia</span><input class="field-control" [(ngModel)]="model.reference" name="reference" /></label>
+          <label><span>Notas</span><input class="field-control" [(ngModel)]="model.notes" name="notes" /></label>
+          <button type="submit" data-testid="payment-create-submit" [disabled]="loading() || loadingCatalog() || !canSubmit()"> {{ loading() ? 'Guardando...' : 'Crear pago' }} </button>
+        </div>
+
+        <div class="form-feedback" aria-live="polite">
           @if (loadingCatalog()) {
             <small class="helper">Cargando catálogo SAT...</small>
           } @else if (catalogError()) {
             <small class="helper error">{{ catalogError() }}</small>
-          } 
-        </label>
-
-        <label>
-          <span>Monto</span>
-          <input class="field-control" data-testid="payment-create-amount" [(ngModel)]="model.amount" name="amount" type="number" min="0.01" step="0.01" required />
-          @if (normalizedMaxOperationalAmount() != null) {
-            <small class="helper">Saldo pendiente operativo: {{ normalizedMaxOperationalAmount()!.toFixed(2) }} MXN</small>
           }
+
           @if (getAmountInfoMessage(); as amountInfoMessage) {
             <small class="helper info" data-testid="payment-create-amount-info">{{ amountInfoMessage }}</small>
           }
-        </label>
-        <label><span>Referencia</span><input class="field-control" [(ngModel)]="model.reference" name="reference" /></label>
-        <label><span>Notas</span><input class="field-control" [(ngModel)]="model.notes" name="notes" /></label>
-        <button type="submit" data-testid="payment-create-submit" [disabled]="loading() || loadingCatalog() || !canSubmit()"> {{ loading() ? 'Guardando...' : 'Crear pago' }} </button>
+        </div>
       </form>
     </section>
   `,
   styles: [`
-    .panel { border:1px solid #d8d1c2; border-radius:1rem; padding:1rem; background:#fff; }
+    .panel { border:1px solid #d8d1c2; border-radius:1rem; padding:1rem; background:#fff; display:grid; gap:1rem; }
+    .panel-header { display:flex; justify-content:space-between; gap:0.75rem 1rem; align-items:flex-start; flex-wrap:wrap; }
+    h3 { margin:0; }
+    .support-badge { margin:0; display:inline-flex; align-items:center; gap:0.35rem; flex-wrap:wrap; padding:0.35rem 0.75rem; border-radius:999px; border:1px solid #cbd7e3; background:#f4f7fb; color:#44607a; font-size:0.82rem; line-height:1.3; }
+    .support-badge strong { color:#182533; font-weight:700; }
+    .create-payment-form { display:grid; gap:0.75rem; }
     .form-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:1rem; align-items:end; }
     label { display:grid; gap:0.35rem; min-width:0; }
     input, select, button { font:inherit; }
     .field-control { width:100%; min-width:0; border:1px solid #c9d1da; border-radius:0.8rem; padding:0.75rem 0.9rem; box-sizing:border-box; }
     .payment-form-select { max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .form-feedback { display:grid; gap:0.4rem; }
     .helper { margin:0; color:#5f6b76; font-size:0.82rem; }
     .helper.error { color:#7a2020; }
     .helper.info { color:#2d5d7b; }
     button { border:none; border-radius:0.8rem; padding:0.75rem 1rem; background:#182533; color:#fff; cursor:pointer; }
+    @media (max-width: 720px) {
+      .panel-header { flex-direction:column; align-items:stretch; }
+      .support-badge { align-self:flex-start; }
+    }
   `],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
