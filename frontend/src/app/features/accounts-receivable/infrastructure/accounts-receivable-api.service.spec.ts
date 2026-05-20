@@ -87,6 +87,59 @@ describe('AccountsReceivableApiService', () => {
     httpTesting.verify();
   });
 
+  it('uses payment mutation routes to update and delete a payment', () => {
+    const service = TestBed.inject(AccountsReceivableApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.updatePaymentAmount(7, { amount: 125.5 }).subscribe();
+
+    let req = httpTesting.expectOne('/api/accounts-receivable/payments/7/amount');
+    expect(req.request.method).toBe('PATCH');
+    expect(req.request.body).toEqual({ amount: 125.5 });
+    req.flush({
+      outcome: 'Updated',
+      isSuccess: true,
+      accountsReceivablePaymentId: 7,
+      previousAmount: 100,
+      updatedAmount: 125.5,
+      payment: {
+        id: 7,
+        paymentDateUtc: '2026-04-03T00:00:00Z',
+        paymentFormSat: '03',
+        currencyCode: 'MXN',
+        amount: 125.5,
+        appliedTotal: 0,
+        remainingAmount: 125.5,
+        customerCreditBalanceAmount: 0,
+        receivedFromFiscalReceiverId: 77,
+        operationalStatus: 'CapturedUnapplied',
+        repStatus: 'NoApplications',
+        readyToPrepareRep: false,
+        unappliedDisposition: 'PendingAllocation',
+        repReservedAmount: 0,
+        repFiscalizedAmount: 0,
+        applicationsCount: 0,
+        createdAtUtc: '2026-04-03T00:00:00Z',
+        updatedAtUtc: '2026-04-03T00:00:00Z',
+        applications: [],
+      },
+    });
+
+    service.deletePayment(7).subscribe();
+
+    req = httpTesting.expectOne('/api/accounts-receivable/payments/7');
+    expect(req.request.method).toBe('DELETE');
+    req.flush({
+      outcome: 'Deleted',
+      isSuccess: true,
+      accountsReceivablePaymentId: 7,
+      deletedAmount: 125.5,
+      receivedFromFiscalReceiverId: 77,
+    });
+
+    httpTesting.verify();
+  });
+
   it('uses receiver summary routes for candidates, preview and send', () => {
     const service = TestBed.inject(AccountsReceivableApiService);
     const httpTesting = TestBed.inject(HttpTestingController);

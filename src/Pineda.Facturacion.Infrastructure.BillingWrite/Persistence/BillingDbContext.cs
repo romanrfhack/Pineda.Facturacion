@@ -120,6 +120,11 @@ public class BillingDbContext : DbContext, IUnitOfWork
             throw new OperationalOrderConflictException(
                 "One or more selected legacy orders are already associated with another operational billing document.");
         }
+        catch (DbUpdateConcurrencyException exception) when (IsAccountsReceivablePaymentMutationConflict(exception))
+        {
+            throw new OperationalOrderConflictException(
+                "Accounts receivable payment changed concurrently. Reload the payment and try again.");
+        }
         catch (DbUpdateException exception) when (IsActiveSalesOrderOperationalConflict(exception))
         {
             throw new OperationalOrderConflictException(
@@ -130,6 +135,11 @@ public class BillingDbContext : DbContext, IUnitOfWork
     private static bool IsLegacyImportBillingDocumentConflict(DbUpdateConcurrencyException exception)
     {
         return exception.Entries.Any(entry => entry.Entity is LegacyImportRecord);
+    }
+
+    private static bool IsAccountsReceivablePaymentMutationConflict(DbUpdateConcurrencyException exception)
+    {
+        return exception.Entries.Any(entry => entry.Entity is AccountsReceivablePayment);
     }
 
     private static bool IsActiveSalesOrderOperationalConflict(DbUpdateException exception)

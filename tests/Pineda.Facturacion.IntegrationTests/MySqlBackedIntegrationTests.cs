@@ -428,6 +428,171 @@ public sealed class MySqlBackedIntegrationTests
     }
 
     [MySqlFact]
+    public async Task AccountsReceivablePaymentRepository_UpdateAmount_Succeeds_ForUnappliedPayment_OnRealMySql()
+    {
+        await _fixture.ResetDatabaseAsync();
+        const long paymentId = 7001;
+
+        await using (var seedDb = _fixture.CreateDbContext())
+        {
+            seedDb.AccountsReceivablePayments.Add(CreateAccountsReceivablePayment(paymentId, 100m));
+            await seedDb.SaveChangesAsync();
+        }
+
+        await using (var db = _fixture.CreateDbContext())
+        {
+            var repository = new AccountsReceivablePaymentRepository(db);
+            var updated = await repository.TryUpdateAmountIfMutableAsync(
+                paymentId,
+                125.5m,
+                new DateTime(2026, 5, 20, 12, 0, 0, DateTimeKind.Utc));
+
+            Assert.True(updated);
+        }
+
+        await using var verifyDb = _fixture.CreateDbContext();
+        var payment = await verifyDb.AccountsReceivablePayments.SingleAsync(x => x.Id == paymentId);
+        Assert.Equal(125.5m, payment.Amount);
+    }
+
+    [MySqlFact]
+    public async Task AccountsReceivablePaymentRepository_Delete_Succeeds_ForUnappliedPayment_OnRealMySql()
+    {
+        await _fixture.ResetDatabaseAsync();
+        const long paymentId = 7002;
+
+        await using (var seedDb = _fixture.CreateDbContext())
+        {
+            seedDb.AccountsReceivablePayments.Add(CreateAccountsReceivablePayment(paymentId, 100m));
+            await seedDb.SaveChangesAsync();
+        }
+
+        await using (var db = _fixture.CreateDbContext())
+        {
+            var repository = new AccountsReceivablePaymentRepository(db);
+            var deleted = await repository.TryDeleteIfMutableAsync(paymentId);
+
+            Assert.True(deleted);
+        }
+
+        await using var verifyDb = _fixture.CreateDbContext();
+        Assert.False(await verifyDb.AccountsReceivablePayments.AnyAsync(x => x.Id == paymentId));
+    }
+
+    [MySqlFact]
+    public async Task AccountsReceivablePaymentRepository_UpdateAmount_IsBlocked_WhenApplicationsExist_OnRealMySql()
+    {
+        await _fixture.ResetDatabaseAsync();
+        const long paymentId = 7003;
+        const long invoiceId = 8003;
+        const long applicationId = 9003;
+
+        await using (var seedDb = _fixture.CreateDbContext())
+        {
+            await SeedAppliedAccountsReceivablePaymentFixtureAsync(seedDb, paymentId, invoiceId, applicationId, 3003);
+        }
+
+        await using (var db = _fixture.CreateDbContext())
+        {
+            var repository = new AccountsReceivablePaymentRepository(db);
+            var updated = await repository.TryUpdateAmountIfMutableAsync(
+                paymentId,
+                125.5m,
+                new DateTime(2026, 5, 20, 12, 0, 0, DateTimeKind.Utc));
+
+            Assert.False(updated);
+        }
+
+        await using var verifyDb = _fixture.CreateDbContext();
+        var payment = await verifyDb.AccountsReceivablePayments.SingleAsync(x => x.Id == paymentId);
+        var invoice = await verifyDb.AccountsReceivableInvoices.SingleAsync(x => x.Id == invoiceId);
+        var application = await verifyDb.AccountsReceivablePaymentApplications.SingleAsync(x => x.Id == applicationId);
+        Assert.Equal(100m, payment.Amount);
+        Assert.Equal(AccountsReceivableInvoiceStatus.PartiallyPaid, invoice.Status);
+        Assert.Equal(40m, invoice.PaidTotal);
+        Assert.Equal(60m, invoice.OutstandingBalance);
+        Assert.Equal(paymentId, application.AccountsReceivablePaymentId);
+        Assert.Equal(invoiceId, application.AccountsReceivableInvoiceId);
+        Assert.Equal(40m, application.AppliedAmount);
+    }
+
+    [MySqlFact]
+    public async Task AccountsReceivablePaymentRepository_Delete_IsBlocked_WhenApplicationsExist_OnRealMySql()
+    {
+        await _fixture.ResetDatabaseAsync();
+        const long paymentId = 7004;
+        const long invoiceId = 8004;
+        const long applicationId = 9004;
+
+        await using (var seedDb = _fixture.CreateDbContext())
+        {
+            await SeedAppliedAccountsReceivablePaymentFixtureAsync(seedDb, paymentId, invoiceId, applicationId, 3004);
+        }
+
+        await using (var db = _fixture.CreateDbContext())
+        {
+            var repository = new AccountsReceivablePaymentRepository(db);
+            var deleted = await repository.TryDeleteIfMutableAsync(paymentId);
+
+            Assert.False(deleted);
+        }
+
+        await using var verifyDb = _fixture.CreateDbContext();
+        Assert.True(await verifyDb.AccountsReceivablePayments.AnyAsync(x => x.Id == paymentId));
+        Assert.True(await verifyDb.AccountsReceivableInvoices.AnyAsync(x => x.Id == invoiceId));
+        Assert.True(await verifyDb.AccountsReceivablePaymentApplications.AnyAsync(x => x.Id == applicationId));
+    }
+
+    [MySqlFact]
+    public async Task AccountsReceivablePaymentRepository_UpdateAmount_IsBlocked_WhenRepDocumentExists_OnRealMySql()
+    {
+        await _fixture.ResetDatabaseAsync();
+        const long paymentId = 7005;
+
+        await using (var seedDb = _fixture.CreateDbContext())
+        {
+            seedDb.AccountsReceivablePayments.Add(CreateAccountsReceivablePayment(paymentId, 100m));
+            seedDb.PaymentComplementDocuments.Add(CreatePaymentComplementDocument(9105, paymentId));
+            await seedDb.SaveChangesAsync();
+        }
+
+        await using (var db = _fixture.CreateDbContext())
+        {
+            var repository = new AccountsReceivablePaymentRepository(db);
+            var updated = await repository.TryUpdateAmountIfMutableAsync(
+                paymentId,
+                125.5m,
+                new DateTime(2026, 5, 20, 12, 0, 0, DateTimeKind.Utc));
+
+            Assert.False(updated);
+        }
+    }
+
+    [MySqlFact]
+    public async Task AccountsReceivablePaymentRepository_Delete_IsBlocked_WhenRepPaymentExists_OnRealMySql()
+    {
+        await _fixture.ResetDatabaseAsync();
+        const long paymentId = 7006;
+        const long documentId = 9106;
+
+        await using (var seedDb = _fixture.CreateDbContext())
+        {
+            seedDb.AccountsReceivablePayments.Add(CreateAccountsReceivablePayment(paymentId, 100m));
+            seedDb.PaymentComplementDocuments.Add(CreatePaymentComplementDocument(documentId, paymentId));
+            seedDb.PaymentComplementPayments.Add(CreatePaymentComplementPayment(9206, documentId, paymentId, 100m));
+            await seedDb.SaveChangesAsync();
+        }
+
+        await using (var db = _fixture.CreateDbContext())
+        {
+            var repository = new AccountsReceivablePaymentRepository(db);
+            var deleted = await repository.TryDeleteIfMutableAsync(paymentId);
+
+            Assert.False(deleted);
+        }
+    }
+
+    [MySqlFact]
     public async Task ImportedLegacyOrderLookup_UsesFilteredSqlQueries_AndPreservesOperationalSelection()
     {
         await _fixture.ResetDatabaseAsync();
@@ -982,6 +1147,179 @@ public sealed class MySqlBackedIntegrationTests
             IsActive = true,
             CreatedAtUtc = new DateTime(2026, 4, 10, 0, 0, 0, DateTimeKind.Utc),
             UpdatedAtUtc = new DateTime(2026, 4, 10, 0, 0, 0, DateTimeKind.Utc)
+        };
+    }
+
+    private static AccountsReceivablePayment CreateAccountsReceivablePayment(long id, decimal amount)
+    {
+        return new AccountsReceivablePayment
+        {
+            Id = id,
+            PaymentDateUtc = new DateTime(2026, 5, 20, 12, 0, 0, DateTimeKind.Utc),
+            PaymentFormSat = "03",
+            CurrencyCode = "MXN",
+            Amount = amount,
+            ReceivedFromFiscalReceiverId = null,
+            UnappliedDisposition = AccountsReceivablePaymentUnappliedDisposition.PendingAllocation,
+            CreatedAtUtc = new DateTime(2026, 5, 20, 12, 0, 0, DateTimeKind.Utc),
+            UpdatedAtUtc = new DateTime(2026, 5, 20, 12, 0, 0, DateTimeKind.Utc)
+        };
+    }
+
+    private static AccountsReceivableInvoice CreateAccountsReceivableInvoice(
+        long id,
+        decimal total,
+        long billingDocumentId,
+        long fiscalDocumentId,
+        long fiscalStampId,
+        long fiscalReceiverId,
+        decimal paidTotal = 0m)
+    {
+        var outstandingBalance = total - paidTotal;
+        return new AccountsReceivableInvoice
+        {
+            Id = id,
+            BillingDocumentId = billingDocumentId,
+            FiscalDocumentId = fiscalDocumentId,
+            FiscalStampId = fiscalStampId,
+            FiscalReceiverId = fiscalReceiverId,
+            Status = paidTotal > 0m ? AccountsReceivableInvoiceStatus.PartiallyPaid : AccountsReceivableInvoiceStatus.Open,
+            PaymentMethodSat = "PPD",
+            PaymentFormSatInitial = "99",
+            IsCreditSale = true,
+            CreditDays = 30,
+            IssuedAtUtc = new DateTime(2026, 5, 1, 0, 0, 0, DateTimeKind.Utc),
+            DueAtUtc = new DateTime(2026, 5, 31, 0, 0, 0, DateTimeKind.Utc),
+            CurrencyCode = "MXN",
+            Total = total,
+            PaidTotal = paidTotal,
+            OutstandingBalance = outstandingBalance,
+            CreatedAtUtc = new DateTime(2026, 5, 1, 0, 0, 0, DateTimeKind.Utc),
+            UpdatedAtUtc = new DateTime(2026, 5, 1, 0, 0, 0, DateTimeKind.Utc)
+        };
+    }
+
+    private static async Task SeedAppliedAccountsReceivablePaymentFixtureAsync(
+        BillingDbContext db,
+        long paymentId,
+        long invoiceId,
+        long applicationId,
+        long scenarioId)
+    {
+        const long issuerProfileId = 1;
+        const long fiscalReceiverId = 1;
+        const decimal total = 100m;
+        const decimal appliedAmount = 40m;
+
+        var importRecordId = 10_000 + scenarioId;
+        var salesOrderId = 20_000 + scenarioId;
+        var billingDocumentId = 30_000 + scenarioId;
+        var fiscalDocumentId = 40_000 + scenarioId;
+        var fiscalStampId = 50_000 + scenarioId;
+
+        db.IssuerProfiles.Add(CreateIssuerProfileEntity(issuerProfileId));
+        db.FiscalReceivers.Add(CreateFiscalReceiver(fiscalReceiverId));
+        db.LegacyImportRecords.Add(CreateImportRecord(importRecordId, $"LEG-AR-{scenarioId}", billingDocumentId));
+        db.SalesOrders.Add(CreateSalesOrder(salesOrderId, importRecordId));
+        db.BillingDocuments.Add(CreateBillingDocument(billingDocumentId, salesOrderId));
+        db.FiscalDocuments.Add(CreateFiscalDocument(fiscalDocumentId, billingDocumentId, FiscalDocumentStatus.Stamped));
+        db.FiscalStamps.Add(CreateFiscalStamp(fiscalStampId, fiscalDocumentId, $"UUID-AR-{scenarioId}"));
+        db.AccountsReceivablePayments.Add(CreateAccountsReceivablePayment(paymentId, total));
+        db.AccountsReceivableInvoices.Add(
+            CreateAccountsReceivableInvoice(
+                invoiceId,
+                total,
+                billingDocumentId,
+                fiscalDocumentId,
+                fiscalStampId,
+                fiscalReceiverId,
+                paidTotal: appliedAmount));
+        db.AccountsReceivablePaymentApplications.Add(
+            CreateAccountsReceivablePaymentApplication(applicationId, paymentId, invoiceId, appliedAmount));
+
+        await db.SaveChangesAsync();
+    }
+
+    private static AccountsReceivablePaymentApplication CreateAccountsReceivablePaymentApplication(
+        long id,
+        long paymentId,
+        long invoiceId,
+        decimal appliedAmount)
+    {
+        return new AccountsReceivablePaymentApplication
+        {
+            Id = id,
+            AccountsReceivablePaymentId = paymentId,
+            AccountsReceivableInvoiceId = invoiceId,
+            ApplicationSequence = 1,
+            AppliedAmount = appliedAmount,
+            PreviousBalance = 100m,
+            NewBalance = 100m - appliedAmount,
+            CreatedAtUtc = new DateTime(2026, 5, 20, 12, 0, 0, DateTimeKind.Utc)
+        };
+    }
+
+    private static PaymentComplementDocument CreatePaymentComplementDocument(long id, long accountsReceivablePaymentId)
+    {
+        return new PaymentComplementDocument
+        {
+            Id = id,
+            AccountsReceivablePaymentId = accountsReceivablePaymentId,
+            Status = PaymentComplementDocumentStatus.ReadyForStamping,
+            ProviderName = null,
+            CfdiVersion = "4.0",
+            DocumentType = "P",
+            IssuedAtUtc = new DateTime(2026, 5, 20, 12, 0, 0, DateTimeKind.Utc),
+            PaymentDateUtc = new DateTime(2026, 5, 20, 12, 0, 0, DateTimeKind.Utc),
+            CurrencyCode = "MXN",
+            TotalPaymentsAmount = 100m,
+            IssuerProfileId = null,
+            FiscalReceiverId = null,
+            IssuerRfc = "AAA010101AAA",
+            IssuerLegalName = "Issuer One",
+            IssuerFiscalRegimeCode = "601",
+            IssuerPostalCode = "01000",
+            ReceiverRfc = "BBB010101BBB",
+            ReceiverLegalName = "Receiver One",
+            ReceiverFiscalRegimeCode = "601",
+            ReceiverPostalCode = "02000",
+            ReceiverCountryCode = "MX",
+            ReceiverForeignTaxRegistration = null,
+            PacEnvironment = "Sandbox",
+            CertificateReference = "CERT",
+            PrivateKeyReference = "KEY",
+            PrivateKeyPasswordReference = "PWD",
+            CreatedAtUtc = new DateTime(2026, 5, 20, 12, 0, 0, DateTimeKind.Utc),
+            UpdatedAtUtc = new DateTime(2026, 5, 20, 12, 0, 0, DateTimeKind.Utc)
+        };
+    }
+
+    private static PaymentComplementPayment CreatePaymentComplementPayment(
+        long id,
+        long paymentComplementDocumentId,
+        long accountsReceivablePaymentId,
+        decimal amount)
+    {
+        return new PaymentComplementPayment
+        {
+            Id = id,
+            PaymentComplementDocumentId = paymentComplementDocumentId,
+            AccountsReceivablePaymentId = accountsReceivablePaymentId,
+            PaymentDateUtc = new DateTime(2026, 5, 20, 12, 0, 0, DateTimeKind.Utc),
+            PaymentFormSat = "03",
+            CurrencyCode = "MXN",
+            Amount = amount,
+            ExchangeRate = null,
+            OperationNumber = "OP-1",
+            OrderingBankRfc = null,
+            OrderingAccountNumber = null,
+            BeneficiaryBankRfc = null,
+            BeneficiaryAccountNumber = null,
+            PaymentChainType = null,
+            PaymentCertificate = null,
+            PaymentChain = null,
+            PaymentSeal = null,
+            CreatedAtUtc = new DateTime(2026, 5, 20, 12, 0, 0, DateTimeKind.Utc)
         };
     }
 

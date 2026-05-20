@@ -272,7 +272,18 @@ public class ApplyAccountsReceivablePaymentService
         }
 
         await _accountsReceivablePaymentApplicationRepository.AddRangeAsync(createdApplications, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (OperationalOrderConflictException exception)
+        {
+            return Conflict(
+                command.AccountsReceivablePaymentId,
+                exception.Message,
+                payment,
+                remainingPaymentAmount);
+        }
 
         return new ApplyAccountsReceivablePaymentResult
         {

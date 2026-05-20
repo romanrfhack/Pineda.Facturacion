@@ -134,6 +134,23 @@ public static class AccountsReceivableEndpoints
             .Produces<AccountsReceivablePaymentResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status404NotFound);
 
+        group.MapPatch("/payments/{paymentId:long}/amount", UpdateAccountsReceivablePaymentAmountAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.OperatorOrAbove)
+            .WithName("UpdateAccountsReceivablePaymentAmount")
+            .WithSummary("Update the amount for an unapplied accounts receivable payment")
+            .Produces<UpdateAccountsReceivablePaymentAmountResponse>(StatusCodes.Status200OK)
+            .Produces<UpdateAccountsReceivablePaymentAmountResponse>(StatusCodes.Status400BadRequest)
+            .Produces<UpdateAccountsReceivablePaymentAmountResponse>(StatusCodes.Status404NotFound)
+            .Produces<UpdateAccountsReceivablePaymentAmountResponse>(StatusCodes.Status409Conflict);
+
+        group.MapDelete("/payments/{paymentId:long}", DeleteAccountsReceivablePaymentAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.OperatorOrAbove)
+            .WithName("DeleteAccountsReceivablePayment")
+            .WithSummary("Delete an unapplied accounts receivable payment")
+            .Produces<DeleteAccountsReceivablePaymentResponse>(StatusCodes.Status200OK)
+            .Produces<DeleteAccountsReceivablePaymentResponse>(StatusCodes.Status404NotFound)
+            .Produces<DeleteAccountsReceivablePaymentResponse>(StatusCodes.Status409Conflict);
+
         group.MapPost("/payments/{paymentId:long}/apply", ApplyAccountsReceivablePaymentAsync)
             .RequireAuthorization(AuthorizationPolicyNames.OperatorOrAbove)
             .WithName("ApplyAccountsReceivablePayment")
@@ -564,6 +581,59 @@ public static class AccountsReceivableEndpoints
         return TypedResults.Ok(MapPayment(result.AccountsReceivablePayment, result.OperationalProjection));
     }
 
+    private static async Task<Results<Ok<UpdateAccountsReceivablePaymentAmountResponse>, BadRequest<UpdateAccountsReceivablePaymentAmountResponse>, NotFound<UpdateAccountsReceivablePaymentAmountResponse>, Conflict<UpdateAccountsReceivablePaymentAmountResponse>>> UpdateAccountsReceivablePaymentAmountAsync(
+        long paymentId,
+        UpdateAccountsReceivablePaymentAmountRequest request,
+        UpdateAccountsReceivablePaymentAmountService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(
+            new UpdateAccountsReceivablePaymentAmountCommand
+            {
+                AccountsReceivablePaymentId = paymentId,
+                Amount = request.Amount
+            },
+            cancellationToken);
+
+        var response = new UpdateAccountsReceivablePaymentAmountResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            AccountsReceivablePaymentId = result.AccountsReceivablePaymentId,
+            PreviousAmount = result.PreviousAmount,
+            UpdatedAmount = result.UpdatedAmount,
+            Payment = result.AccountsReceivablePayment is null
+                ? null
+                : MapPayment(result.AccountsReceivablePayment)
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "AccountsReceivablePayment.UpdateAmount",
+            "AccountsReceivablePayment",
+            paymentId.ToString(),
+            result.Outcome.ToString(),
+            new { paymentId, request.Amount },
+            new
+            {
+                result.PreviousAmount,
+                result.UpdatedAmount,
+                result.AccountsReceivablePayment?.ReceivedFromFiscalReceiverId
+            },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            UpdateAccountsReceivablePaymentAmountOutcome.Updated => TypedResults.Ok(response),
+            UpdateAccountsReceivablePaymentAmountOutcome.NotFound => TypedResults.NotFound(response),
+            UpdateAccountsReceivablePaymentAmountOutcome.Conflict => TypedResults.Conflict(response),
+            _ => TypedResults.BadRequest(response)
+        };
+    }
+
     private static async Task<Ok<AccountsReceivablePaymentsResponse>> SearchAccountsReceivablePaymentsAsync(
         long? fiscalReceiverId,
         string? operationalStatus,
@@ -590,6 +660,46 @@ public static class AccountsReceivableEndpoints
         {
             Items = result.Items.Select(MapPaymentProjection).ToList()
         });
+    }
+
+    private static async Task<Results<Ok<DeleteAccountsReceivablePaymentResponse>, NotFound<DeleteAccountsReceivablePaymentResponse>, Conflict<DeleteAccountsReceivablePaymentResponse>>> DeleteAccountsReceivablePaymentAsync(
+        long paymentId,
+        DeleteAccountsReceivablePaymentService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(paymentId, cancellationToken);
+        var response = new DeleteAccountsReceivablePaymentResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            AccountsReceivablePaymentId = result.AccountsReceivablePaymentId,
+            DeletedAmount = result.DeletedAmount,
+            ReceivedFromFiscalReceiverId = result.ReceivedFromFiscalReceiverId
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "AccountsReceivablePayment.Delete",
+            "AccountsReceivablePayment",
+            paymentId.ToString(),
+            result.Outcome.ToString(),
+            new { paymentId },
+            new
+            {
+                result.DeletedAmount,
+                result.ReceivedFromFiscalReceiverId
+            },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            DeleteAccountsReceivablePaymentOutcome.Deleted => TypedResults.Ok(response),
+            DeleteAccountsReceivablePaymentOutcome.NotFound => TypedResults.NotFound(response),
+            _ => TypedResults.Conflict(response)
+        };
     }
 
     private static async Task<Results<Ok<ApplyAccountsReceivablePaymentResponse>, BadRequest<ApplyAccountsReceivablePaymentResponse>, NotFound<ApplyAccountsReceivablePaymentResponse>, Conflict<ApplyAccountsReceivablePaymentResponse>>> ApplyAccountsReceivablePaymentAsync(
@@ -1580,6 +1690,11 @@ public class CreateAccountsReceivablePaymentRequest
     public long? ReceivedFromFiscalReceiverId { get; set; }
 }
 
+public class UpdateAccountsReceivablePaymentAmountRequest
+{
+    public decimal Amount { get; set; }
+}
+
 public class CreateAccountsReceivablePaymentResponse
 {
     public string Outcome { get; set; } = string.Empty;
@@ -1587,6 +1702,23 @@ public class CreateAccountsReceivablePaymentResponse
     public bool IsSuccess { get; set; }
 
     public string? ErrorMessage { get; set; }
+
+    public AccountsReceivablePaymentResponse? Payment { get; set; }
+}
+
+public class UpdateAccountsReceivablePaymentAmountResponse
+{
+    public string Outcome { get; set; } = string.Empty;
+
+    public bool IsSuccess { get; set; }
+
+    public string? ErrorMessage { get; set; }
+
+    public long AccountsReceivablePaymentId { get; set; }
+
+    public decimal PreviousAmount { get; set; }
+
+    public decimal UpdatedAmount { get; set; }
 
     public AccountsReceivablePaymentResponse? Payment { get; set; }
 }
@@ -1687,6 +1819,21 @@ public class SetAccountsReceivablePaymentUnappliedDispositionResponse
     public string? ErrorMessage { get; set; }
 
     public long AccountsReceivablePaymentId { get; set; }
+}
+
+public class DeleteAccountsReceivablePaymentResponse
+{
+    public string Outcome { get; set; } = string.Empty;
+
+    public bool IsSuccess { get; set; }
+
+    public string? ErrorMessage { get; set; }
+
+    public long AccountsReceivablePaymentId { get; set; }
+
+    public decimal DeletedAmount { get; set; }
+
+    public long? ReceivedFromFiscalReceiverId { get; set; }
 }
 
 public class AccountsReceivablePaymentsResponse

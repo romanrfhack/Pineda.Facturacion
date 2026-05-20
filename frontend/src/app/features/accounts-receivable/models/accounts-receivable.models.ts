@@ -236,6 +236,10 @@ export interface CreateAccountsReceivablePaymentRequest {
   receivedFromFiscalReceiverId?: number | null;
 }
 
+export interface UpdateAccountsReceivablePaymentAmountRequest {
+  amount: number;
+}
+
 export interface AccountsReceivablePaymentResponse {
   id: number;
   paymentDateUtc: string;
@@ -306,6 +310,16 @@ export interface CreateAccountsReceivablePaymentResponse {
   payment?: AccountsReceivablePaymentResponse | null;
 }
 
+export interface UpdateAccountsReceivablePaymentAmountResponse {
+  outcome: string;
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  accountsReceivablePaymentId: number;
+  previousAmount: number;
+  updatedAmount: number;
+  payment?: AccountsReceivablePaymentResponse | null;
+}
+
 export interface ApplyAccountsReceivablePaymentRowRequest {
   accountsReceivableInvoiceId: number;
   appliedAmount: number;
@@ -335,6 +349,15 @@ export interface SetAccountsReceivablePaymentUnappliedDispositionResponse {
   isSuccess: boolean;
   errorMessage?: string | null;
   accountsReceivablePaymentId: number;
+}
+
+export interface DeleteAccountsReceivablePaymentResponse {
+  outcome: string;
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  accountsReceivablePaymentId: number;
+  deletedAmount: number;
+  receivedFromFiscalReceiverId?: number | null;
 }
 
 export interface PreparePaymentComplementRequest {
