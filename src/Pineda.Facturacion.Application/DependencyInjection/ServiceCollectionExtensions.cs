@@ -65,6 +65,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<SearchAccountsReceivablePaymentsService>();
         services.AddScoped<CreateAccountsReceivablePaymentService>();
         services.AddScoped<GetAccountsReceivablePaymentByIdService>();
+        services.AddScoped<UpdateAccountsReceivablePaymentAmountService>();
+        services.AddScoped<DeleteAccountsReceivablePaymentService>();
         services.AddScoped<ApplyAccountsReceivablePaymentService>();
         services.AddScoped<SetAccountsReceivablePaymentUnappliedDispositionService>();
         services.AddScoped<PreparePaymentComplementService>();

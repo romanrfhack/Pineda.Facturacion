@@ -2065,6 +2065,62 @@ public class PaymentComplementServicesTests
             ExistingById = accountsReceivablePayment;
             return Task.CompletedTask;
         }
+
+        public Task<AccountsReceivablePaymentMutationSnapshot?> GetMutationSnapshotAsync(long accountsReceivablePaymentId, CancellationToken cancellationToken = default)
+        {
+            var payment = new[] { ExistingTracked, ExistingById }.FirstOrDefault(x => x?.Id == accountsReceivablePaymentId);
+            if (payment is null)
+            {
+                return Task.FromResult<AccountsReceivablePaymentMutationSnapshot?>(null);
+            }
+
+            return Task.FromResult<AccountsReceivablePaymentMutationSnapshot?>(new AccountsReceivablePaymentMutationSnapshot
+            {
+                PaymentId = payment.Id,
+                Amount = payment.Amount,
+                ReceivedFromFiscalReceiverId = payment.ReceivedFromFiscalReceiverId,
+                HasApplications = payment.Applications.Count > 0,
+                HasRepAssociations = false
+            });
+        }
+
+        public Task<bool> TryUpdateAmountIfMutableAsync(
+            long accountsReceivablePaymentId,
+            decimal amount,
+            DateTime updatedAtUtc,
+            CancellationToken cancellationToken = default)
+        {
+            var payment = new[] { ExistingTracked, ExistingById }.FirstOrDefault(x => x?.Id == accountsReceivablePaymentId);
+            if (payment is null || payment.Applications.Count > 0)
+            {
+                return Task.FromResult(false);
+            }
+
+            payment.Amount = amount;
+            payment.UpdatedAtUtc = updatedAtUtc;
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> TryDeleteIfMutableAsync(long accountsReceivablePaymentId, CancellationToken cancellationToken = default)
+        {
+            var payment = new[] { ExistingTracked, ExistingById }.FirstOrDefault(x => x?.Id == accountsReceivablePaymentId);
+            if (payment is null || payment.Applications.Count > 0)
+            {
+                return Task.FromResult(false);
+            }
+
+            if (ExistingTracked?.Id == accountsReceivablePaymentId)
+            {
+                ExistingTracked = null;
+            }
+
+            if (ExistingById?.Id == accountsReceivablePaymentId)
+            {
+                ExistingById = null;
+            }
+
+            return Task.FromResult(true);
+        }
     }
 
     private sealed class PcFakeAccountsReceivableInvoiceRepository : IAccountsReceivableInvoiceRepository

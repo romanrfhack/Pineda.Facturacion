@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CurrencyPipe, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { FeedbackService } from '../../../core/ui/feedback.service';
 import { PermissionService } from '../../../core/auth/permission.service';
@@ -803,6 +803,61 @@ interface ReceiverWorkspaceInvoiceViewModel {
                           [queryParams]="{ paymentId: item.paymentId }"
                           >Ver detalle</a
                         >
+                        @if (permissionService.canManagePayments() && canMutatePayment(item)) {
+                          <div class="row-inline-actions">
+                            <button
+                              type="button"
+                              class="secondary inline-action-button"
+                              data-testid="workspace-payment-edit-button"
+                              (click)="startPaymentAmountEdit(item)"
+                              [disabled]="loading()"
+                            >
+                              Editar importe
+                            </button>
+                            <button
+                              type="button"
+                              class="secondary inline-action-button"
+                              data-testid="workspace-payment-delete-button"
+                              (click)="deletePayment(item)"
+                              [disabled]="loading()"
+                            >
+                              Eliminar pago
+                            </button>
+                          </div>
+                        }
+                        @if (isEditingPayment(item.paymentId)) {
+                          <div class="payment-edit-panel">
+                            <label>
+                              <span>Nuevo importe</span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0.01"
+                                data-testid="workspace-payment-amount-input"
+                                [ngModel]="editingPaymentAmountText()"
+                                (ngModelChange)="editingPaymentAmountText.set($event)"
+                              />
+                            </label>
+                            <div class="row-inline-actions">
+                              <button
+                                type="button"
+                                data-testid="workspace-payment-save-button"
+                                (click)="savePaymentAmountEdit(item.paymentId)"
+                                [disabled]="loading() || !hasValidEditingPaymentAmount()"
+                              >
+                                Guardar
+                              </button>
+                              <button
+                                type="button"
+                                class="secondary inline-action-button"
+                                (click)="cancelPaymentAmountEdit()"
+                                [disabled]="loading()"
+                              >
+                                Cancelar
+                              </button>
+                            </div>
+                          </div>
+                        }
                       </td>
                     </tr>
                   }
@@ -1308,6 +1363,61 @@ interface ReceiverWorkspaceInvoiceViewModel {
               currentPayment.repStatus
             }}</span>
           </div>
+          @if (permissionService.canManagePayments() && canMutatePayment(currentPayment)) {
+            <div class="detail-payment-actions">
+              <button
+                type="button"
+                class="secondary inline-action-button"
+                data-testid="detail-payment-edit-button"
+                (click)="startPaymentAmountEdit(currentPayment)"
+                [disabled]="loading()"
+              >
+                Editar importe
+              </button>
+              <button
+                type="button"
+                class="secondary inline-action-button"
+                data-testid="detail-payment-delete-button"
+                (click)="deletePayment(currentPayment)"
+                [disabled]="loading()"
+              >
+                Eliminar pago
+              </button>
+            </div>
+          }
+          @if (isEditingPayment(currentPayment.id)) {
+            <section class="payment-edit-panel detail-payment-edit-panel">
+              <label>
+                <span>Nuevo importe</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  data-testid="detail-payment-amount-input"
+                  [ngModel]="editingPaymentAmountText()"
+                  (ngModelChange)="editingPaymentAmountText.set($event)"
+                />
+              </label>
+              <div class="row-inline-actions">
+                <button
+                  type="button"
+                  data-testid="detail-payment-save-button"
+                  (click)="savePaymentAmountEdit(currentPayment.id)"
+                  [disabled]="loading() || !hasValidEditingPaymentAmount()"
+                >
+                  Guardar
+                </button>
+                <button
+                  type="button"
+                  class="secondary inline-action-button"
+                  (click)="cancelPaymentAmountEdit()"
+                  [disabled]="loading()"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </section>
+          }
           @if (showPendingCustomerCreditBalanceAction()) {
             <section class="status-panel status-panel-warning">
               <div class="status-panel-copy">
@@ -1658,6 +1768,28 @@ interface ReceiverWorkspaceInvoiceViewModel {
       .links {
         margin-top: 1rem;
       }
+      .row-inline-actions,
+      .detail-payment-actions {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        margin-top: 0.65rem;
+      }
+      .inline-action-button {
+        padding: 0.6rem 0.85rem;
+      }
+      .payment-edit-panel {
+        display: grid;
+        gap: 0.65rem;
+        margin-top: 0.75rem;
+        padding: 0.75rem;
+        border: 1px solid #ece3d3;
+        border-radius: 0.85rem;
+        background: #fffdf8;
+      }
+      .detail-payment-edit-panel {
+        margin-top: 1rem;
+      }
       textarea {
         border: 1px solid #d8d1c2;
         border-radius: 0.75rem;
@@ -1710,6 +1842,7 @@ export class AccountsReceivablePageComponent {
   private readonly api = inject(AccountsReceivableApiService);
   private readonly fiscalReceiversApi = inject(FiscalReceiversApiService);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly feedbackService = inject(FeedbackService);
   protected readonly permissionService = inject(PermissionService);
 
@@ -1751,6 +1884,8 @@ export class AccountsReceivablePageComponent {
   protected readonly eligibleReceiverInvoices = signal<AccountsReceivablePortfolioItemResponse[]>(
     [],
   );
+  protected readonly editingPaymentId = signal<number | null>(null);
+  protected readonly editingPaymentAmountText = signal<string | number>('');
   protected readonly receiverWorkspaceInvoiceSummary = computed<ReceivableInvoiceCollectionSummary>(
     () => {
       const workspace = this.receiverWorkspace();
@@ -1898,6 +2033,37 @@ export class AccountsReceivablePageComponent {
       this.isPendingRemainderRepBlockReason(currentPayment.repBlockReason)
     );
   });
+
+  protected canMutatePayment(
+    payment: AccountsReceivablePaymentSummaryItemResponse | AccountsReceivablePaymentResponse | null,
+  ): boolean {
+    if (!payment) {
+      return false;
+    }
+
+    return payment.applicationsCount === 0 && !this.hasRepAssociation(payment);
+  }
+
+  protected isEditingPayment(paymentId: number): boolean {
+    return this.editingPaymentId() === paymentId;
+  }
+
+  protected startPaymentAmountEdit(
+    payment: AccountsReceivablePaymentSummaryItemResponse | AccountsReceivablePaymentResponse,
+  ): void {
+    this.editingPaymentId.set('paymentId' in payment ? payment.paymentId : payment.id);
+    this.editingPaymentAmountText.set(this.formatEditableAmount(payment.amount));
+  }
+
+  protected cancelPaymentAmountEdit(): void {
+    this.editingPaymentId.set(null);
+    this.editingPaymentAmountText.set('');
+  }
+
+  protected hasValidEditingPaymentAmount(): boolean {
+    const amount = this.parseEditingPaymentAmount();
+    return amount !== null && amount > 0;
+  }
 
   protected accountsReceivableStatusTone(status: string): StatusBadgeTone {
     switch (status) {
@@ -2223,6 +2389,54 @@ export class AccountsReceivablePageComponent {
     });
   }
 
+  protected async savePaymentAmountEdit(paymentId: number): Promise<void> {
+    const amount = this.parseEditingPaymentAmount();
+    if (amount === null || amount <= 0) {
+      this.feedbackService.show('error', 'El importe debe ser mayor a cero.');
+      return;
+    }
+
+    await this.run(async () => {
+      await firstValueFrom(
+        this.api.updatePaymentAmount(paymentId, {
+          amount,
+        }),
+      );
+
+      this.cancelPaymentAmountEdit();
+      await this.refreshPaymentMutationViews(paymentId);
+      this.feedbackService.show('success', 'Importe del pago actualizado.');
+    });
+  }
+
+  protected async deletePayment(
+    payment: AccountsReceivablePaymentSummaryItemResponse | AccountsReceivablePaymentResponse,
+  ): Promise<void> {
+    if (
+      !window.confirm(
+        '¿Deseas eliminar este pago? Esta acción solo es posible si el pago no ha sido aplicado a ninguna factura.',
+      )
+    ) {
+      return;
+    }
+
+    const paymentId = 'paymentId' in payment ? payment.paymentId : payment.id;
+    const receiverId = this.resolvePaymentReceiverId(payment);
+
+    await this.run(async () => {
+      await firstValueFrom(this.api.deletePayment(paymentId));
+      this.cancelPaymentAmountEdit();
+
+      if (this.payment()?.id === paymentId) {
+        await this.navigateAfterPaymentDeletion(receiverId);
+      } else {
+        await this.refreshPaymentMutationViews(paymentId, receiverId);
+      }
+
+      this.feedbackService.show('success', 'Pago eliminado.');
+    });
+  }
+
   protected async createCollectionCommitment(): Promise<void> {
     const currentInvoice = this.invoice();
     if (!currentInvoice) {
@@ -2419,6 +2633,75 @@ export class AccountsReceivablePageComponent {
 
   private isPendingRemainderRepBlockReason(reason: string | null | undefined): boolean {
     return (reason ?? '').toLowerCase().includes('unapplied payment remainder');
+  }
+
+  private async refreshPaymentMutationViews(
+    paymentId: number,
+    receiverId: number | null = this.resolvePaymentReceiverId(this.payment()),
+  ): Promise<void> {
+    if (this.payment()?.id === paymentId) {
+      await this.loadPayment(paymentId);
+      if (this.detailMode()) {
+        return;
+      }
+    }
+
+    const workspaceReceiverId = this.receiverWorkspaceId() ?? receiverId;
+    if (workspaceReceiverId !== null) {
+      await this.loadReceiverWorkspace(workspaceReceiverId);
+      return;
+    }
+
+    await this.loadPayments();
+  }
+
+  private async navigateAfterPaymentDeletion(receiverId: number | null): Promise<void> {
+    const currentInvoiceId = this.invoice()?.id ?? null;
+    const queryParams =
+      currentInvoiceId !== null
+        ? { invoiceId: currentInvoiceId }
+        : receiverId !== null
+          ? { fiscalReceiverId: receiverId }
+          : {};
+
+    await this.router.navigate(['/app/accounts-receivable'], { queryParams });
+  }
+
+  private hasRepAssociation(
+    payment: AccountsReceivablePaymentSummaryItemResponse | AccountsReceivablePaymentResponse,
+  ): boolean {
+    return (
+      !!payment.repDocumentStatus || payment.repReservedAmount > 0 || payment.repFiscalizedAmount > 0
+    );
+  }
+
+  private resolvePaymentReceiverId(
+    payment: AccountsReceivablePaymentSummaryItemResponse | AccountsReceivablePaymentResponse | null,
+  ): number | null {
+    if (!payment) {
+      return null;
+    }
+
+    return 'paymentId' in payment
+      ? (payment.fiscalReceiverId ?? null)
+      : (payment.receivedFromFiscalReceiverId ?? null);
+  }
+
+  private parseEditingPaymentAmount(): number | null {
+    const rawValue = this.editingPaymentAmountText();
+    const sanitized = String(rawValue ?? '')
+      .replace(/,/g, '')
+      .trim();
+    if (!sanitized) {
+      return null;
+    }
+
+    const parsed = Number(sanitized);
+    return Number.isFinite(parsed) ? this.normalizeMoney(parsed) : null;
+  }
+
+  private formatEditableAmount(value: number): string {
+    return this.normalizeMoney(value).toFixed(2);
   }
 
   private normalizeMoney(value: number): number {

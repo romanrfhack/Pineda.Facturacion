@@ -66,6 +66,7 @@ public class AccountsReceivablePaymentConfiguration : IEntityTypeConfiguration<A
 
         builder.Property(x => x.UpdatedAtUtc)
             .HasColumnName("updated_at_utc")
+            .IsConcurrencyToken()
             .IsRequired();
 
         builder.HasOne<FiscalReceiver>()

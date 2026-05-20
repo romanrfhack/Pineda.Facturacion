@@ -2140,6 +2140,213 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
+    public async Task UpdateAccountsReceivablePaymentAmount_UpdatesUnappliedPaymentCapturedFromInvoiceContext()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        var seed = await factory.SeedStandardFiscalMasterDataAsync();
+        var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-AR-UPD-1001", seed.ReceiverId, "SKU-1", "UUID-AR-UPD-1001");
+        var invoice = await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId);
+        var invoiceId = invoice!.AccountsReceivableInvoice!.Id;
+
+        var createPaymentResponse = await client.PostAsJsonAsync("/api/accounts-receivable/payments", new CreateAccountsReceivablePaymentRequest
+        {
+            AccountsReceivableInvoiceId = invoiceId,
+            PaymentDateUtc = DateTime.UtcNow,
+            PaymentFormSat = "03",
+            Amount = 100m,
+            Reference = "PAY-UPD-1",
+            ReceivedFromFiscalReceiverId = seed.ReceiverId
+        });
+        Assert.Equal(HttpStatusCode.OK, createPaymentResponse.StatusCode);
+        var createPaymentBody = await createPaymentResponse.Content.ReadFromJsonAsync<CreateAccountsReceivablePaymentResponse>();
+        var paymentId = createPaymentBody!.Payment!.Id;
+
+        var updateResponse = await client.PatchAsJsonAsync($"/api/accounts-receivable/payments/{paymentId}/amount", new
+        {
+            amount = 125.5m
+        });
+        Assert.Equal(HttpStatusCode.OK, updateResponse.StatusCode);
+        using (var updateJson = await JsonDocument.ParseAsync(await updateResponse.Content.ReadAsStreamAsync()))
+        {
+            Assert.Equal("Updated", updateJson.RootElement.GetProperty("outcome").GetString());
+            Assert.Equal(100m, updateJson.RootElement.GetProperty("previousAmount").GetDecimal());
+            Assert.Equal(125.5m, updateJson.RootElement.GetProperty("updatedAmount").GetDecimal());
+        }
+
+        var getPaymentResponse = await client.GetAsync($"/api/accounts-receivable/payments/{paymentId}");
+        Assert.Equal(HttpStatusCode.OK, getPaymentResponse.StatusCode);
+        using var paymentJson = await JsonDocument.ParseAsync(await getPaymentResponse.Content.ReadAsStreamAsync());
+        Assert.Equal(125.5m, paymentJson.RootElement.GetProperty("amount").GetDecimal());
+        Assert.Equal(125.5m, paymentJson.RootElement.GetProperty("remainingAmount").GetDecimal());
+        Assert.Equal(0, paymentJson.RootElement.GetProperty("applications").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task DeleteAccountsReceivablePayment_DeletesUnappliedPaymentCapturedFromInvoiceContext()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        var seed = await factory.SeedStandardFiscalMasterDataAsync();
+        var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-AR-DEL-1001", seed.ReceiverId, "SKU-1", "UUID-AR-DEL-1001");
+        var invoice = await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId);
+        var invoiceId = invoice!.AccountsReceivableInvoice!.Id;
+
+        var createPaymentResponse = await client.PostAsJsonAsync("/api/accounts-receivable/payments", new CreateAccountsReceivablePaymentRequest
+        {
+            AccountsReceivableInvoiceId = invoiceId,
+            PaymentDateUtc = DateTime.UtcNow,
+            PaymentFormSat = "03",
+            Amount = 100m,
+            Reference = "PAY-DEL-1",
+            ReceivedFromFiscalReceiverId = seed.ReceiverId
+        });
+        Assert.Equal(HttpStatusCode.OK, createPaymentResponse.StatusCode);
+        var createPaymentBody = await createPaymentResponse.Content.ReadFromJsonAsync<CreateAccountsReceivablePaymentResponse>();
+        var paymentId = createPaymentBody!.Payment!.Id;
+
+        var deleteResponse = await client.DeleteAsync($"/api/accounts-receivable/payments/{paymentId}");
+        Assert.Equal(HttpStatusCode.OK, deleteResponse.StatusCode);
+        using (var deleteJson = await JsonDocument.ParseAsync(await deleteResponse.Content.ReadAsStreamAsync()))
+        {
+            Assert.Equal("Deleted", deleteJson.RootElement.GetProperty("outcome").GetString());
+            Assert.Equal(100m, deleteJson.RootElement.GetProperty("deletedAmount").GetDecimal());
+        }
+
+        var getPaymentResponse = await client.GetAsync($"/api/accounts-receivable/payments/{paymentId}");
+        Assert.Equal(HttpStatusCode.NotFound, getPaymentResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task UpdateAccountsReceivablePaymentAmount_ReturnsConflict_WhenPaymentIsAlreadyApplied_AndPreservesInvoiceState()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-AR-UPD-CONFLICT-1001", uuid: "UUID-AR-UPD-CONFLICT-1001");
+        var invoice = await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId);
+        var invoiceId = invoice!.AccountsReceivableInvoice!.Id;
+
+        var createPaymentBody = await (await client.PostAsJsonAsync("/api/accounts-receivable/payments", new CreateAccountsReceivablePaymentRequest
+        {
+            PaymentDateUtc = DateTime.UtcNow,
+            PaymentFormSat = "03",
+            Amount = 116m,
+            Reference = "PAY-UPD-CONFLICT-1"
+        })).Content.ReadFromJsonAsync<CreateAccountsReceivablePaymentResponse>();
+        var paymentId = createPaymentBody!.Payment!.Id;
+
+        var applyResponse = await client.PostAsJsonAsync($"/api/accounts-receivable/payments/{paymentId}/apply", new ApplyAccountsReceivablePaymentRequest
+        {
+            Applications =
+            [
+                new ApplyAccountsReceivablePaymentRowRequest
+                {
+                    AccountsReceivableInvoiceId = invoiceId,
+                    AppliedAmount = 40m
+                }
+            ]
+        });
+        Assert.Equal(HttpStatusCode.OK, applyResponse.StatusCode);
+
+        var updateResponse = await client.PatchAsJsonAsync($"/api/accounts-receivable/payments/{paymentId}/amount", new
+        {
+            amount = 150m
+        });
+        Assert.Equal(HttpStatusCode.Conflict, updateResponse.StatusCode);
+        using (var updateJson = await JsonDocument.ParseAsync(await updateResponse.Content.ReadAsStreamAsync()))
+        {
+            Assert.Equal("Conflict", updateJson.RootElement.GetProperty("outcome").GetString());
+            Assert.Equal("El pago ya fue aplicado a una o más facturas y no puede editarse.", updateJson.RootElement.GetProperty("errorMessage").GetString());
+        }
+
+        var getPaymentResponse = await client.GetAsync($"/api/accounts-receivable/payments/{paymentId}");
+        Assert.Equal(HttpStatusCode.OK, getPaymentResponse.StatusCode);
+        using (var paymentJson = await JsonDocument.ParseAsync(await getPaymentResponse.Content.ReadAsStreamAsync()))
+        {
+            Assert.Equal(116m, paymentJson.RootElement.GetProperty("amount").GetDecimal());
+            Assert.Equal(40m, paymentJson.RootElement.GetProperty("appliedTotal").GetDecimal());
+            Assert.Equal(76m, paymentJson.RootElement.GetProperty("remainingAmount").GetDecimal());
+            Assert.Equal(1, paymentJson.RootElement.GetProperty("applications").GetArrayLength());
+        }
+
+        var getInvoiceResponse = await client.GetAsync($"/api/accounts-receivable/invoices/{invoiceId}");
+        Assert.Equal(HttpStatusCode.OK, getInvoiceResponse.StatusCode);
+        using (var invoiceJson = await JsonDocument.ParseAsync(await getInvoiceResponse.Content.ReadAsStreamAsync()))
+        {
+            Assert.Equal("PartiallyPaid", invoiceJson.RootElement.GetProperty("status").GetString());
+            Assert.Equal(40m, invoiceJson.RootElement.GetProperty("paidTotal").GetDecimal());
+            Assert.Equal(76m, invoiceJson.RootElement.GetProperty("outstandingBalance").GetDecimal());
+        }
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+        Assert.Equal(1, await dbContext.AccountsReceivablePaymentApplications.CountAsync(x => x.AccountsReceivablePaymentId == paymentId));
+    }
+
+    [Fact]
+    public async Task DeleteAccountsReceivablePayment_ReturnsConflict_WhenPaymentIsAlreadyApplied_AndPreservesInvoiceState()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        var fiscalDocumentId = await PrepareStampedFiscalDocumentThroughApiAsync(factory, client, "LEG-AR-DEL-CONFLICT-1001", uuid: "UUID-AR-DEL-CONFLICT-1001");
+        var invoice = await EnsureAccountsReceivableInvoiceThroughApiAsync(client, fiscalDocumentId);
+        var invoiceId = invoice!.AccountsReceivableInvoice!.Id;
+
+        var createPaymentBody = await (await client.PostAsJsonAsync("/api/accounts-receivable/payments", new CreateAccountsReceivablePaymentRequest
+        {
+            PaymentDateUtc = DateTime.UtcNow,
+            PaymentFormSat = "03",
+            Amount = 116m,
+            Reference = "PAY-DEL-CONFLICT-1"
+        })).Content.ReadFromJsonAsync<CreateAccountsReceivablePaymentResponse>();
+        var paymentId = createPaymentBody!.Payment!.Id;
+
+        var applyResponse = await client.PostAsJsonAsync($"/api/accounts-receivable/payments/{paymentId}/apply", new ApplyAccountsReceivablePaymentRequest
+        {
+            Applications =
+            [
+                new ApplyAccountsReceivablePaymentRowRequest
+                {
+                    AccountsReceivableInvoiceId = invoiceId,
+                    AppliedAmount = 40m
+                }
+            ]
+        });
+        Assert.Equal(HttpStatusCode.OK, applyResponse.StatusCode);
+
+        var deleteResponse = await client.DeleteAsync($"/api/accounts-receivable/payments/{paymentId}");
+        Assert.Equal(HttpStatusCode.Conflict, deleteResponse.StatusCode);
+        using (var deleteJson = await JsonDocument.ParseAsync(await deleteResponse.Content.ReadAsStreamAsync()))
+        {
+            Assert.Equal("Conflict", deleteJson.RootElement.GetProperty("outcome").GetString());
+            Assert.Equal("El pago ya fue aplicado a una o más facturas y no puede eliminarse.", deleteJson.RootElement.GetProperty("errorMessage").GetString());
+        }
+
+        var getPaymentResponse = await client.GetAsync($"/api/accounts-receivable/payments/{paymentId}");
+        Assert.Equal(HttpStatusCode.OK, getPaymentResponse.StatusCode);
+        using (var paymentJson = await JsonDocument.ParseAsync(await getPaymentResponse.Content.ReadAsStreamAsync()))
+        {
+            Assert.Equal(116m, paymentJson.RootElement.GetProperty("amount").GetDecimal());
+            Assert.Equal(40m, paymentJson.RootElement.GetProperty("appliedTotal").GetDecimal());
+            Assert.Equal(76m, paymentJson.RootElement.GetProperty("remainingAmount").GetDecimal());
+            Assert.Equal(1, paymentJson.RootElement.GetProperty("applications").GetArrayLength());
+        }
+
+        var getInvoiceResponse = await client.GetAsync($"/api/accounts-receivable/invoices/{invoiceId}");
+        Assert.Equal(HttpStatusCode.OK, getInvoiceResponse.StatusCode);
+        using (var invoiceJson = await JsonDocument.ParseAsync(await getInvoiceResponse.Content.ReadAsStreamAsync()))
+        {
+            Assert.Equal("PartiallyPaid", invoiceJson.RootElement.GetProperty("status").GetString());
+            Assert.Equal(40m, invoiceJson.RootElement.GetProperty("paidTotal").GetDecimal());
+            Assert.Equal(76m, invoiceJson.RootElement.GetProperty("outstandingBalance").GetDecimal());
+        }
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+        Assert.Equal(1, await dbContext.AccountsReceivablePaymentApplications.CountAsync(x => x.AccountsReceivablePaymentId == paymentId));
+    }
+
+    [Fact]
     public async Task CreateAccountsReceivablePayment_AllowsOverContextAmount_AndTracksRemainderAcrossMultipleInvoices()
     {
         await using var factory = new MvpApiFactory();

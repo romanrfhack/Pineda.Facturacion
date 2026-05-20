@@ -3,6 +3,7 @@ using Pineda.Facturacion.Application.Abstractions.Communication;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Abstractions.Security;
 using Pineda.Facturacion.Application.Abstractions.Documents;
+using Pineda.Facturacion.Application.Common;
 using Pineda.Facturacion.Application.Security;
 using Pineda.Facturacion.Application.UseCases.AccountsReceivable;
 using Pineda.Facturacion.Application.UseCases.Audit;
@@ -247,6 +248,180 @@ public class AccountsReceivableServicesTests
         Assert.Equal("MXN", repository.Added!.CurrencyCode);
         Assert.Equal(250m, repository.Added.Amount);
         Assert.Equal(AccountsReceivablePaymentUnappliedDisposition.PendingAllocation, repository.Added.UnappliedDisposition);
+    }
+
+    [Fact]
+    public async Task UpdateAccountsReceivablePaymentAmount_Succeeds_WhenPaymentHasNoApplicationsOrRep()
+    {
+        var payment = CreatePayment(amount: 100m);
+        var repository = new ArFakeAccountsReceivablePaymentRepository
+        {
+            ExistingById = payment,
+            ExistingTracked = payment
+        };
+        var service = new UpdateAccountsReceivablePaymentAmountService(repository, new ArFakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new UpdateAccountsReceivablePaymentAmountCommand
+        {
+            AccountsReceivablePaymentId = payment.Id,
+            Amount = 125.50m
+        });
+
+        Assert.Equal(UpdateAccountsReceivablePaymentAmountOutcome.Updated, result.Outcome);
+        Assert.True(result.IsSuccess);
+        Assert.Equal(100m, result.PreviousAmount);
+        Assert.Equal(125.50m, result.UpdatedAmount);
+        Assert.Equal(125.50m, payment.Amount);
+    }
+
+    [Fact]
+    public async Task DeleteAccountsReceivablePayment_Succeeds_WhenPaymentHasNoApplicationsOrRep()
+    {
+        var payment = CreatePayment(amount: 100m);
+        var repository = new ArFakeAccountsReceivablePaymentRepository
+        {
+            ExistingById = payment,
+            ExistingTracked = payment
+        };
+        var service = new DeleteAccountsReceivablePaymentService(repository, new ArFakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(payment.Id);
+
+        Assert.Equal(DeleteAccountsReceivablePaymentOutcome.Deleted, result.Outcome);
+        Assert.True(result.IsSuccess);
+        Assert.True(repository.Deleted);
+        Assert.Null(repository.ExistingById);
+        Assert.Null(repository.ExistingTracked);
+    }
+
+    [Fact]
+    public async Task UpdateAccountsReceivablePaymentAmount_ReturnsConflict_WhenPaymentHasApplications()
+    {
+        var payment = CreatePayment(amount: 100m);
+        payment.Applications.Add(new AccountsReceivablePaymentApplication
+        {
+            Id = 33,
+            AccountsReceivablePaymentId = payment.Id,
+            AccountsReceivableInvoiceId = 201,
+            ApplicationSequence = 1,
+            AppliedAmount = 40m,
+            PreviousBalance = 100m,
+            NewBalance = 60m,
+            CreatedAtUtc = DateTime.UtcNow
+        });
+        var repository = new ArFakeAccountsReceivablePaymentRepository
+        {
+            ExistingById = payment,
+            ExistingTracked = payment
+        };
+        var service = new UpdateAccountsReceivablePaymentAmountService(repository, new ArFakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new UpdateAccountsReceivablePaymentAmountCommand
+        {
+            AccountsReceivablePaymentId = payment.Id,
+            Amount = 125m
+        });
+
+        Assert.Equal(UpdateAccountsReceivablePaymentAmountOutcome.Conflict, result.Outcome);
+        Assert.False(result.IsSuccess);
+        Assert.Equal(100m, payment.Amount);
+        Assert.Contains("no puede editarse", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task DeleteAccountsReceivablePayment_ReturnsConflict_WhenPaymentHasApplications()
+    {
+        var payment = CreatePayment(amount: 100m);
+        payment.Applications.Add(new AccountsReceivablePaymentApplication
+        {
+            Id = 33,
+            AccountsReceivablePaymentId = payment.Id,
+            AccountsReceivableInvoiceId = 201,
+            ApplicationSequence = 1,
+            AppliedAmount = 40m,
+            PreviousBalance = 100m,
+            NewBalance = 60m,
+            CreatedAtUtc = DateTime.UtcNow
+        });
+        var repository = new ArFakeAccountsReceivablePaymentRepository
+        {
+            ExistingById = payment,
+            ExistingTracked = payment
+        };
+        var service = new DeleteAccountsReceivablePaymentService(repository, new ArFakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(payment.Id);
+
+        Assert.Equal(DeleteAccountsReceivablePaymentOutcome.Conflict, result.Outcome);
+        Assert.False(result.IsSuccess);
+        Assert.False(repository.Deleted);
+        Assert.Contains("no puede eliminarse", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task UpdateAccountsReceivablePaymentAmount_ReturnsConflict_WhenPaymentHasRepAssociations()
+    {
+        var payment = CreatePayment(amount: 100m);
+        var repository = new ArFakeAccountsReceivablePaymentRepository
+        {
+            ExistingById = payment,
+            ExistingTracked = payment,
+            MutationHasRepAssociations = true
+        };
+        var service = new UpdateAccountsReceivablePaymentAmountService(repository, new ArFakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new UpdateAccountsReceivablePaymentAmountCommand
+        {
+            AccountsReceivablePaymentId = payment.Id,
+            Amount = 125m
+        });
+
+        Assert.Equal(UpdateAccountsReceivablePaymentAmountOutcome.Conflict, result.Outcome);
+        Assert.False(result.IsSuccess);
+        Assert.Equal(100m, payment.Amount);
+        Assert.Contains("REP", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task DeleteAccountsReceivablePayment_ReturnsConflict_WhenPaymentHasRepAssociations()
+    {
+        var payment = CreatePayment(amount: 100m);
+        var repository = new ArFakeAccountsReceivablePaymentRepository
+        {
+            ExistingById = payment,
+            ExistingTracked = payment,
+            MutationHasRepAssociations = true
+        };
+        var service = new DeleteAccountsReceivablePaymentService(repository, new ArFakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(payment.Id);
+
+        Assert.Equal(DeleteAccountsReceivablePaymentOutcome.Conflict, result.Outcome);
+        Assert.False(result.IsSuccess);
+        Assert.False(repository.Deleted);
+        Assert.Contains("REP", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task UpdateAccountsReceivablePaymentAmount_ReturnsValidationFailed_WhenAmountIsNotPositive()
+    {
+        var payment = CreatePayment(amount: 100m);
+        var repository = new ArFakeAccountsReceivablePaymentRepository
+        {
+            ExistingById = payment,
+            ExistingTracked = payment
+        };
+        var service = new UpdateAccountsReceivablePaymentAmountService(repository, new ArFakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new UpdateAccountsReceivablePaymentAmountCommand
+        {
+            AccountsReceivablePaymentId = payment.Id,
+            Amount = 0m
+        });
+
+        Assert.Equal(UpdateAccountsReceivablePaymentAmountOutcome.ValidationFailed, result.Outcome);
+        Assert.False(result.IsSuccess);
+        Assert.Equal(100m, payment.Amount);
     }
 
     [Fact]
@@ -912,6 +1087,44 @@ public class AccountsReceivableServicesTests
         Assert.Empty(appRepository.Added);
         Assert.Equal(100m, invoice1.OutstandingBalance);
         Assert.Equal(50m, invoice2.OutstandingBalance);
+    }
+
+    [Fact]
+    public async Task ApplyAccountsReceivablePayment_ReturnsConflict_WhenPaymentChangesConcurrentlyDuringSave()
+    {
+        var payment = CreatePayment(amount: 120m);
+        var invoice = CreateInvoice(id: 201, total: 100m);
+        var unitOfWork = new ArFakeUnitOfWork
+        {
+            ExceptionToThrow = new OperationalOrderConflictException(
+                "Accounts receivable payment changed concurrently. Reload the payment and try again.")
+        };
+        var service = new ApplyAccountsReceivablePaymentService(
+            new ArFakeAccountsReceivablePaymentRepository { ExistingTracked = payment },
+            new ArFakeAccountsReceivableInvoiceRepository
+            {
+                TrackedById = { [invoice.Id] = invoice }
+            },
+            new ArFakeAccountsReceivablePaymentApplicationRepository(),
+            new ArFakePaymentComplementDocumentRepository(),
+            unitOfWork);
+
+        var result = await service.ExecuteAsync(new ApplyAccountsReceivablePaymentCommand
+        {
+            AccountsReceivablePaymentId = payment.Id,
+            Applications =
+            [
+                new ApplyAccountsReceivablePaymentApplicationInput
+                {
+                    AccountsReceivableInvoiceId = invoice.Id,
+                    AppliedAmount = 40m
+                }
+            ]
+        });
+
+        Assert.Equal(ApplyAccountsReceivablePaymentOutcome.Conflict, result.Outcome);
+        Assert.False(result.IsSuccess);
+        Assert.Contains("changed concurrently", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -2479,18 +2692,22 @@ public class AccountsReceivableServicesTests
 
         public AccountsReceivablePayment? ExistingTracked { get; set; }
 
+        public bool MutationHasRepAssociations { get; set; }
+
+        public bool Deleted { get; private set; }
+
         public IReadOnlyList<AccountsReceivablePayment> SearchResults { get; set; } = [];
 
         public AccountsReceivablePayment? Added { get; private set; }
 
         public Task<AccountsReceivablePayment?> GetByIdAsync(long accountsReceivablePaymentId, CancellationToken cancellationToken = default)
         {
-            return Task.FromResult(ExistingById ?? ExistingTracked);
+            return Task.FromResult(new[] { ExistingById, ExistingTracked }.FirstOrDefault(x => x?.Id == accountsReceivablePaymentId));
         }
 
         public Task<AccountsReceivablePayment?> GetTrackedByIdAsync(long accountsReceivablePaymentId, CancellationToken cancellationToken = default)
         {
-            return Task.FromResult(ExistingTracked ?? ExistingById);
+            return Task.FromResult(new[] { ExistingTracked, ExistingById }.FirstOrDefault(x => x?.Id == accountsReceivablePaymentId));
         }
 
         public Task<IReadOnlyList<AccountsReceivablePayment>> SearchAsync(SearchAccountsReceivablePaymentsFilter filter, CancellationToken cancellationToken = default)
@@ -2527,6 +2744,63 @@ public class AccountsReceivableServicesTests
 
             return Task.CompletedTask;
         }
+
+        public Task<AccountsReceivablePaymentMutationSnapshot?> GetMutationSnapshotAsync(long accountsReceivablePaymentId, CancellationToken cancellationToken = default)
+        {
+            var payment = new[] { ExistingTracked, ExistingById }.FirstOrDefault(x => x?.Id == accountsReceivablePaymentId);
+            if (payment is null)
+            {
+                return Task.FromResult<AccountsReceivablePaymentMutationSnapshot?>(null);
+            }
+
+            return Task.FromResult<AccountsReceivablePaymentMutationSnapshot?>(new AccountsReceivablePaymentMutationSnapshot
+            {
+                PaymentId = payment.Id,
+                Amount = payment.Amount,
+                ReceivedFromFiscalReceiverId = payment.ReceivedFromFiscalReceiverId,
+                HasApplications = payment.Applications.Count > 0,
+                HasRepAssociations = MutationHasRepAssociations
+            });
+        }
+
+        public Task<bool> TryUpdateAmountIfMutableAsync(
+            long accountsReceivablePaymentId,
+            decimal amount,
+            DateTime updatedAtUtc,
+            CancellationToken cancellationToken = default)
+        {
+            var payment = new[] { ExistingTracked, ExistingById }.FirstOrDefault(x => x?.Id == accountsReceivablePaymentId);
+            if (payment is null || payment.Applications.Count > 0 || MutationHasRepAssociations)
+            {
+                return Task.FromResult(false);
+            }
+
+            payment.Amount = amount;
+            payment.UpdatedAtUtc = updatedAtUtc;
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> TryDeleteIfMutableAsync(long accountsReceivablePaymentId, CancellationToken cancellationToken = default)
+        {
+            var payment = new[] { ExistingTracked, ExistingById }.FirstOrDefault(x => x?.Id == accountsReceivablePaymentId);
+            if (payment is null || payment.Applications.Count > 0 || MutationHasRepAssociations)
+            {
+                return Task.FromResult(false);
+            }
+
+            Deleted = true;
+            if (ExistingTracked?.Id == accountsReceivablePaymentId)
+            {
+                ExistingTracked = null;
+            }
+
+            if (ExistingById?.Id == accountsReceivablePaymentId)
+            {
+                ExistingById = null;
+            }
+
+            return Task.FromResult(true);
+        }
     }
 
     private sealed class ArFakeAccountsReceivablePaymentApplicationRepository : IAccountsReceivablePaymentApplicationRepository
@@ -2544,7 +2818,17 @@ public class AccountsReceivableServicesTests
 
     private sealed class ArFakeUnitOfWork : IUnitOfWork
     {
-        public Task SaveChangesAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public Exception? ExceptionToThrow { get; set; }
+
+        public Task SaveChangesAsync(CancellationToken cancellationToken)
+        {
+            if (ExceptionToThrow is not null)
+            {
+                throw ExceptionToThrow;
+            }
+
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class ArFakeIssuerProfileRepository : IIssuerProfileRepository

@@ -1,13 +1,14 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { convertToParamMap, provideRouter } from '@angular/router';
-import { of, ReplaySubject } from 'rxjs';
+import { HttpErrorResponse } from '@angular/common/http';
+import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
+import { of, ReplaySubject, throwError } from 'rxjs';
 import { AccountsReceivablePageComponent } from './accounts-receivable-page.component';
 import { AccountsReceivableApiService } from '../infrastructure/accounts-receivable-api.service';
 import { PermissionService } from '../../../core/auth/permission.service';
 import { FeedbackService } from '../../../core/ui/feedback.service';
-import { ActivatedRoute } from '@angular/router';
 import { FiscalReceiversApiService } from '../../catalogs/infrastructure/fiscal-receivers-api.service';
 import {
+  AccountsReceivablePaymentSummaryItemResponse,
   AccountsReceivablePortfolioItemResponse,
   AccountsReceivableReceiverWorkspaceResponse,
   AccountsReceivableReceiverWorkspaceSummaryResponse,
@@ -15,6 +16,7 @@ import {
 
 describe('AccountsReceivablePageComponent', () => {
   const queryParams$ = new ReplaySubject<ReturnType<typeof convertToParamMap>>(1);
+  const feedbackService = { show: vi.fn() };
   const api = {
     getInvoiceById: vi.fn(),
     getReceiverWorkspace: vi.fn(),
@@ -25,9 +27,16 @@ describe('AccountsReceivablePageComponent', () => {
     applyPayment: vi.fn(),
     getInvoiceByFiscalDocumentId: vi.fn(),
     searchPayments: vi.fn().mockReturnValue(of({ items: [] })),
+    updatePaymentAmount: vi.fn(),
+    deletePayment: vi.fn(),
   };
 
   beforeEach(() => {
+    vi.restoreAllMocks();
+    for (const mock of Object.values(api) as Array<{ mockReset: () => void }>) {
+      mock.mockReset();
+    }
+    feedbackService.show.mockReset();
     queryParams$.next(convertToParamMap({ invoiceId: '2', paymentId: '6' }));
     api.getReceiverWorkspace.mockReturnValue(of(createWorkspace()));
     api.getInvoiceById.mockReturnValue(
@@ -208,6 +217,25 @@ describe('AccountsReceivablePageComponent', () => {
         },
       }),
     );
+    api.searchPayments.mockReturnValue(of({ items: [] }));
+    api.updatePaymentAmount.mockReturnValue(
+      of({
+        outcome: 'Updated',
+        isSuccess: true,
+        accountsReceivablePaymentId: 6,
+        previousAmount: 5000,
+        updatedAmount: 5250,
+      }),
+    );
+    api.deletePayment.mockReturnValue(
+      of({
+        outcome: 'Deleted',
+        isSuccess: true,
+        accountsReceivablePaymentId: 6,
+        deletedAmount: 5000,
+        receivedFromFiscalReceiverId: 77,
+      }),
+    );
 
     TestBed.configureTestingModule({
       imports: [AccountsReceivablePageComponent],
@@ -229,7 +257,7 @@ describe('AccountsReceivablePageComponent', () => {
             ),
           },
         },
-        { provide: FeedbackService, useValue: { show: vi.fn() } },
+        { provide: FeedbackService, useValue: feedbackService },
         {
           provide: PermissionService,
           useValue: { canManagePayments: () => true },
@@ -477,6 +505,263 @@ describe('AccountsReceivablePageComponent', () => {
 
     expect(fixture.nativeElement.textContent).toContain('Ver detalle');
     expect(fixture.nativeElement.textContent).toContain('Nuevo pago');
+  });
+
+  it('shows payment mutation actions for unapplied workspace payments without REP references', async () => {
+    queryParams$.next(convertToParamMap({ fiscalReceiverId: '77' }));
+    api.getReceiverWorkspace.mockReturnValueOnce(
+      of(
+        createWorkspace({
+          payments: [
+            createWorkspacePayment({
+              applicationsCount: 0,
+              operationalStatus: 'CapturedUnapplied',
+              repStatus: 'NoApplications',
+            }),
+          ],
+        }),
+      ),
+    );
+
+    const fixture = TestBed.createComponent(AccountsReceivablePageComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(
+      fixture.nativeElement.querySelector('[data-testid="workspace-payment-edit-button"]'),
+    ).not.toBeNull();
+    expect(
+      fixture.nativeElement.querySelector('[data-testid="workspace-payment-delete-button"]'),
+    ).not.toBeNull();
+  });
+
+  it('hides payment mutation actions for applied workspace payments', async () => {
+    queryParams$.next(convertToParamMap({ fiscalReceiverId: '77' }));
+    api.getReceiverWorkspace.mockReturnValueOnce(
+      of(
+        createWorkspace({
+          payments: [
+            createWorkspacePayment({
+              applicationsCount: 1,
+              operationalStatus: 'PartiallyApplied',
+              repStatus: 'PendingApplications',
+            }),
+          ],
+        }),
+      ),
+    );
+
+    const fixture = TestBed.createComponent(AccountsReceivablePageComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(
+      fixture.nativeElement.querySelector('[data-testid="workspace-payment-edit-button"]'),
+    ).toBeNull();
+    expect(
+      fixture.nativeElement.querySelector('[data-testid="workspace-payment-delete-button"]'),
+    ).toBeNull();
+  });
+
+  it('shows payment mutation actions in detail mode for unapplied payments', async () => {
+    queryParams$.next(convertToParamMap({ paymentId: '6' }));
+    api.getPaymentById.mockReset().mockReturnValue(
+      of({
+        id: 6,
+        paymentDateUtc: '2026-04-03T00:00:00Z',
+        paymentFormSat: '03',
+        currencyCode: 'MXN',
+        amount: 5000,
+        appliedTotal: 0,
+        remainingAmount: 5000,
+        customerCreditBalanceAmount: 0,
+        reference: 'DEP-1',
+        notes: null,
+        receivedFromFiscalReceiverId: 77,
+        operationalStatus: 'CapturedUnapplied',
+        repStatus: 'NoApplications',
+        readyToPrepareRep: false,
+        repBlockReason: null,
+        unappliedDisposition: 'PendingAllocation',
+        repDocumentStatus: null,
+        repReservedAmount: 0,
+        repFiscalizedAmount: 0,
+        applicationsCount: 0,
+        linkedFiscalDocumentId: 31809,
+        createdAtUtc: '2026-04-03T00:00:00Z',
+        updatedAtUtc: '2026-04-03T00:00:00Z',
+        applications: [],
+      }),
+    );
+
+    const fixture = TestBed.createComponent(AccountsReceivablePageComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="detail-payment-edit-button"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="detail-payment-delete-button"]')).not.toBeNull();
+  });
+
+  it('updates the payment amount and refreshes the receiver workspace', async () => {
+    queryParams$.next(convertToParamMap({ fiscalReceiverId: '77' }));
+    api.getReceiverWorkspace
+      .mockReturnValueOnce(
+        of(
+          createWorkspace({
+            payments: [createWorkspacePayment({ amount: 5000, applicationsCount: 0 })],
+          }),
+        ),
+      )
+      .mockReturnValueOnce(
+        of(
+          createWorkspace({
+            payments: [createWorkspacePayment({ amount: 5250, applicationsCount: 0 })],
+          }),
+        ),
+      );
+    api.updatePaymentAmount.mockReturnValueOnce(
+      of({
+        outcome: 'Updated',
+        isSuccess: true,
+        accountsReceivablePaymentId: 6,
+        previousAmount: 5000,
+        updatedAmount: 5250,
+      }),
+    );
+
+    const fixture = TestBed.createComponent(AccountsReceivablePageComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const editButton = fixture.nativeElement.querySelector(
+      '[data-testid="workspace-payment-edit-button"]',
+    ) as HTMLButtonElement;
+    editButton.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const amountInput = fixture.nativeElement.querySelector(
+      '[data-testid="workspace-payment-amount-input"]',
+    ) as HTMLInputElement;
+    amountInput.value = '5250.00';
+    amountInput.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const saveButton = fixture.nativeElement.querySelector(
+      '[data-testid="workspace-payment-save-button"]',
+    ) as HTMLButtonElement;
+    saveButton.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(api.updatePaymentAmount).toHaveBeenCalledWith(6, { amount: 5250 });
+    expect(api.getReceiverWorkspace).toHaveBeenCalledTimes(2);
+    expect(feedbackService.show).toHaveBeenCalledWith(
+      'success',
+      'Importe del pago actualizado.',
+    );
+  });
+
+  it('deletes the payment after confirmation and refreshes the receiver workspace', async () => {
+    queryParams$.next(convertToParamMap({ fiscalReceiverId: '77' }));
+    api.getReceiverWorkspace
+      .mockReturnValueOnce(
+        of(
+          createWorkspace({
+            payments: [createWorkspacePayment({ applicationsCount: 0 })],
+          }),
+        ),
+      )
+      .mockReturnValueOnce(
+        of(
+          createWorkspace({
+            summary: {
+              paymentsCount: 0,
+              paymentsWithUnappliedAmountCount: 0,
+              paymentsPendingRepCount: 0,
+            },
+            payments: [],
+          }),
+        ),
+      );
+    api.deletePayment.mockReturnValueOnce(
+      of({
+        outcome: 'Deleted',
+        isSuccess: true,
+        accountsReceivablePaymentId: 6,
+        deletedAmount: 5000,
+        receivedFromFiscalReceiverId: 77,
+      }),
+    );
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    const fixture = TestBed.createComponent(AccountsReceivablePageComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const deleteButton = fixture.nativeElement.querySelector(
+      '[data-testid="workspace-payment-delete-button"]',
+    ) as HTMLButtonElement;
+    deleteButton.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(window.confirm).toHaveBeenCalled();
+    expect(api.deletePayment).toHaveBeenCalledWith(6);
+    expect(api.getReceiverWorkspace).toHaveBeenCalledTimes(2);
+    expect(feedbackService.show).toHaveBeenCalledWith('success', 'Pago eliminado.');
+  });
+
+  it('shows the backend conflict message when updating a payment is blocked', async () => {
+    queryParams$.next(convertToParamMap({ fiscalReceiverId: '77' }));
+    api.getReceiverWorkspace.mockReturnValueOnce(
+      of(
+        createWorkspace({
+          payments: [createWorkspacePayment({ applicationsCount: 0 })],
+        }),
+      ),
+    );
+    api.updatePaymentAmount.mockReturnValueOnce(
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 409,
+            error: {
+              errorMessage:
+                'El pago ya fue aplicado a una o más facturas y no puede editarse.',
+            },
+          }),
+      ),
+    );
+
+    const fixture = TestBed.createComponent(AccountsReceivablePageComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const editButton = fixture.nativeElement.querySelector(
+      '[data-testid="workspace-payment-edit-button"]',
+    ) as HTMLButtonElement;
+    editButton.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const saveButton = fixture.nativeElement.querySelector(
+      '[data-testid="workspace-payment-save-button"]',
+    ) as HTMLButtonElement;
+    saveButton.click();
+    await fixture.whenStable();
+
+    expect(feedbackService.show).toHaveBeenCalledWith(
+      'error',
+      'El pago ya fue aplicado a una o más facturas y no puede editarse.',
+    );
   });
 
   it('sorts overdue invoices first in the receiver workspace and renders the collection label', async () => {
@@ -884,6 +1169,33 @@ function createWorkspace(
     payments: overrides.payments ?? [],
     pendingCommitments: overrides.pendingCommitments ?? [],
     recentNotes: overrides.recentNotes ?? [],
+  };
+}
+
+function createWorkspacePayment(
+  overrides: Partial<AccountsReceivablePaymentSummaryItemResponse> = {},
+): AccountsReceivablePaymentSummaryItemResponse {
+  return {
+    paymentId: overrides.paymentId ?? 6,
+    receivedAtUtc: overrides.receivedAtUtc ?? '2026-04-03T00:00:00Z',
+    amount: overrides.amount ?? 5000,
+    appliedAmount: overrides.appliedAmount ?? 0,
+    unappliedAmount: overrides.unappliedAmount ?? 5000,
+    customerCreditBalanceAmount: overrides.customerCreditBalanceAmount ?? 0,
+    currencyCode: overrides.currencyCode ?? 'MXN',
+    reference: overrides.reference ?? 'DEP-1',
+    payerName: overrides.payerName ?? 'Receiver',
+    fiscalReceiverId: overrides.fiscalReceiverId ?? 77,
+    operationalStatus: overrides.operationalStatus ?? 'CapturedUnapplied',
+    repStatus: overrides.repStatus ?? 'NoApplications',
+    readyToPrepareRep: overrides.readyToPrepareRep ?? false,
+    repBlockReason: overrides.repBlockReason ?? null,
+    unappliedDisposition: overrides.unappliedDisposition ?? 'PendingAllocation',
+    repDocumentStatus: overrides.repDocumentStatus ?? null,
+    applicationsCount: overrides.applicationsCount ?? 0,
+    linkedFiscalDocumentId: overrides.linkedFiscalDocumentId ?? 31809,
+    repReservedAmount: overrides.repReservedAmount ?? 0,
+    repFiscalizedAmount: overrides.repFiscalizedAmount ?? 0,
   };
 }
 

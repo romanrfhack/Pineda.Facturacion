@@ -20,12 +20,15 @@ import {
   CreateCollectionNoteResponse,
   CreateAccountsReceivablePaymentRequest,
   CreateAccountsReceivablePaymentResponse,
+  DeleteAccountsReceivablePaymentResponse,
   SearchAccountsReceivablePortfolioRequest,
   SearchAccountsReceivablePaymentsRequest,
   PreparePaymentComplementRequest,
   PreparePaymentComplementResponse,
   SetAccountsReceivablePaymentUnappliedDispositionRequest,
   SetAccountsReceivablePaymentUnappliedDispositionResponse,
+  UpdateAccountsReceivablePaymentAmountRequest,
+  UpdateAccountsReceivablePaymentAmountResponse,
   ReceivablesSummaryCandidatesResponse,
   ReceivablesSummaryPreviewResponse,
   ReceivablesSummaryRequest,
@@ -128,6 +131,22 @@ export class AccountsReceivableApiService {
 
   getPaymentById(paymentId: number): Observable<AccountsReceivablePaymentResponse> {
     return this.http.get<AccountsReceivablePaymentResponse>(buildApiUrl(`/accounts-receivable/payments/${paymentId}`));
+  }
+
+  updatePaymentAmount(
+    paymentId: number,
+    request: UpdateAccountsReceivablePaymentAmountRequest
+  ): Observable<UpdateAccountsReceivablePaymentAmountResponse> {
+    return this.http.patch<UpdateAccountsReceivablePaymentAmountResponse>(
+      buildApiUrl(`/accounts-receivable/payments/${paymentId}/amount`),
+      request
+    );
+  }
+
+  deletePayment(paymentId: number): Observable<DeleteAccountsReceivablePaymentResponse> {
+    return this.http.delete<DeleteAccountsReceivablePaymentResponse>(
+      buildApiUrl(`/accounts-receivable/payments/${paymentId}`)
+    );
   }
 
   searchPayments(request: SearchAccountsReceivablePaymentsRequest = {}): Observable<AccountsReceivablePaymentsResponse> {
