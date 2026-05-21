@@ -342,9 +342,39 @@ describe('AccountsReceivablePageComponent', () => {
       hasPendingBalance: true,
     });
     expect(api.getInvoiceById).not.toHaveBeenCalled();
-    expect(feedbackService.show).not.toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(fixture.componentInstance['payment']()?.id).toBe(6);
+      expect(fixture.componentInstance['eligibleReceiverInvoices']()).toEqual([
+        expect.objectContaining({ accountsReceivableInvoiceId: 3 }),
+      ]);
+      expect(feedbackService.show).not.toHaveBeenCalled();
+    });
     expect(fixture.nativeElement.textContent).not.toContain('Crear pago');
     expect(fixture.nativeElement.textContent).not.toContain('Aplicar pago a esta cuenta');
+  });
+
+  it('shows a specific error when the payment detail cannot be loaded without recent creation context', async () => {
+    queryParams$.next(convertToParamMap({ paymentId: '6' }));
+    api.getInvoiceById.mockClear();
+    api.searchPortfolio.mockClear();
+    api.getPaymentById.mockReset().mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 500 })),
+    );
+
+    const fixture = TestBed.createComponent(AccountsReceivablePageComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(feedbackService.show).toHaveBeenCalledWith(
+      'error',
+      'No se pudo cargar el detalle del pago.',
+    );
+    expect(feedbackService.show).not.toHaveBeenCalledWith(
+      'error',
+      'No se pudo completar la operación.',
+    );
+    expect(api.searchPortfolio).not.toHaveBeenCalled();
+    expect(fixture.componentInstance['payment']()).toBeNull();
   });
 
   it('shows a specific warning when the freshly created payment detail cannot be loaded', async () => {
@@ -396,7 +426,7 @@ describe('AccountsReceivablePageComponent', () => {
       expect(fixture.componentInstance['eligibleReceiverInvoices']()).toEqual([]);
       expect(feedbackService.show).toHaveBeenCalledWith(
         'warning',
-        'No se pudieron cargar las facturas pendientes.',
+        'No se pudieron cargar las facturas pendientes del receptor.',
       );
     });
     expect(feedbackService.show).not.toHaveBeenCalledWith(
@@ -819,7 +849,7 @@ describe('AccountsReceivablePageComponent', () => {
 
     expect(feedbackService.show).toHaveBeenCalledWith(
       'error',
-      'El pago ya fue aplicado a una o más facturas y no puede editarse.',
+      'No se pudo actualizar el importe del pago. El pago ya fue aplicado a una o más facturas y no puede editarse.',
     );
   });
 

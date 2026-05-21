@@ -50,6 +50,25 @@ interface ReceiverWorkspaceInvoiceViewModel {
   readonly collection: ReceivableCollectionStatusDetail;
 }
 
+const LOAD_PORTFOLIO_ERROR_MESSAGE = 'No se pudo cargar la cartera.';
+const LOAD_PAYMENTS_ERROR_MESSAGE = 'No se pudieron cargar los pagos.';
+const SEARCH_RECEIVERS_ERROR_MESSAGE = 'No se pudieron buscar los receptores.';
+const CREATE_INVOICE_ERROR_MESSAGE = 'No se pudo crear la cuenta por cobrar.';
+const APPLY_PAYMENT_ERROR_MESSAGE = 'No se pudo aplicar el pago a la factura.';
+const CONFIRM_CUSTOMER_CREDIT_BALANCE_ERROR_MESSAGE =
+  'No se pudo confirmar el remanente como saldo a favor del cliente.';
+const UPDATE_PAYMENT_AMOUNT_ERROR_MESSAGE = 'No se pudo actualizar el importe del pago.';
+const DELETE_PAYMENT_ERROR_MESSAGE = 'No se pudo eliminar el pago.';
+const CREATE_COLLECTION_COMMITMENT_ERROR_MESSAGE =
+  'No se pudo registrar el compromiso de cobranza.';
+const CREATE_COLLECTION_NOTE_ERROR_MESSAGE = 'No se pudo registrar la nota de cobranza.';
+const LOAD_PAYMENT_DETAIL_ERROR_MESSAGE = 'No se pudo cargar el detalle del pago.';
+const LOAD_PAYMENT_DETAIL_AFTER_CREATE_ERROR_MESSAGE =
+  'El pago fue registrado, pero no se pudo cargar el detalle.';
+const LOAD_PENDING_RECEIVER_INVOICES_ERROR_MESSAGE =
+  'No se pudieron cargar las facturas pendientes del receptor.';
+const LOAD_RECEIVER_WORKSPACE_ERROR_MESSAGE = 'No se pudo cargar el workspace del receptor.';
+
 @Component({
   selector: 'app-accounts-receivable-page',
   imports: [
@@ -2177,7 +2196,7 @@ export class AccountsReceivablePageComponent {
         this.selectedReceiverWorkspaceInvoiceIds.set([]);
         this.receiverWorkspaceFilter.set(RECEIVABLE_WORKSPACE_FILTERS.openInvoices);
         this.receiverWorkspaceToday.set(new Date());
-        void this.loadReceiverWorkspace(receiverWorkspaceId);
+        void this.loadReceiverWorkspace(receiverWorkspaceId, { showError: true });
         return;
       }
 
@@ -2292,14 +2311,14 @@ export class AccountsReceivablePageComponent {
     const fiscalReceiverId = this.receiverWorkspaceId();
     if (fiscalReceiverId !== null) {
       this.selectedReceiverWorkspaceInvoiceIds.set([]);
-      await this.loadReceiverWorkspace(fiscalReceiverId);
+      await this.loadReceiverWorkspace(fiscalReceiverId, { showError: true });
     }
   }
 
   protected async applyPortfolioFilters(): Promise<void> {
     await this.run(async () => {
       await this.loadPortfolio();
-    });
+    }, LOAD_PORTFOLIO_ERROR_MESSAGE);
   }
 
   protected async resetPortfolioFilters(): Promise<void> {
@@ -2318,7 +2337,7 @@ export class AccountsReceivablePageComponent {
   protected async applyPaymentFilters(): Promise<void> {
     await this.run(async () => {
       await this.loadPayments();
-    });
+    }, LOAD_PAYMENTS_ERROR_MESSAGE);
   }
 
   protected async resetPaymentFilters(): Promise<void> {
@@ -2341,7 +2360,7 @@ export class AccountsReceivablePageComponent {
     await this.run(async () => {
       const items = await firstValueFrom(this.fiscalReceiversApi.search(query));
       this.receiverLookupResults.set(items);
-    });
+    }, SEARCH_RECEIVERS_ERROR_MESSAGE);
   }
 
   protected async createInvoice(): Promise<void> {
@@ -2359,7 +2378,7 @@ export class AccountsReceivablePageComponent {
         this.accountsReceivableInvoiceId.set(response.accountsReceivableInvoice.id);
         this.feedbackService.show('success', 'Cuenta por cobrar creada.');
       }
-    });
+    }, CREATE_INVOICE_ERROR_MESSAGE);
   }
 
   protected async applyPayment(request: ApplyAccountsReceivablePaymentRequest): Promise<void> {
@@ -2379,7 +2398,7 @@ export class AccountsReceivablePageComponent {
       await this.loadEligibleReceiverInvoices();
 
       this.feedbackService.show('success', 'Aplicación de pago registrada.');
-    });
+    }, APPLY_PAYMENT_ERROR_MESSAGE);
   }
 
   protected async confirmCustomerCreditBalance(): Promise<void> {
@@ -2396,7 +2415,7 @@ export class AccountsReceivablePageComponent {
       );
       await this.loadPayment(currentPayment.id);
       this.feedbackService.show('success', 'Remanente confirmado como saldo a favor del cliente.');
-    });
+    }, CONFIRM_CUSTOMER_CREDIT_BALANCE_ERROR_MESSAGE);
   }
 
   protected async savePaymentAmountEdit(paymentId: number): Promise<void> {
@@ -2416,7 +2435,7 @@ export class AccountsReceivablePageComponent {
       this.cancelPaymentAmountEdit();
       await this.refreshPaymentMutationViews(paymentId);
       this.feedbackService.show('success', 'Importe del pago actualizado.');
-    });
+    }, UPDATE_PAYMENT_AMOUNT_ERROR_MESSAGE);
   }
 
   protected async deletePayment(
@@ -2444,7 +2463,7 @@ export class AccountsReceivablePageComponent {
       }
 
       this.feedbackService.show('success', 'Pago eliminado.');
-    });
+    }, DELETE_PAYMENT_ERROR_MESSAGE);
   }
 
   protected async createCollectionCommitment(): Promise<void> {
@@ -2465,7 +2484,7 @@ export class AccountsReceivablePageComponent {
       this.collectionCommitmentForm.promisedDateUtc = '';
       this.collectionCommitmentForm.notes = '';
       this.feedbackService.show('success', 'Compromiso registrado.');
-    });
+    }, CREATE_COLLECTION_COMMITMENT_ERROR_MESSAGE);
   }
 
   protected async createCollectionNote(): Promise<void> {
@@ -2488,21 +2507,24 @@ export class AccountsReceivablePageComponent {
       this.collectionNoteForm.content = '';
       this.collectionNoteForm.nextFollowUpAtUtc = '';
       this.feedbackService.show('success', 'Nota registrada.');
-    });
+    }, CREATE_COLLECTION_NOTE_ERROR_MESSAGE);
   }
 
   private async loadPortfolio(): Promise<void> {
     const request = this.buildPortfolioRequest();
     const response = await firstValueFrom(this.api.searchPortfolio(request));
-    this.portfolioItems.set(response.items);
+    this.portfolioItems.set(readCollectionItems(response.items, LOAD_PORTFOLIO_ERROR_MESSAGE));
   }
 
   private async loadPayments(): Promise<void> {
     const response = await firstValueFrom(this.api.searchPayments(this.buildPaymentRequest()));
-    this.paymentItems.set(response.items);
+    this.paymentItems.set(readCollectionItems(response.items, LOAD_PAYMENTS_ERROR_MESSAGE));
   }
 
-  private async loadReceiverWorkspace(fiscalReceiverId: number): Promise<void> {
+  private async loadReceiverWorkspace(
+    fiscalReceiverId: number,
+    options: { showError?: boolean } = {},
+  ): Promise<void> {
     try {
       const workspace = await firstValueFrom(this.api.getReceiverWorkspace(fiscalReceiverId));
       this.receiverWorkspace.set(workspace);
@@ -2514,8 +2536,15 @@ export class AccountsReceivablePageComponent {
       );
       this.receiverLookupResults.set([]);
       this.receiverLookupQuery = workspace.rfc || workspace.legalName || '';
-    } catch {
+    } catch (error) {
       this.receiverWorkspace.set(null);
+
+      if (options.showError) {
+        this.feedbackService.show(
+          'error',
+          describeOperationError(error, LOAD_RECEIVER_WORKSPACE_ERROR_MESSAGE),
+        );
+      }
     }
   }
 
@@ -2586,16 +2615,19 @@ export class AccountsReceivablePageComponent {
 
     try {
       this.payment.set(await firstValueFrom(this.api.getPaymentById(paymentId)));
-    } catch {
+    } catch (error) {
       this.payment.set(null);
       this.eligibleReceiverInvoices.set([]);
 
       if (options.showDetailError) {
         this.feedbackService.show(
           paymentWasJustCreated ? 'warning' : 'error',
-          paymentWasJustCreated
-            ? 'El pago fue registrado, pero no se pudo cargar el detalle.'
-            : 'No se pudo cargar el detalle del pago.',
+          describeOperationError(
+            error,
+            paymentWasJustCreated
+              ? LOAD_PAYMENT_DETAIL_AFTER_CREATE_ERROR_MESSAGE
+              : LOAD_PAYMENT_DETAIL_ERROR_MESSAGE,
+          ),
         );
       }
 
@@ -2618,12 +2650,12 @@ export class AccountsReceivablePageComponent {
     }
   }
 
-  private async run(operation: () => Promise<void>): Promise<void> {
+  private async run(operation: () => Promise<void>, errorMessage: string): Promise<void> {
     this.loading.set(true);
     try {
       await operation();
     } catch (error) {
-      this.feedbackService.show('error', extractErrorMessage(error));
+      this.feedbackService.show('error', describeOperationError(error, errorMessage));
     } finally {
       this.loading.set(false);
     }
@@ -2648,6 +2680,10 @@ export class AccountsReceivablePageComponent {
           hasPendingBalance: true,
         }),
       );
+      const responseItems = readCollectionItems(
+        response.items,
+        LOAD_PENDING_RECEIVER_INVOICES_ERROR_MESSAGE,
+      );
 
       const appliedInvoiceIdsWithoutContext = !currentInvoice
         ? new Set(
@@ -2657,7 +2693,7 @@ export class AccountsReceivablePageComponent {
           )
         : null;
 
-      const items = response.items.filter(
+      const items = responseItems.filter(
         (item) =>
           item.accountsReceivableInvoiceId !== currentInvoice?.id &&
           item.fiscalReceiverId === fiscalReceiverId &&
@@ -2668,11 +2704,14 @@ export class AccountsReceivablePageComponent {
       );
 
       this.eligibleReceiverInvoices.set(items);
-    } catch {
+    } catch (error) {
       this.eligibleReceiverInvoices.set([]);
 
       if (options.showError) {
-        this.feedbackService.show('warning', 'No se pudieron cargar las facturas pendientes.');
+        this.feedbackService.show(
+          'warning',
+          describeOperationError(error, LOAD_PENDING_RECEIVER_INVOICES_ERROR_MESSAGE),
+        );
       }
     }
   }
@@ -2808,6 +2847,19 @@ function extractCreatedPaymentIdFromNavigationState(state: unknown): number | nu
     : null;
 }
 
-function extractErrorMessage(error: unknown): string {
-  return extractApiErrorMessage(error);
+function readCollectionItems<T>(items: T[] | null | undefined, errorMessage: string): T[] {
+  if (!Array.isArray(items)) {
+    throw new Error(errorMessage);
+  }
+
+  return items;
+}
+
+function describeOperationError(error: unknown, fallback: string): string {
+  const message = extractApiErrorMessage(error, fallback).trim();
+  if (!message || message === fallback) {
+    return fallback;
+  }
+
+  return `${fallback} ${message}`;
 }

@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
+import { HttpErrorResponse } from '@angular/common/http';
 import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
-import { of, ReplaySubject } from 'rxjs';
+import { of, ReplaySubject, throwError } from 'rxjs';
 import { FeedbackService } from '../../../core/ui/feedback.service';
 import { FiscalReceiverSatCatalogService } from '../../catalogs/application/fiscal-receiver-sat-catalog.service';
 import { AccountsReceivableApiService } from '../infrastructure/accounts-receivable-api.service';
@@ -177,10 +178,39 @@ describe('AccountsReceivableNewPaymentPageComponent', () => {
     });
   });
 
+  it('shows a specific error and does not navigate when payment creation fails', async () => {
+    queryParams$.next(convertToParamMap({ fiscalReceiverId: '77' }));
+    const router = TestBed.inject(Router);
+    const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+    api.createPayment.mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 500 })),
+    );
+
+    const fixture = TestBed.createComponent(AccountsReceivableNewPaymentPageComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    await fixture.componentInstance['createPayment']({
+      paymentDateUtc: '2026-04-03T10:00',
+      paymentFormSat: '03',
+      amount: 1722.01,
+      reference: 'DEP-WS',
+      notes: null,
+    });
+
+    expect(feedbackService.show).toHaveBeenCalledWith('error', 'No se pudo registrar el pago.');
+    expect(feedbackService.show).not.toHaveBeenCalledWith('success', 'Pago registrado.');
+    expect(feedbackService.show).not.toHaveBeenCalledWith(
+      'error',
+      'No se pudo completar la operación.',
+    );
+    expect(navigateSpy).not.toHaveBeenCalled();
+  });
+
   it('keeps the creation success toast and shows a specific warning when navigation to the detail fails', async () => {
     queryParams$.next(convertToParamMap({ fiscalReceiverId: '77' }));
     const router = TestBed.inject(Router);
-    vi.spyOn(router, 'navigate').mockRejectedValue(new Error('navigation failed'));
+    vi.spyOn(router, 'navigate').mockResolvedValue(false);
 
     const fixture = TestBed.createComponent(AccountsReceivableNewPaymentPageComponent);
     fixture.detectChanges();
@@ -198,7 +228,7 @@ describe('AccountsReceivableNewPaymentPageComponent', () => {
     expect(feedbackService.show).toHaveBeenNthCalledWith(
       2,
       'warning',
-      'El pago fue registrado, pero no se pudo cargar el detalle.',
+      'El pago fue registrado, pero no se pudo abrir el detalle.',
     );
     expect(feedbackService.show).not.toHaveBeenCalledWith(
       'error',

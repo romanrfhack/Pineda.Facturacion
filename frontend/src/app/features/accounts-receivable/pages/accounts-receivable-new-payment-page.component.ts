@@ -13,6 +13,10 @@ import {
 } from '../models/accounts-receivable.models';
 import { PaymentCreateFormComponent } from '../components/payment-create-form.component';
 
+const CREATE_PAYMENT_ERROR_MESSAGE = 'No se pudo registrar el pago.';
+const OPEN_PAYMENT_DETAIL_ERROR_MESSAGE = 'El pago fue registrado, pero no se pudo abrir el detalle.';
+const LOAD_RECEIVER_WORKSPACE_ERROR_MESSAGE = 'No se pudo cargar el workspace del receptor.';
+
 @Component({
   selector: 'app-accounts-receivable-new-payment-page',
   imports: [RouterLink, CurrencyPipe, PaymentCreateFormComponent],
@@ -254,6 +258,7 @@ export class AccountsReceivableNewPaymentPageComponent {
       );
 
       if (!response.payment) {
+        this.feedbackService.show('error', CREATE_PAYMENT_ERROR_MESSAGE);
         return;
       }
 
@@ -264,7 +269,7 @@ export class AccountsReceivableNewPaymentPageComponent {
 
       this.feedbackService.show('success', 'Pago registrado.');
     } catch (error) {
-      this.feedbackService.show('error', extractApiErrorMessage(error));
+      this.feedbackService.show('error', describeOperationError(error, CREATE_PAYMENT_ERROR_MESSAGE));
       return;
     } finally {
       if (createdPaymentId === null || detailQueryParams === null) {
@@ -282,13 +287,10 @@ export class AccountsReceivableNewPaymentPageComponent {
       });
 
       if (!navigated) {
-        this.feedbackService.show(
-          'warning',
-          'El pago fue registrado, pero no se pudo cargar el detalle.',
-        );
+        this.feedbackService.show('warning', OPEN_PAYMENT_DETAIL_ERROR_MESSAGE);
       }
     } catch {
-      this.feedbackService.show('warning', 'El pago fue registrado, pero no se pudo cargar el detalle.');
+      this.feedbackService.show('warning', OPEN_PAYMENT_DETAIL_ERROR_MESSAGE);
     } finally {
       this.loading.set(false);
     }
@@ -335,11 +337,22 @@ export class AccountsReceivableNewPaymentPageComponent {
       await operation();
     } catch (error) {
       if (!options.silenceErrors) {
-        this.feedbackService.show('error', extractApiErrorMessage(error));
+        this.feedbackService.show(
+          'error',
+          describeOperationError(error, this.resolveContextErrorMessage()),
+        );
       }
     } finally {
       this.loading.set(false);
     }
+  }
+
+  private resolveContextErrorMessage(): string {
+    if (this.fiscalReceiverId() !== null) {
+      return LOAD_RECEIVER_WORKSPACE_ERROR_MESSAGE;
+    }
+
+    return 'No se pudo cargar el contexto del pago.';
   }
 }
 
@@ -350,4 +363,13 @@ function parseNumber(value: string | null): number | null {
 
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function describeOperationError(error: unknown, fallback: string): string {
+  const message = extractApiErrorMessage(error, fallback).trim();
+  if (!message || message === fallback) {
+    return fallback;
+  }
+
+  return `${fallback} ${message}`;
 }

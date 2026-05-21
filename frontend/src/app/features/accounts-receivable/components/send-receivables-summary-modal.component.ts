@@ -494,7 +494,9 @@ export class SendReceivablesSummaryModalComponent {
       }
       this.sent.emit(response);
     } catch (error) {
-      this.errorMessage.set(extractApiErrorMessage(error));
+      this.errorMessage.set(
+        describeOperationError(error, 'No se pudo enviar el resumen de adeudos.'),
+      );
     } finally {
       this.sending.set(false);
     }
@@ -542,7 +544,12 @@ export class SendReceivablesSummaryModalComponent {
       this.manualSelectedIds.set(eligibleCurrentSelection);
       this.scope.set(eligibleCurrentSelection.length ? 'current_selection' : 'all_pending');
     } catch (error) {
-      this.candidateError.set(extractApiErrorMessage(error));
+      this.candidateError.set(
+        describeOperationError(
+          error,
+          'No se pudieron cargar las facturas candidatas para el resumen.',
+        ),
+      );
     } finally {
       this.loadingCandidates.set(false);
     }
@@ -573,7 +580,9 @@ export class SendReceivablesSummaryModalComponent {
       this.preview.set(response);
       this.step.set(3);
     } catch (error) {
-      this.errorMessage.set(extractApiErrorMessage(error));
+      this.errorMessage.set(
+        describeOperationError(error, 'No se pudo generar la vista previa del resumen de adeudos.'),
+      );
     } finally {
       this.previewing.set(false);
     }
@@ -656,4 +665,13 @@ function splitRecipients(value: string): string[] {
 
 function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function describeOperationError(error: unknown, fallback: string): string {
+  const message = extractApiErrorMessage(error, fallback).trim();
+  if (!message || message === fallback) {
+    return fallback;
+  }
+
+  return `${fallback} ${message}`;
 }
