@@ -307,7 +307,7 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
         var relatedDocuments = payment.RelatedDocuments
             .OrderBy(x => x.AccountsReceivableInvoiceId)
             .ThenBy(x => x.InstallmentNumber)
-            .Select(BuildRelatedDocument)
+            .Select(relatedDocument => BuildRelatedDocument(relatedDocument, payment.CurrencyCode))
             .ToList();
 
         var transfers = relatedDocuments
@@ -376,7 +376,9 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
         };
     }
 
-    private static FacturaloPlusPagoDoctoRelacionado BuildRelatedDocument(PaymentComplementStampingRequestRelatedDocument relatedDocument)
+    private static FacturaloPlusPagoDoctoRelacionado BuildRelatedDocument(
+        PaymentComplementStampingRequestRelatedDocument relatedDocument,
+        string monedaP)
     {
         var transfers = relatedDocument.TaxTransfers
             .Select(x => new FacturaloPlusPagoTrasladoDR
@@ -404,7 +406,7 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
             Serie = relatedDocument.Series,
             Folio = relatedDocument.Folio,
             MonedaDR = relatedDocument.CurrencyCode,
-            EquivalenciaDR = relatedDocument.CurrencyEquivalence.HasValue ? FormatRate(relatedDocument.CurrencyEquivalence.Value) : null,
+            EquivalenciaDR = ResolveEquivalenciaDR(relatedDocument.CurrencyCode, monedaP, relatedDocument.CurrencyEquivalence),
             NumParcialidad = relatedDocument.InstallmentNumber,
             ImpSaldoAnt = NormalizeMoney(relatedDocument.PreviousBalance),
             ImpPagado = NormalizeMoney(relatedDocument.PaidAmount),
@@ -509,6 +511,34 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
         }
 
         return FormatRate(exchangeRate.Value);
+    }
+
+    private static string ResolveEquivalenciaDR(string monedaDR, string monedaP, decimal? equivalenciaDR)
+    {
+        if (string.IsNullOrWhiteSpace(monedaDR))
+        {
+            throw new InvalidOperationException(
+                "Payload REP invalido para FacturaloPlus: MonedaDR requerida en DoctoRelacionado.");
+        }
+
+        if (string.IsNullOrWhiteSpace(monedaP))
+        {
+            throw new InvalidOperationException(
+                "Payload REP invalido para FacturaloPlus: MonedaP requerida en Pago.");
+        }
+
+        if (AreSameCurrency(monedaDR, monedaP))
+        {
+            return "1";
+        }
+
+        if (!equivalenciaDR.HasValue || equivalenciaDR.Value <= 0m)
+        {
+            throw new InvalidOperationException(
+                $"Payload REP invalido para FacturaloPlus: EquivalenciaDR requerida y mayor a 0 cuando MonedaDR '{monedaDR}' es distinta de MonedaP '{monedaP}'.");
+        }
+
+        return FormatEquivalenciaDR(equivalenciaDR.Value);
     }
 
     private static object BuildRedactedRequestSummary(PaymentComplementStampingRequest request)
@@ -817,8 +847,20 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
                     return paymentTaxValidationError;
                 }
 
+                var monedaP = ReadJsonScalar(pago, "MonedaP");
                 foreach (var docto in doctos.EnumerateArray())
                 {
+                    if (docto.ValueKind != JsonValueKind.Object)
+                    {
+                        return InvalidRepPayloadMessage + " Cada DoctoRelacionado debe ser objeto.";
+                    }
+
+                    var equivalenciaValidationError = ValidateDoctoRelacionadoEquivalenciaDR(docto, monedaP!);
+                    if (equivalenciaValidationError is not null)
+                    {
+                        return equivalenciaValidationError;
+                    }
+
                     var relatedTaxValidationError = ValidateOptionalTaxArrays(docto, "ImpuestosDR", "TrasladosDR", "RetencionesDR");
                     if (relatedTaxValidationError is not null)
                     {
@@ -869,6 +911,33 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
         }
 
         return null;
+    }
+
+    private static string? ValidateDoctoRelacionadoEquivalenciaDR(JsonElement doctoRelacionado, string monedaP)
+    {
+        var monedaDR = ReadJsonScalar(doctoRelacionado, "MonedaDR");
+        if (string.IsNullOrWhiteSpace(monedaDR))
+        {
+            return InvalidRepPayloadMessage + " Cada DoctoRelacionado debe incluir MonedaDR.";
+        }
+
+        var equivalenciaDR = ReadJsonScalar(doctoRelacionado, "EquivalenciaDR");
+        if (string.IsNullOrWhiteSpace(equivalenciaDR))
+        {
+            return InvalidRepPayloadMessage + " Cada DoctoRelacionado debe incluir EquivalenciaDR.";
+        }
+
+        equivalenciaDR = equivalenciaDR.Trim();
+        if (AreSameCurrency(monedaDR, monedaP))
+        {
+            return string.Equals(equivalenciaDR, "1", StringComparison.Ordinal)
+                ? null
+                : "Payload REP invalido para FacturaloPlus: cuando MonedaDR es igual a MonedaP, EquivalenciaDR debe ser exactamente '1'.";
+        }
+
+        return TryParsePositiveInvariantDecimal(equivalenciaDR, out _)
+            ? null
+            : InvalidRepPayloadMessage + " Cuando MonedaDR es distinta de MonedaP, EquivalenciaDR debe representar un numero mayor a 0.";
     }
 
     private static string? ValidatePaymentConcept(JsonElement comprobante)
@@ -986,20 +1055,36 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
                 {
                     var monedaP = ReadJsonScalar(pago, "MonedaP");
                     var tipoCambioP = ReadJsonScalar(pago, "TipoCambioP");
+                    var doctosRelacionados = TryGetProperty(pago, out var doctos, "DoctoRelacionado") && doctos.ValueKind == JsonValueKind.Array
+                        ? doctos.EnumerateArray()
+                            .Where(docto => docto.ValueKind == JsonValueKind.Object)
+                            .Select(docto =>
+                            {
+                                var monedaDR = ReadJsonScalar(docto, "MonedaDR");
+                                var equivalenciaDR = ReadJsonScalar(docto, "EquivalenciaDR");
+                                return new FacturaloPlusRepDoctoRelacionadoSummary
+                                {
+                                    MonedaP = monedaP,
+                                    MonedaDR = monedaDR,
+                                    EquivalenciaDR = equivalenciaDR,
+                                    EquivalenciaDRNormalizedBecauseSameCurrency =
+                                        AreSameCurrency(monedaP, monedaDR)
+                                        && string.Equals(equivalenciaDR, "1", StringComparison.Ordinal)
+                                };
+                            })
+                            .ToList()
+                        : [];
+
                     return new FacturaloPlusRepPagoSummary
                     {
                         MonedaP = monedaP,
                         TipoCambioP = tipoCambioP,
-                        TipoCambioPNormalizedForMxn = IsMxnCurrency(monedaP) && string.Equals(tipoCambioP, "1", StringComparison.Ordinal)
+                        TipoCambioPNormalizedForMxn = IsMxnCurrency(monedaP) && string.Equals(tipoCambioP, "1", StringComparison.Ordinal),
+                        DoctosRelacionados = doctosRelacionados
                     };
                 })
                 .ToList();
-            summary.DoctoRelacionadoCount = pagos
-                .EnumerateArray()
-                .Where(pago => pago.ValueKind == JsonValueKind.Object && TryGetProperty(pago, out _, "DoctoRelacionado"))
-                .Select(pago => pago.GetProperty("DoctoRelacionado"))
-                .Where(doctos => doctos.ValueKind == JsonValueKind.Array)
-                .Sum(doctos => doctos.GetArrayLength());
+            summary.DoctoRelacionadoCount = summary.Pagos.Sum(pago => pago.DoctosRelacionados.Count);
         }
         catch (JsonException)
         {
@@ -1159,9 +1244,29 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
         return string.Equals(currencyCode?.Trim(), "MXN", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static bool AreSameCurrency(string? currencyCode, string? otherCurrencyCode)
+    {
+        return string.Equals(currencyCode?.Trim(), otherCurrencyCode?.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
+
     private static string FormatRate(decimal rate)
     {
         return Math.Round(rate, 6, MidpointRounding.AwayFromZero).ToString("0.000000", CultureInfo.InvariantCulture);
+    }
+
+    private static string FormatEquivalenciaDR(decimal equivalenciaDR)
+    {
+        return FormatRate(equivalenciaDR);
+    }
+
+    private static bool TryParsePositiveInvariantDecimal(string value, out decimal parsedValue)
+    {
+        return decimal.TryParse(
+                   value,
+                   NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint,
+                   CultureInfo.InvariantCulture,
+                   out parsedValue)
+               && parsedValue > 0m;
     }
 
     private static PaymentComplementStampingGatewayResult ValidationFailed(
@@ -1724,5 +1829,18 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
         public string? TipoCambioP { get; set; }
 
         public bool TipoCambioPNormalizedForMxn { get; set; }
+
+        public List<FacturaloPlusRepDoctoRelacionadoSummary> DoctosRelacionados { get; set; } = [];
+    }
+
+    private sealed class FacturaloPlusRepDoctoRelacionadoSummary
+    {
+        public string? MonedaP { get; set; }
+
+        public string? MonedaDR { get; set; }
+
+        public string? EquivalenciaDR { get; set; }
+
+        public bool EquivalenciaDRNormalizedBecauseSameCurrency { get; set; }
     }
 }
