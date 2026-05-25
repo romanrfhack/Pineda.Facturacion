@@ -645,18 +645,34 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).toContain('Contexto del CFDI base');
-    expect(fixture.nativeElement.textContent).toContain('Explicación de elegibilidad');
+    expect(fixture.nativeElement.textContent).toContain('Resumen');
+    expect(fixture.nativeElement.textContent).toContain('Elegibilidad');
+    expect(fixture.nativeElement.textContent).toContain('Pagos y REP');
+    expect(fixture.nativeElement.textContent).toContain('Timeline');
+    expect(fixture.nativeElement.textContent).toContain('Datos tecnicos');
+    expect(fixture.nativeElement.textContent).toContain('Seguimiento operativo');
+    expect(fixture.nativeElement.textContent).toContain('EligibleInternalRep');
+
+    const tabs = Array.from(fixture.nativeElement.querySelectorAll('[role="tab"]')) as HTMLButtonElement[];
+    tabs.find((button) => button.textContent?.includes('Timeline'))?.click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Pago registrado');
+
+    tabs.find((button) => button.textContent?.includes('Datos tecnicos'))?.click();
+    fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('Snapshot operativo persistido');
-    expect(fixture.nativeElement.textContent).toContain('Timeline operativo');
-    expect(fixture.nativeElement.textContent).toContain('Historial de pagos registrados');
-    expect(fixture.nativeElement.textContent).toContain('Aplicaciones de pago');
-    expect(fixture.nativeElement.textContent).toContain('REP emitidos y relacionados');
+
+    tabs.find((button) => button.textContent?.includes('Pagos y REP'))?.click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Pagos registrados');
     expect(fixture.nativeElement.textContent).toContain('9001');
     expect(fixture.nativeElement.textContent).toContain('UUID-PC-1');
-    expect(fixture.nativeElement.textContent).toContain('EligibleInternalRep');
+
+    const paymentTabs = Array.from(fixture.nativeElement.querySelectorAll('[role="tab"]')) as HTMLButtonElement[];
+    paymentTabs.find((button) => button.textContent?.includes('REP relacionados'))?.click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('REP emitidos y relacionados');
     expect(fixture.nativeElement.textContent).toContain('FacturaloPlus');
-    expect(fixture.nativeElement.textContent).toContain('Pago registrado');
-    expect(fixture.nativeElement.textContent).toContain('REP timbrado');
   });
 
   it('renders operational alerts and refresh/cancel actions in detail', async () => {
@@ -692,6 +708,15 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
 
     expect(fixture.nativeElement.textContent).toContain('Seguimiento operativo');
     expect(fixture.nativeElement.textContent).toContain('REP timbrado disponible');
+
+    let tabs = Array.from(fixture.nativeElement.querySelectorAll('[role="tab"]')) as HTMLButtonElement[];
+    tabs.find((button) => button.textContent?.includes('Pagos y REP'))?.click();
+    fixture.detectChanges();
+
+    tabs = Array.from(fixture.nativeElement.querySelectorAll('[role="tab"]')) as HTMLButtonElement[];
+    tabs.find((button) => button.textContent?.includes('REP relacionados'))?.click();
+    fixture.detectChanges();
+
     expect(fixture.nativeElement.textContent).toContain('Refrescar');
     expect(fixture.nativeElement.textContent).toContain('Cancelar');
 
@@ -1127,6 +1152,15 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
       accountsReceivablePaymentId: 9002
     });
     expect(getInternalBaseDocumentByFiscalDocumentId).toHaveBeenCalledTimes(2);
+
+    let tabs = Array.from(fixture.nativeElement.querySelectorAll('[role="tab"]')) as HTMLButtonElement[];
+    tabs.find((button) => button.textContent?.includes('Pagos y REP'))?.click();
+    fixture.detectChanges();
+
+    tabs = Array.from(fixture.nativeElement.querySelectorAll('[role="tab"]')) as HTMLButtonElement[];
+    tabs.find((button) => button.textContent?.includes('REP relacionados'))?.click();
+    fixture.detectChanges();
+
     expect(fixture.nativeElement.textContent).toContain('Listo para timbrar');
   });
 
@@ -1347,6 +1381,15 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
       retryRejected: false
     });
     expect(getInternalBaseDocumentByFiscalDocumentId).toHaveBeenCalledTimes(2);
+
+    let tabs = Array.from(fixture.nativeElement.querySelectorAll('[role="tab"]')) as HTMLButtonElement[];
+    tabs.find((button) => button.textContent?.includes('Pagos y REP'))?.click();
+    fixture.detectChanges();
+
+    tabs = Array.from(fixture.nativeElement.querySelectorAll('[role="tab"]')) as HTMLButtonElement[];
+    tabs.find((button) => button.textContent?.includes('REP relacionados'))?.click();
+    fixture.detectChanges();
+
     expect(fixture.nativeElement.textContent).toContain('UUID-PC-2');
     expect(fixture.nativeElement.textContent).toContain('FacturaloPlus');
   });
@@ -1368,6 +1411,10 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
     await fixture.componentInstance['preparePaymentComplement'](fixture.componentInstance['selectedDetail']()!.paymentHistory[0]);
     fixture.componentInstance['selectedDetail']()!.issuedReps[0].status = 'ReadyForStamping';
     await fixture.componentInstance['stampPaymentComplement'](fixture.componentInstance['selectedDetail']()!.issuedReps[0]);
+    fixture.detectChanges();
+
+    const tabs = Array.from(fixture.nativeElement.querySelectorAll('[role="tab"]')) as HTMLButtonElement[];
+    tabs.find((button) => button.textContent?.includes('Pagos y REP'))?.click();
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).toContain('No existe un REP preparado elegible para timbrar en este CFDI.');
@@ -1447,8 +1494,20 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
     await fixture.componentInstance['openDetailModal'](fixture.componentInstance['items']()[1]);
     fixture.detectChanges();
 
+    let tabs = Array.from(fixture.nativeElement.querySelectorAll('[role="tab"]')) as HTMLButtonElement[];
+    tabs.find((button) => button.textContent?.includes('Pagos y REP'))?.click();
+    fixture.detectChanges();
+
     expect(fixture.nativeElement.textContent).toContain('Todavía no hay pagos registrados relacionados');
+
+    tabs = Array.from(fixture.nativeElement.querySelectorAll('[role="tab"]')) as HTMLButtonElement[];
+    tabs.find((button) => button.textContent?.includes('Aplicaciones'))?.click();
+    fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('Todavía no hay pagos aplicados');
+
+    tabs = Array.from(fixture.nativeElement.querySelectorAll('[role="tab"]')) as HTMLButtonElement[];
+    tabs.find((button) => button.textContent?.includes('REP relacionados'))?.click();
+    fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('Aún no hay REP ligados');
   });
 

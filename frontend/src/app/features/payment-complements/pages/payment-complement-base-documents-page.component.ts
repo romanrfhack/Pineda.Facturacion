@@ -6,6 +6,7 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
 import { FeedbackService } from '../../../core/ui/feedback.service';
 import { getDisplayLabel } from '../../../shared/ui/display-labels';
 import { AccountsReceivableApiService } from '../../accounts-receivable/infrastructure/accounts-receivable-api.service';
+import { PaymentContextModalComponent } from '../components/payment-context-modal.component';
 import { PaymentComplementsApiService } from '../infrastructure/payment-complements-api.service';
 import {
   RepBaseDocumentBulkRefreshResponse,
@@ -23,7 +24,7 @@ import {
 
 @Component({
   selector: 'app-payment-complement-base-documents-page',
-  imports: [FormsModule, DecimalPipe],
+  imports: [FormsModule, DecimalPipe, PaymentContextModalComponent],
   template: `
     <section class="page">
       <header>
@@ -295,473 +296,40 @@ import {
         }
       </section>
 
-      @if (showDetailModal()) {
-        <section class="modal-backdrop" (click)="closeDetailModal()">
-          <section class="modal-card detail-modal" (click)="$event.stopPropagation()">
-            <div class="modal-header">
-              <div>
-                <p class="eyebrow">Complementos de pago</p>
-                <h3>Contexto del CFDI base</h3>
-              </div>
-              <div class="modal-actions">
-                @if (selectedDetail()?.summary?.isEligible && (selectedDetail()?.summary?.outstandingBalance ?? 0) > 0) {
-                  <button type="button" (click)="openRegisterPaymentForm()">Registrar pago</button>
-                }
-                <button type="button" class="secondary" (click)="closeDetailModal()">Cerrar</button>
-              </div>
-            </div>
-
-            @if (loadingDetail()) {
-              <p class="helper">Cargando contexto del CFDI...</p>
-            } @else if (detailError()) {
-              <p class="error">{{ detailError() }}</p>
-            } @else if (selectedDetail(); as detail) {
-              <section class="summary-grid">
-                <article class="summary-card">
-                  <h4>Resumen fiscal</h4>
-                  <dl>
-                    <div><dt>FiscalDocumentId</dt><dd>{{ detail.summary.fiscalDocumentId }}</dd></div>
-                    <div><dt>BillingDocumentId</dt><dd>{{ detail.summary.billingDocumentId ?? '—' }}</dd></div>
-                    <div><dt>SalesOrderId</dt><dd>{{ detail.summary.salesOrderId ?? '—' }}</dd></div>
-                    <div><dt>UUID</dt><dd>{{ detail.summary.uuid || '—' }}</dd></div>
-                    <div><dt>Serie/Folio</dt><dd>{{ buildSeriesFolio(detail.summary) }}</dd></div>
-                    <div><dt>Emisión</dt><dd>{{ formatUtc(detail.summary.issuedAtUtc) }}</dd></div>
-                    <div><dt>Receptor</dt><dd>{{ detail.summary.receiverRfc }} · {{ detail.summary.receiverLegalName }}</dd></div>
-                    <div><dt>Método SAT</dt><dd>{{ detail.summary.paymentMethodSat }}</dd></div>
-                    <div><dt>Forma SAT</dt><dd>{{ detail.summary.paymentFormSat }}</dd></div>
-                    <div><dt>Moneda</dt><dd>{{ detail.summary.currencyCode }}</dd></div>
-                    <div><dt>Estado fiscal</dt><dd>{{ getDisplayLabel(detail.summary.fiscalStatus) }}</dd></div>
-                  </dl>
-                </article>
-
-                <article class="summary-card">
-                  <h4>Resumen operativo</h4>
-                  <dl>
-                    <div><dt>AR Invoice</dt><dd>{{ detail.summary.accountsReceivableInvoiceId ?? '—' }}</dd></div>
-                    <div><dt>Estado REP</dt><dd>{{ getDisplayLabel(detail.summary.repOperationalStatus) }}</dd></div>
-                    <div><dt>Total</dt><dd>{{ detail.summary.total | number:'1.2-2' }}</dd></div>
-                    <div><dt>Pagado</dt><dd>{{ detail.summary.paidTotal | number:'1.2-2' }}</dd></div>
-                    <div><dt>Saldo</dt><dd>{{ detail.summary.outstandingBalance | number:'1.2-2' }}</dd></div>
-                    <div><dt>Pagos registrados</dt><dd>{{ detail.summary.registeredPaymentCount }}</dd></div>
-                    <div><dt>REP ligados</dt><dd>{{ detail.summary.paymentComplementCount }}</dd></div>
-                    <div><dt>REP emitidos</dt><dd>{{ detail.summary.stampedPaymentComplementCount }}</dd></div>
-                    <div><dt>Último REP</dt><dd>{{ formatOptionalUtc(detail.summary.lastRepIssuedAtUtc) }}</dd></div>
-                    <div><dt>Estatus CxC</dt><dd>{{ detail.summary.accountsReceivableStatus ? getDisplayLabel(detail.summary.accountsReceivableStatus) : '—' }}</dd></div>
-                  </dl>
-                </article>
-
-                <article class="summary-card">
-                  <h4>Explicación de elegibilidad</h4>
-                  <div class="eligibility-box">
-                    <span class="status-pill" [class.status-eligible]="detail.summary.isEligible" [class.status-blocked]="detail.summary.isBlocked" [class.status-ineligible]="!detail.summary.isEligible && !detail.summary.isBlocked">
-                      {{ detail.summary.eligibility.status }}
-                    </span>
-                    <p class="eligibility-reason">{{ detail.summary.eligibility.primaryReasonMessage }}</p>
-                    <p class="helper">Código: {{ detail.summary.eligibility.primaryReasonCode }} · Evaluado: {{ formatUtc(detail.summary.eligibility.evaluatedAtUtc) }}</p>
-                    @if (canEnsureAccountsReceivable(detail)) {
-                      <p class="helper">Este CFDI ya cumple el patrón fiscal del flujo diferido, pero todavía no tiene la cuenta operativa que REP usa para controlar saldo, parcialidades y aplicaciones.</p>
-                      <div class="row-actions">
-                        <button type="button" [disabled]="ensuringAccountsReceivable()" (click)="ensureAccountsReceivable(detail.summary.fiscalDocumentId)">
-                          {{ ensuringAccountsReceivable() ? 'Habilitando...' : 'Habilitar cuenta por cobrar' }}
-                        </button>
-                      </div>
-                    }
-                  </div>
-
-                  @if (detail.summary.eligibility.secondarySignals.length) {
-                    <ul class="signal-list">
-                      @for (signal of detail.summary.eligibility.secondarySignals; track signal.code + '-' + signal.message) {
-                        <li class="signal-item">
-                          <span class="signal-pill" [class.signal-positive]="signal.severity === 'Satisfied'" [class.signal-warning]="signal.severity !== 'Satisfied'">{{ signal.severity }}</span>
-                          <div>
-                            <strong>{{ signal.code }}</strong>
-                            <p>{{ signal.message }}</p>
-                          </div>
-                        </li>
-                      }
-                    </ul>
-                  } @else {
-                    <p class="helper">No hay señales secundarias adicionales para este CFDI.</p>
-                  }
-                </article>
-
-                <article class="summary-card">
-                  <h4>Snapshot operativo persistido</h4>
-                  @if (detail.operationalState; as operationalState) {
-                    <dl>
-                      <div><dt>Última evaluación</dt><dd>{{ formatUtc(operationalState.lastEligibilityEvaluatedAtUtc) }}</dd></div>
-                      <div><dt>Estatus persistido</dt><dd>{{ operationalState.lastEligibilityStatus }}</dd></div>
-                      <div><dt>Motivo persistido</dt><dd>{{ operationalState.lastPrimaryReasonMessage }}</dd></div>
-                      <div><dt>Código persistido</dt><dd>{{ operationalState.lastPrimaryReasonCode }}</dd></div>
-                      <div><dt>REP pendiente</dt><dd>{{ operationalState.repPendingFlag ? 'Sí' : 'No' }}</dd></div>
-                      <div><dt>Total pagado aplicado</dt><dd>{{ operationalState.totalPaidApplied | number:'1.2-2' }}</dd></div>
-                      <div><dt>Conteo REP</dt><dd>{{ operationalState.repCount }}</dd></div>
-                      <div><dt>Último REP emitido</dt><dd>{{ formatOptionalUtc(operationalState.lastRepIssuedAtUtc) }}</dd></div>
-                    </dl>
-                  } @else {
-                    <p class="helper">Todavía no existe snapshot operativo persistido para este CFDI.</p>
-                  }
-                </article>
-
-                <article class="summary-card">
-                  <h4>Seguimiento operativo</h4>
-                  <dl>
-                    <div><dt>Acción recomendada</dt><dd>{{ getRecommendedActionLabel(detail.summary.nextRecommendedAction) }}</dd></div>
-                    <div><dt>Operación bloqueada</dt><dd>{{ detail.summary.hasBlockedOperation ? 'Sí' : 'No' }}</dd></div>
-                    <div><dt>Pago sin REP timbrado</dt><dd>{{ detail.summary.hasAppliedPaymentsWithoutStampedRep ? 'Sí' : 'No' }}</dd></div>
-                    <div><dt>REP pendiente de timbrar</dt><dd>{{ detail.summary.hasPreparedRepPendingStamp ? 'Sí' : 'No' }}</dd></div>
-                    <div><dt>REP con error</dt><dd>{{ detail.summary.hasRepWithError ? 'Sí' : 'No' }}</dd></div>
-                  </dl>
-
-                  @if (getAlerts(detail.summary).length) {
-                    <ul class="alert-list">
-                      @for (alert of getAlerts(detail.summary); track alert.code + '-' + alert.message) {
-                        <li class="alert-item" [class.alert-critical]="alert.severity === 'critical'" [class.alert-error]="alert.severity === 'error'" [class.alert-warning]="alert.severity === 'warning'" [class.alert-info]="alert.severity === 'info'">
-                          <strong>{{ getDisplayLabel(alert.code) }}</strong>
-                          <p>{{ alert.message }}</p>
-                        </li>
-                      }
-                    </ul>
-                  } @else {
-                    <p class="helper">No hay alertas operativas activas para este CFDI.</p>
-                  }
-                </article>
-              </section>
-
-              <section class="nested-card">
-                <div class="section-header">
-                  <div>
-                    <h4>Timeline operativo</h4>
-                    <p class="helper">Historial cronológico derivado del flujo REP sobre este CFDI base. Las alertas activas siguen viviendo en el resumen operativo; aquí sólo se muestra trazabilidad.</p>
-                  </div>
-                </div>
-
-                @if (!(detail.timeline ?? []).length) {
-                  <p class="helper">Todavía no hay eventos cronológicos suficientes para este CFDI.</p>
-                } @else {
-                  <div class="timeline-list">
-                    @for (event of detail.timeline ?? []; track event.eventType + '-' + event.occurredAtUtc + '-' + (event.referenceId ?? 0)) {
-                      <article class="timeline-item">
-                        <header>
-                          <div class="timeline-heading">
-                            <strong>{{ event.title }}</strong>
-                            <div class="timeline-badges">
-                              @if (event.severity) {
-                                <span class="severity-pill" [class.severity-warning]="event.severity === 'warning'" [class.severity-error]="event.severity === 'error'" [class.severity-critical]="event.severity === 'critical'" [class.severity-info]="event.severity === 'info'">
-                                  {{ getDisplayLabel(event.severity) }}
-                                </span>
-                              }
-                              @if (event.status) {
-                                <span class="timeline-chip">{{ getDisplayLabel(event.status) }}</span>
-                              }
-                              <span class="timeline-chip">{{ event.eventType }}</span>
-                            </div>
-                          </div>
-                          <span>{{ formatUtc(event.occurredAtUtc) }}</span>
-                        </header>
-                        <p>{{ event.description }}</p>
-                        <small>
-                          Fuente {{ event.sourceType }}
-                          @if (event.referenceId) {
-                            · Ref #{{ event.referenceId }}
-                          }
-                          @if (event.referenceUuid) {
-                            · UUID {{ event.referenceUuid }}
-                          }
-                        </small>
-                        @if (timelineMetadataEntries(event).length) {
-                          <div class="timeline-meta-list">
-                            @for (entry of timelineMetadataEntries(event); track entry) {
-                              <span class="timeline-chip">{{ entry }}</span>
-                            }
-                          </div>
-                        }
-                      </article>
-                    }
-                  </div>
-                }
-              </section>
-
-              <section class="nested-card">
-                <div class="section-header">
-                  <div>
-                    <h4>Registro de pago</h4>
-                    <p class="helper">El pago se registra y se aplica completo al CFDI base actual. Después puedes preparar y timbrar el REP sobre ese mismo pago desde el historial inferior.</p>
-                  </div>
-                  @if (!showRegisterPaymentForm()) {
-                    <button
-                      type="button"
-                      [disabled]="!detail.summary.isEligible || detail.summary.outstandingBalance <= 0 || submittingPayment()"
-                      (click)="openRegisterPaymentForm()">
-                      Registrar pago
-                    </button>
-                  }
-                </div>
-
-                @if (showRegisterPaymentForm()) {
-                  <form class="payment-form" (ngSubmit)="submitRegisterPayment()">
-                    <label><span>Fecha de pago</span><input [(ngModel)]="paymentDate" name="paymentDate" type="date" [disabled]="submittingPayment()" /></label>
-                    <label><span>Forma SAT</span><input [(ngModel)]="paymentFormSat" name="paymentFormSat" maxlength="3" [disabled]="submittingPayment()" /></label>
-                    <label><span>Monto</span><input [(ngModel)]="paymentAmount" name="paymentAmount" type="number" min="0" step="0.01" [disabled]="submittingPayment()" /></label>
-                    <label><span>Referencia</span><input [(ngModel)]="paymentReference" name="paymentReference" [disabled]="submittingPayment()" /></label>
-                    <label class="wide"><span>Notas</span><textarea [(ngModel)]="paymentNotes" name="paymentNotes" rows="3" [disabled]="submittingPayment()"></textarea></label>
-
-                    <div class="wide helper">
-                      Saldo disponible para aplicar: {{ detail.summary.outstandingBalance | number:'1.2-2' }}
-                    </div>
-
-                    @if (paymentError()) {
-                      <p class="error wide">{{ paymentError() }}</p>
-                    }
-
-                    <div class="actions wide">
-                      <button type="submit" [disabled]="submittingPayment()">{{ submittingPayment() ? 'Aplicando...' : 'Confirmar pago' }}</button>
-                      <button type="button" class="secondary" (click)="cancelRegisterPaymentForm()" [disabled]="submittingPayment()">Cancelar</button>
-                    </div>
-                  </form>
-                } @else if (!detail.summary.isEligible || detail.summary.outstandingBalance <= 0) {
-                  <p class="helper">{{ buildRegisterPaymentBlockedMessage(detail) }}</p>
-                  @if (canEnsureAccountsReceivable(detail)) {
-                    <div class="row-actions">
-                      <button type="button" [disabled]="ensuringAccountsReceivable()" (click)="ensureAccountsReceivable(detail.summary.fiscalDocumentId)">
-                        {{ ensuringAccountsReceivable() ? 'Habilitando...' : 'Habilitar cuenta por cobrar' }}
-                      </button>
-                    </div>
-                  }
-                }
-              </section>
-
-              <section class="nested-card">
-                <div class="section-header">
-                  <div>
-                    <h4>Historial de pagos registrados</h4>
-                    <p class="helper">Cada pago aplicado al CFDI puede preparar un REP una sola vez. Puedes seleccionar varios pagos elegibles para agruparlos en un solo REP; si ya existe un complemento para un pago, se muestra como ligado.</p>
-                  </div>
-                  <div class="row-actions">
-                    @if (groupedPaymentSelectionCount() > 0) {
-                      <span class="helper">{{ groupedPaymentSelectionCount() }} pago(s) seleccionado(s)</span>
-                    }
-                    <button
-                      type="button"
-                      class="secondary small"
-                      [disabled]="groupedPaymentSelectionCount() < 2 || preparingComplement() !== null || stampingComplement() !== null"
-                      (click)="prepareSelectedPaymentComplement()">
-                      {{ preparingComplement() === GROUPED_PREPARE_TOKEN ? 'Preparando...' : 'Preparar REP agrupado' }}
-                    </button>
-                    <button
-                      type="button"
-                      class="secondary small"
-                      [disabled]="!groupedPaymentSelectionCount() || preparingComplement() !== null || stampingComplement() !== null"
-                      (click)="clearGroupedPaymentSelection()">
-                      Limpiar selección
-                    </button>
-                  </div>
-                </div>
-
-                @if (repActionError()) {
-                  <p class="error">{{ repActionError() }}</p>
-                }
-
-                @if (!detail.paymentHistory.length) {
-                  <p class="helper">Todavía no hay pagos registrados relacionados con este CFDI dentro del sistema.</p>
-                } @else {
-                  <div class="table-wrap">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Agrupar</th>
-                          <th>PaymentId</th>
-                          <th>Fecha</th>
-                          <th>Forma</th>
-                          <th>Monto pago</th>
-                          <th>Aplicado al CFDI</th>
-                          <th>Remanente del pago</th>
-                          <th>Referencia</th>
-                          <th>REP ligado</th>
-                          <th>Estatus REP</th>
-                          <th>Acción</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        @for (payment of detail.paymentHistory; track payment.accountsReceivablePaymentId + '-' + payment.createdAtUtc) {
-                          <tr>
-                            <td>
-                              @if (canPrepareComplement(payment)) {
-                                <input
-                                  type="checkbox"
-                                  [checked]="isGroupedPaymentSelected(payment.accountsReceivablePaymentId)"
-                                  [disabled]="preparingComplement() !== null || stampingComplement() !== null"
-                                  (change)="toggleGroupedPaymentSelection(payment.accountsReceivablePaymentId, $any($event.target).checked)" />
-                              } @else {
-                                <span class="helper">—</span>
-                              }
-                            </td>
-                            <td>{{ payment.accountsReceivablePaymentId }}</td>
-                            <td>{{ formatUtc(payment.paymentDateUtc) }}</td>
-                            <td>{{ payment.paymentFormSat }}</td>
-                            <td>{{ payment.paymentAmount | number:'1.2-2' }}</td>
-                            <td>{{ payment.amountAppliedToDocument | number:'1.2-2' }}</td>
-                            <td>{{ payment.remainingPaymentAmount | number:'1.2-2' }}</td>
-                            <td>{{ payment.reference || '—' }}</td>
-                            <td>{{ payment.paymentComplementUuid || (payment.paymentComplementId ? '#' + payment.paymentComplementId : '—') }}</td>
-                            <td>{{ payment.paymentComplementStatus ? getDisplayLabel(payment.paymentComplementStatus) : '—' }}</td>
-                            <td>
-                              @if (canPrepareComplement(payment)) {
-                                <button
-                                  type="button"
-                                  class="small"
-                                  [disabled]="preparingComplement() || stampingComplement()"
-                                  (click)="preparePaymentComplement(payment)">
-                                  {{ preparingComplement() === payment.accountsReceivablePaymentId ? 'Preparando...' : 'Preparar REP' }}
-                                </button>
-                              } @else {
-                                <span class="helper">—</span>
-                              }
-                            </td>
-                          </tr>
-                        }
-                      </tbody>
-                    </table>
-                  </div>
-                }
-              </section>
-
-              <section class="nested-card">
-                <h4>Aplicaciones de pago</h4>
-                @if (!detail.paymentApplications.length) {
-                  <p class="helper">Todavía no hay pagos aplicados a este CFDI dentro del sistema.</p>
-                } @else {
-                  <div class="table-wrap">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>PaymentId</th>
-                          <th>Fecha</th>
-                          <th>Forma</th>
-                          <th>Monto pago</th>
-                          <th>Parcialidad</th>
-                          <th>Aplicado</th>
-                          <th>Saldo anterior</th>
-                          <th>Saldo nuevo</th>
-                          <th>Remanente</th>
-                          <th>Referencia</th>
-                          <th>Notas</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        @for (application of detail.paymentApplications; track application.accountsReceivablePaymentId + '-' + application.applicationSequence) {
-                          <tr>
-                            <td>{{ application.accountsReceivablePaymentId }}</td>
-                            <td>{{ formatUtc(application.paymentDateUtc) }}</td>
-                            <td>{{ application.paymentFormSat }}</td>
-                            <td>{{ application.paymentAmount | number:'1.2-2' }}</td>
-                            <td>{{ application.applicationSequence }}</td>
-                            <td>{{ application.appliedAmount | number:'1.2-2' }}</td>
-                            <td>{{ application.previousBalance | number:'1.2-2' }}</td>
-                            <td>{{ application.newBalance | number:'1.2-2' }}</td>
-                            <td>{{ application.remainingPaymentAmount | number:'1.2-2' }}</td>
-                            <td>{{ application.reference || '—' }}</td>
-                            <td>{{ application.notes || '—' }}</td>
-                          </tr>
-                        }
-                      </tbody>
-                    </table>
-                  </div>
-                }
-              </section>
-
-              <section class="nested-card">
-                <div class="section-header">
-                  <div>
-                    <h4>REP emitidos y relacionados</h4>
-                    <p class="helper">Los complementos preparados quedan listos para timbrado desde este mismo contexto operativo.</p>
-                  </div>
-                </div>
-
-                @if (!detail.issuedReps.length) {
-                  <p class="helper">Aún no hay REP ligados a este CFDI base.</p>
-                } @else {
-                  <div class="table-wrap">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Complemento</th>
-                          <th>PaymentId</th>
-                          <th>Estado</th>
-                          <th>UUID</th>
-                          <th>Proveedor</th>
-                          <th>Parcialidad</th>
-                          <th>Fecha pago</th>
-                          <th>Emisión</th>
-                          <th>Timbrado</th>
-                          <th>Cancelación</th>
-                          <th>Saldo anterior</th>
-                          <th>Monto</th>
-                          <th>Saldo remanente</th>
-                          <th>Acción</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        @for (complement of detail.issuedReps; track complement.paymentComplementId) {
-                          <tr>
-                            <td>{{ complement.paymentComplementId }}</td>
-                            <td>{{ complement.accountsReceivablePaymentId }}</td>
-                            <td>{{ getDisplayLabel(complement.status) }}</td>
-                            <td>{{ complement.uuid || '—' }}</td>
-                            <td>{{ complement.providerName || '—' }}</td>
-                            <td>{{ complement.installmentNumber }}</td>
-                            <td>{{ formatUtc(complement.paymentDateUtc) }}</td>
-                            <td>{{ formatOptionalUtc(complement.issuedAtUtc) }}</td>
-                            <td>{{ formatOptionalUtc(complement.stampedAtUtc) }}</td>
-                            <td>{{ formatOptionalUtc(complement.cancelledAtUtc) }}</td>
-                            <td>{{ complement.previousBalance | number:'1.2-2' }}</td>
-                            <td>{{ complement.paidAmount | number:'1.2-2' }}</td>
-                            <td>{{ complement.remainingBalance | number:'1.2-2' }}</td>
-                            <td>
-                              <div class="row-actions">
-                                @if (canStampComplement(complement)) {
-                                  <button
-                                    type="button"
-                                    class="small"
-                                    [disabled]="stampingComplement() !== null || preparingComplement() !== null || refreshingComplement() !== null || cancellingComplement() !== null"
-                                    (click)="stampPaymentComplement(complement)">
-                                    {{ stampingComplement() === complement.paymentComplementId ? (complement.status === 'StampingRejected' ? 'Reintentando...' : 'Timbrando...') : (complement.status === 'StampingRejected' ? 'Reintentar timbrado' : 'Timbrar REP') }}
-                                  </button>
-                                }
-                                @if (canRefreshComplement(complement)) {
-                                  <button
-                                    type="button"
-                                    class="secondary small"
-                                    [disabled]="stampingComplement() !== null || preparingComplement() !== null || refreshingComplement() !== null || cancellingComplement() !== null"
-                                    (click)="refreshPaymentComplement(complement)">
-                                    {{ refreshingComplement() === complement.paymentComplementId ? 'Refrescando...' : 'Refrescar' }}
-                                  </button>
-                                }
-                                @if (canCancelComplement(complement)) {
-                                  <button
-                                    type="button"
-                                    class="secondary small"
-                                    [disabled]="stampingComplement() !== null || preparingComplement() !== null || refreshingComplement() !== null || cancellingComplement() !== null"
-                                    (click)="cancelPaymentComplement(complement)">
-                                    {{ cancellingComplement() === complement.paymentComplementId ? 'Cancelando...' : 'Cancelar' }}
-                                  </button>
-                                }
-                                @if (!canStampComplement(complement) && !canRefreshComplement(complement) && !canCancelComplement(complement)) {
-                                  <span class="helper">—</span>
-                                }
-                              </div>
-                            </td>
-                          </tr>
-                        }
-                      </tbody>
-                    </table>
-                  </div>
-                }
-              </section>
-            }
-          </section>
-        </section>
-      }
+      <app-payment-context-modal
+        [open]="showDetailModal()"
+        [detail]="selectedDetail()"
+        [loading]="loadingDetail()"
+        [error]="detailError()"
+        [showRegisterPaymentForm]="showRegisterPaymentForm()"
+        [submittingPayment]="submittingPayment()"
+        [ensuringAccountsReceivable]="ensuringAccountsReceivable()"
+        [paymentError]="paymentError()"
+        [repActionError]="repActionError()"
+        [preparingComplement]="preparingComplement()"
+        [stampingComplement]="stampingComplement()"
+        [refreshingComplement]="refreshingComplement()"
+        [cancellingComplement]="cancellingComplement()"
+        [groupedPaymentIds]="groupedPaymentIds()"
+        [groupedPrepareToken]="GROUPED_PREPARE_TOKEN"
+        [(paymentDate)]="paymentDate"
+        [(paymentFormSat)]="paymentFormSat"
+        [(paymentAmount)]="paymentAmount"
+        [(paymentReference)]="paymentReference"
+        [(paymentNotes)]="paymentNotes"
+        (closeRequested)="closeDetailModal()"
+        (registerPaymentRequested)="openRegisterPaymentForm()"
+        (registerPaymentCancelled)="cancelRegisterPaymentForm()"
+        (registerPaymentSubmitted)="submitRegisterPayment()"
+        (ensureAccountsReceivableRequested)="ensureAccountsReceivable($event)"
+        (groupedPaymentToggled)="toggleGroupedPaymentSelection($event.accountsReceivablePaymentId, $event.checked)"
+        (groupedPaymentSelectionCleared)="clearGroupedPaymentSelection()"
+        (prepareSelectedPaymentComplementRequested)="prepareSelectedPaymentComplement()"
+        (preparePaymentComplementRequested)="preparePaymentComplement($event)"
+        (stampPaymentComplementRequested)="stampPaymentComplement($event)"
+        (refreshPaymentComplementRequested)="refreshPaymentComplement($event)"
+        (cancelPaymentComplementRequested)="cancelPaymentComplement($event)"
+      />
     </section>
   `,
   styles: [`
