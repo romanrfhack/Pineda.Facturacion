@@ -102,7 +102,16 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
 
         var redactedSummary = BuildRedactedRequestSummary(request);
         var providerRequestHash = ComputeSha256(JsonSerializer.Serialize(redactedSummary, JsonOptions));
-        var payload = BuildPayload(request, certificateMetadata, comprobanteFecha!);
+        FacturaloPlusPaymentComplementStampingPayload payload;
+        try
+        {
+            payload = BuildPayload(request, certificateMetadata, comprobanteFecha!);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return ValidationFailed(ex.Message, providerRequestHash);
+        }
+
         var payloadJson = JsonSerializer.Serialize(payload, JsonOptions);
         var payloadSummary = BuildRepPayloadSummary(payloadJson);
         var payloadValidationError = ValidatePaymentComplementPayloadJson(payloadJson);
@@ -337,12 +346,14 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
             })
             .ToList();
 
+        var tipoCambioP = ResolveTipoCambioP(payment.CurrencyCode, payment.ExchangeRate);
+
         return new FacturaloPlusPago
         {
             FechaPago = BuildPaymentFecha(payment.PaymentDateUtc),
             FormaDePagoP = payment.PaymentFormSat,
             MonedaP = payment.CurrencyCode,
-            TipoCambioP = payment.ExchangeRate.HasValue ? FormatRate(payment.ExchangeRate.Value) : null,
+            TipoCambioP = tipoCambioP,
             Monto = NormalizeMoney(payment.Amount),
             NumOperacion = payment.OperationNumber,
             RfcEmisorCtaOrd = payment.OrderingBankRfc,
@@ -477,6 +488,27 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
         }
 
         return paymentFecha!;
+    }
+
+    private static string ResolveTipoCambioP(string monedaP, decimal? exchangeRate)
+    {
+        if (string.IsNullOrWhiteSpace(monedaP))
+        {
+            throw new InvalidOperationException("Payload REP invalido para FacturaloPlus: MonedaP es requerido.");
+        }
+
+        if (IsMxnCurrency(monedaP))
+        {
+            return "1";
+        }
+
+        if (!exchangeRate.HasValue || exchangeRate.Value <= 0m)
+        {
+            throw new InvalidOperationException(
+                $"Payload REP invalido para FacturaloPlus: TipoCambioP requerido para MonedaP '{monedaP}'.");
+        }
+
+        return FormatRate(exchangeRate.Value);
     }
 
     private static object BuildRedactedRequestSummary(PaymentComplementStampingRequest request)
@@ -766,6 +798,12 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
                     return InvalidRepPayloadMessage + " Cada Pago debe ser objeto.";
                 }
 
+                var tipoCambioValidationError = ValidatePagoTipoCambioP(pago);
+                if (tipoCambioValidationError is not null)
+                {
+                    return tipoCambioValidationError;
+                }
+
                 if (!TryGetProperty(pago, out var doctos, "DoctoRelacionado")
                     || doctos.ValueKind != JsonValueKind.Array
                     || doctos.GetArrayLength() == 0)
@@ -795,6 +833,42 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
         {
             return InvalidRepPayloadMessage + " JSON invalido.";
         }
+    }
+
+    private static string? ValidatePagoTipoCambioP(JsonElement pago)
+    {
+        var monedaP = ReadJsonScalar(pago, "MonedaP");
+        if (string.IsNullOrWhiteSpace(monedaP))
+        {
+            return InvalidRepPayloadMessage + " Cada Pago debe incluir MonedaP.";
+        }
+
+        if (!TryGetProperty(pago, out var tipoCambioPProperty, "TipoCambioP")
+            || tipoCambioPProperty.ValueKind != JsonValueKind.String
+            || string.IsNullOrWhiteSpace(tipoCambioPProperty.GetString()))
+        {
+            return InvalidRepPayloadMessage + " Cada Pago debe incluir TipoCambioP como string no vacio.";
+        }
+
+        var tipoCambioP = tipoCambioPProperty.GetString()!.Trim();
+        if (IsMxnCurrency(monedaP))
+        {
+            return string.Equals(tipoCambioP, "1", StringComparison.Ordinal)
+                ? null
+                : "Payload REP invalido para FacturaloPlus: cuando MonedaP es MXN, TipoCambioP debe ser exactamente '1'.";
+        }
+
+        if (!decimal.TryParse(
+                tipoCambioP,
+                NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint,
+                CultureInfo.InvariantCulture,
+                out var parsedTipoCambioP)
+            || parsedTipoCambioP <= 0m)
+        {
+            return InvalidRepPayloadMessage + " Cuando MonedaP es distinta de MXN, TipoCambioP debe representar un numero mayor a 0.";
+        }
+
+        return null;
     }
 
     private static string? ValidatePaymentConcept(JsonElement comprobante)
@@ -905,6 +979,21 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
             }
 
             summary.PagoCount = pagos.GetArrayLength();
+            summary.Pagos = pagos
+                .EnumerateArray()
+                .Where(pago => pago.ValueKind == JsonValueKind.Object)
+                .Select(pago =>
+                {
+                    var monedaP = ReadJsonScalar(pago, "MonedaP");
+                    var tipoCambioP = ReadJsonScalar(pago, "TipoCambioP");
+                    return new FacturaloPlusRepPagoSummary
+                    {
+                        MonedaP = monedaP,
+                        TipoCambioP = tipoCambioP,
+                        TipoCambioPNormalizedForMxn = IsMxnCurrency(monedaP) && string.Equals(tipoCambioP, "1", StringComparison.Ordinal)
+                    };
+                })
+                .ToList();
             summary.DoctoRelacionadoCount = pagos
                 .EnumerateArray()
                 .Where(pago => pago.ValueKind == JsonValueKind.Object && TryGetProperty(pago, out _, "DoctoRelacionado"))
@@ -1063,6 +1152,11 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
     private static decimal NormalizeMoney(decimal amount)
     {
         return Math.Round(amount, 2, MidpointRounding.AwayFromZero);
+    }
+
+    private static bool IsMxnCurrency(string? currencyCode)
+    {
+        return string.Equals(currencyCode?.Trim(), "MXN", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string FormatRate(decimal rate)
@@ -1618,6 +1712,17 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
 
         public decimal? MontoTotalPagos { get; set; }
 
+        public List<FacturaloPlusRepPagoSummary> Pagos { get; set; } = [];
+
         public bool JsonParseFailed { get; set; }
+    }
+
+    private sealed class FacturaloPlusRepPagoSummary
+    {
+        public string? MonedaP { get; set; }
+
+        public string? TipoCambioP { get; set; }
+
+        public bool TipoCambioPNormalizedForMxn { get; set; }
     }
 }

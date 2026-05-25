@@ -85,10 +85,95 @@ public class FacturaloPlusPaymentComplementStampingGatewayTests
         Assert.Equal("2.0", pagos20.GetProperty("Version").GetString());
         Assert.Equal(JsonValueKind.Array, pagos20.GetProperty("Pago").ValueKind);
         Assert.Equal("03", pagos20.GetProperty("Pago")[0].GetProperty("FormaDePagoP").GetString());
+        Assert.Equal("MXN", pagos20.GetProperty("Pago")[0].GetProperty("MonedaP").GetString());
+        Assert.Equal("1", pagos20.GetProperty("Pago")[0].GetProperty("TipoCambioP").GetString());
         Assert.Equal(JsonValueKind.Array, pagos20.GetProperty("Pago")[0].GetProperty("DoctoRelacionado").ValueKind);
         Assert.Equal("UUID-REL-1", pagos20.GetProperty("Pago")[0].GetProperty("DoctoRelacionado")[0].GetProperty("IdDocumento").GetString());
         Assert.Equal("Complemento de Pago", json.RootElement.GetProperty("CamposPDF").GetProperty("tipoComprobante").GetString());
         Assert.Equal("Complemento Vigente", json.RootElement.GetProperty("CamposPDF").GetProperty("Comentarios").GetString());
+        Assert.Contains("\"monedaP\":\"MXN\"", result.RawResponseSummaryJson, StringComparison.Ordinal);
+        Assert.Contains("\"tipoCambioP\":\"1\"", result.RawResponseSummaryJson, StringComparison.Ordinal);
+        Assert.Contains("\"tipoCambioPNormalizedForMxn\":true", result.RawResponseSummaryJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task StampAsync_Normalizes_TipoCambioP_To_1_For_Mxn_When_ExchangeRate_Is_Zero()
+    {
+        var handler = CreateSuccessfulHandler();
+        var gateway = CreateGateway(handler);
+        var request = CreateRequest();
+        request.Payments[0].ExchangeRate = 0m;
+
+        var result = await gateway.StampAsync(request);
+
+        Assert.Equal(PaymentComplementStampingGatewayOutcome.Stamped, result.Outcome);
+
+        var decodedJson = DecodePayloadJson(handler);
+        using var json = JsonDocument.Parse(decodedJson);
+        var tipoCambioP = json.RootElement.GetProperty("Comprobante").GetProperty("Complemento")[0].GetProperty("Pagos20").GetProperty("Pago")[0].GetProperty("TipoCambioP").GetString();
+        Assert.Equal("1", tipoCambioP);
+        Assert.DoesNotContain("\"TipoCambioP\":\"0\"", decodedJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"TipoCambioP\":\"0.000000\"", decodedJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"TipoCambioP\":0", decodedJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task StampAsync_Normalizes_TipoCambioP_To_1_For_Mxn_When_ExchangeRate_Is_One()
+    {
+        var handler = CreateSuccessfulHandler();
+        var gateway = CreateGateway(handler);
+        var request = CreateRequest();
+        request.Payments[0].ExchangeRate = 1.00m;
+
+        var result = await gateway.StampAsync(request);
+
+        Assert.Equal(PaymentComplementStampingGatewayOutcome.Stamped, result.Outcome);
+
+        var decodedJson = DecodePayloadJson(handler);
+        using var json = JsonDocument.Parse(decodedJson);
+        var tipoCambioP = json.RootElement.GetProperty("Comprobante").GetProperty("Complemento")[0].GetProperty("Pagos20").GetProperty("Pago")[0].GetProperty("TipoCambioP").GetString();
+        Assert.Equal("1", tipoCambioP);
+        Assert.DoesNotContain("\"TipoCambioP\":\"1.0\"", decodedJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"TipoCambioP\":\"1.00\"", decodedJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task StampAsync_Serializes_ForeignCurrency_TipoCambioP_With_InvariantCulture()
+    {
+        var handler = CreateSuccessfulHandler();
+        var gateway = CreateGateway(handler);
+        var request = CreateRequest();
+        request.Payments[0].CurrencyCode = "USD";
+        request.Payments[0].ExchangeRate = 17.123456m;
+
+        var result = await gateway.StampAsync(request);
+
+        Assert.Equal(PaymentComplementStampingGatewayOutcome.Stamped, result.Outcome);
+
+        var decodedJson = DecodePayloadJson(handler);
+        using var json = JsonDocument.Parse(decodedJson);
+        var pago = json.RootElement.GetProperty("Comprobante").GetProperty("Complemento")[0].GetProperty("Pagos20").GetProperty("Pago")[0];
+        Assert.Equal("USD", pago.GetProperty("MonedaP").GetString());
+        Assert.Equal("17.123456", pago.GetProperty("TipoCambioP").GetString());
+        Assert.DoesNotContain("\"TipoCambioP\":\"1\"", decodedJson, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(0d)]
+    public async Task StampAsync_Fails_Before_ProviderCall_When_ForeignCurrency_ExchangeRate_Is_Missing_Or_Zero(double? exchangeRate)
+    {
+        var handler = CreateSuccessfulHandler();
+        var gateway = CreateGateway(handler);
+        var request = CreateRequest();
+        request.Payments[0].CurrencyCode = "USD";
+        request.Payments[0].ExchangeRate = exchangeRate.HasValue ? (decimal)exchangeRate.Value : null;
+
+        var result = await gateway.StampAsync(request);
+
+        Assert.Equal(PaymentComplementStampingGatewayOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("TipoCambioP requerido para MonedaP 'USD'", result.ErrorMessage, StringComparison.Ordinal);
+        Assert.Null(handler.LastRequest);
     }
 
     [Fact]
@@ -163,6 +248,85 @@ public class FacturaloPlusPaymentComplementStampingGatewayTests
 
         Assert.NotNull(validationError);
         Assert.Contains("Comprobante.Complemento[0].Pagos20", validationError, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ValidatePaymentComplementPayloadJson_Rejects_MxnPago_With_TipoCambioP_Distinct_From_1()
+    {
+        const string invalidTipoCambioPayload = """
+            {
+              "Comprobante": {
+                "Version": "4.0",
+                "Fecha": "2026-03-24T09:00:00",
+                "Moneda": "XXX",
+                "TipoDeComprobante": "P",
+                "Exportacion": "01",
+                "LugarExpedicion": "01000",
+                "SubTotal": 0,
+                "Total": 0,
+                "Emisor": {
+                  "Rfc": "AAA010101AAA",
+                  "Nombre": "Issuer SA",
+                  "RegimenFiscal": "601"
+                },
+                "Receptor": {
+                  "Rfc": "BBB010101BBB",
+                  "Nombre": "Receiver SA",
+                  "DomicilioFiscalReceptor": "02000",
+                  "RegimenFiscalReceptor": "601",
+                  "UsoCFDI": "CP01"
+                },
+                "Conceptos": [
+                  {
+                    "ClaveProdServ": "84111506",
+                    "Cantidad": 1,
+                    "ClaveUnidad": "ACT",
+                    "Descripcion": "Pago",
+                    "ValorUnitario": 0,
+                    "Importe": 0,
+                    "ObjetoImp": "01"
+                  }
+                ],
+                "Complemento": [
+                  {
+                    "Pagos20": {
+                      "Version": "2.0",
+                      "Totales": {
+                        "MontoTotalPagos": 123.45
+                      },
+                      "Pago": [
+                        {
+                          "FechaPago": "2026-03-24T09:00:00",
+                          "FormaDePagoP": "03",
+                          "MonedaP": "MXN",
+                          "TipoCambioP": "0",
+                          "Monto": 123.45,
+                          "DoctoRelacionado": [
+                            {
+                              "IdDocumento": "UUID-REL-1",
+                              "MonedaDR": "MXN",
+                              "NumParcialidad": 1,
+                              "ImpSaldoAnt": 123.45,
+                              "ImpPagado": 123.45,
+                              "ImpSaldoInsoluto": 0,
+                              "ObjetoImpDR": "02"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+            """;
+
+        var validationError = InvokePayloadValidation(invalidTipoCambioPayload);
+
+        Assert.NotNull(validationError);
+        Assert.Equal(
+            "Payload REP invalido para FacturaloPlus: cuando MonedaP es MXN, TipoCambioP debe ser exactamente '1'.",
+            validationError);
     }
 
     [Fact]
@@ -340,6 +504,9 @@ public class FacturaloPlusPaymentComplementStampingGatewayTests
         using var json = JsonDocument.Parse(decodedJson);
         var pagos20 = json.RootElement.GetProperty("Comprobante").GetProperty("Complemento")[0].GetProperty("Pagos20");
         Assert.Equal(2, pagos20.GetProperty("Pago").GetArrayLength());
+        Assert.All(
+            pagos20.GetProperty("Pago").EnumerateArray().Select(pago => pago.GetProperty("TipoCambioP").GetString()),
+            tipoCambioP => Assert.Equal("1", tipoCambioP));
         Assert.Equal(173.45m, pagos20.GetProperty("Totales").GetProperty("MontoTotalPagos").GetDecimal());
         Assert.Equal(17.03m, pagos20.GetProperty("Totales").GetProperty("TotalTrasladosImpuestoIVA16").GetDecimal());
         Assert.Equal(5m, pagos20.GetProperty("Totales").GetProperty("TotalRetencionesISR").GetDecimal());
@@ -408,6 +575,23 @@ public class FacturaloPlusPaymentComplementStampingGatewayTests
                 ApiKeyHeaderName = "X-Api-Key"
             }),
             secretResolver);
+    }
+
+    private static RecordingHandler CreateSuccessfulHandler()
+    {
+        return new RecordingHandler(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""
+                {
+                  "code": "200",
+                  "message": "Solicitud procesada con éxito. - Complemento timbrado.",
+                  "data": {
+                    "uuid": "UUID-PC-OK-1",
+                    "xml": "<cfdi:Comprobante xmlns:cfdi=\"http://www.sat.gob.mx/cfd/4\" />"
+                  }
+                }
+                """, Encoding.UTF8, "application/json")
+        });
     }
 
     private static PaymentComplementStampingRequest CreateRequest()
@@ -512,6 +696,14 @@ public class FacturaloPlusPaymentComplementStampingGatewayTests
             .ToDictionary(
                 pieces => Uri.UnescapeDataString(pieces[0]),
                 pieces => Uri.UnescapeDataString(pieces.Length > 1 ? pieces[1] : string.Empty));
+    }
+
+    private static string DecodePayloadJson(RecordingHandler handler)
+    {
+        Assert.NotNull(handler.LastBody);
+        var form = ParseFormBody(handler.LastBody!);
+        Assert.True(form.ContainsKey("jsonB64"));
+        return Encoding.UTF8.GetString(Convert.FromBase64String(form["jsonB64"]));
     }
 
     private static string? InvokePayloadValidation(string payloadJson)
