@@ -54,9 +54,115 @@ public class FacturaloPlusPaymentComplementStampingGatewayTests
         var comprobante = json.RootElement.GetProperty("Comprobante");
         Assert.Equal("P", comprobante.GetProperty("TipoDeComprobante").GetString());
         Assert.Equal("XXX", comprobante.GetProperty("Moneda").GetString());
+        Assert.Equal(0m, comprobante.GetProperty("SubTotal").GetDecimal());
+        Assert.Equal(0m, comprobante.GetProperty("Total").GetDecimal());
+        Assert.Equal("01", comprobante.GetProperty("Exportacion").GetString());
         Assert.Equal("CP01", comprobante.GetProperty("Receptor").GetProperty("UsoCFDI").GetString());
-        Assert.Equal("03", comprobante.GetProperty("Complemento").GetProperty("Pagos20").GetProperty("Pago")[0].GetProperty("FormaDePagoP").GetString());
-        Assert.Equal("UUID-REL-1", comprobante.GetProperty("Complemento").GetProperty("Pagos20").GetProperty("Pago")[0].GetProperty("DoctoRelacionado")[0].GetProperty("IdDocumento").GetString());
+        Assert.False(comprobante.TryGetProperty("FormaPago", out _));
+        Assert.False(comprobante.TryGetProperty("MetodoPago", out _));
+        Assert.False(comprobante.TryGetProperty("CondicionesDePago", out _));
+        Assert.False(comprobante.TryGetProperty("Descuento", out _));
+        Assert.False(comprobante.TryGetProperty("TipoCambio", out _));
+        Assert.False(comprobante.TryGetProperty("Impuestos", out _));
+
+        var conceptos = comprobante.GetProperty("Conceptos");
+        Assert.Equal(JsonValueKind.Array, conceptos.ValueKind);
+        Assert.Equal(1, conceptos.GetArrayLength());
+        Assert.Equal("84111506", conceptos[0].GetProperty("ClaveProdServ").GetString());
+        Assert.Equal(1m, conceptos[0].GetProperty("Cantidad").GetDecimal());
+        Assert.Equal("ACT", conceptos[0].GetProperty("ClaveUnidad").GetString());
+        Assert.Equal("Pago", conceptos[0].GetProperty("Descripcion").GetString());
+        Assert.Equal(0m, conceptos[0].GetProperty("ValorUnitario").GetDecimal());
+        Assert.Equal(0m, conceptos[0].GetProperty("Importe").GetDecimal());
+        Assert.Equal("01", conceptos[0].GetProperty("ObjetoImp").GetString());
+
+        var complemento = comprobante.GetProperty("Complemento");
+        Assert.Equal(JsonValueKind.Array, complemento.ValueKind);
+        Assert.True(complemento.GetArrayLength() > 0);
+        Assert.True(complemento[0].TryGetProperty("Pagos20", out var pagos20));
+        Assert.False(complemento[0].TryGetProperty("Pagos", out _));
+        Assert.DoesNotContain("\"Pagos\":", decodedJson, StringComparison.Ordinal);
+        Assert.Equal("2.0", pagos20.GetProperty("Version").GetString());
+        Assert.Equal(JsonValueKind.Array, pagos20.GetProperty("Pago").ValueKind);
+        Assert.Equal("03", pagos20.GetProperty("Pago")[0].GetProperty("FormaDePagoP").GetString());
+        Assert.Equal(JsonValueKind.Array, pagos20.GetProperty("Pago")[0].GetProperty("DoctoRelacionado").ValueKind);
+        Assert.Equal("UUID-REL-1", pagos20.GetProperty("Pago")[0].GetProperty("DoctoRelacionado")[0].GetProperty("IdDocumento").GetString());
+        Assert.Equal("Complemento de Pago", json.RootElement.GetProperty("CamposPDF").GetProperty("tipoComprobante").GetString());
+        Assert.Equal("Complemento Vigente", json.RootElement.GetProperty("CamposPDF").GetProperty("Comentarios").GetString());
+    }
+
+    [Fact]
+    public void ValidatePaymentComplementPayloadJson_Rejects_LegacyObjectComplemento()
+    {
+        const string legacyPayload = """
+            {
+              "Comprobante": {
+                "Version": "4.0",
+                "Fecha": "2026-03-24T09:00:00",
+                "Moneda": "XXX",
+                "TipoDeComprobante": "P",
+                "Exportacion": "01",
+                "LugarExpedicion": "01000",
+                "SubTotal": 0,
+                "Total": 0,
+                "Emisor": {
+                  "Rfc": "AAA010101AAA",
+                  "Nombre": "Issuer SA",
+                  "RegimenFiscal": "601"
+                },
+                "Receptor": {
+                  "Rfc": "BBB010101BBB",
+                  "Nombre": "Receiver SA",
+                  "DomicilioFiscalReceptor": "02000",
+                  "RegimenFiscalReceptor": "601",
+                  "UsoCFDI": "CP01"
+                },
+                "Conceptos": [
+                  {
+                    "ClaveProdServ": "84111506",
+                    "Cantidad": 1,
+                    "ClaveUnidad": "ACT",
+                    "Descripcion": "Pago",
+                    "ValorUnitario": 0,
+                    "Importe": 0,
+                    "ObjetoImp": "01"
+                  }
+                ],
+                "Complemento": {
+                  "Pagos20": {
+                    "Version": "2.0",
+                    "Totales": {
+                      "MontoTotalPagos": 123.45
+                    },
+                    "Pago": [
+                      {
+                        "FechaPago": "2026-03-24T09:00:00",
+                        "FormaDePagoP": "03",
+                        "MonedaP": "MXN",
+                        "Monto": 123.45,
+                        "DoctoRelacionado": [
+                          {
+                            "IdDocumento": "UUID-REL-1",
+                            "MonedaDR": "MXN",
+                            "NumParcialidad": 1,
+                            "ImpSaldoAnt": 123.45,
+                            "ImpPagado": 123.45,
+                            "ImpSaldoInsoluto": 0,
+                            "ObjetoImpDR": "02"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+            """;
+
+        var validationError = InvokePayloadValidation(legacyPayload);
+
+        Assert.NotNull(validationError);
+        Assert.Contains("Comprobante.Complemento[0].Pagos20", validationError, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -232,7 +338,7 @@ public class FacturaloPlusPaymentComplementStampingGatewayTests
         var form = ParseFormBody(handler.LastBody!);
         var decodedJson = Encoding.UTF8.GetString(Convert.FromBase64String(form["jsonB64"]));
         using var json = JsonDocument.Parse(decodedJson);
-        var pagos20 = json.RootElement.GetProperty("Comprobante").GetProperty("Complemento").GetProperty("Pagos20");
+        var pagos20 = json.RootElement.GetProperty("Comprobante").GetProperty("Complemento")[0].GetProperty("Pagos20");
         Assert.Equal(2, pagos20.GetProperty("Pago").GetArrayLength());
         Assert.Equal(173.45m, pagos20.GetProperty("Totales").GetProperty("MontoTotalPagos").GetDecimal());
         Assert.Equal(17.03m, pagos20.GetProperty("Totales").GetProperty("TotalTrasladosImpuestoIVA16").GetDecimal());
@@ -406,6 +512,16 @@ public class FacturaloPlusPaymentComplementStampingGatewayTests
             .ToDictionary(
                 pieces => Uri.UnescapeDataString(pieces[0]),
                 pieces => Uri.UnescapeDataString(pieces.Length > 1 ? pieces[1] : string.Empty));
+    }
+
+    private static string? InvokePayloadValidation(string payloadJson)
+    {
+        var method = typeof(FacturaloPlusPaymentComplementStampingGateway).GetMethod(
+            "ValidatePaymentComplementPayloadJson",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+        Assert.NotNull(method);
+
+        return (string?)method!.Invoke(null, [payloadJson]);
     }
 
     private sealed class RecordingSecretResolver : ISecretReferenceResolver

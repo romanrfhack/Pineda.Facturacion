@@ -16,6 +16,8 @@ namespace Pineda.Facturacion.Infrastructure.FacturaloPlus.FacturaloPlus;
 
 public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementStampingGateway
 {
+    private const string InvalidRepPayloadMessage = "Payload REP invalido para FacturaloPlus: CFDI tipo P sin Comprobante.Complemento[0].Pagos20 valido.";
+
     private static readonly string[] CfdiTimeZoneIds =
     [
         "America/Mexico_City",
@@ -102,6 +104,16 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
         var providerRequestHash = ComputeSha256(JsonSerializer.Serialize(redactedSummary, JsonOptions));
         var payload = BuildPayload(request, certificateMetadata, comprobanteFecha!);
         var payloadJson = JsonSerializer.Serialize(payload, JsonOptions);
+        var payloadSummary = BuildRepPayloadSummary(payloadJson);
+        var payloadValidationError = ValidatePaymentComplementPayloadJson(payloadJson);
+        if (payloadValidationError is not null)
+        {
+            return ValidationFailed(
+                payloadValidationError,
+                providerRequestHash,
+                BuildPayloadValidationFailureSummary(providerOperation, payloadSummary, payloadValidationError));
+        }
+
         var formPayload = BuildFormPayload(apiKey, payloadJson, privateKeyValue, certificateValue);
 
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, providerOperation)
@@ -128,7 +140,7 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
 
         var providerResponse = TryDeserialize(responseContent);
         var requestUri = response.RequestMessage?.RequestUri?.ToString() ?? httpRequest.RequestUri?.ToString();
-        var rawResponseSummaryJson = BuildRawResponseSummary(response.StatusCode, providerOperation, requestUri, providerResponse, responseContent);
+        var rawResponseSummaryJson = BuildRawResponseSummary(response.StatusCode, providerOperation, requestUri, providerResponse, responseContent, payloadSummary);
 
         if (response.IsSuccessStatusCode && IsProviderSuccess(providerResponse) && HasSuccessfulStampEvidence(providerResponse))
         {
@@ -217,6 +229,11 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
 
         return new FacturaloPlusPaymentComplementStampingPayload
         {
+            CamposPDF = new FacturaloPlusPaymentComplementCamposPdf
+            {
+                TipoComprobante = "Complemento de Pago",
+                Comentarios = "Complemento Vigente"
+            },
             Comprobante = new FacturaloPlusPaymentComplementComprobante
             {
                 Version = request.CfdiVersion,
@@ -260,15 +277,18 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
                         ObjetoImp = "01"
                     }
                 ],
-                Complemento = new FacturaloPlusPaymentComplementComplemento
-                {
-                    Pagos20 = new FacturaloPlusPaymentComplementPagos20
+                Complemento =
+                [
+                    new FacturaloPlusPaymentComplementComplemento
                     {
-                        Version = "2.0",
-                        Totales = BuildTotales(payloadPagos),
-                        Pago = payloadPagos
+                        Pagos20 = new FacturaloPlusPaymentComplementPagos20
+                        {
+                            Version = "2.0",
+                            Totales = BuildTotales(payloadPagos),
+                            Pago = payloadPagos
+                        }
                     }
-                }
+                ]
             }
         };
     }
@@ -605,13 +625,15 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
         string providerOperation,
         string? requestUri,
         FacturaloPlusProviderResponse? providerResponse,
-        string responseContent)
+        string responseContent,
+        FacturaloPlusRepPayloadSummary? requestPayloadSummary)
     {
         var summary = new
         {
             StatusCode = (int)statusCode,
             ProviderOperation = providerOperation,
             RequestUri = requestUri,
+            RequestPayloadSummary = requestPayloadSummary,
             providerResponse?.Success,
             providerResponse?.Code,
             providerResponse?.Message,
@@ -625,6 +647,315 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
         };
 
         return JsonSerializer.Serialize(summary, JsonOptions);
+    }
+
+    private static string BuildPayloadValidationFailureSummary(
+        string providerOperation,
+        FacturaloPlusRepPayloadSummary requestPayloadSummary,
+        string validationError)
+    {
+        var summary = new
+        {
+            StatusCode = 0,
+            ProviderOperation = providerOperation,
+            RequestPayloadSummary = requestPayloadSummary,
+            ValidationError = validationError,
+            ProviderCallSkipped = true
+        };
+
+        return JsonSerializer.Serialize(summary, JsonOptions);
+    }
+
+    private static string? ValidatePaymentComplementPayloadJson(string payloadJson)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(payloadJson);
+            var root = document.RootElement;
+
+            if (!TryGetProperty(root, out var comprobante, "Comprobante") || comprobante.ValueKind != JsonValueKind.Object)
+            {
+                return InvalidRepPayloadMessage + " Falta root.Comprobante.";
+            }
+
+            if (!string.Equals(ReadJsonScalar(comprobante, "Version"), "4.0", StringComparison.Ordinal))
+            {
+                return InvalidRepPayloadMessage + " Comprobante.Version debe ser 4.0.";
+            }
+
+            if (!string.Equals(ReadJsonScalar(comprobante, "TipoDeComprobante"), "P", StringComparison.Ordinal))
+            {
+                return InvalidRepPayloadMessage + " Comprobante.TipoDeComprobante debe ser P.";
+            }
+
+            if (!string.Equals(ReadJsonScalar(comprobante, "Moneda"), "XXX", StringComparison.Ordinal))
+            {
+                return InvalidRepPayloadMessage + " Comprobante.Moneda debe ser XXX.";
+            }
+
+            if (ReadJsonDecimal(comprobante, "SubTotal") != 0m || ReadJsonDecimal(comprobante, "Total") != 0m)
+            {
+                return InvalidRepPayloadMessage + " Comprobante.SubTotal y Comprobante.Total deben ser cero.";
+            }
+
+            if (!string.Equals(ReadJsonScalar(comprobante, "Exportacion"), "01", StringComparison.Ordinal))
+            {
+                return InvalidRepPayloadMessage + " Comprobante.Exportacion debe ser 01.";
+            }
+
+            foreach (var forbiddenField in new[] { "FormaPago", "MetodoPago", "CondicionesDePago", "Descuento", "TipoCambio", "Impuestos" })
+            {
+                if (TryGetProperty(comprobante, out _, forbiddenField))
+                {
+                    return InvalidRepPayloadMessage + $" Comprobante.{forbiddenField} no debe enviarse en CFDI tipo P.";
+                }
+            }
+
+            if (!TryGetProperty(comprobante, out var receptor, "Receptor")
+                || receptor.ValueKind != JsonValueKind.Object
+                || !string.Equals(ReadJsonScalar(receptor, "UsoCFDI"), "CP01", StringComparison.Ordinal))
+            {
+                return InvalidRepPayloadMessage + " Receptor.UsoCFDI debe ser CP01.";
+            }
+
+            var conceptValidationError = ValidatePaymentConcept(comprobante);
+            if (conceptValidationError is not null)
+            {
+                return conceptValidationError;
+            }
+
+            if (!TryGetProperty(comprobante, out var complemento, "Complemento")
+                || complemento.ValueKind != JsonValueKind.Array
+                || complemento.GetArrayLength() == 0)
+            {
+                return InvalidRepPayloadMessage + " Comprobante.Complemento debe ser arreglo no vacio.";
+            }
+
+            var firstComplemento = complemento.EnumerateArray().First();
+            if (firstComplemento.ValueKind != JsonValueKind.Object)
+            {
+                return InvalidRepPayloadMessage + " Comprobante.Complemento[0] debe ser objeto.";
+            }
+
+            if (TryGetProperty(firstComplemento, out _, "Pagos"))
+            {
+                return InvalidRepPayloadMessage + " FacturaloPlus espera Pagos20, no Pagos.";
+            }
+
+            if (!TryGetProperty(firstComplemento, out var pagos20, "Pagos20") || pagos20.ValueKind != JsonValueKind.Object)
+            {
+                return InvalidRepPayloadMessage;
+            }
+
+            if (!string.Equals(ReadJsonScalar(pagos20, "Version"), "2.0", StringComparison.Ordinal))
+            {
+                return InvalidRepPayloadMessage + " Pagos20.Version debe ser 2.0.";
+            }
+
+            if (!TryGetProperty(pagos20, out var pagos, "Pago")
+                || pagos.ValueKind != JsonValueKind.Array
+                || pagos.GetArrayLength() == 0)
+            {
+                return InvalidRepPayloadMessage + " Pagos20.Pago debe ser arreglo no vacio.";
+            }
+
+            foreach (var pago in pagos.EnumerateArray())
+            {
+                if (pago.ValueKind != JsonValueKind.Object)
+                {
+                    return InvalidRepPayloadMessage + " Cada Pago debe ser objeto.";
+                }
+
+                if (!TryGetProperty(pago, out var doctos, "DoctoRelacionado")
+                    || doctos.ValueKind != JsonValueKind.Array
+                    || doctos.GetArrayLength() == 0)
+                {
+                    return InvalidRepPayloadMessage + " Cada Pago debe incluir DoctoRelacionado como arreglo no vacio.";
+                }
+
+                var paymentTaxValidationError = ValidateOptionalTaxArrays(pago, "ImpuestosP", "TrasladosP", "RetencionesP");
+                if (paymentTaxValidationError is not null)
+                {
+                    return paymentTaxValidationError;
+                }
+
+                foreach (var docto in doctos.EnumerateArray())
+                {
+                    var relatedTaxValidationError = ValidateOptionalTaxArrays(docto, "ImpuestosDR", "TrasladosDR", "RetencionesDR");
+                    if (relatedTaxValidationError is not null)
+                    {
+                        return relatedTaxValidationError;
+                    }
+                }
+            }
+
+            return null;
+        }
+        catch (JsonException)
+        {
+            return InvalidRepPayloadMessage + " JSON invalido.";
+        }
+    }
+
+    private static string? ValidatePaymentConcept(JsonElement comprobante)
+    {
+        if (!TryGetProperty(comprobante, out var conceptos, "Conceptos")
+            || conceptos.ValueKind != JsonValueKind.Array
+            || conceptos.GetArrayLength() != 1)
+        {
+            return InvalidRepPayloadMessage + " CFDI tipo P debe incluir un solo concepto de pago.";
+        }
+
+        var concepto = conceptos.EnumerateArray().First();
+        if (concepto.ValueKind != JsonValueKind.Object)
+        {
+            return InvalidRepPayloadMessage + " El concepto de pago debe ser objeto.";
+        }
+
+        if (!string.Equals(ReadJsonScalar(concepto, "ClaveProdServ"), "84111506", StringComparison.Ordinal)
+            || !string.Equals(ReadJsonScalar(concepto, "ClaveUnidad"), "ACT", StringComparison.Ordinal)
+            || !string.Equals(ReadJsonScalar(concepto, "Descripcion"), "Pago", StringComparison.Ordinal)
+            || !string.Equals(ReadJsonScalar(concepto, "ObjetoImp"), "01", StringComparison.Ordinal)
+            || ReadJsonDecimal(concepto, "Cantidad") != 1m
+            || ReadJsonDecimal(concepto, "ValorUnitario") != 0m
+            || ReadJsonDecimal(concepto, "Importe") != 0m)
+        {
+            return InvalidRepPayloadMessage + " El concepto de pago no cumple el layout CFDI tipo P.";
+        }
+
+        return null;
+    }
+
+    private static string? ValidateOptionalTaxArrays(
+        JsonElement owner,
+        string containerName,
+        string transferArrayName,
+        string retentionArrayName)
+    {
+        if (!TryGetProperty(owner, out var container, containerName))
+        {
+            return null;
+        }
+
+        if (container.ValueKind != JsonValueKind.Object)
+        {
+            return InvalidRepPayloadMessage + $" {containerName} debe ser objeto.";
+        }
+
+        if (TryGetProperty(container, out var transfers, transferArrayName) && transfers.ValueKind != JsonValueKind.Array)
+        {
+            return InvalidRepPayloadMessage + $" {containerName}.{transferArrayName} debe ser arreglo.";
+        }
+
+        if (TryGetProperty(container, out var retentions, retentionArrayName) && retentions.ValueKind != JsonValueKind.Array)
+        {
+            return InvalidRepPayloadMessage + $" {containerName}.{retentionArrayName} debe ser arreglo.";
+        }
+
+        return null;
+    }
+
+    private static FacturaloPlusRepPayloadSummary BuildRepPayloadSummary(string payloadJson)
+    {
+        var summary = new FacturaloPlusRepPayloadSummary();
+
+        try
+        {
+            using var document = JsonDocument.Parse(payloadJson);
+            if (!TryGetProperty(document.RootElement, out var comprobante, "Comprobante") || comprobante.ValueKind != JsonValueKind.Object)
+            {
+                return summary;
+            }
+
+            summary.TipoDeComprobante = ReadJsonScalar(comprobante, "TipoDeComprobante");
+            summary.Moneda = ReadJsonScalar(comprobante, "Moneda");
+            summary.SubTotal = ReadJsonDecimal(comprobante, "SubTotal");
+            summary.Total = ReadJsonDecimal(comprobante, "Total");
+
+            if (!TryGetProperty(comprobante, out var complemento, "Complemento"))
+            {
+                summary.ComplementoKind = "Missing";
+                return summary;
+            }
+
+            summary.ComplementoKind = complemento.ValueKind.ToString();
+            summary.ComplementoIsArray = complemento.ValueKind == JsonValueKind.Array;
+            if (complemento.ValueKind != JsonValueKind.Array || complemento.GetArrayLength() == 0)
+            {
+                return summary;
+            }
+
+            var firstComplemento = complemento.EnumerateArray().First();
+            if (!TryGetProperty(firstComplemento, out var pagos20, "Pagos20") || pagos20.ValueKind != JsonValueKind.Object)
+            {
+                summary.HasPagos20 = false;
+                return summary;
+            }
+
+            summary.HasPagos20 = true;
+            summary.Pagos20Version = ReadJsonScalar(pagos20, "Version");
+            if (TryGetProperty(pagos20, out var totales, "Totales") && totales.ValueKind == JsonValueKind.Object)
+            {
+                summary.MontoTotalPagos = ReadJsonDecimal(totales, "MontoTotalPagos");
+            }
+
+            if (!TryGetProperty(pagos20, out var pagos, "Pago") || pagos.ValueKind != JsonValueKind.Array)
+            {
+                return summary;
+            }
+
+            summary.PagoCount = pagos.GetArrayLength();
+            summary.DoctoRelacionadoCount = pagos
+                .EnumerateArray()
+                .Where(pago => pago.ValueKind == JsonValueKind.Object && TryGetProperty(pago, out _, "DoctoRelacionado"))
+                .Select(pago => pago.GetProperty("DoctoRelacionado"))
+                .Where(doctos => doctos.ValueKind == JsonValueKind.Array)
+                .Sum(doctos => doctos.GetArrayLength());
+        }
+        catch (JsonException)
+        {
+            summary.JsonParseFailed = true;
+        }
+
+        return summary;
+    }
+
+    private static string? ReadJsonScalar(JsonElement element, string propertyName)
+    {
+        if (!TryGetProperty(element, out var property, propertyName))
+        {
+            return null;
+        }
+
+        return property.ValueKind switch
+        {
+            JsonValueKind.String => property.GetString(),
+            JsonValueKind.Number => property.GetRawText(),
+            JsonValueKind.True => bool.TrueString,
+            JsonValueKind.False => bool.FalseString,
+            _ => null
+        };
+    }
+
+    private static decimal? ReadJsonDecimal(JsonElement element, string propertyName)
+    {
+        if (!TryGetProperty(element, out var property, propertyName))
+        {
+            return null;
+        }
+
+        if (property.ValueKind == JsonValueKind.Number && property.TryGetDecimal(out var number))
+        {
+            return number;
+        }
+
+        if (property.ValueKind == JsonValueKind.String
+            && decimal.TryParse(property.GetString(), NumberStyles.Number, CultureInfo.InvariantCulture, out var textNumber))
+        {
+            return textNumber;
+        }
+
+        return null;
     }
 
     private static string ComputeSha256(string value)
@@ -739,13 +1070,18 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
         return Math.Round(rate, 6, MidpointRounding.AwayFromZero).ToString("0.000000", CultureInfo.InvariantCulture);
     }
 
-    private static PaymentComplementStampingGatewayResult ValidationFailed(string errorMessage)
+    private static PaymentComplementStampingGatewayResult ValidationFailed(
+        string errorMessage,
+        string? providerRequestHash = null,
+        string? rawResponseSummaryJson = null)
     {
         return new PaymentComplementStampingGatewayResult
         {
             Outcome = PaymentComplementStampingGatewayOutcome.ValidationFailed,
             ProviderName = "FacturaloPlus",
             ProviderOperation = "payment-complement-stamp",
+            ProviderRequestHash = providerRequestHash,
+            RawResponseSummaryJson = rawResponseSummaryJson,
             ErrorMessage = errorMessage
         };
     }
@@ -969,6 +1305,16 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
     {
         [JsonPropertyName("Comprobante")]
         public FacturaloPlusPaymentComplementComprobante Comprobante { get; init; } = new();
+        [JsonPropertyName("CamposPDF")]
+        public FacturaloPlusPaymentComplementCamposPdf CamposPDF { get; init; } = new();
+    }
+
+    private sealed class FacturaloPlusPaymentComplementCamposPdf
+    {
+        [JsonPropertyName("tipoComprobante")]
+        public string TipoComprobante { get; init; } = string.Empty;
+        [JsonPropertyName("Comentarios")]
+        public string Comentarios { get; init; } = string.Empty;
     }
 
     private sealed class FacturaloPlusPaymentComplementComprobante
@@ -1000,7 +1346,7 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
         [JsonPropertyName("Conceptos")]
         public List<FacturaloPlusPaymentComplementConcepto> Conceptos { get; init; } = [];
         [JsonPropertyName("Complemento")]
-        public FacturaloPlusPaymentComplementComplemento Complemento { get; init; } = new();
+        public List<FacturaloPlusPaymentComplementComplemento> Complemento { get; init; } = [];
     }
 
     private sealed class FacturaloPlusPaymentComplementComprobanteEmisor
@@ -1246,5 +1592,32 @@ public class FacturaloPlusPaymentComplementStampingGateway : IPaymentComplementS
         public string? ErrorMessage { get; set; }
 
         public bool HasSuccessfulStampEvidence { get; set; }
+    }
+
+    private sealed class FacturaloPlusRepPayloadSummary
+    {
+        public string? TipoDeComprobante { get; set; }
+
+        public string? Moneda { get; set; }
+
+        public decimal? SubTotal { get; set; }
+
+        public decimal? Total { get; set; }
+
+        public string? ComplementoKind { get; set; }
+
+        public bool ComplementoIsArray { get; set; }
+
+        public bool HasPagos20 { get; set; }
+
+        public string? Pagos20Version { get; set; }
+
+        public int PagoCount { get; set; }
+
+        public int DoctoRelacionadoCount { get; set; }
+
+        public decimal? MontoTotalPagos { get; set; }
+
+        public bool JsonParseFailed { get; set; }
     }
 }
