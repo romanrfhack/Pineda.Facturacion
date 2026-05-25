@@ -2,16 +2,20 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
+import { PermissionService } from '../../../core/auth/permission.service';
 import { extractApiErrorMessage } from '../../../core/http/api-error-message';
 import { FeedbackService } from '../../../core/ui/feedback.service';
 import { getDisplayLabel } from '../../../shared/ui/display-labels';
 import { AccountsReceivableApiService } from '../../accounts-receivable/infrastructure/accounts-receivable-api.service';
+import { PaymentComplementStampEvidenceDetailComponent } from '../components/payment-complement-stamp-evidence-detail.component';
 import { PaymentContextModalComponent } from '../components/payment-context-modal.component';
 import { PaymentComplementsApiService } from '../infrastructure/payment-complements-api.service';
 import {
   RepBaseDocumentBulkRefreshResponse,
   InternalRepBaseDocumentDetailResponse,
   InternalRepBaseDocumentItemResponse,
+  PaymentComplementEmailDraftResponse,
+  PaymentComplementStampResponse,
   InternalRepBaseDocumentPaymentComplementResponse,
   InternalRepBaseDocumentPaymentHistoryResponse,
   PrepareInternalRepBaseDocumentPaymentComplementResponse,
@@ -24,7 +28,7 @@ import {
 
 @Component({
   selector: 'app-payment-complement-base-documents-page',
-  imports: [FormsModule, DecimalPipe, PaymentContextModalComponent],
+  imports: [FormsModule, DecimalPipe, PaymentComplementStampEvidenceDetailComponent, PaymentContextModalComponent],
   template: `
     <section class="page">
       <header>
@@ -310,6 +314,8 @@ import {
         [stampingComplement]="stampingComplement()"
         [refreshingComplement]="refreshingComplement()"
         [cancellingComplement]="cancellingComplement()"
+        [repUtilityActionKey]="repUtilityActionKey()"
+        [canSendPaymentComplementEmail]="permissionService.canStampFiscal()"
         [groupedPaymentIds]="groupedPaymentIds()"
         [groupedPrepareToken]="GROUPED_PREPARE_TOKEN"
         [(paymentDate)]="paymentDate"
@@ -327,9 +333,116 @@ import {
         (prepareSelectedPaymentComplementRequested)="prepareSelectedPaymentComplement()"
         (preparePaymentComplementRequested)="preparePaymentComplement($event)"
         (stampPaymentComplementRequested)="stampPaymentComplement($event)"
+        (viewPaymentComplementStampRequested)="openPaymentComplementStampDetail($event)"
+        (downloadPaymentComplementXmlRequested)="downloadPaymentComplementXml($event)"
+        (downloadPaymentComplementPdfRequested)="downloadPaymentComplementPdf($event)"
+        (emailPaymentComplementRequested)="openPaymentComplementEmailComposer($event)"
         (refreshPaymentComplementRequested)="refreshPaymentComplement($event)"
         (cancelPaymentComplementRequested)="cancelPaymentComplement($event)"
       />
+
+      @if (showPaymentComplementStampDetail()) {
+        <section class="overlay-backdrop" (click)="closePaymentComplementStampDetail()">
+          <section class="overlay-card detail-overlay" role="dialog" aria-modal="true" (click)="$event.stopPropagation()">
+            <div class="overlay-header">
+              <div>
+                <p class="eyebrow">Complementos de pago</p>
+                <h3>Detalle de timbrado REP</h3>
+              </div>
+              <button type="button" class="secondary" (click)="closePaymentComplementStampDetail()">Cerrar</button>
+            </div>
+
+            @if (loadingPaymentComplementStampDetail()) {
+              <p class="helper">Cargando evidencia de timbrado...</p>
+            } @else if (paymentComplementStampDetailError()) {
+              <p class="error">{{ paymentComplementStampDetailError() }}</p>
+            } @else if (paymentComplementStampDetail(); as stamp) {
+              @if (selectedPaymentComplementForStampDetail(); as rep) {
+                <section class="card nested-card stamp-summary-card">
+                  <div class="summary-grid">
+                    <div><strong>REP</strong><span>#{{ rep.paymentComplementId }}</span></div>
+                    <div><strong>UUID</strong><span>{{ stamp.uuid || rep.uuid || '—' }}</span></div>
+                    <div><strong>Proveedor</strong><span>{{ stamp.providerName || rep.providerName || '—' }}</span></div>
+                    <div><strong>Estado</strong><span>{{ getDisplayLabel(stamp.status || rep.status) }}</span></div>
+                    <div><strong>Timbrado</strong><span>{{ formatOptionalUtc(stamp.stampedAtUtc || rep.stampedAtUtc) }}</span></div>
+                    <div><strong>XML</strong><span>{{ rep.xmlAvailable ? 'Disponible' : 'No disponible' }}</span></div>
+                    <div><strong>PDF</strong><span>{{ rep.pdfAvailable ? 'Disponible' : (rep.canGeneratePdf ? 'Generable' : 'No disponible') }}</span></div>
+                    <div><strong>Cancelación</strong><span>{{ formatOptionalUtc(rep.cancelledAtUtc) }}</span></div>
+                  </div>
+                </section>
+              }
+
+              <app-payment-complement-stamp-evidence-detail [stamp]="stamp" />
+            }
+          </section>
+        </section>
+      }
+
+      @if (showPaymentComplementEmailComposer()) {
+        <section class="overlay-backdrop" (click)="closePaymentComplementEmailComposer()">
+          <section class="overlay-card" role="dialog" aria-modal="true" (click)="$event.stopPropagation()">
+            <div class="overlay-header">
+              <div>
+                <p class="eyebrow">Complementos de pago</p>
+                <h3>Enviar REP por correo</h3>
+              </div>
+              <button type="button" class="secondary" (click)="closePaymentComplementEmailComposer()" [disabled]="sendingPaymentComplementEmail()">
+                Cerrar
+              </button>
+            </div>
+
+            <p class="helper">El backend adjuntará el XML y PDF del complemento de pago disponible para este REP.</p>
+
+            @if (paymentComplementEmailAttachments().length) {
+              <section class="attachment-section">
+                <strong>Adjuntos esperados</strong>
+                <div class="attachment-chip-list">
+                  @for (fileName of paymentComplementEmailAttachments(); track fileName) {
+                    <span class="attachment-chip">{{ fileName }}</span>
+                  }
+                </div>
+              </section>
+            }
+
+            <form class="email-form" (ngSubmit)="sendPaymentComplementEmail()">
+              <label class="wide">
+                <span>Correo(s) destino</span>
+                <input [(ngModel)]="paymentComplementEmailRecipientsInput" name="paymentComplementEmailRecipientsInput" />
+              </label>
+              <label class="wide">
+                <span>Asunto</span>
+                <input [(ngModel)]="paymentComplementEmailSubject" name="paymentComplementEmailSubject" />
+              </label>
+              <label class="wide">
+                <span>Mensaje</span>
+                <textarea [(ngModel)]="paymentComplementEmailBody" name="paymentComplementEmailBody" rows="6"></textarea>
+              </label>
+
+              @if (paymentComplementEmailRecipientsError()) {
+                <p class="error wide">{{ paymentComplementEmailRecipientsError() }}</p>
+              }
+
+              @if (paymentComplementEmailDraftError()) {
+                <p class="error wide">{{ paymentComplementEmailDraftError() }}</p>
+              }
+
+              <div class="actions wide">
+                <button type="submit" [disabled]="sendingPaymentComplementEmail() || !hasValidPaymentComplementEmailRecipients()">
+                  {{ sendingPaymentComplementEmail() ? 'Enviando...' : 'Enviar complemento' }}
+                </button>
+                <button
+                  type="button"
+                  class="secondary"
+                  (click)="closePaymentComplementEmailComposer()"
+                  [disabled]="sendingPaymentComplementEmail()"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </form>
+          </section>
+        </section>
+      }
     </section>
   `,
   styles: [`
@@ -339,8 +452,8 @@ import {
     .filters { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:1rem; align-items:end; }
     .wide { grid-column:1 / -1; }
     label { display:grid; gap:0.35rem; }
-    input, select, button { font:inherit; }
-    input, select { border:1px solid #c9d1da; border-radius:0.8rem; padding:0.75rem 0.9rem; }
+    input, select, textarea, button { font:inherit; }
+    input, select, textarea { border:1px solid #c9d1da; border-radius:0.8rem; padding:0.75rem 0.9rem; }
     button { border:none; border-radius:0.8rem; padding:0.75rem 1rem; background:#182533; color:#fff; cursor:pointer; }
     button.secondary { background:#d8c49b; color:#182533; }
     button.small { padding:0.45rem 0.7rem; font-size:0.88rem; }
@@ -399,14 +512,26 @@ import {
     .detail-modal { align-content:start; }
     .modal-header { display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; }
     .payment-form { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:1rem; align-items:end; }
-    textarea { font:inherit; border:1px solid #c9d1da; border-radius:0.8rem; padding:0.75rem 0.9rem; resize:vertical; }
+    textarea { resize:vertical; }
     .summary-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:1rem; }
+    .overlay-backdrop { position:fixed; inset:0; background:rgba(24, 37, 51, 0.52); display:grid; place-items:center; padding:1rem; z-index:60; }
+    .overlay-card { width:min(980px, 100%); max-height:calc(100vh - 2rem); overflow:auto; border:1px solid #d8d1c2; border-radius:1rem; background:#fff; padding:1rem; display:grid; gap:1rem; box-shadow:0 24px 60px rgba(24, 37, 51, 0.24); }
+    .detail-overlay { width:min(1080px, 100%); }
+    .overlay-header { display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; }
+    .stamp-summary-card { background:#fcfaf4; }
+    .summary-grid div { display:grid; gap:0.2rem; }
+    .summary-grid strong { color:#5f6b76; font-size:0.82rem; }
+    .summary-grid span { color:#182533; font-weight:600; overflow-wrap:anywhere; }
+    .attachment-section { display:grid; gap:0.65rem; }
+    .attachment-chip-list { display:flex; flex-wrap:wrap; gap:0.55rem; }
+    .attachment-chip { display:inline-flex; align-items:center; border:1px solid #d8d1c2; border-radius:999px; background:#f6f1e7; color:#5a4d35; padding:0.3rem 0.75rem; }
+    .email-form { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:1rem; align-items:start; }
     dl { display:grid; gap:0.5rem; margin:0; }
     dl div { display:grid; gap:0.15rem; }
     dt { font-size:0.8rem; color:#5f6b76; }
     dd { margin:0; font-weight:600; color:#182533; }
     @media (max-width: 720px) {
-      .toolbar, .pagination, .modal-header { flex-direction:column; align-items:stretch; }
+      .toolbar, .pagination, .modal-header, .overlay-header { flex-direction:column; align-items:stretch; }
     }
   `],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -416,6 +541,7 @@ export class PaymentComplementBaseDocumentsPageComponent {
   private readonly api = inject(PaymentComplementsApiService);
   private readonly accountsReceivableApi = inject(AccountsReceivableApiService);
   private readonly feedbackService = inject(FeedbackService);
+  protected readonly permissionService = inject(PermissionService);
   protected readonly getDisplayLabel = getDisplayLabel;
 
   protected fromDate = '';
@@ -459,13 +585,28 @@ export class PaymentComplementBaseDocumentsPageComponent {
   protected readonly stampingComplement = signal<number | null>(null);
   protected readonly refreshingComplement = signal<number | null>(null);
   protected readonly cancellingComplement = signal<number | null>(null);
+  protected readonly repUtilityActionKey = signal<string | null>(null);
   protected readonly repActionError = signal<string | null>(null);
+  protected readonly showPaymentComplementStampDetail = signal(false);
+  protected readonly loadingPaymentComplementStampDetail = signal(false);
+  protected readonly paymentComplementStampDetail = signal<PaymentComplementStampResponse | null>(null);
+  protected readonly paymentComplementStampDetailError = signal<string | null>(null);
+  protected readonly selectedPaymentComplementForStampDetail = signal<InternalRepBaseDocumentPaymentComplementResponse | null>(null);
+  protected readonly showPaymentComplementEmailComposer = signal(false);
+  protected readonly sendingPaymentComplementEmail = signal(false);
+  protected readonly paymentComplementEmailDraft = signal<PaymentComplementEmailDraftResponse | null>(null);
+  protected readonly paymentComplementEmailDraftError = signal<string | null>(null);
+  protected readonly paymentComplementEmailRecipientsError = signal<string | null>(null);
+  protected readonly selectedPaymentComplementForEmail = signal<InternalRepBaseDocumentPaymentComplementResponse | null>(null);
   protected readonly groupedPaymentIds = signal<number[]>([]);
   protected paymentDate = todayInputValue();
   protected paymentFormSat = '03';
   protected paymentAmount: number | null = null;
   protected paymentReference = '';
   protected paymentNotes = '';
+  protected paymentComplementEmailRecipientsInput = '';
+  protected paymentComplementEmailSubject = '';
+  protected paymentComplementEmailBody = '';
 
   constructor() {
     void this.load();
@@ -527,6 +668,9 @@ export class PaymentComplementBaseDocumentsPageComponent {
     this.loadingDetail.set(false);
     this.detailError.set(null);
     this.repActionError.set(null);
+    this.closePaymentComplementStampDetail();
+    this.forceClosePaymentComplementEmailComposer();
+    this.repUtilityActionKey.set(null);
     this.clearGroupedPaymentSelection();
     this.cancelRegisterPaymentForm();
   }
@@ -774,6 +918,181 @@ export class PaymentComplementBaseDocumentsPageComponent {
       this.feedbackService.show('error', message);
     } finally {
       this.cancellingComplement.set(null);
+    }
+  }
+
+  protected async openPaymentComplementStampDetail(
+    complement: InternalRepBaseDocumentPaymentComplementResponse
+  ): Promise<void> {
+    this.selectedPaymentComplementForStampDetail.set(complement);
+    this.showPaymentComplementStampDetail.set(true);
+    this.loadingPaymentComplementStampDetail.set(true);
+    this.paymentComplementStampDetail.set(null);
+    this.paymentComplementStampDetailError.set(null);
+    this.repUtilityActionKey.set(`detail:${complement.paymentComplementId}`);
+
+    try {
+      const stamp = await firstValueFrom(this.api.getPaymentComplementStamp(complement.paymentComplementId));
+      this.paymentComplementStampDetail.set(stamp);
+    } catch (error) {
+      const message = resolvePaymentComplementStampDetailError(error);
+      this.paymentComplementStampDetailError.set(message);
+      this.feedbackService.show('error', message);
+    } finally {
+      this.loadingPaymentComplementStampDetail.set(false);
+      this.repUtilityActionKey.set(null);
+    }
+  }
+
+  protected closePaymentComplementStampDetail(): void {
+    this.showPaymentComplementStampDetail.set(false);
+    this.loadingPaymentComplementStampDetail.set(false);
+    this.paymentComplementStampDetail.set(null);
+    this.paymentComplementStampDetailError.set(null);
+    this.selectedPaymentComplementForStampDetail.set(null);
+  }
+
+  protected async downloadPaymentComplementXml(
+    complement: InternalRepBaseDocumentPaymentComplementResponse
+  ): Promise<void> {
+    this.repUtilityActionKey.set(`xml:${complement.paymentComplementId}`);
+
+    try {
+      const response = await firstValueFrom(this.api.downloadPaymentComplementXml(complement.paymentComplementId));
+      const blob = response.body;
+      if (!blob) {
+        throw new Error('MissingBlob');
+      }
+
+      triggerBlobDownload(
+        blob,
+        getFileNameFromContentDisposition(response.headers.get('content-disposition')) ??
+          buildRepFileName(complement, 'xml'),
+      );
+    } catch (error) {
+      this.feedbackService.show('error', resolvePaymentComplementDownloadError(error, 'xml'));
+    } finally {
+      this.repUtilityActionKey.set(null);
+    }
+  }
+
+  protected async downloadPaymentComplementPdf(
+    complement: InternalRepBaseDocumentPaymentComplementResponse
+  ): Promise<void> {
+    this.repUtilityActionKey.set(`pdf:${complement.paymentComplementId}`);
+
+    try {
+      const response = await firstValueFrom(this.api.downloadPaymentComplementPdf(complement.paymentComplementId));
+      const blob = response.body;
+      if (!blob) {
+        throw new Error('MissingBlob');
+      }
+
+      triggerBlobDownload(
+        blob,
+        getFileNameFromContentDisposition(response.headers.get('content-disposition')) ??
+          buildRepFileName(complement, 'pdf'),
+      );
+    } catch (error) {
+      this.feedbackService.show('error', resolvePaymentComplementDownloadError(error, 'pdf'));
+    } finally {
+      this.repUtilityActionKey.set(null);
+    }
+  }
+
+  protected async openPaymentComplementEmailComposer(
+    complement: InternalRepBaseDocumentPaymentComplementResponse
+  ): Promise<void> {
+    this.selectedPaymentComplementForEmail.set(complement);
+    this.paymentComplementEmailDraft.set(null);
+    this.paymentComplementEmailDraftError.set(null);
+    this.paymentComplementEmailRecipientsError.set(null);
+    this.paymentComplementEmailRecipientsInput = '';
+    this.paymentComplementEmailSubject = '';
+    this.paymentComplementEmailBody = '';
+    this.repUtilityActionKey.set(`email:${complement.paymentComplementId}`);
+
+    try {
+      const draft = await firstValueFrom(this.api.getPaymentComplementEmailDraft(complement.paymentComplementId));
+      this.paymentComplementEmailDraft.set(draft);
+      this.paymentComplementEmailRecipientsInput = draft.recipients.join(', ');
+      this.paymentComplementEmailSubject = draft.subject ?? '';
+      this.paymentComplementEmailBody = draft.body ?? '';
+      this.showPaymentComplementEmailComposer.set(true);
+    } catch (error) {
+      const message = resolvePaymentComplementEmailDraftError(error);
+      this.paymentComplementEmailDraftError.set(message);
+      this.feedbackService.show('error', message);
+    } finally {
+      this.repUtilityActionKey.set(null);
+    }
+  }
+
+  protected closePaymentComplementEmailComposer(): void {
+    if (this.sendingPaymentComplementEmail()) {
+      return;
+    }
+
+    this.forceClosePaymentComplementEmailComposer();
+  }
+
+  protected hasValidPaymentComplementEmailRecipients(): boolean {
+    const recipients = parseRecipients(this.paymentComplementEmailRecipientsInput);
+    return recipients.length > 0 && recipients.every(isValidEmail);
+  }
+
+  protected paymentComplementEmailAttachments(): string[] {
+    const draftAttachments = this.paymentComplementEmailDraft()?.attachments ?? [];
+    if (draftAttachments.length) {
+      return draftAttachments.map((attachment) => attachment.fileName);
+    }
+
+    const complement = this.selectedPaymentComplementForEmail();
+    if (!complement) {
+      return [];
+    }
+
+    return [buildRepFileName(complement, 'xml'), buildRepFileName(complement, 'pdf')];
+  }
+
+  protected async sendPaymentComplementEmail(): Promise<void> {
+    const complement = this.selectedPaymentComplementForEmail();
+    if (!complement || this.sendingPaymentComplementEmail()) {
+      return;
+    }
+
+    const recipients = parseRecipients(this.paymentComplementEmailRecipientsInput);
+    if (!recipients.length) {
+      this.paymentComplementEmailRecipientsError.set('Captura al menos un destinatario.');
+      return;
+    }
+
+    if (!recipients.every(isValidEmail)) {
+      this.paymentComplementEmailRecipientsError.set('Captura únicamente correos válidos para continuar.');
+      return;
+    }
+
+    if (!this.permissionService.canStampFiscal()) {
+      this.paymentComplementEmailDraftError.set('No tienes permisos para enviar este complemento por correo.');
+      return;
+    }
+
+    this.sendingPaymentComplementEmail.set(true);
+    this.paymentComplementEmailRecipientsError.set(null);
+    this.paymentComplementEmailDraftError.set(null);
+
+    try {
+      await firstValueFrom(this.api.sendPaymentComplementEmail(complement.paymentComplementId, {
+        recipients,
+        subject: normalizeOptionalText(this.paymentComplementEmailSubject),
+        body: normalizeOptionalText(this.paymentComplementEmailBody),
+      }));
+      this.feedbackService.show('success', 'Complemento de pago enviado por correo.');
+      this.forceClosePaymentComplementEmailComposer();
+    } catch (error) {
+      this.paymentComplementEmailDraftError.set(resolvePaymentComplementEmailSendError(error));
+    } finally {
+      this.sendingPaymentComplementEmail.set(false);
     }
   }
 
@@ -1078,6 +1397,134 @@ export class PaymentComplementBaseDocumentsPageComponent {
       .filter((paymentId) => paymentId !== anchorPaymentId)
       .sort((left, right) => left - right);
   }
+
+  private forceClosePaymentComplementEmailComposer(): void {
+    this.showPaymentComplementEmailComposer.set(false);
+    this.sendingPaymentComplementEmail.set(false);
+    this.paymentComplementEmailDraft.set(null);
+    this.paymentComplementEmailDraftError.set(null);
+    this.paymentComplementEmailRecipientsError.set(null);
+    this.selectedPaymentComplementForEmail.set(null);
+    this.paymentComplementEmailRecipientsInput = '';
+    this.paymentComplementEmailSubject = '';
+    this.paymentComplementEmailBody = '';
+  }
+}
+
+function parseRecipients(value: string): string[] {
+  return value
+    .split(/[,;\n]+/)
+    .map((recipient) => recipient.trim())
+    .filter((recipient) => recipient.length > 0);
+}
+
+function isValidEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function normalizeOptionalText(value: string): string | null {
+  const normalized = value.trim();
+  return normalized ? normalized : null;
+}
+
+function triggerBlobDownload(blob: Blob, fileName: string): void {
+  const objectUrl = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = objectUrl;
+  link.download = fileName;
+  link.rel = 'noopener';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 30000);
+}
+
+function getFileNameFromContentDisposition(disposition: string | null): string | null {
+  if (!disposition) {
+    return null;
+  }
+
+  const utf8Match = /filename\*=UTF-8''([^;]+)/i.exec(disposition);
+  if (utf8Match?.[1]) {
+    return decodeURIComponent(utf8Match[1].replace(/"/g, ''));
+  }
+
+  const fileNameMatch = /filename="?([^"]+)"?/i.exec(disposition);
+  return fileNameMatch?.[1] ?? null;
+}
+
+function buildRepFileName(
+  complement: Pick<InternalRepBaseDocumentPaymentComplementResponse, 'paymentComplementId' | 'uuid'>,
+  extension: 'xml' | 'pdf',
+): string {
+  const token = complement.uuid ?? complement.paymentComplementId;
+  return `REP_${token}.${extension}`;
+}
+
+function resolvePaymentComplementStampDetailError(error: unknown): string {
+  if (getErrorStatus(error) === 404) {
+    return 'No se encontró el detalle de timbrado del complemento de pago.';
+  }
+
+  return extractApiErrorMessage(error, 'No fue posible consultar el detalle de timbrado del REP.');
+}
+
+function resolvePaymentComplementDownloadError(error: unknown, fileType: 'xml' | 'pdf'): string {
+  const status = getErrorStatus(error);
+  if (fileType === 'xml') {
+    if (status === 404) {
+      return 'No se encontró el XML del complemento de pago.';
+    }
+
+    return extractApiErrorMessage(error, 'No fue posible descargar el XML del REP.');
+  }
+
+  if (status === 404) {
+    return 'No se encontró el PDF del complemento de pago.';
+  }
+
+  if (status === 409) {
+    return 'PDF no disponible para este REP.';
+  }
+
+  return extractApiErrorMessage(error, 'No fue posible descargar el PDF del REP.');
+}
+
+function resolvePaymentComplementEmailDraftError(error: unknown): string {
+  const status = getErrorStatus(error);
+  if (status === 404) {
+    return 'No se encontró el complemento de pago.';
+  }
+
+  if (status === 409) {
+    return 'El complemento no está timbrado o no tiene XML/PDF disponible.';
+  }
+
+  return extractApiErrorMessage(error, 'No fue posible cargar el borrador de correo del REP.');
+}
+
+function resolvePaymentComplementEmailSendError(error: unknown): string {
+  const status = getErrorStatus(error);
+  switch (status) {
+    case 400:
+      return extractApiErrorMessage(error, 'Verifica los destinatarios del correo.');
+    case 403:
+      return 'No tienes permisos para enviar este complemento por correo.';
+    case 404:
+      return 'No se encontró el complemento de pago.';
+    case 409:
+      return extractApiErrorMessage(error, 'El complemento no está timbrado o no tiene XML/PDF disponible.');
+    case 503:
+      return extractApiErrorMessage(error, 'No se pudo enviar el correo. Intenta más tarde.');
+    default:
+      return extractApiErrorMessage(error, 'No fue posible enviar el complemento de pago por correo.');
+  }
+}
+
+function getErrorStatus(error: unknown): number | null {
+  return typeof error === 'object' && error !== null && 'status' in error && typeof (error as { status?: unknown }).status === 'number'
+    ? ((error as { status: number }).status)
+    : null;
 }
 
 function parseBooleanFilter(value: string): boolean | null {

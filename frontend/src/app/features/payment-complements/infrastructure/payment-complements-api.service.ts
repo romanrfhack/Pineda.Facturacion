@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpResponse } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { buildApiUrl } from '../../../core/config/api-url';
 import {
@@ -35,12 +35,15 @@ import {
   StampInternalRepBaseDocumentPaymentComplementResponse,
   PaymentComplementCancellationResponse,
   PaymentComplementDocumentResponse,
+  PaymentComplementEmailDraftResponse,
   PaymentComplementStampResponse,
   RefreshExternalRepBaseDocumentPaymentComplementStatusRequest,
   RefreshExternalRepBaseDocumentPaymentComplementStatusResponse,
   RefreshInternalRepBaseDocumentPaymentComplementStatusRequest,
   RefreshInternalRepBaseDocumentPaymentComplementStatusResponse,
   RefreshPaymentComplementStatusResponse,
+  SendPaymentComplementEmailRequest,
+  SendPaymentComplementEmailResponse,
   StampPaymentComplementResponse
 } from '../models/payment-complements.models';
 
@@ -277,11 +280,40 @@ export class PaymentComplementsApiService {
   }
 
   getStamp(paymentComplementId: number): Observable<PaymentComplementStampResponse> {
+    return this.getPaymentComplementStamp(paymentComplementId);
+  }
+
+  getPaymentComplementStamp(paymentComplementId: number): Observable<PaymentComplementStampResponse> {
     return this.http.get<PaymentComplementStampResponse>(buildApiUrl(`/payment-complements/${paymentComplementId}/stamp`));
   }
 
   getStampXml(paymentComplementId: number): Observable<string> {
     return this.http.get(buildApiUrl(`/payment-complements/${paymentComplementId}/stamp/xml`), { responseType: 'text' });
+  }
+
+  downloadPaymentComplementXml(paymentComplementId: number): Observable<HttpResponse<Blob>> {
+    return this.http.get(buildApiUrl(`/payment-complements/${paymentComplementId}/stamp/xml`), {
+      observe: 'response',
+      responseType: 'blob'
+    });
+  }
+
+  downloadPaymentComplementPdf(paymentComplementId: number): Observable<HttpResponse<Blob>> {
+    return this.http.get(buildApiUrl(`/payment-complements/${paymentComplementId}/stamp/pdf`), {
+      observe: 'response',
+      responseType: 'blob'
+    });
+  }
+
+  getPaymentComplementEmailDraft(paymentComplementId: number): Observable<PaymentComplementEmailDraftResponse> {
+    return this.http.get<PaymentComplementEmailDraftResponse>(buildApiUrl(`/payment-complements/${paymentComplementId}/email-draft`));
+  }
+
+  sendPaymentComplementEmail(
+    paymentComplementId: number,
+    request: SendPaymentComplementEmailRequest
+  ): Observable<SendPaymentComplementEmailResponse> {
+    return this.http.post<SendPaymentComplementEmailResponse>(buildApiUrl(`/payment-complements/${paymentComplementId}/email`), request);
   }
 
   cancel(paymentComplementId: number): Observable<CancelPaymentComplementResponse> {

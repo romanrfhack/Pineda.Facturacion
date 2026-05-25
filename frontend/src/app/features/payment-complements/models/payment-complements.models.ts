@@ -91,6 +91,37 @@ export interface PaymentComplementStampResponse {
   updatedAtUtc: string;
 }
 
+export interface PaymentComplementEmailDraftAttachmentResponse {
+  fileName: string;
+  contentType: string;
+}
+
+export interface PaymentComplementEmailDraftResponse {
+  outcome: string;
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  recipients: string[];
+  subject?: string | null;
+  body?: string | null;
+  attachments: PaymentComplementEmailDraftAttachmentResponse[];
+}
+
+export interface SendPaymentComplementEmailRequest {
+  recipients: string[];
+  subject?: string | null;
+  body?: string | null;
+}
+
+export interface SendPaymentComplementEmailResponse {
+  outcome: string;
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  supportMessage?: string | null;
+  paymentComplementId: number;
+  recipients: string[];
+  sentAtUtc?: string | null;
+}
+
 export interface CancelPaymentComplementResponse {
   outcome: string;
   isSuccess: boolean;
@@ -525,6 +556,12 @@ export interface ExternalRepBaseDocumentPaymentComplementResponse {
   stampedAtUtc?: string | null;
   cancelledAtUtc?: string | null;
   providerName?: string | null;
+  xmlAvailable: boolean;
+  pdfAvailable: boolean;
+  canGeneratePdf: boolean;
+  canEmail: boolean;
+  canDownloadXml: boolean;
+  canDownloadPdf: boolean;
   installmentNumber: number;
   previousBalance: number;
   paidAmount: number;
@@ -874,6 +911,12 @@ export interface InternalRepBaseDocumentPaymentComplementResponse {
   stampedAtUtc?: string | null;
   cancelledAtUtc?: string | null;
   providerName?: string | null;
+  xmlAvailable: boolean;
+  pdfAvailable: boolean;
+  canGeneratePdf: boolean;
+  canEmail: boolean;
+  canDownloadXml: boolean;
+  canDownloadPdf: boolean;
   installmentNumber: number;
   previousBalance: number;
   paidAmount: number;

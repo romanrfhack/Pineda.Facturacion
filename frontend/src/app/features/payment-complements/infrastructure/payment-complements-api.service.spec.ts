@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { provideHttpClient } from '@angular/common/http';
+import { HttpHeaders, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { PaymentComplementsApiService } from './payment-complements-api.service';
 
@@ -22,6 +22,114 @@ describe('PaymentComplementsApiService', () => {
     expect(req.request.method).toBe('GET');
     expect(req.request.responseType).toBe('text');
     req.flush('<cfdi:Comprobante />');
+    httpTesting.verify();
+  });
+
+  it('gets payment-complement stamp detail by paymentComplementId', () => {
+    const service = TestBed.inject(PaymentComplementsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.getPaymentComplementStamp(60).subscribe((stamp) => {
+      expect(stamp.paymentComplementDocumentId).toBe(60);
+      expect(stamp.uuid).toBe('UUID-REP-60');
+    });
+
+    const req = httpTesting.expectOne('/api/payment-complements/60/stamp');
+    expect(req.request.method).toBe('GET');
+    req.flush({
+      id: 600,
+      paymentComplementDocumentId: 60,
+      providerName: 'FacturaloPlus',
+      status: 'Stamped',
+      uuid: 'UUID-REP-60',
+      createdAtUtc: '2026-04-05T12:00:00Z',
+      updatedAtUtc: '2026-04-05T12:05:00Z'
+    });
+    httpTesting.verify();
+  });
+
+  it('downloads payment-complement xml as blob response with headers', () => {
+    const service = TestBed.inject(PaymentComplementsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.downloadPaymentComplementXml(60).subscribe((response) => {
+      expect(response.body).toBeInstanceOf(Blob);
+      expect(response.headers.get('content-disposition')).toContain('REP_UUID-REP-60.xml');
+    });
+
+    const req = httpTesting.expectOne('/api/payment-complements/60/stamp/xml');
+    expect(req.request.method).toBe('GET');
+    expect(req.request.responseType).toBe('blob');
+    req.flush(new Blob(['<cfdi:Comprobante />'], { type: 'application/xml' }), {
+      headers: new HttpHeaders({ 'content-disposition': 'attachment; filename=\"REP_UUID-REP-60.xml\"' })
+    });
+    httpTesting.verify();
+  });
+
+  it('downloads payment-complement pdf as blob response with headers', () => {
+    const service = TestBed.inject(PaymentComplementsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.downloadPaymentComplementPdf(60).subscribe((response) => {
+      expect(response.body).toBeInstanceOf(Blob);
+      expect(response.headers.get('content-disposition')).toContain('REP_UUID-REP-60.pdf');
+    });
+
+    const req = httpTesting.expectOne('/api/payment-complements/60/stamp/pdf');
+    expect(req.request.method).toBe('GET');
+    expect(req.request.responseType).toBe('blob');
+    req.flush(new Blob(['%PDF-1.4'], { type: 'application/pdf' }), {
+      headers: new HttpHeaders({ 'content-disposition': 'attachment; filename=\"REP_UUID-REP-60.pdf\"' })
+    });
+    httpTesting.verify();
+  });
+
+  it('loads and sends the payment-complement email flow by paymentComplementId', () => {
+    const service = TestBed.inject(PaymentComplementsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.getPaymentComplementEmailDraft(60).subscribe((draft) => {
+      expect(draft.recipients).toEqual(['cliente@example.com']);
+      expect(draft.attachments.map((attachment) => attachment.fileName)).toEqual(['REP_UUID-REP-60.xml', 'REP_UUID-REP-60.pdf']);
+    });
+
+    const draftReq = httpTesting.expectOne('/api/payment-complements/60/email-draft');
+    expect(draftReq.request.method).toBe('GET');
+    draftReq.flush({
+      outcome: 'Found',
+      isSuccess: true,
+      recipients: ['cliente@example.com'],
+      subject: 'Complemento de pago UUID-REP-60',
+      body: 'Adjuntamos el complemento de pago correspondiente.',
+      attachments: [
+        { fileName: 'REP_UUID-REP-60.xml', contentType: 'application/xml' },
+        { fileName: 'REP_UUID-REP-60.pdf', contentType: 'application/pdf' }
+      ]
+    });
+
+    service.sendPaymentComplementEmail(60, {
+      recipients: ['cliente@example.com'],
+      subject: 'Complemento de pago UUID-REP-60',
+      body: 'Adjuntamos el complemento de pago correspondiente.'
+    }).subscribe((response) => {
+      expect(response.paymentComplementId).toBe(60);
+      expect(response.recipients).toEqual(['cliente@example.com']);
+    });
+
+    const sendReq = httpTesting.expectOne('/api/payment-complements/60/email');
+    expect(sendReq.request.method).toBe('POST');
+    expect(sendReq.request.body).toEqual({
+      recipients: ['cliente@example.com'],
+      subject: 'Complemento de pago UUID-REP-60',
+      body: 'Adjuntamos el complemento de pago correspondiente.'
+    });
+    sendReq.flush({
+      outcome: 'Sent',
+      isSuccess: true,
+      paymentComplementId: 60,
+      recipients: ['cliente@example.com'],
+      sentAtUtc: '2026-04-05T12:10:00Z'
+    });
     httpTesting.verify();
   });
 

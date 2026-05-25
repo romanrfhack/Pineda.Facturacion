@@ -724,7 +724,7 @@ interface GroupedPaymentToggleEvent {
                                         <button
                                           type="button"
                                           class="small"
-                                          [disabled]="stampingComplement() !== null || preparingComplement() !== null || refreshingComplement() !== null || cancellingComplement() !== null"
+                                          [disabled]="repActionDisabled()"
                                           (click)="stampPaymentComplementRequested.emit(complement)"
                                         >
                                           {{
@@ -734,11 +734,47 @@ interface GroupedPaymentToggleEvent {
                                           }}
                                         </button>
                                       }
+                                      <button
+                                        type="button"
+                                        class="secondary small"
+                                        [disabled]="repActionDisabled() || !canViewComplementStamp(complement)"
+                                        [title]="detailButtonTitle(complement)"
+                                        (click)="viewPaymentComplementStampRequested.emit(complement)"
+                                      >
+                                        {{ repUtilityActionLabel(complement, 'detail', 'Detalle', 'Cargando...') }}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        class="secondary small"
+                                        [disabled]="repActionDisabled() || !canDownloadComplementXml(complement)"
+                                        [title]="xmlButtonTitle(complement)"
+                                        (click)="downloadPaymentComplementXmlRequested.emit(complement)"
+                                      >
+                                        {{ repUtilityActionLabel(complement, 'xml', 'XML', 'Descargando...') }}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        class="secondary small"
+                                        [disabled]="repActionDisabled() || !canDownloadComplementPdf(complement)"
+                                        [title]="pdfButtonTitle(complement)"
+                                        (click)="downloadPaymentComplementPdfRequested.emit(complement)"
+                                      >
+                                        {{ repUtilityActionLabel(complement, 'pdf', 'PDF', 'Descargando...') }}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        class="secondary small"
+                                        [disabled]="repActionDisabled() || !canEmailComplement(complement)"
+                                        [title]="emailButtonTitle(complement)"
+                                        (click)="emailPaymentComplementRequested.emit(complement)"
+                                      >
+                                        {{ repUtilityActionLabel(complement, 'email', 'Correo', 'Cargando...') }}
+                                      </button>
                                       @if (canRefreshComplement(complement)) {
                                         <button
                                           type="button"
                                           class="secondary small"
-                                          [disabled]="stampingComplement() !== null || preparingComplement() !== null || refreshingComplement() !== null || cancellingComplement() !== null"
+                                          [disabled]="repActionDisabled()"
                                           (click)="refreshPaymentComplementRequested.emit(complement)"
                                         >
                                           {{ refreshingComplement() === complement.paymentComplementId ? 'Refrescando...' : 'Refrescar' }}
@@ -748,13 +784,13 @@ interface GroupedPaymentToggleEvent {
                                         <button
                                           type="button"
                                           class="secondary small"
-                                          [disabled]="stampingComplement() !== null || preparingComplement() !== null || refreshingComplement() !== null || cancellingComplement() !== null"
+                                          [disabled]="repActionDisabled()"
                                           (click)="cancelPaymentComplementRequested.emit(complement)"
                                         >
                                           {{ cancellingComplement() === complement.paymentComplementId ? 'Cancelando...' : 'Cancelar' }}
                                         </button>
                                       }
-                                      @if (!canStampComplement(complement) && !canRefreshComplement(complement) && !canCancelComplement(complement)) {
+                                      @if (!canStampComplement(complement) && !canRefreshComplement(complement) && !canCancelComplement(complement) && !hasRepUtilityActions(complement)) {
                                         <span class="helper">—</span>
                                       }
                                     </div>
@@ -1458,6 +1494,8 @@ export class PaymentContextModalComponent {
   readonly stampingComplement = input<number | null>(null);
   readonly refreshingComplement = input<number | null>(null);
   readonly cancellingComplement = input<number | null>(null);
+  readonly repUtilityActionKey = input<string | null>(null);
+  readonly canSendPaymentComplementEmail = input(true);
   readonly groupedPaymentIds = input<number[]>([]);
   readonly groupedPrepareToken = input(-1);
 
@@ -1483,6 +1521,10 @@ export class PaymentContextModalComponent {
   readonly prepareSelectedPaymentComplementRequested = output<void>();
   readonly preparePaymentComplementRequested = output<InternalRepBaseDocumentPaymentHistoryResponse>();
   readonly stampPaymentComplementRequested = output<InternalRepBaseDocumentPaymentComplementResponse>();
+  readonly viewPaymentComplementStampRequested = output<InternalRepBaseDocumentPaymentComplementResponse>();
+  readonly downloadPaymentComplementXmlRequested = output<InternalRepBaseDocumentPaymentComplementResponse>();
+  readonly downloadPaymentComplementPdfRequested = output<InternalRepBaseDocumentPaymentComplementResponse>();
+  readonly emailPaymentComplementRequested = output<InternalRepBaseDocumentPaymentComplementResponse>();
   readonly refreshPaymentComplementRequested = output<InternalRepBaseDocumentPaymentComplementResponse>();
   readonly cancelPaymentComplementRequested = output<InternalRepBaseDocumentPaymentComplementResponse>();
 
@@ -1864,12 +1906,101 @@ export class PaymentContextModalComponent {
     return complement.status === 'ReadyForStamping' || complement.status === 'StampingRejected';
   }
 
+  protected canViewComplementStamp(complement: InternalRepBaseDocumentPaymentComplementResponse): boolean {
+    if (!complement.paymentComplementId) {
+      return false;
+    }
+
+    return Boolean(
+      complement.uuid ||
+      complement.stampedAtUtc ||
+      complement.cancelledAtUtc ||
+      complement.status === 'StampingRejected',
+    );
+  }
+
+  protected canDownloadComplementXml(complement: InternalRepBaseDocumentPaymentComplementResponse): boolean {
+    if (complement.canDownloadXml === true) {
+      return true;
+    }
+
+    if (complement.canDownloadXml === false) {
+      return false;
+    }
+
+    return this.canViewComplementStamp(complement) && this.isStampedOrCancelled(complement);
+  }
+
+  protected canDownloadComplementPdf(complement: InternalRepBaseDocumentPaymentComplementResponse): boolean {
+    return complement.canDownloadPdf === true || complement.canGeneratePdf === true;
+  }
+
+  protected canEmailComplement(complement: InternalRepBaseDocumentPaymentComplementResponse): boolean {
+    return complement.canEmail === true && this.canSendPaymentComplementEmail();
+  }
+
   protected canRefreshComplement(complement: InternalRepBaseDocumentPaymentComplementResponse): boolean {
     return ['Stamped', 'CancellationRequested', 'CancellationRejected', 'Cancelled'].includes(complement.status);
   }
 
   protected canCancelComplement(complement: InternalRepBaseDocumentPaymentComplementResponse): boolean {
     return complement.status === 'Stamped' || complement.status === 'CancellationRejected';
+  }
+
+  protected hasRepUtilityActions(complement: InternalRepBaseDocumentPaymentComplementResponse): boolean {
+    return (
+      this.canViewComplementStamp(complement) ||
+      this.canDownloadComplementXml(complement) ||
+      this.canDownloadComplementPdf(complement) ||
+      complement.canEmail === true
+    );
+  }
+
+  protected repActionDisabled(): boolean {
+    return (
+      this.preparingComplement() !== null ||
+      this.stampingComplement() !== null ||
+      this.refreshingComplement() !== null ||
+      this.cancellingComplement() !== null ||
+      this.repUtilityActionKey() !== null
+    );
+  }
+
+  protected repUtilityActionLabel(
+    complement: InternalRepBaseDocumentPaymentComplementResponse,
+    action: 'detail' | 'xml' | 'pdf' | 'email',
+    idleLabel: string,
+    busyLabel: string,
+  ): string {
+    return this.repUtilityActionInProgress(complement, action) ? busyLabel : idleLabel;
+  }
+
+  protected detailButtonTitle(complement: InternalRepBaseDocumentPaymentComplementResponse): string {
+    return this.canViewComplementStamp(complement)
+      ? 'Ver detalle del timbrado REP.'
+      : 'Detalle de timbrado no disponible para este REP.';
+  }
+
+  protected xmlButtonTitle(complement: InternalRepBaseDocumentPaymentComplementResponse): string {
+    return this.canDownloadComplementXml(complement)
+      ? 'Descargar XML del REP.'
+      : 'XML no disponible para este REP.';
+  }
+
+  protected pdfButtonTitle(complement: InternalRepBaseDocumentPaymentComplementResponse): string {
+    return this.canDownloadComplementPdf(complement)
+      ? 'Descargar PDF del REP.'
+      : 'PDF no disponible para este REP.';
+  }
+
+  protected emailButtonTitle(complement: InternalRepBaseDocumentPaymentComplementResponse): string {
+    if (complement.canEmail !== true) {
+      return 'El REP no está listo para envío.';
+    }
+
+    return this.canSendPaymentComplementEmail()
+      ? 'Enviar el REP por correo al cliente.'
+      : 'No tienes permisos para enviar este complemento por correo.';
   }
 
   protected isGroupedPaymentSelected(accountsReceivablePaymentId: number): boolean {
@@ -2033,6 +2164,17 @@ export class PaymentContextModalComponent {
 
   protected formatAmountWithCurrency(value: number, currencyCode: string): string {
     return `${this.formatAmount(value)} ${currencyCode}`;
+  }
+
+  private repUtilityActionInProgress(
+    complement: InternalRepBaseDocumentPaymentComplementResponse,
+    action: 'detail' | 'xml' | 'pdf' | 'email',
+  ): boolean {
+    return this.repUtilityActionKey() === `${action}:${complement.paymentComplementId}`;
+  }
+
+  private isStampedOrCancelled(complement: InternalRepBaseDocumentPaymentComplementResponse): boolean {
+    return complement.status === 'Stamped' || complement.status === 'Cancelled';
   }
 
   protected buildSeriesFolio(item: { series?: string | null; folio?: string | null }): string {

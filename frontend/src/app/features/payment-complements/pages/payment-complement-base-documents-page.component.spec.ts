@@ -1,10 +1,71 @@
 import { TestBed } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
+import { PermissionService } from '../../../core/auth/permission.service';
 import { FeedbackService } from '../../../core/ui/feedback.service';
 import { PaymentComplementsApiService } from '../infrastructure/payment-complements-api.service';
 import { PaymentComplementBaseDocumentsPageComponent } from './payment-complement-base-documents-page.component';
 
 describe('PaymentComplementBaseDocumentsPageComponent', () => {
+  function createIssuedRep(
+    overrides?: Partial<{
+      paymentComplementId: number;
+      accountsReceivablePaymentId: number;
+      status: string;
+      uuid: string | null;
+      paymentDateUtc: string;
+      issuedAtUtc: string | null;
+      stampedAtUtc: string | null;
+      cancelledAtUtc: string | null;
+      providerName: string | null;
+      xmlAvailable: boolean;
+      pdfAvailable: boolean;
+      canGeneratePdf: boolean;
+      canEmail: boolean;
+      canDownloadXml: boolean;
+      canDownloadPdf: boolean;
+      installmentNumber: number;
+      previousBalance: number;
+      paidAmount: number;
+      remainingBalance: number;
+    }>
+  ) {
+    return {
+      paymentComplementId: 7001,
+      accountsReceivablePaymentId: 9001,
+      status: 'Stamped',
+      uuid: 'UUID-PC-1',
+      paymentDateUtc: '2026-04-02T10:00:00Z',
+      issuedAtUtc: '2026-04-02T12:00:00Z',
+      stampedAtUtc: '2026-04-02T12:05:00Z',
+      cancelledAtUtc: null,
+      providerName: 'FacturaloPlus',
+      xmlAvailable: true,
+      pdfAvailable: true,
+      canGeneratePdf: false,
+      canEmail: true,
+      canDownloadXml: true,
+      canDownloadPdf: true,
+      installmentNumber: 1,
+      previousBalance: 116,
+      paidAmount: 40,
+      remainingBalance: 76,
+      ...overrides
+    };
+  }
+
+  function createBlobResponse(fileName: string, body: Blob) {
+    return {
+      body,
+      headers: {
+        get(name: string) {
+          return name.toLowerCase() === 'content-disposition'
+            ? `attachment; filename="${fileName}"`
+            : null;
+        }
+      }
+    };
+  }
+
   function createApi(overrides?: Partial<Record<keyof PaymentComplementsApiService, unknown>>) {
     return {
       searchInternalBaseDocuments: vi.fn().mockReturnValue(of({
@@ -288,21 +349,7 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
           }
         ],
         issuedReps: [
-          {
-            paymentComplementId: 7001,
-            accountsReceivablePaymentId: 9001,
-            status: 'Stamped',
-            uuid: 'UUID-PC-1',
-            paymentDateUtc: '2026-04-02T10:00:00Z',
-            issuedAtUtc: '2026-04-02T12:00:00Z',
-            stampedAtUtc: '2026-04-02T12:05:00Z',
-            cancelledAtUtc: null,
-            providerName: 'FacturaloPlus',
-            installmentNumber: 1,
-            previousBalance: 116,
-            paidAmount: 40,
-            remainingBalance: 76
-          }
+          createIssuedRep()
         ]
       })),
       registerInternalBaseDocumentPayment: vi.fn().mockReturnValue(of({
@@ -409,6 +456,57 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
         nextRecommendedAction: null,
         availableActions: ['ViewDetail'],
         alerts: []
+        })),
+      getPaymentComplementStamp: vi.fn().mockReturnValue(of({
+        id: 8101,
+        paymentComplementDocumentId: 7001,
+        providerName: 'FacturaloPlus',
+        providerOperation: 'stamp',
+        providerTrackingId: 'TRACK-7001',
+        status: 'Stamped',
+        uuid: 'UUID-PC-1',
+        stampedAtUtc: '2026-04-02T12:05:00Z',
+        providerCode: null,
+        providerMessage: 'Timbrado correcto',
+        errorCode: null,
+        errorMessage: null,
+        supportMessage: null,
+        rawResponseSummaryJson: '{"outcome":"Stamped"}',
+        xmlHash: 'hash-7001',
+        qrCodeTextOrUrl: 'https://sat.example/qr/7001',
+        originalString: '||1.0|UUID-PC-1||',
+        lastKnownExternalStatus: 'VIGENTE',
+        lastStatusProviderCode: null,
+        lastStatusProviderMessage: null,
+        lastStatusSupportMessage: null,
+        lastStatusRawResponseSummaryJson: null,
+        lastStatusCheckAtUtc: '2026-04-02T12:06:00Z',
+        createdAtUtc: '2026-04-02T12:05:00Z',
+        updatedAtUtc: '2026-04-02T12:06:00Z'
+      })),
+      downloadPaymentComplementXml: vi.fn().mockReturnValue(
+        of(createBlobResponse('REP_UUID-PC-1.xml', new Blob(['<cfdi:Comprobante />'], { type: 'application/xml' })))
+      ),
+      downloadPaymentComplementPdf: vi.fn().mockReturnValue(
+        of(createBlobResponse('REP_UUID-PC-1.pdf', new Blob(['%PDF-1.4'], { type: 'application/pdf' })))
+      ),
+      getPaymentComplementEmailDraft: vi.fn().mockReturnValue(of({
+        outcome: 'Found',
+        isSuccess: true,
+        recipients: ['cliente@example.com'],
+        subject: 'Complemento de pago UUID-PC-1',
+        body: 'Adjuntamos el complemento de pago correspondiente.',
+        attachments: [
+          { fileName: 'REP_UUID-PC-1.xml', contentType: 'application/xml' },
+          { fileName: 'REP_UUID-PC-1.pdf', contentType: 'application/pdf' }
+        ]
+      })),
+      sendPaymentComplementEmail: vi.fn().mockReturnValue(of({
+        outcome: 'Sent',
+        isSuccess: true,
+        paymentComplementId: 7001,
+        recipients: ['cliente@example.com'],
+        sentAtUtc: '2026-04-03T11:00:00Z'
       })),
       bulkRefreshInternalBaseDocuments: vi.fn().mockReturnValue(of({
         isSuccess: true,
@@ -442,7 +540,8 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
       imports: [PaymentComplementBaseDocumentsPageComponent],
       providers: [
         { provide: PaymentComplementsApiService, useValue: createApi(apiOverrides) },
-        { provide: FeedbackService, useValue: { show: vi.fn() } }
+        { provide: FeedbackService, useValue: { show: vi.fn() } },
+        { provide: PermissionService, useValue: { canStampFiscal: vi.fn().mockReturnValue(true) } }
       ]
     }).compileComponents();
 
@@ -717,6 +816,10 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
     tabs.find((button) => button.textContent?.includes('REP relacionados'))?.click();
     fixture.detectChanges();
 
+    expect(fixture.nativeElement.textContent).toContain('Detalle');
+    expect(fixture.nativeElement.textContent).toContain('XML');
+    expect(fixture.nativeElement.textContent).toContain('PDF');
+    expect(fixture.nativeElement.textContent).toContain('Correo');
     expect(fixture.nativeElement.textContent).toContain('Refrescar');
     expect(fixture.nativeElement.textContent).toContain('Cancelar');
 
@@ -730,6 +833,171 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
       cancellationReasonCode: '02',
       replacementUuid: null
     });
+  });
+
+  it('downloads the REP XML using paymentComplementId and the backend filename', async () => {
+    const fixture = await configure();
+    const api = TestBed.inject(PaymentComplementsApiService) as unknown as {
+      downloadPaymentComplementXml: ReturnType<typeof vi.fn>;
+    };
+    const createObjectUrlSpy = vi.spyOn(window.URL, 'createObjectURL').mockReturnValue('blob:rep-xml');
+    const revokeObjectUrlSpy = vi.spyOn(window.URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    const originalCreateElement = document.createElement.bind(document);
+    const createdAnchors: HTMLAnchorElement[] = [];
+    const createElementSpy = vi.spyOn(document, 'createElement').mockImplementation(((tagName: string) => {
+      const element = originalCreateElement(tagName);
+      if (tagName === 'a') {
+        const anchor = element as HTMLAnchorElement;
+        Object.defineProperty(anchor, 'click', { value: vi.fn(), configurable: true });
+        createdAnchors.push(anchor);
+        return anchor;
+      }
+
+      return element;
+    }) as typeof document.createElement);
+
+    await fixture.componentInstance['openDetailModal'](fixture.componentInstance['items']()[0]);
+    const complement = fixture.componentInstance['selectedDetail']()!.issuedReps[0];
+    await fixture.componentInstance['downloadPaymentComplementXml'](complement);
+
+    expect(api.downloadPaymentComplementXml).toHaveBeenCalledWith(7001);
+    expect(createdAnchors.at(0)?.download).toBe('REP_UUID-PC-1.xml');
+
+    createElementSpy.mockRestore();
+    revokeObjectUrlSpy.mockRestore();
+    createObjectUrlSpy.mockRestore();
+  });
+
+  it('downloads the REP PDF using paymentComplementId and the backend filename', async () => {
+    const fixture = await configure();
+    const api = TestBed.inject(PaymentComplementsApiService) as unknown as {
+      downloadPaymentComplementPdf: ReturnType<typeof vi.fn>;
+    };
+    const createObjectUrlSpy = vi.spyOn(window.URL, 'createObjectURL').mockReturnValue('blob:rep-pdf');
+    const revokeObjectUrlSpy = vi.spyOn(window.URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    const originalCreateElement = document.createElement.bind(document);
+    const createdAnchors: HTMLAnchorElement[] = [];
+    const createElementSpy = vi.spyOn(document, 'createElement').mockImplementation(((tagName: string) => {
+      const element = originalCreateElement(tagName);
+      if (tagName === 'a') {
+        const anchor = element as HTMLAnchorElement;
+        Object.defineProperty(anchor, 'click', { value: vi.fn(), configurable: true });
+        createdAnchors.push(anchor);
+        return anchor;
+      }
+
+      return element;
+    }) as typeof document.createElement);
+
+    await fixture.componentInstance['openDetailModal'](fixture.componentInstance['items']()[0]);
+    const complement = fixture.componentInstance['selectedDetail']()!.issuedReps[0];
+    await fixture.componentInstance['downloadPaymentComplementPdf'](complement);
+
+    expect(api.downloadPaymentComplementPdf).toHaveBeenCalledWith(7001);
+    expect(createdAnchors.at(0)?.download).toBe('REP_UUID-PC-1.pdf');
+
+    createElementSpy.mockRestore();
+    revokeObjectUrlSpy.mockRestore();
+    createObjectUrlSpy.mockRestore();
+  });
+
+  it('opens the REP email composer with draft data and sends using paymentComplementId', async () => {
+    const sendPaymentComplementEmail = vi.fn().mockReturnValue(of({
+      outcome: 'Sent',
+      isSuccess: true,
+      paymentComplementId: 7001,
+      recipients: ['cliente@example.com'],
+      sentAtUtc: '2026-04-03T11:00:00Z'
+    }));
+    const fixture = await configure({ sendPaymentComplementEmail });
+
+    await fixture.componentInstance['openDetailModal'](fixture.componentInstance['items']()[0]);
+    const complement = fixture.componentInstance['selectedDetail']()!.issuedReps[0];
+    await fixture.componentInstance['openPaymentComplementEmailComposer'](complement);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Enviar REP por correo');
+    expect(fixture.nativeElement.textContent).toContain('REP_UUID-PC-1.xml');
+    expect(fixture.nativeElement.textContent).toContain('REP_UUID-PC-1.pdf');
+
+    fixture.componentInstance['paymentComplementEmailRecipientsInput'] = 'cliente@example.com';
+    await fixture.componentInstance['sendPaymentComplementEmail']();
+
+    expect(sendPaymentComplementEmail).toHaveBeenCalledWith(7001, {
+      recipients: ['cliente@example.com'],
+      subject: 'Complemento de pago UUID-PC-1',
+      body: 'Adjuntamos el complemento de pago correspondiente.'
+    });
+  });
+
+  it('disables REP XML/PDF/Correo actions when flags are not available', async () => {
+    const fixture = await configure();
+
+    await fixture.componentInstance['openDetailModal'](fixture.componentInstance['items']()[0]);
+    fixture.componentInstance['selectedDetail']()!.issuedReps = [
+      createIssuedRep({
+        status: 'ReadyForStamping',
+        uuid: null,
+        stampedAtUtc: null,
+        xmlAvailable: false,
+        pdfAvailable: false,
+        canGeneratePdf: false,
+        canEmail: false,
+        canDownloadXml: false,
+        canDownloadPdf: false
+      })
+    ];
+    fixture.detectChanges();
+
+    let tabs = Array.from(fixture.nativeElement.querySelectorAll('[role="tab"]')) as HTMLButtonElement[];
+    tabs.find((button) => button.textContent?.includes('Pagos y REP'))?.click();
+    fixture.detectChanges();
+
+    tabs = Array.from(fixture.nativeElement.querySelectorAll('[role="tab"]')) as HTMLButtonElement[];
+    tabs.find((button) => button.textContent?.includes('REP relacionados'))?.click();
+    fixture.detectChanges();
+
+    const buttons = Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[];
+    expect(buttons.find((button) => button.textContent?.trim() === 'Detalle')?.disabled).toBe(true);
+    expect(buttons.find((button) => button.textContent?.trim() === 'XML')?.disabled).toBe(true);
+    expect(buttons.find((button) => button.textContent?.trim() === 'PDF')?.disabled).toBe(true);
+    expect(buttons.find((button) => button.textContent?.trim() === 'Correo')?.disabled).toBe(true);
+  });
+
+  it('shows a permission message when REP email send returns 403', async () => {
+    const sendPaymentComplementEmail = vi.fn().mockReturnValue(throwError(() => ({ status: 403 })));
+    const fixture = await configure({ sendPaymentComplementEmail });
+
+    await fixture.componentInstance['openDetailModal'](fixture.componentInstance['items']()[0]);
+    const complement = fixture.componentInstance['selectedDetail']()!.issuedReps[0];
+    await fixture.componentInstance['openPaymentComplementEmailComposer'](complement);
+    fixture.componentInstance['paymentComplementEmailRecipientsInput'] = 'cliente@example.com';
+    await fixture.componentInstance['sendPaymentComplementEmail']();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('No tienes permisos para enviar este complemento por correo.');
+  });
+
+  it('shows a not available error when REP PDF download returns 409', async () => {
+    const downloadPaymentComplementPdf = vi.fn().mockReturnValue(throwError(() => ({ status: 409 })));
+    const fixture = await configure({ downloadPaymentComplementPdf });
+    const feedback = TestBed.inject(FeedbackService) as unknown as { show: ReturnType<typeof vi.fn> };
+
+    await fixture.componentInstance['openDetailModal'](fixture.componentInstance['items']()[0]);
+    await fixture.componentInstance['downloadPaymentComplementPdf'](fixture.componentInstance['selectedDetail']()!.issuedReps[0]);
+
+    expect(feedback.show).toHaveBeenCalledWith('error', 'PDF no disponible para este REP.');
+  });
+
+  it('shows a not found error when REP stamp detail is missing', async () => {
+    const getPaymentComplementStamp = vi.fn().mockReturnValue(throwError(() => ({ status: 404 })));
+    const fixture = await configure({ getPaymentComplementStamp });
+    const feedback = TestBed.inject(FeedbackService) as unknown as { show: ReturnType<typeof vi.fn> };
+
+    await fixture.componentInstance['openDetailModal'](fixture.componentInstance['items']()[0]);
+    await fixture.componentInstance['openPaymentComplementStampDetail'](fixture.componentInstance['selectedDetail']()!.issuedReps[0]);
+
+    expect(feedback.show).toHaveBeenCalledWith('error', 'No se encontró el detalle de timbrado del complemento de pago.');
   });
 
   it('renders the payment form from the base-document context and submits successfully', async () => {
@@ -1108,7 +1376,7 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
         ],
         paymentApplications: [],
         issuedReps: [
-          {
+          createIssuedRep({
             paymentComplementId: 7002,
             accountsReceivablePaymentId: 9002,
             status: 'ReadyForStamping',
@@ -1116,13 +1384,17 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
             paymentDateUtc: '2026-04-03T00:00:00Z',
             issuedAtUtc: '2026-04-03T09:10:00Z',
             stampedAtUtc: null,
-            cancelledAtUtc: null,
             providerName: null,
+            pdfAvailable: false,
+            canGeneratePdf: false,
+            canEmail: false,
+            canDownloadXml: false,
+            canDownloadPdf: false,
             installmentNumber: 2,
             previousBalance: 76,
             paidAmount: 36,
             remainingBalance: 40
-          }
+          })
         ]
       }));
     const prepareInternalBaseDocumentPaymentComplement = vi.fn().mockReturnValue(of({
@@ -1241,7 +1513,7 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
         ],
         paymentApplications: [],
         issuedReps: [
-          {
+          createIssuedRep({
             paymentComplementId: 7002,
             accountsReceivablePaymentId: 9002,
             status: 'ReadyForStamping',
@@ -1249,13 +1521,17 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
             paymentDateUtc: '2026-04-03T00:00:00Z',
             issuedAtUtc: '2026-04-03T09:10:00Z',
             stampedAtUtc: null,
-            cancelledAtUtc: null,
             providerName: null,
+            pdfAvailable: false,
+            canGeneratePdf: false,
+            canEmail: false,
+            canDownloadXml: false,
+            canDownloadPdf: false,
             installmentNumber: 2,
             previousBalance: 76,
             paidAmount: 36,
             remainingBalance: 40
-          }
+          })
         ]
       }))
       .mockReturnValueOnce(of({
@@ -1333,7 +1609,7 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
         ],
         paymentApplications: [],
         issuedReps: [
-          {
+          createIssuedRep({
             paymentComplementId: 7002,
             accountsReceivablePaymentId: 9002,
             status: 'Stamped',
@@ -1341,13 +1617,12 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
             paymentDateUtc: '2026-04-03T00:00:00Z',
             issuedAtUtc: '2026-04-03T09:10:00Z',
             stampedAtUtc: '2026-04-03T09:15:00Z',
-            cancelledAtUtc: null,
             providerName: 'FacturaloPlus',
             installmentNumber: 2,
             previousBalance: 76,
             paidAmount: 36,
             remainingBalance: 40
-          }
+          })
         ]
       }));
     const stampInternalBaseDocumentPaymentComplement = vi.fn().mockReturnValue(of({
