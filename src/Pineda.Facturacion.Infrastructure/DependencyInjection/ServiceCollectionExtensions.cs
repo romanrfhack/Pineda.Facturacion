@@ -73,6 +73,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IStampedLegacyNotesReportExcelExporter, StampedLegacyNotesReportExcelExporter>();
         services.AddSingleton<ILoginAttemptThrottleService, InMemoryLoginAttemptThrottleService>();
         services.AddScoped<IFiscalDocumentPdfRenderer, FiscalDocumentPdfRenderer>();
+        services.AddScoped<IPaymentComplementPdfRenderer, PaymentComplementPdfRenderer>();
         services.AddScoped<IReceivablesSummaryPdfRenderer, ReceivablesSummaryPdfRenderer>();
         services.AddSingleton<IIssuerProfileLogoStorage, IssuerProfileLogoStorage>();
         services.AddSingleton<EmailDeliverySafetyPolicy>();

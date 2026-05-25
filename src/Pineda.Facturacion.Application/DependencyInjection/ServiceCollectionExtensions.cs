@@ -93,6 +93,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<CancelExternalRepBaseDocumentPaymentComplementService>();
         services.AddScoped<StampPaymentComplementService>();
         services.AddScoped<GetPaymentComplementStampByPaymentComplementIdService>();
+        services.AddScoped<GetPaymentComplementPdfService>();
+        services.AddScoped<GetPaymentComplementEmailDraftService>();
+        services.AddScoped<SendPaymentComplementEmailService>();
         services.AddScoped<CancelPaymentComplementService>();
         services.AddScoped<GetPaymentComplementCancellationByPaymentComplementIdService>();
         services.AddScoped<RefreshPaymentComplementStatusService>();

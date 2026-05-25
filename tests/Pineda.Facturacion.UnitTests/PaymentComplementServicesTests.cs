@@ -1,12 +1,16 @@
+using System.Net.Mail;
 using Pineda.Facturacion.Application.Abstractions.Pac;
+using Pineda.Facturacion.Application.Abstractions.Communication;
 using Pineda.Facturacion.Application.Abstractions.Documents;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
+using Pineda.Facturacion.Application.Abstractions.Storage;
 using Pineda.Facturacion.Application.Contracts.Pac;
 using Pineda.Facturacion.Application.UseCases.AccountsReceivable;
 using Pineda.Facturacion.Application.UseCases.PaymentComplements;
 using Pineda.Facturacion.Api.Endpoints;
 using Pineda.Facturacion.Domain.Entities;
 using Pineda.Facturacion.Domain.Enums;
+using Pineda.Facturacion.Infrastructure.Documents;
 
 namespace Pineda.Facturacion.UnitTests;
 
@@ -1570,6 +1574,157 @@ public class PaymentComplementServicesTests
     }
 
     [Fact]
+    public async Task GetPaymentComplementPdf_Returns_Pdf_For_Stamped_Rep()
+    {
+        var document = CreatePaymentComplementDocument();
+        document.Status = PaymentComplementDocumentStatus.Stamped;
+
+        var service = new GetPaymentComplementPdfService(
+            new PcFakePaymentComplementDocumentRepository { ExistingTrackedById = document },
+            new PcFakePaymentComplementStampRepository { ExistingTracked = CreatePaymentComplementStamp() },
+            new PcFakePaymentComplementPdfRenderer());
+
+        var result = await service.ExecuteAsync(document.Id);
+
+        Assert.Equal(GetPaymentComplementPdfOutcome.Found, result.Outcome);
+        Assert.Equal("REP_UUID-PC-1.pdf", result.FileName);
+        Assert.Equal("%PDF-payment-complement-test"u8.ToArray(), result.Content);
+    }
+
+    [Fact]
+    public async Task GetPaymentComplementEmailDraft_Preloads_Receiver_Email_And_Attachments()
+    {
+        var document = CreatePaymentComplementDocument();
+        document.Status = PaymentComplementDocumentStatus.Stamped;
+
+        var receiver = CreateFiscalReceiver(email: "cliente@example.com");
+        var fiscalReceiverRepository = new PcFakeFiscalReceiverRepository
+        {
+            ByRfc =
+            {
+                [receiver.Rfc] = receiver
+            }
+        };
+
+        var service = new GetPaymentComplementEmailDraftService(
+            new PcFakePaymentComplementDocumentRepository { ExistingTrackedById = document },
+            new PcFakePaymentComplementStampRepository { ExistingTracked = CreatePaymentComplementStamp() },
+            fiscalReceiverRepository);
+
+        var result = await service.ExecuteAsync(document.Id);
+
+        Assert.Equal(GetPaymentComplementEmailDraftOutcome.Found, result.Outcome);
+        Assert.Equal(["cliente@example.com"], result.Recipients);
+        Assert.Equal("Complemento de pago UUID-PC-1", result.Subject);
+        Assert.Equal("Adjuntamos el complemento de pago correspondiente.", result.Body);
+        Assert.Contains(result.Attachments, x => x.FileName == "REP_UUID-PC-1.pdf" && x.ContentType == "application/pdf");
+        Assert.Contains(result.Attachments, x => x.FileName == "REP_UUID-PC-1.xml" && x.ContentType == "application/xml");
+    }
+
+    [Fact]
+    public async Task SendPaymentComplementEmail_Attaches_Xml_And_Pdf()
+    {
+        var document = CreatePaymentComplementDocument();
+        document.Status = PaymentComplementDocumentStatus.Stamped;
+        var emailSender = new PcFakeEmailSender();
+
+        var service = new SendPaymentComplementEmailService(
+            new PcFakePaymentComplementDocumentRepository { ExistingTrackedById = document },
+            new PcFakePaymentComplementStampRepository { ExistingTracked = CreatePaymentComplementStamp() },
+            emailSender,
+            new PcFakePaymentComplementPdfRenderer());
+
+        var result = await service.ExecuteAsync(
+            new SendPaymentComplementEmailCommand
+            {
+                PaymentComplementId = document.Id,
+                Recipients = ["cliente@example.com"]
+            });
+
+        Assert.Equal(SendPaymentComplementEmailOutcome.Sent, result.Outcome);
+        var message = Assert.Single(emailSender.SentMessages);
+        Assert.Equal(["cliente@example.com"], message.Recipients);
+        Assert.Equal(2, message.Attachments.Count);
+        Assert.Contains(message.Attachments, x => x.ContentType == "application/xml" && x.FileName == "REP_UUID-PC-1.xml");
+        Assert.Contains(message.Attachments, x => x.ContentType == "application/pdf" && x.FileName == "REP_UUID-PC-1.pdf");
+    }
+
+    [Fact]
+    public async Task SendPaymentComplementEmail_Blocks_When_Rep_Is_Not_Stamped()
+    {
+        var document = CreatePaymentComplementDocument();
+        var service = new SendPaymentComplementEmailService(
+            new PcFakePaymentComplementDocumentRepository { ExistingTrackedById = document },
+            new PcFakePaymentComplementStampRepository
+            {
+                ExistingTracked = CreatePaymentComplementStamp(status: FiscalStampStatus.Rejected, uuid: null, xmlContent: null)
+            },
+            new PcFakeEmailSender(),
+            new PcFakePaymentComplementPdfRenderer());
+
+        var result = await service.ExecuteAsync(
+            new SendPaymentComplementEmailCommand
+            {
+                PaymentComplementId = document.Id,
+                Recipients = ["cliente@example.com"]
+            });
+
+        Assert.Equal(SendPaymentComplementEmailOutcome.NotStamped, result.Outcome);
+    }
+
+    [Fact]
+    public async Task PaymentComplementPdfRenderer_Generates_A_Real_Pdf_From_Stamped_Rep_Xml()
+    {
+        var document = CreatePaymentComplementDocument();
+        document.Status = PaymentComplementDocumentStatus.Stamped;
+        document.PaymentDateUtc = new DateTime(2026, 5, 25, 22, 59, 0, DateTimeKind.Utc);
+        document.TotalPaymentsAmount = 427m;
+        document.Payments[0].PaymentDateUtc = document.PaymentDateUtc;
+        document.Payments[0].Amount = 427m;
+        document.RelatedDocuments[0].PreviousBalance = 427m;
+        document.RelatedDocuments[0].PaidAmount = 427m;
+        document.RelatedDocuments[0].RemainingBalance = 0m;
+        document.RelatedDocuments[0].RelatedDocumentUuid = "12345678-1234-5678-1234-567812345678";
+
+        var stamp = CreatePaymentComplementStamp(
+            uuid: "a0d96040-2d88-44f4-abbd-c3ddb4f3260d",
+            stampedAtUtc: new DateTime(2026, 5, 26, 3, 47, 0, DateTimeKind.Utc),
+            xmlContent: CreateStampedPaymentComplementXml(
+                uuid: "a0d96040-2d88-44f4-abbd-c3ddb4f3260d",
+                relatedDocumentUuid: "12345678-1234-5678-1234-567812345678",
+                amount: 427m,
+                paymentDateUtc: new DateTime(2026, 5, 25, 22, 59, 0, DateTimeKind.Utc),
+                stampedAtUtc: new DateTime(2026, 5, 26, 3, 47, 0, DateTimeKind.Utc)));
+
+        var renderer = new PaymentComplementPdfRenderer(
+            new FiscalDocumentPdfRenderer(
+                new PcFakeIssuerProfileRepository(),
+                new PcFakeIssuerProfileLogoStorage(),
+                new PcFakeSatCatalogDescriptionProvider()));
+
+        var bytes = await renderer.RenderAsync(document, stamp);
+        var pdfText = System.Text.Encoding.ASCII.GetString(bytes);
+
+        Assert.StartsWith("%PDF-1.4", pdfText, StringComparison.Ordinal);
+        Assert.Contains("COMPLEMENTO DE PAGO", pdfText, StringComparison.Ordinal);
+        Assert.Contains("a0d96040-2d88-44f4-abbd-c3ddb4f3260d", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Complemento Pagos 2.0 - MontoTotalPagos", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Pago 1 - FechaPago", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Pago 1 - FormaDePagoP", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Pago 1 - MonedaP", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Pago 1 - Monto", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Pago 1 / Documento 1 - IdDocumento", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Pago 1 / Documento 1 - NumParcialidad", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Pago 1 / Documento 1 - ImpSaldoAnt", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Pago 1 / Documento 1 - ImpPagado", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Pago 1 / Documento 1 - ImpSaldoInsoluto", pdfText, StringComparison.Ordinal);
+        Assert.Contains("12345678-1234-5678-1234-567812345678", pdfText, StringComparison.Ordinal);
+        Assert.Contains("427.00", pdfText, StringComparison.Ordinal);
+        Assert.Contains("03", pdfText, StringComparison.Ordinal);
+        Assert.Contains("MXN", pdfText, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void PaymentComplementApiResponses_AndEntity_DoNotExposeSecrets()
     {
         var responseFields = typeof(PaymentComplementDocumentResponse)
@@ -1920,7 +2075,7 @@ public class PaymentComplementServicesTests
         };
     }
 
-    private static FiscalReceiver CreateFiscalReceiver(long id = 11, string rfc = "BBB010101BBB")
+    private static FiscalReceiver CreateFiscalReceiver(long id = 11, string rfc = "BBB010101BBB", string? email = null)
     {
         return new FiscalReceiver
         {
@@ -1931,6 +2086,7 @@ public class PaymentComplementServicesTests
             FiscalRegimeCode = "601",
             CfdiUseCodeDefault = "CP01",
             PostalCode = "64000",
+            Email = email,
             IsActive = true,
             CreatedAtUtc = DateTime.UtcNow,
             UpdatedAtUtc = DateTime.UtcNow
@@ -2012,6 +2168,64 @@ public class PaymentComplementServicesTests
                 }
             ]
         };
+    }
+
+    private static PaymentComplementStamp CreatePaymentComplementStamp(
+        long id = 801,
+        long paymentComplementDocumentId = 501,
+        FiscalStampStatus status = FiscalStampStatus.Succeeded,
+        string? uuid = "UUID-PC-1",
+        string? xmlContent = null,
+        DateTime? stampedAtUtc = null)
+    {
+        return new PaymentComplementStamp
+        {
+            Id = id,
+            PaymentComplementDocumentId = paymentComplementDocumentId,
+            ProviderName = "FacturaloPlus",
+            ProviderOperation = "payment-complement-stamp",
+            Status = status,
+            Uuid = uuid,
+            XmlContent = xmlContent ?? CreateStampedPaymentComplementXml(uuid: uuid ?? "UUID-PC-1"),
+            XmlHash = "XML-HASH-PC-1",
+            OriginalString = "||1.1|UUID-PC-1||",
+            QrCodeTextOrUrl = "https://verificacfdi.facturaelectronica.sat.gob.mx/default.aspx?id=UUID-PC-1",
+            StampedAtUtc = stampedAtUtc ?? new DateTime(2026, 5, 26, 3, 47, 0, DateTimeKind.Utc),
+            CreatedAtUtc = DateTime.UtcNow,
+            UpdatedAtUtc = DateTime.UtcNow
+        };
+    }
+
+    private static string CreateStampedPaymentComplementXml(
+        string uuid = "UUID-PC-1",
+        string relatedDocumentUuid = "12345678-1234-5678-1234-567812345678",
+        decimal amount = 50m,
+        DateTime? paymentDateUtc = null,
+        DateTime? stampedAtUtc = null)
+    {
+        var paymentDate = (paymentDateUtc ?? new DateTime(2026, 5, 25, 22, 59, 0, DateTimeKind.Utc)).ToString("yyyy-MM-ddTHH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
+        var stampDate = (stampedAtUtc ?? new DateTime(2026, 5, 26, 3, 47, 0, DateTimeKind.Utc)).ToString("yyyy-MM-ddTHH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
+        var amountText = amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+
+        return $$"""
+            <?xml version="1.0" encoding="utf-8"?>
+            <cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xmlns:pago20="http://www.sat.gob.mx/Pagos20" xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" Version="4.0" Serie="REP" Folio="1" Fecha="2026-05-25T23:01:00" SubTotal="0" Moneda="XXX" Total="0" TipoDeComprobante="P" Exportacion="01" LugarExpedicion="64000" NoCertificado="30001000000500003416" Sello="SELLOCFDTEST1234567890">
+              <cfdi:Emisor Rfc="AAA010101AAA" Nombre="Issuer" RegimenFiscal="601" />
+              <cfdi:Receptor Rfc="BBB010101BBB" Nombre="Receiver" DomicilioFiscalReceptor="64000" RegimenFiscalReceptor="601" UsoCFDI="CP01" />
+              <cfdi:Conceptos>
+                <cfdi:Concepto ClaveProdServ="84111506" Cantidad="1" ClaveUnidad="ACT" Descripcion="Pago" ValorUnitario="0" Importe="0" ObjetoImp="01" />
+              </cfdi:Conceptos>
+              <cfdi:Complemento>
+                <pago20:Pagos Version="2.0">
+                  <pago20:Totales MontoTotalPagos="{{amountText}}" />
+                  <pago20:Pago FechaPago="{{paymentDate}}" FormaDePagoP="03" MonedaP="MXN" Monto="{{amountText}}" NumOperacion="OP-12345">
+                    <pago20:DoctoRelacionado IdDocumento="{{relatedDocumentUuid}}" Serie="A" Folio="1001" MonedaDR="MXN" NumParcialidad="1" ImpSaldoAnt="{{amountText}}" ImpPagado="{{amountText}}" ImpSaldoInsoluto="0.00" ObjetoImpDR="02" />
+                  </pago20:Pago>
+                </pago20:Pagos>
+                <tfd:TimbreFiscalDigital Version="1.1" UUID="{{uuid}}" FechaTimbrado="{{stampDate}}" NoCertificadoSAT="00001000000509846663" SelloCFD="SELLOCFDTEST1234567890" SelloSAT="SELLOSATTEST0987654321" />
+              </cfdi:Complemento>
+            </cfdi:Comprobante>
+            """;
     }
 
     private sealed class PcFakeAccountsReceivablePaymentRepository : IAccountsReceivablePaymentRepository
@@ -2493,6 +2707,56 @@ public class PaymentComplementServicesTests
     private sealed class PcFakeUnitOfWork : IUnitOfWork
     {
         public Task SaveChangesAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private sealed class PcFakeEmailSender : IEmailSender
+    {
+        public List<EmailMessage> SentMessages { get; } = [];
+
+        public Exception? Exception { get; set; }
+
+        public Task SendAsync(EmailMessage message, CancellationToken cancellationToken = default)
+        {
+            if (Exception is not null)
+            {
+                throw Exception;
+            }
+
+            SentMessages.Add(message);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class PcFakePaymentComplementPdfRenderer : IPaymentComplementPdfRenderer
+    {
+        public Exception? Exception { get; set; }
+
+        public Task<byte[]> RenderAsync(PaymentComplementDocument paymentComplementDocument, PaymentComplementStamp paymentComplementStamp, CancellationToken cancellationToken = default)
+        {
+            if (Exception is not null)
+            {
+                throw Exception;
+            }
+
+            return Task.FromResult("%PDF-payment-complement-test"u8.ToArray());
+        }
+    }
+
+    private sealed class PcFakeIssuerProfileLogoStorage : IIssuerProfileLogoStorage
+    {
+        public Task<StoreIssuerProfileLogoResult> SaveAsync(long issuerProfileId, string fileName, string? declaredContentType, byte[] content, CancellationToken cancellationToken = default)
+            => Task.FromResult(new StoreIssuerProfileLogoResult
+            {
+                IsSuccess = true,
+                FileName = fileName,
+                StoragePath = fileName,
+                ContentType = declaredContentType ?? "application/octet-stream"
+            });
+
+        public Task<IssuerProfileLogoBinary?> ReadAsync(string storagePath, CancellationToken cancellationToken = default)
+            => Task.FromResult<IssuerProfileLogoBinary?>(null);
+
+        public Task DeleteAsync(string? storagePath, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     private sealed class PcFakeSatCatalogDescriptionProvider : ISatCatalogDescriptionProvider

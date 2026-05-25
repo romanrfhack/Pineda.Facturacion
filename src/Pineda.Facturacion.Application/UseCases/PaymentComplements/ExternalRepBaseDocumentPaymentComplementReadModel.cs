@@ -44,6 +44,18 @@ public sealed class ExternalRepBaseDocumentPaymentComplementReadModel
 
     public string? ProviderName { get; init; }
 
+    public bool XmlAvailable { get; init; }
+
+    public bool PdfAvailable { get; init; }
+
+    public bool CanGeneratePdf { get; init; }
+
+    public bool CanEmail { get; init; }
+
+    public bool CanDownloadXml { get; init; }
+
+    public bool CanDownloadPdf { get; init; }
+
     public int InstallmentNumber { get; init; }
 
     public decimal PreviousBalance { get; init; }

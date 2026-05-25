@@ -282,6 +282,32 @@ public sealed class ExternalRepBaseDocumentRepository : IExternalRepBaseDocument
                 CancellationUpdatedAtUtc = paymentComplementCancellation != null ? paymentComplementCancellation.UpdatedAtUtc : null,
                 CancelledAtUtc = paymentComplementCancellation != null ? paymentComplementCancellation.CancelledAtUtc : null,
                 ProviderName = document.ProviderName,
+                XmlAvailable = paymentComplementStamp != null && paymentComplementStamp.XmlContent != null && paymentComplementStamp.XmlContent != string.Empty,
+                PdfAvailable = paymentComplementStamp != null
+                    && paymentComplementStamp.Status == FiscalStampStatus.Succeeded
+                    && paymentComplementStamp.XmlContent != null
+                    && paymentComplementStamp.XmlContent != string.Empty
+                    && paymentComplementStamp.Uuid != null
+                    && paymentComplementStamp.Uuid != string.Empty,
+                CanGeneratePdf = paymentComplementStamp != null
+                    && paymentComplementStamp.Status == FiscalStampStatus.Succeeded
+                    && paymentComplementStamp.XmlContent != null
+                    && paymentComplementStamp.XmlContent != string.Empty
+                    && paymentComplementStamp.Uuid != null
+                    && paymentComplementStamp.Uuid != string.Empty,
+                CanEmail = paymentComplementStamp != null
+                    && paymentComplementStamp.Status == FiscalStampStatus.Succeeded
+                    && paymentComplementStamp.XmlContent != null
+                    && paymentComplementStamp.XmlContent != string.Empty
+                    && paymentComplementStamp.Uuid != null
+                    && paymentComplementStamp.Uuid != string.Empty,
+                CanDownloadXml = paymentComplementStamp != null && paymentComplementStamp.XmlContent != null && paymentComplementStamp.XmlContent != string.Empty,
+                CanDownloadPdf = paymentComplementStamp != null
+                    && paymentComplementStamp.Status == FiscalStampStatus.Succeeded
+                    && paymentComplementStamp.XmlContent != null
+                    && paymentComplementStamp.XmlContent != string.Empty
+                    && paymentComplementStamp.Uuid != null
+                    && paymentComplementStamp.Uuid != string.Empty,
                 InstallmentNumber = related.InstallmentNumber,
                 PreviousBalance = related.PreviousBalance,
                 PaidAmount = related.PaidAmount,

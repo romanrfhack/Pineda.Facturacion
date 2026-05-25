@@ -3693,6 +3693,12 @@ public class MvpLifecycleApiTests
         Assert.Equal("Stamped", issuedRep.GetProperty("status").GetString());
         Assert.Equal("UUID-PC-2B-1001", issuedRep.GetProperty("uuid").GetString());
         Assert.Equal("FacturaloPlus", issuedRep.GetProperty("providerName").GetString());
+        Assert.True(issuedRep.GetProperty("xmlAvailable").GetBoolean());
+        Assert.True(issuedRep.GetProperty("pdfAvailable").GetBoolean());
+        Assert.True(issuedRep.GetProperty("canGeneratePdf").GetBoolean());
+        Assert.True(issuedRep.GetProperty("canEmail").GetBoolean());
+        Assert.True(issuedRep.GetProperty("canDownloadXml").GetBoolean());
+        Assert.True(issuedRep.GetProperty("canDownloadPdf").GetBoolean());
         Assert.Equal(1, operationalState.GetProperty("repCount").GetInt32());
         Assert.Equal("UUID-PC-2B-1001", stampJson.RootElement.GetProperty("stampUuid").GetString());
     }
@@ -4668,6 +4674,12 @@ public class MvpLifecycleApiTests
         Assert.Equal(116m, paymentApplicationItem.GetProperty("appliedAmount").GetDecimal());
         Assert.Equal("Stamped", issuedRep.GetProperty("status").GetString());
         Assert.Equal("UUID-PC-EXT-4-1001", issuedRep.GetProperty("uuid").GetString());
+        Assert.True(issuedRep.GetProperty("xmlAvailable").GetBoolean());
+        Assert.True(issuedRep.GetProperty("pdfAvailable").GetBoolean());
+        Assert.True(issuedRep.GetProperty("canGeneratePdf").GetBoolean());
+        Assert.True(issuedRep.GetProperty("canEmail").GetBoolean());
+        Assert.True(issuedRep.GetProperty("canDownloadXml").GetBoolean());
+        Assert.True(issuedRep.GetProperty("canDownloadPdf").GetBoolean());
 
         var unifiedResponse = await client.GetAsync("/api/payment-complements/base-documents?page=1&pageSize=25&query=UUID-EXT-4-1001");
         Assert.Equal(HttpStatusCode.OK, unifiedResponse.StatusCode);
@@ -4825,7 +4837,25 @@ public class MvpLifecycleApiTests
             ProviderTrackingId = "TRACK-PC-1",
             Uuid = "UUID-PC-1",
             StampedAtUtc = DateTime.UtcNow,
-            XmlContent = "<cfdi:Comprobante Version=\"4.0\"><pago20:Pagos /></cfdi:Comprobante>",
+            XmlContent = """
+                <?xml version="1.0" encoding="utf-8"?>
+                <cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xmlns:pago20="http://www.sat.gob.mx/Pagos20" xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" Version="4.0" Serie="REP" Folio="1" Fecha="2026-05-25T23:01:00" SubTotal="0" Moneda="XXX" Total="0" TipoDeComprobante="P" Exportacion="01" LugarExpedicion="01000" NoCertificado="30001000000500003416" Sello="SELLOCFDTEST1234567890">
+                  <cfdi:Emisor Rfc="AAA010101AAA" Nombre="Issuer SA" RegimenFiscal="601" />
+                  <cfdi:Receptor Rfc="BBB010101BBB" Nombre="Receiver One" DomicilioFiscalReceptor="02000" RegimenFiscalReceptor="601" UsoCFDI="CP01" />
+                  <cfdi:Conceptos>
+                    <cfdi:Concepto ClaveProdServ="84111506" Cantidad="1" ClaveUnidad="ACT" Descripcion="Pago" ValorUnitario="0" Importe="0" ObjetoImp="01" />
+                  </cfdi:Conceptos>
+                  <cfdi:Complemento>
+                    <pago20:Pagos Version="2.0">
+                      <pago20:Totales MontoTotalPagos="100.00" />
+                      <pago20:Pago FechaPago="2026-05-25T22:59:00" FormaDePagoP="03" MonedaP="MXN" Monto="100.00" NumOperacion="OP-1001">
+                        <pago20:DoctoRelacionado IdDocumento="12345678-1234-5678-1234-567812345678" Serie="A" Folio="31787" MonedaDR="MXN" NumParcialidad="1" ImpSaldoAnt="100.00" ImpPagado="100.00" ImpSaldoInsoluto="0.00" ObjetoImpDR="02" />
+                      </pago20:Pago>
+                    </pago20:Pagos>
+                    <tfd:TimbreFiscalDigital Version="1.1" UUID="UUID-PC-1" FechaTimbrado="2026-05-26T03:47:00" NoCertificadoSAT="00001000000509846663" SelloCFD="SELLOCFDTEST1234567890" SelloSAT="SELLOSATTEST0987654321" />
+                  </cfdi:Complemento>
+                </cfdi:Comprobante>
+                """,
             XmlHash = "XML-HASH-PC",
             OriginalString = "||1.1|UUID-PC-1||"
         };
@@ -4872,8 +4902,37 @@ public class MvpLifecycleApiTests
         var getStampXmlResponse = await client.GetAsync($"/api/payment-complements/{paymentComplementId}/stamp/xml");
         Assert.Equal(HttpStatusCode.OK, getStampXmlResponse.StatusCode);
         Assert.Equal("application/xml", getStampXmlResponse.Content.Headers.ContentType?.MediaType);
+        Assert.Contains("REP_UUID-PC-1.xml", getStampXmlResponse.Content.Headers.ContentDisposition?.ToString(), StringComparison.Ordinal);
         var complementXml = await getStampXmlResponse.Content.ReadAsStringAsync();
         Assert.Contains("<pago20:Pagos", complementXml, StringComparison.Ordinal);
+
+        var getStampPdfResponse = await client.GetAsync($"/api/payment-complements/{paymentComplementId}/stamp/pdf");
+        Assert.Equal(HttpStatusCode.OK, getStampPdfResponse.StatusCode);
+        Assert.Equal("application/pdf", getStampPdfResponse.Content.Headers.ContentType?.MediaType);
+        Assert.Contains("REP_UUID-PC-1.pdf", getStampPdfResponse.Content.Headers.ContentDisposition?.ToString(), StringComparison.Ordinal);
+        var pdfBytes = await getStampPdfResponse.Content.ReadAsByteArrayAsync();
+        Assert.Equal("PDF-CONTENT", System.Text.Encoding.ASCII.GetString(pdfBytes));
+
+        var getEmailDraftResponse = await client.GetAsync($"/api/payment-complements/{paymentComplementId}/email-draft");
+        Assert.Equal(HttpStatusCode.OK, getEmailDraftResponse.StatusCode);
+        using var emailDraftJson = await JsonDocument.ParseAsync(await getEmailDraftResponse.Content.ReadAsStreamAsync());
+        Assert.Equal("Complemento de pago UUID-PC-1", emailDraftJson.RootElement.GetProperty("subject").GetString());
+        Assert.Equal("Adjuntamos el complemento de pago correspondiente.", emailDraftJson.RootElement.GetProperty("body").GetString());
+        var emailDraftAttachments = emailDraftJson.RootElement.GetProperty("attachments").EnumerateArray().ToList();
+        Assert.Equal(2, emailDraftAttachments.Count);
+        Assert.Contains(emailDraftAttachments, x => x.GetProperty("fileName").GetString() == "REP_UUID-PC-1.pdf" && x.GetProperty("contentType").GetString() == "application/pdf");
+        Assert.Contains(emailDraftAttachments, x => x.GetProperty("fileName").GetString() == "REP_UUID-PC-1.xml" && x.GetProperty("contentType").GetString() == "application/xml");
+
+        var sendEmailResponse = await client.PostAsJsonAsync($"/api/payment-complements/{paymentComplementId}/email", new SendPaymentComplementEmailRequest
+        {
+            Recipients = ["cliente@example.com"]
+        });
+        Assert.Equal(HttpStatusCode.OK, sendEmailResponse.StatusCode);
+        var sentMessage = Assert.Single(factory.EmailSender.SentMessages);
+        Assert.Equal(["cliente@example.com"], sentMessage.Recipients);
+        Assert.Equal(2, sentMessage.Attachments.Count);
+        Assert.Contains(sentMessage.Attachments, x => x.FileName == "REP_UUID-PC-1.xml" && x.ContentType == "application/xml");
+        Assert.Contains(sentMessage.Attachments, x => x.FileName == "REP_UUID-PC-1.pdf" && x.ContentType == "application/pdf");
 
         var cancelComplementResponse = await client.PostAsJsonAsync($"/api/payment-complements/{paymentComplementId}/cancel", new CancelPaymentComplementRequest
         {

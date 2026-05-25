@@ -42,6 +42,30 @@ public static class PaymentComplementsEndpoints
             .Produces(StatusCodes.Status200OK, contentType: "application/xml")
             .Produces(StatusCodes.Status404NotFound);
 
+        group.MapGet("/{paymentComplementId:long}/stamp/pdf", GetPaymentComplementStampPdfByPaymentComplementIdAsync)
+            .WithName("GetPaymentComplementStampPdfByPaymentComplementId")
+            .WithSummary("Get a printable PDF representation for a stamped payment complement")
+            .Produces(StatusCodes.Status200OK, contentType: "application/pdf")
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status409Conflict);
+
+        group.MapGet("/{paymentComplementId:long}/email-draft", GetPaymentComplementEmailDraftAsync)
+            .WithName("GetPaymentComplementEmailDraft")
+            .WithSummary("Get suggested email data for a stamped payment complement")
+            .Produces<PaymentComplementEmailDraftResponse>(StatusCodes.Status200OK)
+            .Produces<PaymentComplementEmailDraftResponse>(StatusCodes.Status404NotFound)
+            .Produces<PaymentComplementEmailDraftResponse>(StatusCodes.Status409Conflict);
+
+        group.MapPost("/{paymentComplementId:long}/email", SendPaymentComplementEmailAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
+            .WithName("SendPaymentComplementEmail")
+            .WithSummary("Send a stamped payment complement by email with XML and PDF attachments")
+            .Produces<SendPaymentComplementEmailResponse>(StatusCodes.Status200OK)
+            .Produces<SendPaymentComplementEmailResponse>(StatusCodes.Status400BadRequest)
+            .Produces<SendPaymentComplementEmailResponse>(StatusCodes.Status404NotFound)
+            .Produces<SendPaymentComplementEmailResponse>(StatusCodes.Status409Conflict)
+            .Produces<SendPaymentComplementEmailResponse>(StatusCodes.Status503ServiceUnavailable);
+
         group.MapPost("/{paymentComplementId:long}/cancel", CancelPaymentComplementAsync)
             .RequireAuthorization(AuthorizationPolicyNames.SupervisorOrAdmin)
             .WithName("CancelPaymentComplement")
@@ -354,6 +378,12 @@ public static class PaymentComplementsEndpoints
                     StampedAtUtc = x.StampedAtUtc,
                     CancelledAtUtc = x.CancelledAtUtc,
                     ProviderName = x.ProviderName,
+                    XmlAvailable = x.XmlAvailable,
+                    PdfAvailable = x.PdfAvailable,
+                    CanGeneratePdf = x.CanGeneratePdf,
+                    CanEmail = x.CanEmail,
+                    CanDownloadXml = x.CanDownloadXml,
+                    CanDownloadPdf = x.CanDownloadPdf,
                     InstallmentNumber = x.InstallmentNumber,
                     PreviousBalance = x.PreviousBalance,
                     PaidAmount = x.PaidAmount,
@@ -1599,7 +1629,102 @@ public static class PaymentComplementsEndpoints
             return TypedResults.NotFound();
         }
 
-        return TypedResults.Text(result.PaymentComplementStamp.XmlContent, "application/xml");
+        var fileName = PaymentComplementFileNameBuilder.Build(result.PaymentComplementStamp.Uuid ?? paymentComplementId.ToString(), "xml");
+        return TypedResults.File(System.Text.Encoding.UTF8.GetBytes(result.PaymentComplementStamp.XmlContent), "application/xml", fileName);
+    }
+
+    private static async Task<IResult> GetPaymentComplementStampPdfByPaymentComplementIdAsync(
+        long paymentComplementId,
+        GetPaymentComplementPdfService service,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(paymentComplementId, cancellationToken);
+        return result.Outcome switch
+        {
+            GetPaymentComplementPdfOutcome.Found when result.Content is not null && !string.IsNullOrWhiteSpace(result.FileName)
+                => TypedResults.File(result.Content, "application/pdf", result.FileName),
+            GetPaymentComplementPdfOutcome.NotFound => TypedResults.NotFound(),
+            _ => TypedResults.Conflict(new { outcome = result.Outcome.ToString(), isSuccess = result.IsSuccess, errorMessage = result.ErrorMessage })
+        };
+    }
+
+    private static async Task<Results<Ok<PaymentComplementEmailDraftResponse>, NotFound<PaymentComplementEmailDraftResponse>, Conflict<PaymentComplementEmailDraftResponse>>> GetPaymentComplementEmailDraftAsync(
+        long paymentComplementId,
+        GetPaymentComplementEmailDraftService service,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(paymentComplementId, cancellationToken);
+        var response = new PaymentComplementEmailDraftResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            Recipients = result.Recipients,
+            Subject = result.Subject,
+            Body = result.Body,
+            Attachments = result.Attachments.Select(x => new PaymentComplementEmailDraftAttachmentResponse
+            {
+                FileName = x.FileName,
+                ContentType = x.ContentType
+            }).ToList()
+        };
+
+        return result.Outcome switch
+        {
+            GetPaymentComplementEmailDraftOutcome.Found => TypedResults.Ok(response),
+            GetPaymentComplementEmailDraftOutcome.NotFound => TypedResults.NotFound(response),
+            _ => TypedResults.Conflict(response)
+        };
+    }
+
+    private static async Task<Results<Ok<SendPaymentComplementEmailResponse>, BadRequest<SendPaymentComplementEmailResponse>, NotFound<SendPaymentComplementEmailResponse>, Conflict<SendPaymentComplementEmailResponse>, JsonHttpResult<SendPaymentComplementEmailResponse>>> SendPaymentComplementEmailAsync(
+        long paymentComplementId,
+        SendPaymentComplementEmailRequest request,
+        SendPaymentComplementEmailService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(
+            new SendPaymentComplementEmailCommand
+            {
+                PaymentComplementId = paymentComplementId,
+                Recipients = request.Recipients,
+                Subject = request.Subject,
+                Body = request.Body
+            },
+            cancellationToken);
+
+        var response = new SendPaymentComplementEmailResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            SupportMessage = result.SupportMessage,
+            PaymentComplementId = result.PaymentComplementId,
+            Recipients = result.Recipients,
+            SentAtUtc = result.SentAtUtc
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "PaymentComplement.Email",
+            "PaymentComplementDocument",
+            paymentComplementId.ToString(),
+            result.Outcome.ToString(),
+            new { paymentComplementId, request.Recipients, request.Subject },
+            new { result.Recipients, result.SentAtUtc, result.SupportMessage },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            SendPaymentComplementEmailOutcome.Sent => TypedResults.Ok(response),
+            SendPaymentComplementEmailOutcome.NotFound => TypedResults.NotFound(response),
+            SendPaymentComplementEmailOutcome.NotStamped => TypedResults.Conflict(response),
+            SendPaymentComplementEmailOutcome.RenderFailed => TypedResults.Conflict(response),
+            SendPaymentComplementEmailOutcome.DeliveryFailed => TypedResults.Json(response, statusCode: StatusCodes.Status503ServiceUnavailable),
+            _ => TypedResults.BadRequest(response)
+        };
     }
 
     private static async Task<Results<Ok<CancelPaymentComplementResponse>, BadRequest<CancelPaymentComplementResponse>, NotFound<CancelPaymentComplementResponse>, Conflict<CancelPaymentComplementResponse>, JsonHttpResult<CancelPaymentComplementResponse>>> CancelPaymentComplementAsync(
@@ -1930,6 +2055,12 @@ public static class PaymentComplementsEndpoints
                     StampedAtUtc = x.StampedAtUtc,
                     CancelledAtUtc = x.CancelledAtUtc,
                     ProviderName = x.ProviderName,
+                    XmlAvailable = x.XmlAvailable,
+                    PdfAvailable = x.PdfAvailable,
+                    CanGeneratePdf = x.CanGeneratePdf,
+                    CanEmail = x.CanEmail,
+                    CanDownloadXml = x.CanDownloadXml,
+                    CanDownloadPdf = x.CanDownloadPdf,
                     InstallmentNumber = x.InstallmentNumber,
                     PreviousBalance = x.PreviousBalance,
                     PaidAmount = x.PaidAmount,
@@ -2590,6 +2721,56 @@ public class RefreshPaymentComplementStatusResponse
     public string? RawResponseSummaryJson { get; set; }
 }
 
+public sealed class PaymentComplementEmailDraftResponse
+{
+    public string Outcome { get; set; } = string.Empty;
+
+    public bool IsSuccess { get; set; }
+
+    public string? ErrorMessage { get; set; }
+
+    public IReadOnlyList<string> Recipients { get; set; } = [];
+
+    public string? Subject { get; set; }
+
+    public string? Body { get; set; }
+
+    public IReadOnlyList<PaymentComplementEmailDraftAttachmentResponse> Attachments { get; set; } = [];
+}
+
+public sealed class PaymentComplementEmailDraftAttachmentResponse
+{
+    public string FileName { get; set; } = string.Empty;
+
+    public string ContentType { get; set; } = string.Empty;
+}
+
+public sealed class SendPaymentComplementEmailRequest
+{
+    public IReadOnlyList<string> Recipients { get; init; } = [];
+
+    public string? Subject { get; init; }
+
+    public string? Body { get; init; }
+}
+
+public sealed class SendPaymentComplementEmailResponse
+{
+    public string Outcome { get; init; } = string.Empty;
+
+    public bool IsSuccess { get; init; }
+
+    public string? ErrorMessage { get; init; }
+
+    public string? SupportMessage { get; init; }
+
+    public long PaymentComplementId { get; init; }
+
+    public IReadOnlyList<string> Recipients { get; init; } = [];
+
+    public DateTime? SentAtUtc { get; init; }
+}
+
 public sealed class PaymentComplementBaseDocumentSearchErrorResponse
 {
     public string ErrorMessage { get; set; } = string.Empty;
@@ -2975,6 +3156,18 @@ public sealed class InternalRepBaseDocumentPaymentComplementResponse
     public DateTime? CancelledAtUtc { get; set; }
 
     public string? ProviderName { get; set; }
+
+    public bool XmlAvailable { get; set; }
+
+    public bool PdfAvailable { get; set; }
+
+    public bool CanGeneratePdf { get; set; }
+
+    public bool CanEmail { get; set; }
+
+    public bool CanDownloadXml { get; set; }
+
+    public bool CanDownloadPdf { get; set; }
 
     public int InstallmentNumber { get; set; }
 
@@ -3710,6 +3903,18 @@ public sealed class ExternalRepBaseDocumentPaymentComplementResponse
     public DateTime? CancelledAtUtc { get; set; }
 
     public string? ProviderName { get; set; }
+
+    public bool XmlAvailable { get; set; }
+
+    public bool PdfAvailable { get; set; }
+
+    public bool CanGeneratePdf { get; set; }
+
+    public bool CanEmail { get; set; }
+
+    public bool CanDownloadXml { get; set; }
+
+    public bool CanDownloadPdf { get; set; }
 
     public int InstallmentNumber { get; set; }
 
