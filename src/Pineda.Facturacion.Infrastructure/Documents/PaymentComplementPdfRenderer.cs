@@ -64,7 +64,7 @@ public sealed class PaymentComplementPdfRenderer : IPaymentComplementPdfRenderer
             CurrencyCode = GetAttribute(comprobante, "Moneda") ?? "XXX",
             ExchangeRate = ParseNullableDecimal(GetAttribute(comprobante, "TipoCambio")),
             PaymentMethodSat = string.Empty,
-            PaymentFormSat = GetAttribute(firstPago, "FormaDePagoP") ?? paymentComplementDocument.Payments.OrderBy(x => x.Id).FirstOrDefault()?.PaymentFormSat ?? string.Empty,
+            PaymentFormSat = string.Empty,
             PaymentCondition = null,
             IsCreditSale = false,
             CreditDays = null,
@@ -131,8 +131,8 @@ public sealed class PaymentComplementPdfRenderer : IPaymentComplementPdfRenderer
         var totales = pagos?.Elements().FirstOrDefault(static node => node.Name.LocalName == "Totales");
         var pagosNodes = pagos?.Elements().Where(static node => node.Name.LocalName == "Pago").ToList() ?? [];
 
-        AddField(fields, fiscalDocumentId, ref displayOrder, "REP_VERSION", "Complemento Pagos 2.0 - Version", GetAttribute(pagos, "Version"), createdAtUtc);
-        AddField(fields, fiscalDocumentId, ref displayOrder, "REP_TOTAL_PAYMENTS", "Complemento Pagos 2.0 - MontoTotalPagos", GetAttribute(totales, "MontoTotalPagos"), createdAtUtc);
+        AddField(fields, fiscalDocumentId, ref displayOrder, "REP_COMPLEMENT_FIELD_VERSION", "Version Pagos 2.0", GetAttribute(pagos, "Version"), createdAtUtc);
+        AddField(fields, fiscalDocumentId, ref displayOrder, "REP_COMPLEMENT_FIELD_MONTOTOTALPAGOS", "Monto total de pagos", GetAttribute(totales, "MontoTotalPagos"), createdAtUtc);
 
         if (totales is not null)
         {
@@ -147,8 +147,8 @@ public sealed class PaymentComplementPdfRenderer : IPaymentComplementPdfRenderer
                     fields,
                     fiscalDocumentId,
                     ref displayOrder,
-                    $"REP_TOTAL_{attribute.Name.LocalName.ToUpperInvariant()}",
-                    $"Totales - {attribute.Name.LocalName}",
+                    $"REP_COMPLEMENT_FIELD_{NormalizeFieldCodeToken(attribute.Name.LocalName)}",
+                    GetComplementFieldLabel(attribute.Name.LocalName),
                     attribute.Value,
                     createdAtUtc);
             }
@@ -157,33 +157,52 @@ public sealed class PaymentComplementPdfRenderer : IPaymentComplementPdfRenderer
         for (var paymentIndex = 0; paymentIndex < pagosNodes.Count; paymentIndex++)
         {
             var pago = pagosNodes[paymentIndex];
-            var paymentLabel = $"Pago {paymentIndex + 1}";
-            AddField(fields, fiscalDocumentId, ref displayOrder, $"REP_PAGO_{paymentIndex + 1}_FECHA", $"{paymentLabel} - FechaPago", GetAttribute(pago, "FechaPago"), createdAtUtc);
-            AddField(fields, fiscalDocumentId, ref displayOrder, $"REP_PAGO_{paymentIndex + 1}_FORMA", $"{paymentLabel} - FormaDePagoP", GetAttribute(pago, "FormaDePagoP"), createdAtUtc);
-            AddField(fields, fiscalDocumentId, ref displayOrder, $"REP_PAGO_{paymentIndex + 1}_MONEDA", $"{paymentLabel} - MonedaP", GetAttribute(pago, "MonedaP"), createdAtUtc);
-            AddField(fields, fiscalDocumentId, ref displayOrder, $"REP_PAGO_{paymentIndex + 1}_TIPOCAMBIO", $"{paymentLabel} - TipoCambioP", GetAttribute(pago, "TipoCambioP"), createdAtUtc);
-            AddField(fields, fiscalDocumentId, ref displayOrder, $"REP_PAGO_{paymentIndex + 1}_MONTO", $"{paymentLabel} - Monto", GetAttribute(pago, "Monto"), createdAtUtc);
-            AddField(fields, fiscalDocumentId, ref displayOrder, $"REP_PAGO_{paymentIndex + 1}_OPERACION", $"{paymentLabel} - NumOperacion", GetAttribute(pago, "NumOperacion"), createdAtUtc);
+            var paymentNumber = paymentIndex + 1;
+            AddField(fields, fiscalDocumentId, ref displayOrder, $"REP_PAYMENT_{paymentNumber}_FIELD_FECHAPAGO", "Fecha de pago", GetAttribute(pago, "FechaPago"), createdAtUtc);
+            AddField(fields, fiscalDocumentId, ref displayOrder, $"REP_PAYMENT_{paymentNumber}_FIELD_FORMADEPAGOP", "Forma de pago", GetAttribute(pago, "FormaDePagoP"), createdAtUtc);
+            AddField(fields, fiscalDocumentId, ref displayOrder, $"REP_PAYMENT_{paymentNumber}_FIELD_MONEDAP", "Moneda", GetAttribute(pago, "MonedaP"), createdAtUtc);
+            AddField(fields, fiscalDocumentId, ref displayOrder, $"REP_PAYMENT_{paymentNumber}_FIELD_TIPOCAMBIOP", "Tipo de cambio", GetAttribute(pago, "TipoCambioP"), createdAtUtc);
+            AddField(fields, fiscalDocumentId, ref displayOrder, $"REP_PAYMENT_{paymentNumber}_FIELD_MONTO", "Monto", GetAttribute(pago, "Monto"), createdAtUtc);
+            AddField(fields, fiscalDocumentId, ref displayOrder, $"REP_PAYMENT_{paymentNumber}_FIELD_NUMOPERACION", "Numero de operacion", GetAttribute(pago, "NumOperacion"), createdAtUtc);
 
-            AddTaxFields(fields, fiscalDocumentId, ref displayOrder, $"{paymentLabel} - ImpuestosP", pago, createdAtUtc);
+            AddTaxFields(
+                fields,
+                fiscalDocumentId,
+                ref displayOrder,
+                $"REP_PAYMENT_{paymentNumber}",
+                pago,
+                "ImpuestosP",
+                "TrasladoP",
+                "RetencionP",
+                createdAtUtc);
 
             var relatedDocuments = pago.Elements().Where(static node => node.Name.LocalName == "DoctoRelacionado").ToList();
             for (var documentIndex = 0; documentIndex < relatedDocuments.Count; documentIndex++)
             {
                 var relatedDocument = relatedDocuments[documentIndex];
-                var relatedDocumentLabel = $"{paymentLabel} / Documento {documentIndex + 1}";
-                AddField(fields, fiscalDocumentId, ref displayOrder, $"REP_DR_{paymentIndex + 1}_{documentIndex + 1}_UUID", $"{relatedDocumentLabel} - IdDocumento", GetAttribute(relatedDocument, "IdDocumento"), createdAtUtc);
-                AddField(fields, fiscalDocumentId, ref displayOrder, $"REP_DR_{paymentIndex + 1}_{documentIndex + 1}_SERIE", $"{relatedDocumentLabel} - Serie", GetAttribute(relatedDocument, "Serie"), createdAtUtc);
-                AddField(fields, fiscalDocumentId, ref displayOrder, $"REP_DR_{paymentIndex + 1}_{documentIndex + 1}_FOLIO", $"{relatedDocumentLabel} - Folio", GetAttribute(relatedDocument, "Folio"), createdAtUtc);
-                AddField(fields, fiscalDocumentId, ref displayOrder, $"REP_DR_{paymentIndex + 1}_{documentIndex + 1}_MONEDA", $"{relatedDocumentLabel} - MonedaDR", GetAttribute(relatedDocument, "MonedaDR"), createdAtUtc);
-                AddField(fields, fiscalDocumentId, ref displayOrder, $"REP_DR_{paymentIndex + 1}_{documentIndex + 1}_EQUIVALENCIA", $"{relatedDocumentLabel} - EquivalenciaDR", GetAttribute(relatedDocument, "EquivalenciaDR"), createdAtUtc);
-                AddField(fields, fiscalDocumentId, ref displayOrder, $"REP_DR_{paymentIndex + 1}_{documentIndex + 1}_PARCIALIDAD", $"{relatedDocumentLabel} - NumParcialidad", GetAttribute(relatedDocument, "NumParcialidad"), createdAtUtc);
-                AddField(fields, fiscalDocumentId, ref displayOrder, $"REP_DR_{paymentIndex + 1}_{documentIndex + 1}_SALDO_ANT", $"{relatedDocumentLabel} - ImpSaldoAnt", GetAttribute(relatedDocument, "ImpSaldoAnt"), createdAtUtc);
-                AddField(fields, fiscalDocumentId, ref displayOrder, $"REP_DR_{paymentIndex + 1}_{documentIndex + 1}_IMP_PAGADO", $"{relatedDocumentLabel} - ImpPagado", GetAttribute(relatedDocument, "ImpPagado"), createdAtUtc);
-                AddField(fields, fiscalDocumentId, ref displayOrder, $"REP_DR_{paymentIndex + 1}_{documentIndex + 1}_SALDO_INSOLUTO", $"{relatedDocumentLabel} - ImpSaldoInsoluto", GetAttribute(relatedDocument, "ImpSaldoInsoluto"), createdAtUtc);
-                AddField(fields, fiscalDocumentId, ref displayOrder, $"REP_DR_{paymentIndex + 1}_{documentIndex + 1}_OBJETO_IMP", $"{relatedDocumentLabel} - ObjetoImpDR", GetAttribute(relatedDocument, "ObjetoImpDR"), createdAtUtc);
+                var documentNumber = documentIndex + 1;
+                var fieldCodePrefix = $"REP_PAYMENT_{paymentNumber}_DOCUMENT_{documentNumber}";
+                AddField(fields, fiscalDocumentId, ref displayOrder, $"{fieldCodePrefix}_FIELD_IDDOCUMENTO", "UUID documento", GetAttribute(relatedDocument, "IdDocumento"), createdAtUtc);
+                AddField(fields, fiscalDocumentId, ref displayOrder, $"{fieldCodePrefix}_FIELD_SERIE", "Serie", GetAttribute(relatedDocument, "Serie"), createdAtUtc);
+                AddField(fields, fiscalDocumentId, ref displayOrder, $"{fieldCodePrefix}_FIELD_FOLIO", "Folio", GetAttribute(relatedDocument, "Folio"), createdAtUtc);
+                AddField(fields, fiscalDocumentId, ref displayOrder, $"{fieldCodePrefix}_FIELD_MONEDADR", "Moneda del documento", GetAttribute(relatedDocument, "MonedaDR"), createdAtUtc);
+                AddField(fields, fiscalDocumentId, ref displayOrder, $"{fieldCodePrefix}_FIELD_EQUIVALENCIADR", "Equivalencia", GetAttribute(relatedDocument, "EquivalenciaDR"), createdAtUtc);
+                AddField(fields, fiscalDocumentId, ref displayOrder, $"{fieldCodePrefix}_FIELD_NUMPARCIALIDAD", "Numero de parcialidad", GetAttribute(relatedDocument, "NumParcialidad"), createdAtUtc);
+                AddField(fields, fiscalDocumentId, ref displayOrder, $"{fieldCodePrefix}_FIELD_IMPSALDOANT", "Saldo anterior", GetAttribute(relatedDocument, "ImpSaldoAnt"), createdAtUtc);
+                AddField(fields, fiscalDocumentId, ref displayOrder, $"{fieldCodePrefix}_FIELD_IMPPAGADO", "Monto pagado", GetAttribute(relatedDocument, "ImpPagado"), createdAtUtc);
+                AddField(fields, fiscalDocumentId, ref displayOrder, $"{fieldCodePrefix}_FIELD_IMPSALDOINSOLUTO", "Saldo insoluto", GetAttribute(relatedDocument, "ImpSaldoInsoluto"), createdAtUtc);
+                AddField(fields, fiscalDocumentId, ref displayOrder, $"{fieldCodePrefix}_FIELD_OBJETOIMPDR", "Objeto de impuesto", GetAttribute(relatedDocument, "ObjetoImpDR"), createdAtUtc);
 
-                AddTaxFields(fields, fiscalDocumentId, ref displayOrder, $"{relatedDocumentLabel} - ImpuestosDR", relatedDocument, createdAtUtc);
+                AddTaxFields(
+                    fields,
+                    fiscalDocumentId,
+                    ref displayOrder,
+                    fieldCodePrefix,
+                    relatedDocument,
+                    "ImpuestosDR",
+                    "TrasladoDR",
+                    "RetencionDR",
+                    createdAtUtc);
             }
         }
 
@@ -194,30 +213,40 @@ public sealed class PaymentComplementPdfRenderer : IPaymentComplementPdfRenderer
         List<FiscalDocumentSpecialFieldValue> fields,
         long fiscalDocumentId,
         ref int displayOrder,
-        string labelPrefix,
+        string fieldCodePrefix,
         XElement scope,
+        string taxesContainerName,
+        string transferName,
+        string retentionName,
         DateTime createdAtUtc)
     {
-        foreach (var traslado in scope.Descendants().Where(static node => node.Name.LocalName is "TrasladoDR" or "TrasladoP"))
+        var taxesContainer = scope.Elements().FirstOrDefault(node => string.Equals(node.Name.LocalName, taxesContainerName, StringComparison.OrdinalIgnoreCase));
+        if (taxesContainer is null)
+        {
+            return;
+        }
+
+        var taxSequence = 1;
+        foreach (var traslado in taxesContainer.Descendants().Where(node => string.Equals(node.Name.LocalName, transferName, StringComparison.OrdinalIgnoreCase)))
         {
             AddField(
                 fields,
                 fiscalDocumentId,
                 ref displayOrder,
-                $"REP_TAX_{displayOrder}",
-                $"{labelPrefix} - {traslado.Name.LocalName}",
+                $"{fieldCodePrefix}_TAX_{NormalizeFieldCodeToken(traslado.Name.LocalName)}_{taxSequence++}",
+                "Traslado",
                 SummarizeAttributes(traslado),
                 createdAtUtc);
         }
 
-        foreach (var retencion in scope.Descendants().Where(static node => node.Name.LocalName is "RetencionDR" or "RetencionP"))
+        foreach (var retencion in taxesContainer.Descendants().Where(node => string.Equals(node.Name.LocalName, retentionName, StringComparison.OrdinalIgnoreCase)))
         {
             AddField(
                 fields,
                 fiscalDocumentId,
                 ref displayOrder,
-                $"REP_TAX_{displayOrder}",
-                $"{labelPrefix} - {retencion.Name.LocalName}",
+                $"{fieldCodePrefix}_TAX_{NormalizeFieldCodeToken(retencion.Name.LocalName)}_{taxSequence++}",
+                "Retencion",
                 SummarizeAttributes(retencion),
                 createdAtUtc);
         }
@@ -255,6 +284,63 @@ public sealed class PaymentComplementPdfRenderer : IPaymentComplementPdfRenderer
             DisplayOrder = displayOrder++,
             CreatedAtUtc = createdAtUtc
         });
+    }
+
+    private static string GetComplementFieldLabel(string attributeName)
+    {
+        return attributeName switch
+        {
+            "Version" => "Version Pagos 2.0",
+            "MontoTotalPagos" => "Monto total de pagos",
+            "TotalTrasladosBaseIVA16" => "Base trasladada IVA 16%",
+            "TotalTrasladosImpuestoIVA16" => "IVA trasladado 16%",
+            "TotalRetencionesIVA" => "Retencion IVA",
+            "TotalRetencionesISR" => "Retencion ISR",
+            "TotalRetencionesIEPS" => "Retencion IEPS",
+            _ => HumanizeAttributeName(attributeName)
+        };
+    }
+
+    private static string NormalizeFieldCodeToken(string value)
+    {
+        return new string(value
+            .Trim()
+            .ToUpperInvariant()
+            .Where(static character => char.IsLetterOrDigit(character) || character == '_')
+            .ToArray());
+    }
+
+    private static string HumanizeAttributeName(string attributeName)
+    {
+        if (string.IsNullOrWhiteSpace(attributeName))
+        {
+            return string.Empty;
+        }
+
+        var buffer = new List<char>(attributeName.Length + 8);
+        for (var index = 0; index < attributeName.Length; index++)
+        {
+            var current = attributeName[index];
+            if (index > 0)
+            {
+                var previous = attributeName[index - 1];
+                var next = index + 1 < attributeName.Length ? attributeName[index + 1] : '\0';
+                var startsNewWord =
+                    (char.IsLower(previous) && char.IsUpper(current))
+                    || (char.IsLetter(previous) && char.IsDigit(current))
+                    || (char.IsDigit(previous) && char.IsLetter(current))
+                    || (char.IsUpper(previous) && char.IsUpper(current) && next != '\0' && char.IsLower(next));
+
+                if (startsNewWord)
+                {
+                    buffer.Add(' ');
+                }
+            }
+
+            buffer.Add(current);
+        }
+
+        return new string(buffer.ToArray());
     }
 
     private static string? GetAttribute(XElement? element, string attributeName)

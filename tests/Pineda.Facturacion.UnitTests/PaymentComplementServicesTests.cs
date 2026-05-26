@@ -1708,20 +1708,108 @@ public class PaymentComplementServicesTests
         Assert.StartsWith("%PDF-1.4", pdfText, StringComparison.Ordinal);
         Assert.Contains("COMPLEMENTO DE PAGO", pdfText, StringComparison.Ordinal);
         Assert.Contains("a0d96040-2d88-44f4-abbd-c3ddb4f3260d", pdfText, StringComparison.Ordinal);
-        Assert.Contains("Complemento Pagos 2.0 - MontoTotalPagos", pdfText, StringComparison.Ordinal);
-        Assert.Contains("Pago 1 - FechaPago", pdfText, StringComparison.Ordinal);
-        Assert.Contains("Pago 1 - FormaDePagoP", pdfText, StringComparison.Ordinal);
-        Assert.Contains("Pago 1 - MonedaP", pdfText, StringComparison.Ordinal);
-        Assert.Contains("Pago 1 - Monto", pdfText, StringComparison.Ordinal);
-        Assert.Contains("Pago 1 / Documento 1 - IdDocumento", pdfText, StringComparison.Ordinal);
-        Assert.Contains("Pago 1 / Documento 1 - NumParcialidad", pdfText, StringComparison.Ordinal);
-        Assert.Contains("Pago 1 / Documento 1 - ImpSaldoAnt", pdfText, StringComparison.Ordinal);
-        Assert.Contains("Pago 1 / Documento 1 - ImpPagado", pdfText, StringComparison.Ordinal);
-        Assert.Contains("Pago 1 / Documento 1 - ImpSaldoInsoluto", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Datos del complemento", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Pago 1", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Pago 1 - Documento relacionado 1", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Monto total de pagos", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Fecha de pago", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Forma de pago", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Moneda", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Tipo de cambio", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Monto", pdfText, StringComparison.Ordinal);
+        Assert.Contains("UUID documento", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Numero de parcialidad", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Saldo anterior", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Monto pagado", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Saldo insoluto", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Equivalencia", pdfText, StringComparison.Ordinal);
         Assert.Contains("12345678-1234-5678-1234-567812345678", pdfText, StringComparison.Ordinal);
         Assert.Contains("427.00", pdfText, StringComparison.Ordinal);
         Assert.Contains("03", pdfText, StringComparison.Ordinal);
         Assert.Contains("MXN", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Subtotal", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Descuento", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Impuestos", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Total", pdfText, StringComparison.Ordinal);
+        Assert.Contains("XXX", pdfText, StringComparison.Ordinal);
+        Assert.Equal(1, CountOccurrences(pdfText, "Forma de pago"));
+        Assert.DoesNotContain("Metodo de pago", pdfText, StringComparison.Ordinal);
+        Assert.DoesNotContain("Complemento Pagos 2.0 - MontoTotalPagos", pdfText, StringComparison.Ordinal);
+        Assert.DoesNotContain("Pago 1 - FormaDePagoP", pdfText, StringComparison.Ordinal);
+        Assert.DoesNotContain("Pago 1 / Documento 1 - ImpSaldoAnt", pdfText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PaymentComplementPdfRenderer_Renders_Rep_Taxes_In_Compact_Blocks()
+    {
+        var document = CreatePaymentComplementDocument();
+        document.Status = PaymentComplementDocumentStatus.Stamped;
+
+        var stamp = CreatePaymentComplementStamp(
+            uuid: "uuid-rep-tax-001",
+            xmlContent: CreateStampedPaymentComplementXml(
+                uuid: "uuid-rep-tax-001",
+                amount: 427m,
+                pagosXml: CreateRepPagosXml(paymentCount: 1, documentsPerPayment: 1, includeTaxes: true, useLongValues: false)));
+
+        var renderer = new PaymentComplementPdfRenderer(
+            new FiscalDocumentPdfRenderer(
+                new PcFakeIssuerProfileRepository(),
+                new PcFakeIssuerProfileLogoStorage(),
+                new PcFakeSatCatalogDescriptionProvider()));
+
+        var bytes = await renderer.RenderAsync(document, stamp);
+        var pdfText = System.Text.Encoding.ASCII.GetString(bytes);
+
+        Assert.Contains("Base trasladada IVA 16%", pdfText, StringComparison.Ordinal);
+        Assert.Contains("IVA trasladado 16%", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Pago 1 - Impuestos", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Pago 1 - Documento relacionado 1 - Impuestos", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Tipo", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Base", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Impuesto", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Factor", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Tasa/Cuota", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Importe", pdfText, StringComparison.Ordinal);
+        Assert.Contains("368.10", pdfText, StringComparison.Ordinal);
+        Assert.Contains("002", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Tasa", pdfText, StringComparison.Ordinal);
+        Assert.Contains("0.160000", pdfText, StringComparison.Ordinal);
+        Assert.Contains("58.90", pdfText, StringComparison.Ordinal);
+        Assert.DoesNotContain("BaseP=", pdfText, StringComparison.Ordinal);
+        Assert.DoesNotContain("BaseDR=", pdfText, StringComparison.Ordinal);
+        Assert.DoesNotContain("Pago 1 - ImpuestosP - TrasladoP", pdfText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PaymentComplementPdfRenderer_Supports_Multiple_Payments_And_Related_Documents_Across_Pages()
+    {
+        var document = CreatePaymentComplementDocument();
+        document.Status = PaymentComplementDocumentStatus.Stamped;
+
+        var stamp = CreatePaymentComplementStamp(
+            uuid: "uuid-rep-multipage-001",
+            xmlContent: CreateStampedPaymentComplementXml(
+                uuid: "uuid-rep-multipage-001",
+                amount: 996m,
+                pagosXml: CreateRepPagosXml(paymentCount: 3, documentsPerPayment: 3, includeTaxes: true, useLongValues: true)));
+
+        var renderer = new PaymentComplementPdfRenderer(
+            new FiscalDocumentPdfRenderer(
+                new PcFakeIssuerProfileRepository(),
+                new PcFakeIssuerProfileLogoStorage(),
+                new PcFakeSatCatalogDescriptionProvider()));
+
+        var bytes = await renderer.RenderAsync(document, stamp);
+        var pdfText = System.Text.Encoding.ASCII.GetString(bytes);
+
+        Assert.True(CountOccurrences(pdfText, "/Type /Page /Parent") >= 2);
+        Assert.Contains("Pago 3", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Pago 3 - Documento relacionado 3", pdfText, StringComparison.Ordinal);
+        Assert.Contains("UUID-REP-03-03", pdfText, StringComparison.Ordinal);
+        Assert.Contains("OP-03-9999999999999999999999999999", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Datos adicionales", pdfText, StringComparison.Ordinal);
+        Assert.DoesNotContain("Pago 1 - FechaPago", pdfText, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -2201,11 +2289,20 @@ public class PaymentComplementServicesTests
         string relatedDocumentUuid = "12345678-1234-5678-1234-567812345678",
         decimal amount = 50m,
         DateTime? paymentDateUtc = null,
-        DateTime? stampedAtUtc = null)
+        DateTime? stampedAtUtc = null,
+        string? pagosXml = null)
     {
         var paymentDate = (paymentDateUtc ?? new DateTime(2026, 5, 25, 22, 59, 0, DateTimeKind.Utc)).ToString("yyyy-MM-ddTHH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
         var stampDate = (stampedAtUtc ?? new DateTime(2026, 5, 26, 3, 47, 0, DateTimeKind.Utc)).ToString("yyyy-MM-ddTHH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
         var amountText = amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+        var pagosContent = string.IsNullOrWhiteSpace(pagosXml)
+            ? $$"""
+                  <pago20:Totales MontoTotalPagos="{{amountText}}" />
+                  <pago20:Pago FechaPago="{{paymentDate}}" FormaDePagoP="03" MonedaP="MXN" TipoCambioP="1" Monto="{{amountText}}" NumOperacion="OP-12345">
+                    <pago20:DoctoRelacionado IdDocumento="{{relatedDocumentUuid}}" Serie="A" Folio="1001" MonedaDR="MXN" EquivalenciaDR="1" NumParcialidad="1" ImpSaldoAnt="{{amountText}}" ImpPagado="{{amountText}}" ImpSaldoInsoluto="0.00" ObjetoImpDR="02" />
+                  </pago20:Pago>
+                """
+            : pagosXml;
 
         return $$"""
             <?xml version="1.0" encoding="utf-8"?>
@@ -2217,15 +2314,126 @@ public class PaymentComplementServicesTests
               </cfdi:Conceptos>
               <cfdi:Complemento>
                 <pago20:Pagos Version="2.0">
-                  <pago20:Totales MontoTotalPagos="{{amountText}}" />
-                  <pago20:Pago FechaPago="{{paymentDate}}" FormaDePagoP="03" MonedaP="MXN" Monto="{{amountText}}" NumOperacion="OP-12345">
-                    <pago20:DoctoRelacionado IdDocumento="{{relatedDocumentUuid}}" Serie="A" Folio="1001" MonedaDR="MXN" NumParcialidad="1" ImpSaldoAnt="{{amountText}}" ImpPagado="{{amountText}}" ImpSaldoInsoluto="0.00" ObjetoImpDR="02" />
-                  </pago20:Pago>
+                  {{pagosContent}}
                 </pago20:Pagos>
                 <tfd:TimbreFiscalDigital Version="1.1" UUID="{{uuid}}" FechaTimbrado="{{stampDate}}" NoCertificadoSAT="00001000000509846663" SelloCFD="SELLOCFDTEST1234567890" SelloSAT="SELLOSATTEST0987654321" />
               </cfdi:Complemento>
             </cfdi:Comprobante>
             """;
+    }
+
+    private static string CreateRepPagosXml(int paymentCount, int documentsPerPayment, bool includeTaxes, bool useLongValues)
+    {
+        var paymentNodes = new List<string>(paymentCount);
+        var totalPayments = 0m;
+        var totalBase = 0m;
+        var totalTax = 0m;
+
+        for (var paymentNumber = 1; paymentNumber <= paymentCount; paymentNumber++)
+        {
+            var paymentAmount = 344m + (paymentNumber * 83m);
+            totalPayments += paymentAmount;
+            var roundedShare = Math.Round(paymentAmount / documentsPerPayment, 2, MidpointRounding.AwayFromZero);
+            var paymentBase = 0m;
+            var paymentTax = 0m;
+            var documentNodes = new List<string>(documentsPerPayment);
+
+            for (var documentNumber = 1; documentNumber <= documentsPerPayment; documentNumber++)
+            {
+                var paidAmount = documentNumber == documentsPerPayment
+                    ? paymentAmount - (roundedShare * (documentsPerPayment - 1))
+                    : roundedShare;
+                var baseAmount = includeTaxes
+                    ? Math.Round(paidAmount / 1.16m, 2, MidpointRounding.AwayFromZero)
+                    : 0m;
+                var taxAmount = includeTaxes
+                    ? paidAmount - baseAmount
+                    : 0m;
+
+                paymentBase += baseAmount;
+                paymentTax += taxAmount;
+                documentNodes.Add(CreateRepRelatedDocumentXml(paymentNumber, documentNumber, paidAmount, includeTaxes, baseAmount, taxAmount, useLongValues));
+            }
+
+            totalBase += paymentBase;
+            totalTax += paymentTax;
+            paymentNodes.Add(CreateRepPaymentXml(paymentNumber, paymentAmount, includeTaxes, paymentBase, paymentTax, useLongValues, string.Concat(documentNodes)));
+        }
+
+        var totalsAttributes = includeTaxes
+            ? $"MontoTotalPagos=\"{totalPayments.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)}\" TotalTrasladosBaseIVA16=\"{totalBase.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)}\" TotalTrasladosImpuestoIVA16=\"{totalTax.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)}\""
+            : $"MontoTotalPagos=\"{totalPayments.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)}\"";
+
+        return $$"""
+                  <pago20:Totales {{totalsAttributes}} />
+                  {{string.Join(Environment.NewLine, paymentNodes)}}
+                """;
+    }
+
+    private static string CreateRepPaymentXml(int paymentNumber, decimal paymentAmount, bool includeTaxes, decimal baseAmount, decimal taxAmount, bool useLongValues, string relatedDocumentsXml)
+    {
+        var paymentDate = new DateTime(2026, 5, 25, 10 + paymentNumber, 15, 0, DateTimeKind.Utc).ToString("yyyy-MM-ddTHH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
+        var amountText = paymentAmount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+        var baseText = baseAmount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+        var taxText = taxAmount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+        var operation = useLongValues
+            ? $"OP-{paymentNumber:00}-{new string('9', 28)}-{new string('A', 18)}"
+            : $"OP-{paymentNumber:00}";
+        var paymentTaxesXml = includeTaxes
+            ? $$"""
+                      <pago20:ImpuestosP>
+                        <pago20:TrasladosP>
+                          <pago20:TrasladoP BaseP="{{baseText}}" ImpuestoP="002" TipoFactorP="Tasa" TasaOCuotaP="0.160000" ImporteP="{{taxText}}" />
+                        </pago20:TrasladosP>
+                      </pago20:ImpuestosP>
+                    """
+            : string.Empty;
+
+        return $$"""
+                  <pago20:Pago FechaPago="{{paymentDate}}" FormaDePagoP="03" MonedaP="MXN" TipoCambioP="1" Monto="{{amountText}}" NumOperacion="{{operation}}">
+                    {{paymentTaxesXml}}
+                    {{relatedDocumentsXml}}
+                  </pago20:Pago>
+                """;
+    }
+
+    private static string CreateRepRelatedDocumentXml(int paymentNumber, int documentNumber, decimal paidAmount, bool includeTaxes, decimal baseAmount, decimal taxAmount, bool useLongValues)
+    {
+        var paidAmountText = paidAmount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+        var baseText = baseAmount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+        var taxText = taxAmount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+        var relatedDocumentUuid = useLongValues
+            ? $"UUID-REP-{paymentNumber:00}-{documentNumber:00}-{new string('X', 26)}"
+            : $"UUID-REP-{paymentNumber:00}-{documentNumber:00}";
+        var documentTaxesXml = includeTaxes
+            ? $$"""
+                        <pago20:ImpuestosDR>
+                          <pago20:TrasladosDR>
+                            <pago20:TrasladoDR BaseDR="{{baseText}}" ImpuestoDR="002" TipoFactorDR="Tasa" TasaOCuotaDR="0.160000" ImporteDR="{{taxText}}" />
+                          </pago20:TrasladosDR>
+                        </pago20:ImpuestosDR>
+                      """
+            : string.Empty;
+
+        return $$"""
+                    <pago20:DoctoRelacionado IdDocumento="{{relatedDocumentUuid}}" Serie="T" Folio="{{paymentNumber}}{{documentNumber:00}}" MonedaDR="MXN" EquivalenciaDR="1" NumParcialidad="{{documentNumber}}" ImpSaldoAnt="{{paidAmountText}}" ImpPagado="{{paidAmountText}}" ImpSaldoInsoluto="0.00" ObjetoImpDR="02">
+                      {{documentTaxesXml}}
+                    </pago20:DoctoRelacionado>
+                """;
+    }
+
+    private static int CountOccurrences(string text, string value)
+    {
+        var count = 0;
+        var index = 0;
+
+        while ((index = text.IndexOf(value, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += value.Length;
+        }
+
+        return count;
     }
 
     private sealed class PcFakeAccountsReceivablePaymentRepository : IAccountsReceivablePaymentRepository

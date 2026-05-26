@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.IO.Compression;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 
 using Pineda.Facturacion.Application.Abstractions.Documents;
@@ -12,6 +13,11 @@ namespace Pineda.Facturacion.Infrastructure.Documents;
 
 public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
 {
+    private static readonly Regex RepPaymentFieldCodePattern = new(@"^REP_PAYMENT_(\d+)_FIELD_(.+)$", RegexOptions.Compiled);
+    private static readonly Regex RepPaymentTaxCodePattern = new(@"^REP_PAYMENT_(\d+)_TAX_(.+)_(\d+)$", RegexOptions.Compiled);
+    private static readonly Regex RepDocumentFieldCodePattern = new(@"^REP_PAYMENT_(\d+)_DOCUMENT_(\d+)_FIELD_(.+)$", RegexOptions.Compiled);
+    private static readonly Regex RepDocumentTaxCodePattern = new(@"^REP_PAYMENT_(\d+)_DOCUMENT_(\d+)_TAX_(.+)_(\d+)$", RegexOptions.Compiled);
+
     private readonly IIssuerProfileRepository _issuerProfileRepository;
     private readonly IIssuerProfileLogoStorage _logoStorage;
     private readonly ISatCatalogDescriptionProvider _satCatalogDescriptionProvider;
@@ -116,6 +122,7 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
     {
         public required string DocumentTitle { get; init; }
         public required string DocumentType { get; init; }
+        public required string DocumentTypeCode { get; init; }
         public required string CfdiVersion { get; init; }
         public required string Uuid { get; init; }
         public required string SeriesFolio { get; init; }
@@ -159,18 +166,26 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
             var timbre = document.Descendants().FirstOrDefault(static node => node.Name.LocalName == "TimbreFiscalDigital");
             var conceptos = document.Descendants().Where(static node => node.Name.LocalName == "Concepto").ToList();
             var total = ParseDecimal(GetAttribute(comprobante, "Total"), fiscalDocument.Total);
+            var documentTypeCode = GetAttribute(comprobante, "TipoDeComprobante") ?? fiscalDocument.DocumentType ?? string.Empty;
+            var paymentMethodCode = GetAttribute(comprobante, "MetodoPago");
+            var paymentFormCode = GetAttribute(comprobante, "FormaPago");
 
             return new PdfViewModel
             {
                 DocumentTitle = "Representacion impresa del CFDI",
-                DocumentType = ResolveDocumentType(GetAttribute(comprobante, "TipoDeComprobante")),
+                DocumentType = ResolveDocumentType(documentTypeCode),
+                DocumentTypeCode = documentTypeCode,
                 CfdiVersion = GetAttribute(comprobante, "Version") ?? "4.0",
                 Uuid = GetAttribute(timbre, "UUID") ?? fiscalStamp.Uuid ?? "N/D",
                 SeriesFolio = CombineDocumentNumber(GetAttribute(comprobante, "Serie"), GetAttribute(comprobante, "Folio")),
                 IssuedAt = GetAttribute(comprobante, "Fecha") ?? FormatUtc(fiscalDocument.IssuedAtUtc),
                 StampedAt = GetAttribute(timbre, "FechaTimbrado") ?? FormatUtc(fiscalStamp.StampedAtUtc),
-                PaymentMethod = satCatalogDescriptionProvider.FormatPaymentMethod(GetAttribute(comprobante, "MetodoPago") ?? fiscalDocument.PaymentMethodSat),
-                PaymentForm = satCatalogDescriptionProvider.FormatPaymentForm(GetAttribute(comprobante, "FormaPago") ?? fiscalDocument.PaymentFormSat),
+                PaymentMethod = string.IsNullOrWhiteSpace(paymentMethodCode)
+                    ? string.Empty
+                    : satCatalogDescriptionProvider.FormatPaymentMethod(paymentMethodCode),
+                PaymentForm = string.IsNullOrWhiteSpace(paymentFormCode)
+                    ? string.Empty
+                    : satCatalogDescriptionProvider.FormatPaymentForm(paymentFormCode),
                 ExportCode = satCatalogDescriptionProvider.FormatExportCode(GetAttribute(comprobante, "Exportacion") ?? "01"),
                 Currency = GetAttribute(comprobante, "Moneda") ?? fiscalDocument.CurrencyCode,
                 PlaceOfIssue = GetAttribute(comprobante, "LugarExpedicion") ?? fiscalDocument.IssuerPostalCode,
@@ -199,7 +214,7 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
                 ProviderName = fiscalStamp.ProviderName,
                 AdditionalFields = fiscalDocument.SpecialFieldValues
                     .OrderBy(x => x.DisplayOrder)
-                    .Select(x => new PdfAdditionalFieldRow(x.FieldLabelSnapshot, x.Value))
+                    .Select(x => new PdfAdditionalFieldRow(x.FieldCode, x.FieldLabelSnapshot, x.Value))
                     .ToArray(),
                 Concepts = conceptos.Count == 0
                     ? [new PdfConceptRow("N/D", "N/D", "0", "N/D", "N/D", "No se encontraron conceptos en el XML timbrado.", "N/D", "0", "0")]
@@ -296,7 +311,215 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
 
     private sealed record PdfTaxRow(string Label, string Rate, string Amount);
 
-    private sealed record PdfAdditionalFieldRow(string Label, string Value);
+    private sealed record PdfAdditionalFieldRow(string Code, string Label, string Value);
+    private sealed record RepField(string Label, string Value, bool PreferFullWidth = false);
+    private sealed record RepTaxRow(string RowType, string Base, string Tax, string FactorType, string Rate, string Amount, string RawValue);
+    private sealed record RepRelatedDocumentSection(int PaymentNumber, int DocumentNumber, IReadOnlyList<RepField> Fields, IReadOnlyList<RepTaxRow> Taxes);
+    private sealed record RepPaymentSection(int PaymentNumber, IReadOnlyList<RepField> Fields, IReadOnlyList<RepTaxRow> Taxes, IReadOnlyList<RepRelatedDocumentSection> Documents);
+    private sealed record RepAdditionalLayout(IReadOnlyList<RepField> ComplementFields, IReadOnlyList<RepPaymentSection> Payments);
+    private sealed class RepPaymentSectionBuilder
+    {
+        public List<RepField> Fields { get; } = [];
+        public List<RepTaxRow> Taxes { get; } = [];
+        public SortedDictionary<int, RepRelatedDocumentSectionBuilder> Documents { get; } = [];
+    }
+
+    private sealed class RepRelatedDocumentSectionBuilder
+    {
+        public List<RepField> Fields { get; } = [];
+        public List<RepTaxRow> Taxes { get; } = [];
+    }
+
+    private static bool TryBuildRepAdditionalLayout(IReadOnlyList<PdfAdditionalFieldRow> fields, out RepAdditionalLayout layout)
+    {
+        if (!fields.Any(static field => field.Code.StartsWith("REP_", StringComparison.OrdinalIgnoreCase)))
+        {
+            layout = new RepAdditionalLayout([], []);
+            return false;
+        }
+
+        var complementFields = new List<RepField>();
+        var paymentBuilders = new SortedDictionary<int, RepPaymentSectionBuilder>();
+
+        foreach (var field in fields)
+        {
+            if (string.IsNullOrWhiteSpace(field.Code))
+            {
+                continue;
+            }
+
+            if (field.Code.StartsWith("REP_COMPLEMENT_FIELD_", StringComparison.OrdinalIgnoreCase))
+            {
+                complementFields.Add(CreateRepField(field));
+                continue;
+            }
+
+            var paymentFieldMatch = RepPaymentFieldCodePattern.Match(field.Code);
+            if (paymentFieldMatch.Success)
+            {
+                var paymentNumber = ParsePositiveInt(paymentFieldMatch.Groups[1].Value);
+                if (paymentNumber > 0)
+                {
+                    GetOrCreatePaymentBuilder(paymentBuilders, paymentNumber).Fields.Add(CreateRepField(field));
+                }
+
+                continue;
+            }
+
+            var paymentTaxMatch = RepPaymentTaxCodePattern.Match(field.Code);
+            if (paymentTaxMatch.Success)
+            {
+                var paymentNumber = ParsePositiveInt(paymentTaxMatch.Groups[1].Value);
+                if (paymentNumber > 0)
+                {
+                    GetOrCreatePaymentBuilder(paymentBuilders, paymentNumber).Taxes.Add(CreateRepTaxRow(field));
+                }
+
+                continue;
+            }
+
+            var documentFieldMatch = RepDocumentFieldCodePattern.Match(field.Code);
+            if (documentFieldMatch.Success)
+            {
+                var paymentNumber = ParsePositiveInt(documentFieldMatch.Groups[1].Value);
+                var documentNumber = ParsePositiveInt(documentFieldMatch.Groups[2].Value);
+                if (paymentNumber > 0 && documentNumber > 0)
+                {
+                    GetOrCreateDocumentBuilder(paymentBuilders, paymentNumber, documentNumber).Fields.Add(CreateRepField(field));
+                }
+
+                continue;
+            }
+
+            var documentTaxMatch = RepDocumentTaxCodePattern.Match(field.Code);
+            if (documentTaxMatch.Success)
+            {
+                var paymentNumber = ParsePositiveInt(documentTaxMatch.Groups[1].Value);
+                var documentNumber = ParsePositiveInt(documentTaxMatch.Groups[2].Value);
+                if (paymentNumber > 0 && documentNumber > 0)
+                {
+                    GetOrCreateDocumentBuilder(paymentBuilders, paymentNumber, documentNumber).Taxes.Add(CreateRepTaxRow(field));
+                }
+            }
+        }
+
+        layout = new RepAdditionalLayout(
+            complementFields,
+            paymentBuilders
+                .Select(static paymentEntry => new RepPaymentSection(
+                    paymentEntry.Key,
+                    paymentEntry.Value.Fields,
+                    paymentEntry.Value.Taxes,
+                    paymentEntry.Value.Documents
+                        .Select(documentEntry => new RepRelatedDocumentSection(
+                            paymentEntry.Key,
+                            documentEntry.Key,
+                            documentEntry.Value.Fields,
+                            documentEntry.Value.Taxes))
+                        .ToArray()))
+                .ToArray());
+
+        return layout.ComplementFields.Count > 0 || layout.Payments.Count > 0;
+    }
+
+    private static RepField CreateRepField(PdfAdditionalFieldRow field)
+        => new(field.Label, field.Value, ShouldRenderRepFieldFullWidth(field));
+
+    private static bool ShouldRenderRepFieldFullWidth(PdfAdditionalFieldRow field)
+    {
+        if (field.Code.Contains("IDDOCUMENTO", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (field.Value.Length >= 56)
+        {
+            return true;
+        }
+
+        return field.Value.Length >= 36 && !field.Value.Contains(' ', StringComparison.Ordinal);
+    }
+
+    private static RepTaxRow CreateRepTaxRow(PdfAdditionalFieldRow field)
+    {
+        var attributes = ParseRepAttributes(field.Value);
+        return new RepTaxRow(
+            field.Label,
+            GetRepAttribute(attributes, "BaseP", "BaseDR", "Base"),
+            GetRepAttribute(attributes, "ImpuestoP", "ImpuestoDR", "Impuesto"),
+            GetRepAttribute(attributes, "TipoFactorP", "TipoFactorDR", "TipoFactor"),
+            GetRepAttribute(attributes, "TasaOCuotaP", "TasaOCuotaDR", "TasaOCuota"),
+            GetRepAttribute(attributes, "ImporteP", "ImporteDR", "Importe"),
+            field.Value);
+    }
+
+    private static IReadOnlyDictionary<string, string> ParseRepAttributes(string rawValue)
+    {
+        if (string.IsNullOrWhiteSpace(rawValue))
+        {
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var segment in rawValue.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var separatorIndex = segment.IndexOf('=');
+            if (separatorIndex <= 0 || separatorIndex >= segment.Length - 1)
+            {
+                continue;
+            }
+
+            var key = segment[..separatorIndex].Trim();
+            var value = segment[(separatorIndex + 1)..].Trim();
+            if (key.Length == 0 || value.Length == 0)
+            {
+                continue;
+            }
+
+            values[key] = value;
+        }
+
+        return values;
+    }
+
+    private static string GetRepAttribute(IReadOnlyDictionary<string, string> attributes, params string[] keys)
+    {
+        foreach (var key in keys)
+        {
+            if (attributes.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+        }
+
+        return "N/D";
+    }
+
+    private static RepPaymentSectionBuilder GetOrCreatePaymentBuilder(IDictionary<int, RepPaymentSectionBuilder> paymentBuilders, int paymentNumber)
+    {
+        if (!paymentBuilders.TryGetValue(paymentNumber, out var builder))
+        {
+            builder = new RepPaymentSectionBuilder();
+            paymentBuilders[paymentNumber] = builder;
+        }
+
+        return builder;
+    }
+
+    private static RepRelatedDocumentSectionBuilder GetOrCreateDocumentBuilder(IDictionary<int, RepPaymentSectionBuilder> paymentBuilders, int paymentNumber, int documentNumber)
+    {
+        var paymentBuilder = GetOrCreatePaymentBuilder(paymentBuilders, paymentNumber);
+        if (!paymentBuilder.Documents.TryGetValue(documentNumber, out var documentBuilder))
+        {
+            documentBuilder = new RepRelatedDocumentSectionBuilder();
+            paymentBuilder.Documents[documentNumber] = documentBuilder;
+        }
+
+        return documentBuilder;
+    }
+
+    private static int ParsePositiveInt(string value)
+        => int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed > 0 ? parsed : 0;
 
     private static decimal ResolveTransferredTaxes(XDocument document, FiscalDocument fiscalDocument)
     {
@@ -388,16 +611,25 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
         private void DrawHeader(PdfViewModel model, PdfImageAsset? logo)
         {
             var topY = _cursorY;
-            var fiscalRows = new (string Label, string Value)[]
+            var fiscalRows = new List<(string Label, string Value)>
             {
-                ("Versión", model.CfdiVersion),
+                ("Version", model.CfdiVersion),
                 ("Folio", model.SeriesFolio),
-                ("Folio fiscal", model.Uuid),
-                ("Forma de pago", model.PaymentForm),
-                ("Método de pago", model.PaymentMethod),
-                ("Exportación", model.ExportCode),
-                ("Régimen fiscal", model.IssuerRegime)
+                ("Folio fiscal", model.Uuid)
             };
+
+            if (!string.IsNullOrWhiteSpace(model.PaymentForm))
+            {
+                fiscalRows.Add(("Forma de pago", model.PaymentForm));
+            }
+
+            if (!string.IsNullOrWhiteSpace(model.PaymentMethod))
+            {
+                fiscalRows.Add(("Metodo de pago", model.PaymentMethod));
+            }
+
+            fiscalRows.Add(("Exportacion", model.ExportCode));
+            fiscalRows.Add(("Regimen fiscal", model.IssuerRegime));
 
             var rightBoxWidth = 220f;
             var rightBoxInnerWidth = rightBoxWidth - 20f;
@@ -406,7 +638,7 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
             float valueFontSize = 7.5f;
 
             // Calcular altura: cada fila es una sola línea (etiqueta + valor inline, sin columna fija)
-            var rightBoxContentHeight = fiscalRows.Length * (lineHeight + 2f);
+            var rightBoxContentHeight = fiscalRows.Count * (lineHeight + 2f);
 
             var headerHeight = Math.Max(160f, 24f + Math.Max(132f, rightBoxContentHeight + 18f));
             _page.FillRectangle(Margin, topY - headerHeight, PageWidth - (Margin * 2), headerHeight, PdfColor.White);
@@ -678,46 +910,306 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
                 return;
             }
 
-            var contentWidth = PageWidth - (Margin * 2);
-            var rowHeight = 18f;
-            var fieldIndex = 0;
-
-            while (fieldIndex < fields.Count)
+            if (TryBuildRepAdditionalLayout(fields, out var repLayout))
             {
-                EnsureSpace(48f);
+                DrawRepAdditionalFields(repLayout);
+                return;
+            }
 
-                var sectionTop = _cursorY;
-                var bodyStartY = sectionTop - 38f;
-                var usedRows = 0;
+            DrawGenericAdditionalFields(fields);
+        }
 
-                while (fieldIndex + usedRows < fields.Count && (bodyStartY - (usedRows + 1) * rowHeight) >= ContentBottom)
+        private void DrawGenericAdditionalFields(IReadOnlyList<PdfAdditionalFieldRow> fields)
+        {
+            var genericFields = fields
+                .Select(CreateRepField)
+                .ToArray();
+            var blockHeight = MeasureRepFieldBlockHeight(genericFields);
+            EnsureSpace(blockHeight + SectionGap);
+            DrawRepFieldBlock("Datos adicionales", genericFields);
+        }
+
+        private void DrawRepAdditionalFields(RepAdditionalLayout layout)
+        {
+            var sectionHeaderDrawn = false;
+
+            if (layout.ComplementFields.Count > 0)
+            {
+                DrawRepFieldBlockWithSectionHeader("Datos del complemento", layout.ComplementFields, ref sectionHeaderDrawn);
+            }
+
+            foreach (var payment in layout.Payments)
+            {
+                DrawRepFieldBlockWithSectionHeader($"Pago {payment.PaymentNumber}", payment.Fields, ref sectionHeaderDrawn);
+
+                if (payment.Taxes.Count > 0)
                 {
-                    usedRows++;
+                    DrawRepTaxBlockWithSectionHeader($"Pago {payment.PaymentNumber} - Impuestos", payment.Taxes, ref sectionHeaderDrawn);
                 }
 
-                var sectionHeight = 28f + (usedRows * rowHeight);
-                _page.FillRectangle(Margin, sectionTop - sectionHeight, contentWidth, sectionHeight, PdfColor.White);
-                _page.StrokeRectangle(Margin, sectionTop - sectionHeight, contentWidth, sectionHeight, new PdfColor(218, 213, 204), 0.8f);
-                _page.FillRectangle(Margin, sectionTop - 20f, contentWidth, 20f, new PdfColor(238, 235, 228));
-                _page.DrawText("Datos adicionales", Margin + 10f, sectionTop - 14f, 10f, PdfFont.Bold, new PdfColor(22, 30, 42));
-
-                var y = bodyStartY;
-                for (var row = 0; row < usedRows; row++)
+                foreach (var document in payment.Documents)
                 {
-                    var field = fields[fieldIndex + row];
-                    _page.DrawText($"{field.Label}:", Margin + 10f, y, 9f, PdfFont.Bold, new PdfColor(76, 84, 96));
-                    _page.DrawText(field.Value, Margin + 160f, y, 9f, PdfFont.Regular, new PdfColor(76, 84, 96));
-                    y -= rowHeight;
-                }
+                    DrawRepFieldBlockWithSectionHeader(
+                        $"Pago {document.PaymentNumber} - Documento relacionado {document.DocumentNumber}",
+                        document.Fields,
+                        ref sectionHeaderDrawn);
 
-                fieldIndex += usedRows;
-                _cursorY -= sectionHeight + SectionGap;
-
-                if (fieldIndex < fields.Count)
-                {
-                    StartNewPage();
+                    if (document.Taxes.Count > 0)
+                    {
+                        DrawRepTaxBlockWithSectionHeader(
+                            $"Pago {document.PaymentNumber} - Documento relacionado {document.DocumentNumber} - Impuestos",
+                            document.Taxes,
+                            ref sectionHeaderDrawn);
+                    }
                 }
             }
+        }
+
+        private void DrawRepFieldBlockWithSectionHeader(string title, IReadOnlyList<RepField> fields, ref bool sectionHeaderDrawn)
+        {
+            if (fields.Count == 0)
+            {
+                return;
+            }
+
+            var blockHeight = MeasureRepFieldBlockHeight(fields);
+            EnsureRepAdditionalSectionHeader(ref sectionHeaderDrawn, blockHeight + SectionGap);
+            DrawRepFieldBlock(title, fields);
+        }
+
+        private void DrawRepTaxBlockWithSectionHeader(string title, IReadOnlyList<RepTaxRow> rows, ref bool sectionHeaderDrawn)
+        {
+            if (rows.Count == 0)
+            {
+                return;
+            }
+
+            var blockHeight = MeasureRepTaxBlockHeight(rows);
+            EnsureRepAdditionalSectionHeader(ref sectionHeaderDrawn, blockHeight + SectionGap);
+            DrawRepTaxBlock(title, rows);
+        }
+
+        private void EnsureRepAdditionalSectionHeader(ref bool sectionHeaderDrawn, float requiredHeight)
+        {
+            var headerReserve = sectionHeaderDrawn ? 0f : 30f;
+            if (!HasSpace(requiredHeight + headerReserve))
+            {
+                StartNewPage();
+                sectionHeaderDrawn = false;
+            }
+
+            if (!sectionHeaderDrawn)
+            {
+                DrawAdditionalSectionHeader();
+                sectionHeaderDrawn = true;
+            }
+        }
+
+        private void DrawAdditionalSectionHeader()
+        {
+            const float headerHeight = 20f;
+            var sectionWidth = PageWidth - (Margin * 2);
+            var topY = _cursorY;
+
+            _page.FillRectangle(Margin, topY - headerHeight, sectionWidth, headerHeight, new PdfColor(238, 235, 228));
+            _page.StrokeRectangle(Margin, topY - headerHeight, sectionWidth, headerHeight, new PdfColor(218, 213, 204), 0.8f);
+            _page.DrawText("Datos adicionales", Margin + 10f, topY - 14f, 10f, PdfFont.Bold, new PdfColor(22, 30, 42));
+            _cursorY = topY - headerHeight - 6f;
+        }
+
+        private void DrawRepFieldBlock(string title, IReadOnlyList<RepField> fields)
+        {
+            const float headerHeight = 18f;
+            const float innerPad = 10f;
+            const float topPad = 10f;
+            const float columnGap = 14f;
+            const float rowGap = 4f;
+            const float labelFontSize = 8.5f;
+            const float valueFontSize = 8.7f;
+            const float labelLineHeight = 10f;
+            const float valueLineHeight = 10f;
+
+            var sectionWidth = PageWidth - (Margin * 2);
+            var contentWidth = sectionWidth - (innerPad * 2);
+            var columnWidth = (contentWidth - columnGap) / 2f;
+            var rows = BuildRepFieldRows(fields);
+            var blockHeight = MeasureRepFieldBlockHeight(fields);
+            var topY = _cursorY;
+
+            _page.FillRectangle(Margin, topY - blockHeight, sectionWidth, blockHeight, PdfColor.White);
+            _page.StrokeRectangle(Margin, topY - blockHeight, sectionWidth, blockHeight, new PdfColor(218, 213, 204), 0.8f);
+            _page.FillRectangle(Margin, topY - headerHeight, sectionWidth, headerHeight, new PdfColor(248, 247, 243));
+            _page.DrawText(title, Margin + 10f, topY - 13f, 9f, PdfFont.Bold, new PdfColor(88, 80, 66));
+
+            var leftX = Margin + innerPad;
+            var rightX = leftX + columnWidth + columnGap;
+            var currentY = topY - headerHeight - topPad;
+
+            foreach (var row in rows)
+            {
+                if (row.Second is null)
+                {
+                    currentY = DrawStackedField(row.First.Label, row.First.Value, leftX, currentY, contentWidth, labelFontSize, valueFontSize, labelLineHeight, valueLineHeight) - rowGap;
+                    continue;
+                }
+
+                var leftEndY = DrawStackedField(row.First.Label, row.First.Value, leftX, currentY, columnWidth, labelFontSize, valueFontSize, labelLineHeight, valueLineHeight);
+                var rightEndY = DrawStackedField(row.Second.Label, row.Second.Value, rightX, currentY, columnWidth, labelFontSize, valueFontSize, labelLineHeight, valueLineHeight);
+                currentY = Math.Min(leftEndY, rightEndY) - rowGap;
+            }
+
+            _cursorY = topY - blockHeight - SectionGap;
+        }
+
+        private float MeasureRepFieldBlockHeight(IReadOnlyList<RepField> fields)
+        {
+            const float headerHeight = 18f;
+            const float innerPad = 10f;
+            const float topPad = 10f;
+            const float bottomPad = 10f;
+            const float columnGap = 14f;
+            const float rowGap = 4f;
+            const float valueFontSize = 8.7f;
+            const float labelLineHeight = 10f;
+            const float valueLineHeight = 10f;
+
+            var sectionWidth = PageWidth - (Margin * 2);
+            var contentWidth = sectionWidth - (innerPad * 2);
+            var columnWidth = (contentWidth - columnGap) / 2f;
+            var rows = BuildRepFieldRows(fields);
+            var bodyHeight = 0f;
+
+            for (var rowIndex = 0; rowIndex < rows.Count; rowIndex++)
+            {
+                var row = rows[rowIndex];
+                var rowHeight = row.Second is null
+                    ? MeasureStackedFieldHeight(row.First.Value, contentWidth, valueFontSize, labelLineHeight, valueLineHeight)
+                    : Math.Max(
+                        MeasureStackedFieldHeight(row.First.Value, columnWidth, valueFontSize, labelLineHeight, valueLineHeight),
+                        MeasureStackedFieldHeight(row.Second.Value, columnWidth, valueFontSize, labelLineHeight, valueLineHeight));
+                bodyHeight += rowHeight;
+                if (rowIndex < rows.Count - 1)
+                {
+                    bodyHeight += rowGap;
+                }
+            }
+
+            return headerHeight + topPad + bodyHeight + bottomPad;
+        }
+
+        private void DrawRepTaxBlock(string title, IReadOnlyList<RepTaxRow> rows)
+        {
+            const float headerHeight = 18f;
+            const float innerPad = 10f;
+            const float topPad = 8f;
+            const float headerRowHeight = 16f;
+            const float fontSize = 7.6f;
+            const float lineHeight = 9f;
+
+            var sectionWidth = PageWidth - (Margin * 2);
+            var contentWidth = sectionWidth - (innerPad * 2);
+            var columns = GetRepTaxColumnWidths(contentWidth);
+            var topY = _cursorY;
+            var blockHeight = MeasureRepTaxBlockHeight(rows);
+
+            _page.FillRectangle(Margin, topY - blockHeight, sectionWidth, blockHeight, PdfColor.White);
+            _page.StrokeRectangle(Margin, topY - blockHeight, sectionWidth, blockHeight, new PdfColor(218, 213, 204), 0.8f);
+            _page.FillRectangle(Margin, topY - headerHeight, sectionWidth, headerHeight, new PdfColor(248, 247, 243));
+            _page.DrawText(title, Margin + 10f, topY - 13f, 9f, PdfFont.Bold, new PdfColor(88, 80, 66));
+
+            var tableX = Margin + innerPad;
+            var tableTopY = topY - headerHeight - topPad;
+            var headerLabels = new[] { "Tipo", "Base", "Impuesto", "Factor", "Tasa/Cuota", "Importe" };
+            var x = tableX;
+
+            _page.FillRectangle(tableX, tableTopY - headerRowHeight + 2f, contentWidth, headerRowHeight, new PdfColor(238, 235, 228));
+            for (var columnIndex = 0; columnIndex < columns.Length; columnIndex++)
+            {
+                _page.DrawText(headerLabels[columnIndex], x + 4f, tableTopY - 10f, 7.2f, PdfFont.Bold, new PdfColor(88, 80, 66));
+                x += columns[columnIndex];
+            }
+
+            var currentY = tableTopY - headerRowHeight - 2f;
+            foreach (var row in rows)
+            {
+                var values = new[] { row.RowType, row.Base, row.Tax, row.FactorType, row.Rate, row.Amount };
+                var wrappedCells = values
+                    .Select((value, index) => WrapTextConservatively(value, Math.Max(24f, columns[index] - 8f), fontSize))
+                    .ToArray();
+                var rowLineCount = wrappedCells.Max(static lines => Math.Max(1, lines.Length));
+                var rowHeight = Math.Max(14f, rowLineCount * lineHeight);
+
+                _page.DrawLine(tableX, currentY + 3f, tableX + contentWidth, currentY + 3f, new PdfColor(230, 230, 230), 0.4f);
+
+                x = tableX;
+                for (var columnIndex = 0; columnIndex < columns.Length; columnIndex++)
+                {
+                    DrawWrappedTextLines(wrappedCells[columnIndex], x + 4f, currentY - 7f, fontSize, lineHeight, PdfFont.Regular, new PdfColor(76, 84, 96));
+                    x += columns[columnIndex];
+                }
+
+                currentY -= rowHeight;
+            }
+
+            _cursorY = topY - blockHeight - SectionGap;
+        }
+
+        private float MeasureRepTaxBlockHeight(IReadOnlyList<RepTaxRow> rows)
+        {
+            const float headerHeight = 18f;
+            const float innerPad = 10f;
+            const float topPad = 8f;
+            const float bottomPad = 10f;
+            const float headerRowHeight = 16f;
+            const float fontSize = 7.6f;
+            const float lineHeight = 9f;
+
+            var sectionWidth = PageWidth - (Margin * 2);
+            var contentWidth = sectionWidth - (innerPad * 2);
+            var columns = GetRepTaxColumnWidths(contentWidth);
+            var bodyHeight = headerRowHeight + 2f;
+
+            foreach (var row in rows)
+            {
+                var values = new[] { row.RowType, row.Base, row.Tax, row.FactorType, row.Rate, row.Amount };
+                var rowLineCount = values
+                    .Select((value, index) => WrapTextConservatively(value, Math.Max(24f, columns[index] - 8f), fontSize).Length)
+                    .DefaultIfEmpty(1)
+                    .Max();
+                bodyHeight += Math.Max(14f, Math.Max(1, rowLineCount) * lineHeight);
+            }
+
+            return headerHeight + topPad + bodyHeight + bottomPad;
+        }
+
+        private static float[] GetRepTaxColumnWidths(float contentWidth)
+        {
+            return [66f, 98f, 78f, 88f, 102f, Math.Max(70f, contentWidth - 432f)];
+        }
+
+        private static IReadOnlyList<(RepField First, RepField? Second)> BuildRepFieldRows(IReadOnlyList<RepField> fields)
+        {
+            var rows = new List<(RepField First, RepField? Second)>();
+            for (var index = 0; index < fields.Count; index++)
+            {
+                var field = fields[index];
+                if (field.PreferFullWidth)
+                {
+                    rows.Add((field, null));
+                    continue;
+                }
+
+                if (index + 1 < fields.Count && !fields[index + 1].PreferFullWidth)
+                {
+                    rows.Add((field, fields[index + 1]));
+                    index++;
+                    continue;
+                }
+
+                rows.Add((field, null));
+            }
+
+            return rows;
         }
 
         private void DrawTotals(PdfViewModel model)
@@ -739,11 +1231,21 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
             var leftContentWidth = leftWidth - (innerPad * 2);
             var wordsLines = WrapTextConservatively(model.TotalInWords, leftContentWidth, wordsFontSize, isBold: true);
             var wordsHeight = Math.Max(wordsLineHeight, wordsLines.Length * wordsLineHeight);
-            var fieldHeight =
-                MeasureStackedFieldHeight(model.PaymentForm, leftContentWidth, fieldValueFontSize, fieldLabelLineHeight, fieldValueLineHeight) +
-                MeasureStackedFieldHeight(model.PaymentMethod, leftContentWidth, fieldValueFontSize, fieldLabelLineHeight, fieldValueLineHeight) +
-                MeasureStackedFieldHeight(model.ExportCode, leftContentWidth, fieldValueFontSize, fieldLabelLineHeight, fieldValueLineHeight) +
-                MeasureStackedFieldHeight(model.Currency, leftContentWidth, fieldValueFontSize, fieldLabelLineHeight, fieldValueLineHeight);
+            var summaryFields = new List<(string Label, string Value)>();
+            if (!string.IsNullOrWhiteSpace(model.PaymentForm))
+            {
+                summaryFields.Add(("Forma de pago", model.PaymentForm));
+            }
+
+            if (!string.IsNullOrWhiteSpace(model.PaymentMethod))
+            {
+                summaryFields.Add(("Metodo de pago", model.PaymentMethod));
+            }
+
+            summaryFields.Add(("Exportacion", model.ExportCode));
+            summaryFields.Add(("Moneda", model.Currency));
+
+            var fieldHeight = summaryFields.Sum(field => MeasureStackedFieldHeight(field.Value, leftContentWidth, fieldValueFontSize, fieldLabelLineHeight, fieldValueLineHeight));
             var taxLines = model.TaxesBreakdown.Take(2).Select(x => $"{x.Label} {x.Rate}: {x.Amount}").ToArray();
             var taxHeight = taxLines.Length * taxLineHeight;
             var leftHeight = headerHeight + 8f + wordsHeight + 6f + fieldHeight + (taxLines.Length > 0 ? 4f + taxHeight : 0f) + bottomPad;
@@ -765,10 +1267,10 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
             DrawWrappedTextLines(wordsLines, leftX, currentY, wordsFontSize, wordsLineHeight, PdfFont.Bold, new PdfColor(40, 48, 60));
             currentY -= wordsHeight + 6f;
 
-            currentY = DrawStackedField("Forma de pago", model.PaymentForm, leftX, currentY, leftContentWidth, fieldLabelFontSize, fieldValueFontSize, fieldLabelLineHeight, fieldValueLineHeight);
-            currentY = DrawStackedField("Método de pago", model.PaymentMethod, leftX, currentY, leftContentWidth, fieldLabelFontSize, fieldValueFontSize, fieldLabelLineHeight, fieldValueLineHeight);
-            currentY = DrawStackedField("Exportación", model.ExportCode, leftX, currentY, leftContentWidth, fieldLabelFontSize, fieldValueFontSize, fieldLabelLineHeight, fieldValueLineHeight);
-            currentY = DrawStackedField("Moneda", model.Currency, leftX, currentY, leftContentWidth, fieldLabelFontSize, fieldValueFontSize, fieldLabelLineHeight, fieldValueLineHeight);
+            foreach (var field in summaryFields)
+            {
+                currentY = DrawStackedField(field.Label, field.Value, leftX, currentY, leftContentWidth, fieldLabelFontSize, fieldValueFontSize, fieldLabelLineHeight, fieldValueLineHeight);
+            }
 
             if (taxLines.Length > 0)
             {
