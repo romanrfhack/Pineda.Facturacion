@@ -55,6 +55,7 @@ public sealed class GetPaymentComplementEmailDraftService
         {
             Outcome = GetPaymentComplementEmailDraftOutcome.Found,
             IsSuccess = true,
+            DefaultRecipientEmail = fiscalReceiver?.Email?.Trim(),
             Recipients = recipients,
             Subject = $"Complemento de pago {uuid}",
             Body = "Adjuntamos el complemento de pago correspondiente.",

@@ -935,6 +935,7 @@ public static class PaymentComplementsEndpoints
             StampUuid = result.StampUuid,
             StampedAtUtc = result.StampedAtUtc,
             XmlAvailable = result.XmlAvailable,
+            Email = MapStampAndEmailPaymentComplementEmail(result.Email),
             OperationalState = result.OperationalState is null ? null : MapInternalRepOperationalState(result.OperationalState)
         };
 
@@ -945,9 +946,33 @@ public static class PaymentComplementsEndpoints
             fiscalDocumentId.ToString(),
             result.Outcome.ToString(),
             new { fiscalDocumentId, request?.PaymentComplementDocumentId, request?.RetryRejected },
-            new { result.AccountsReceivablePaymentId, result.PaymentComplementDocumentId, result.Status, result.StampUuid, result.StampedAtUtc },
+            new
+            {
+                result.AccountsReceivablePaymentId,
+                result.PaymentComplementDocumentId,
+                result.Status,
+                result.StampUuid,
+                result.StampedAtUtc,
+                EmailAttempted = result.Email.Attempted,
+                EmailSent = result.Email.Sent,
+                EmailStatus = MapPaymentComplementEmailStatus(result.Email.Status),
+                EmailRecipients = result.Email.Recipients,
+                InvalidRecipients = result.Email.InvalidRecipients,
+                EmailMessage = result.Email.Message
+            },
             result.ErrorMessage,
             cancellationToken);
+
+        if (result.Outcome is StampInternalRepBaseDocumentPaymentComplementOutcome.Stamped)
+        {
+            await RecordAutomaticPaymentComplementEmailAuditAsync(
+                result.PaymentComplementDocumentId,
+                result.StampUuid,
+                result.Email,
+                new { fiscalDocumentId, request?.PaymentComplementDocumentId, request?.RetryRejected, context = "internal-base-document" },
+                auditService,
+                cancellationToken);
+        }
 
         return result.Outcome switch
         {
@@ -1115,6 +1140,7 @@ public static class PaymentComplementsEndpoints
             StampUuid = result.StampUuid,
             StampedAtUtc = result.StampedAtUtc,
             XmlAvailable = result.XmlAvailable,
+            Email = MapStampAndEmailPaymentComplementEmail(result.Email),
             RepOperationalStatus = result.UpdatedSummary?.OperationalStatus,
             IsEligible = result.UpdatedSummary?.IsEligible,
             IsBlocked = result.UpdatedSummary?.IsBlocked,
@@ -1128,9 +1154,34 @@ public static class PaymentComplementsEndpoints
             externalRepBaseDocumentId.ToString(),
             result.Outcome.ToString(),
             new { externalRepBaseDocumentId, request?.PaymentComplementDocumentId, request?.RetryRejected },
-            new { result.AccountsReceivablePaymentId, result.PaymentComplementDocumentId, result.Status, result.StampUuid, result.StampedAtUtc, result.UpdatedSummary?.OperationalStatus },
+            new
+            {
+                result.AccountsReceivablePaymentId,
+                result.PaymentComplementDocumentId,
+                result.Status,
+                result.StampUuid,
+                result.StampedAtUtc,
+                result.UpdatedSummary?.OperationalStatus,
+                EmailAttempted = result.Email.Attempted,
+                EmailSent = result.Email.Sent,
+                EmailStatus = MapPaymentComplementEmailStatus(result.Email.Status),
+                EmailRecipients = result.Email.Recipients,
+                InvalidRecipients = result.Email.InvalidRecipients,
+                EmailMessage = result.Email.Message
+            },
             result.ErrorMessage,
             cancellationToken);
+
+        if (result.Outcome is StampExternalRepBaseDocumentPaymentComplementOutcome.Stamped)
+        {
+            await RecordAutomaticPaymentComplementEmailAuditAsync(
+                result.PaymentComplementDocumentId,
+                result.StampUuid,
+                result.Email,
+                new { externalRepBaseDocumentId, request?.PaymentComplementDocumentId, request?.RetryRejected, context = "external-base-document" },
+                auditService,
+                cancellationToken);
+        }
 
         return result.Outcome switch
         {
@@ -1549,12 +1600,12 @@ public static class PaymentComplementsEndpoints
     private static async Task<Results<Ok<StampPaymentComplementResponse>, BadRequest<StampPaymentComplementResponse>, NotFound<StampPaymentComplementResponse>, Conflict<StampPaymentComplementResponse>, JsonHttpResult<StampPaymentComplementResponse>>> StampPaymentComplementAsync(
         long paymentComplementId,
         StampPaymentComplementRequest? request,
-        StampPaymentComplementService service,
+        StampAndEmailPaymentComplementService service,
         IAuditService auditService,
         CancellationToken cancellationToken)
     {
         var result = await service.ExecuteAsync(
-            new StampPaymentComplementCommand
+            new StampAndEmailPaymentComplementCommand
             {
                 PaymentComplementId = paymentComplementId,
                 RetryRejected = request?.RetryRejected ?? false
@@ -1563,7 +1614,7 @@ public static class PaymentComplementsEndpoints
 
         var response = new StampPaymentComplementResponse
         {
-            Outcome = result.Outcome.ToString(),
+            Outcome = result.StampOutcome.ToString(),
             IsSuccess = result.IsSuccess,
             ErrorMessage = result.ErrorMessage,
             PaymentComplementId = result.PaymentComplementId,
@@ -1577,21 +1628,48 @@ public static class PaymentComplementsEndpoints
             ProviderMessage = result.ProviderMessage,
             ErrorCode = result.ErrorCode,
             SupportMessage = result.SupportMessage,
-            RawResponseSummaryJson = result.RawResponseSummaryJson
+            RawResponseSummaryJson = result.RawResponseSummaryJson,
+            WarningMessages = result.WarningMessages,
+            Email = MapStampAndEmailPaymentComplementEmail(result.Email)
         };
+
+        await RecordStampAndEmailPaymentComplementAuditAsync(
+            paymentComplementId,
+            request?.RetryRejected ?? false,
+            result,
+            auditService,
+            cancellationToken);
 
         await AuditApiHelper.RecordAsync(
             auditService,
             "PaymentComplement.Stamp",
             "PaymentComplementDocument",
             paymentComplementId.ToString(),
-            result.Outcome.ToString(),
+            result.StampOutcome.ToString(),
             new { paymentComplementId, retryRejected = request?.RetryRejected ?? false },
-            new { result.PaymentComplementStampId, result.Uuid, result.Status, result.ProviderName, result.ProviderTrackingId },
+            new
+            {
+                result.PaymentComplementStampId,
+                result.Uuid,
+                result.Status,
+                result.ProviderName,
+                result.ProviderTrackingId,
+                EmailAttempted = result.Email.Attempted,
+                EmailSent = result.Email.Sent,
+                EmailStatus = MapPaymentComplementEmailStatus(result.Email.Status),
+                EmailRecipients = result.Email.Recipients,
+                InvalidRecipients = result.Email.InvalidRecipients,
+                EmailMessage = result.Email.Message
+            },
             result.ErrorMessage,
             cancellationToken);
 
-        return result.Outcome switch
+        if (result.Stamped)
+        {
+            await RecordAutomaticPaymentComplementEmailAuditAsync(paymentComplementId, result, auditService, cancellationToken);
+        }
+
+        return result.StampOutcome switch
         {
             StampPaymentComplementOutcome.Stamped => TypedResults.Ok(response),
             StampPaymentComplementOutcome.NotFound => TypedResults.NotFound(response),
@@ -2407,6 +2485,114 @@ public static class PaymentComplementsEndpoints
         return parts.Count == 0 ? null : string.Join(" | ", parts);
     }
 
+    private static StampAndEmailPaymentComplementEmailResponse MapStampAndEmailPaymentComplementEmail(StampAndEmailPaymentComplementEmailResult email)
+    {
+        return new StampAndEmailPaymentComplementEmailResponse
+        {
+            Attempted = email.Attempted,
+            Sent = email.Sent,
+            Status = MapPaymentComplementEmailStatus(email.Status),
+            Recipients = email.Recipients,
+            InvalidRecipients = email.InvalidRecipients,
+            Message = email.Message
+        };
+    }
+
+    private static async Task RecordStampAndEmailPaymentComplementAuditAsync(
+        long paymentComplementId,
+        bool retryRejected,
+        StampAndEmailPaymentComplementResult result,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "PaymentComplement.StampAndEmail",
+            "PaymentComplementDocument",
+            paymentComplementId.ToString(),
+            result.StampOutcome.ToString(),
+            new { paymentComplementId, retryRejected },
+            new
+            {
+                result.Stamped,
+                Status = result.Status?.ToString(),
+                result.ProviderMessage,
+                result.SupportMessage,
+                EmailAttempted = result.Email.Attempted,
+                EmailSent = result.Email.Sent,
+                EmailStatus = MapPaymentComplementEmailStatus(result.Email.Status),
+                EmailRecipients = result.Email.Recipients,
+                InvalidRecipients = result.Email.InvalidRecipients,
+                EmailMessage = result.Email.Message,
+                result.WarningMessages
+            },
+            result.ErrorMessage,
+            cancellationToken);
+    }
+
+    private static async Task RecordAutomaticPaymentComplementEmailAuditAsync(
+        long paymentComplementId,
+        StampAndEmailPaymentComplementResult result,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        await RecordAutomaticPaymentComplementEmailAuditAsync(
+            paymentComplementId,
+            result.Uuid,
+            result.Email,
+            new { paymentComplementId, automatic = true },
+            auditService,
+            cancellationToken);
+    }
+
+    private static async Task RecordAutomaticPaymentComplementEmailAuditAsync(
+        long? paymentComplementId,
+        string? uuid,
+        StampAndEmailPaymentComplementEmailResult email,
+        object request,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        if (!paymentComplementId.HasValue)
+        {
+            return;
+        }
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "PaymentComplement.Email",
+            "PaymentComplementDocument",
+            paymentComplementId.Value.ToString(),
+            email.Status.ToString(),
+            request,
+            new
+            {
+                paymentComplementId,
+                uuid,
+                EmailAttempted = email.Attempted,
+                EmailSent = email.Sent,
+                EmailStatus = MapPaymentComplementEmailStatus(email.Status),
+                EmailRecipients = email.Recipients,
+                InvalidRecipients = email.InvalidRecipients,
+                EmailSentAtUtc = email.SentAtUtc,
+                EmailMessage = email.Message
+            },
+            email.Status == StampAndEmailPaymentComplementEmailStatus.Sent ? null : email.Message,
+            cancellationToken);
+    }
+
+    private static string MapPaymentComplementEmailStatus(StampAndEmailPaymentComplementEmailStatus status)
+    {
+        return status switch
+        {
+            StampAndEmailPaymentComplementEmailStatus.Sent => "sent",
+            StampAndEmailPaymentComplementEmailStatus.Missing => "missing",
+            StampAndEmailPaymentComplementEmailStatus.Invalid => "invalid",
+            StampAndEmailPaymentComplementEmailStatus.Failed => "failed",
+            _ => "not_attempted"
+        };
+    }
+
     private static string BuildPaymentComplementCancellationSupportMessage(PaymentComplementCancellation cancellation)
     {
         var parts = new List<string>();
@@ -2449,6 +2635,8 @@ public class StampPaymentComplementResponse
 
     public string? ErrorMessage { get; set; }
 
+    public List<string> WarningMessages { get; set; } = [];
+
     public long PaymentComplementId { get; set; }
 
     public string? Status { get; set; }
@@ -2472,6 +2660,8 @@ public class StampPaymentComplementResponse
     public string? SupportMessage { get; set; }
 
     public string? RawResponseSummaryJson { get; set; }
+
+    public StampAndEmailPaymentComplementEmailResponse Email { get; set; } = new();
 }
 
 public class PaymentComplementDocumentResponse
@@ -3306,6 +3496,8 @@ public sealed class StampInternalRepBaseDocumentPaymentComplementResponse
 
     public bool XmlAvailable { get; set; }
 
+    public StampAndEmailPaymentComplementEmailResponse Email { get; set; } = new();
+
     public InternalRepBaseDocumentOperationalStateResponse? OperationalState { get; set; }
 }
 
@@ -3549,6 +3741,8 @@ public sealed class StampExternalRepBaseDocumentPaymentComplementResponse
 
     public bool XmlAvailable { get; set; }
 
+    public StampAndEmailPaymentComplementEmailResponse Email { get; set; } = new();
+
     public string? RepOperationalStatus { get; set; }
 
     public bool? IsEligible { get; set; }
@@ -3556,6 +3750,21 @@ public sealed class StampExternalRepBaseDocumentPaymentComplementResponse
     public bool? IsBlocked { get; set; }
 
     public string? EligibilityReason { get; set; }
+}
+
+public sealed class StampAndEmailPaymentComplementEmailResponse
+{
+    public bool Attempted { get; set; }
+
+    public bool Sent { get; set; }
+
+    public string Status { get; set; } = "not_attempted";
+
+    public IReadOnlyList<string> Recipients { get; set; } = [];
+
+    public IReadOnlyList<string> InvalidRecipients { get; set; } = [];
+
+    public string? Message { get; set; }
 }
 
 public sealed class RefreshExternalRepBaseDocumentPaymentComplementStatusRequest

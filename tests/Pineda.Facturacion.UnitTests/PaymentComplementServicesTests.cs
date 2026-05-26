@@ -1242,14 +1242,14 @@ public class PaymentComplementServicesTests
             detailRepository,
             new GetPaymentComplementStampByPaymentComplementIdService(stampRepository),
             new GetInternalRepBaseDocumentByFiscalDocumentIdService(detailRepository),
-            new StampPaymentComplementService(
-                paymentComplementRepository,
+            CreateStampAndEmailServiceFixture(
+                preparedComplement,
                 stampRepository,
-                new PcFakeAccountsReceivablePaymentRepository { ExistingById = CreatePayment(preparedComplement.AccountsReceivablePaymentId, preparedComplement.TotalPaymentsAmount) },
-                new PcFakeFiscalDocumentRepository { ById = { [preparedComplement.RelatedDocuments[0].FiscalDocumentId!.Value] = fiscalDocument } },
-                new PcFakeExternalRepBaseDocumentRepository(),
                 gateway,
-                new PcFakeUnitOfWork()));
+                receiverEmail: "cliente@example.com",
+                payment: CreatePayment(preparedComplement.AccountsReceivablePaymentId, preparedComplement.TotalPaymentsAmount),
+                fiscalDocument: fiscalDocument,
+                paymentComplementRepository: paymentComplementRepository).Service);
 
         var result = await service.ExecuteAsync(new StampInternalRepBaseDocumentPaymentComplementCommand
         {
@@ -1262,6 +1262,8 @@ public class PaymentComplementServicesTests
         Assert.Equal(preparedComplement.Id, result.PaymentComplementDocumentId);
         Assert.Equal("UUID-PC-2B-1", result.StampUuid);
         Assert.True(result.XmlAvailable);
+        Assert.True(result.Email.Sent);
+        Assert.Equal(["cliente@example.com"], result.Email.Recipients);
     }
 
     [Fact]
@@ -1279,14 +1281,11 @@ public class PaymentComplementServicesTests
             detailRepository,
             new GetPaymentComplementStampByPaymentComplementIdService(new PcFakePaymentComplementStampRepository()),
             new GetInternalRepBaseDocumentByFiscalDocumentIdService(detailRepository),
-            new StampPaymentComplementService(
-                new PcFakePaymentComplementDocumentRepository(),
+            CreateStampAndEmailServiceFixture(
+                CreatePaymentComplementDocument(),
                 new PcFakePaymentComplementStampRepository(),
-                new PcFakeAccountsReceivablePaymentRepository(),
-                new PcFakeFiscalDocumentRepository(),
-                new PcFakeExternalRepBaseDocumentRepository(),
                 new PcFakePaymentComplementStampingGateway(),
-                new PcFakeUnitOfWork()));
+                receiverEmail: null).Service);
 
         var result = await service.ExecuteAsync(new StampInternalRepBaseDocumentPaymentComplementCommand
         {
@@ -1673,6 +1672,207 @@ public class PaymentComplementServicesTests
     }
 
     [Fact]
+    public async Task StampAndEmailPaymentComplement_Sends_Email_After_Successful_Stamp()
+    {
+        var document = CreatePaymentComplementDocument();
+        var stampRepository = new PcFakePaymentComplementStampRepository();
+        var gateway = new PcFakePaymentComplementStampingGateway
+        {
+            NextResult = new PaymentComplementStampingGatewayResult
+            {
+                Outcome = PaymentComplementStampingGatewayOutcome.Stamped,
+                ProviderName = "FacturaloPlus",
+                ProviderOperation = "payment-complement-stamp",
+                Uuid = "UUID-PC-AUTO-1",
+                XmlContent = "<xml/>",
+                StampedAtUtc = new DateTime(2026, 5, 26, 3, 47, 0, DateTimeKind.Utc)
+            }
+        };
+
+        var fixture = CreateStampAndEmailServiceFixture(
+            document,
+            stampRepository,
+            gateway,
+            receiverEmail: "cliente@example.com");
+
+        var result = await fixture.Service.ExecuteAsync(new StampAndEmailPaymentComplementCommand
+        {
+            PaymentComplementId = document.Id
+        });
+
+        Assert.True(result.Stamped);
+        Assert.True(result.Email.Attempted);
+        Assert.True(result.Email.Sent);
+        Assert.Equal(StampAndEmailPaymentComplementEmailStatus.Sent, result.Email.Status);
+        Assert.Equal(["cliente@example.com"], result.Email.Recipients);
+        Assert.Single(fixture.EmailSender.SentMessages);
+        Assert.Equal(["cliente@example.com"], fixture.EmailSender.SentMessages[0].Recipients);
+    }
+
+    [Fact]
+    public async Task StampAndEmailPaymentComplement_Returns_Missing_When_Receiver_Has_No_Email()
+    {
+        var document = CreatePaymentComplementDocument();
+        var fixture = CreateStampAndEmailServiceFixture(
+            document,
+            new PcFakePaymentComplementStampRepository(),
+            new PcFakePaymentComplementStampingGateway
+            {
+                NextResult = new PaymentComplementStampingGatewayResult
+                {
+                    Outcome = PaymentComplementStampingGatewayOutcome.Stamped,
+                    ProviderName = "FacturaloPlus",
+                    ProviderOperation = "payment-complement-stamp",
+                    Uuid = "UUID-PC-AUTO-2",
+                    XmlContent = "<xml/>",
+                    StampedAtUtc = new DateTime(2026, 5, 26, 3, 47, 0, DateTimeKind.Utc)
+                }
+            },
+            receiverEmail: null);
+
+        var result = await fixture.Service.ExecuteAsync(new StampAndEmailPaymentComplementCommand
+        {
+            PaymentComplementId = document.Id
+        });
+
+        Assert.True(result.Stamped);
+        Assert.False(result.Email.Attempted);
+        Assert.False(result.Email.Sent);
+        Assert.Equal(StampAndEmailPaymentComplementEmailStatus.Missing, result.Email.Status);
+        Assert.Contains("no tiene un email registrado", result.Email.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("no tiene un email registrado", result.WarningMessages.Single(), StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(fixture.EmailSender.SentMessages);
+    }
+
+    [Fact]
+    public async Task StampAndEmailPaymentComplement_Returns_Failed_When_Email_Delivery_Fails()
+    {
+        var document = CreatePaymentComplementDocument();
+        var fixture = CreateStampAndEmailServiceFixture(
+            document,
+            new PcFakePaymentComplementStampRepository(),
+            new PcFakePaymentComplementStampingGateway
+            {
+                NextResult = new PaymentComplementStampingGatewayResult
+                {
+                    Outcome = PaymentComplementStampingGatewayOutcome.Stamped,
+                    ProviderName = "FacturaloPlus",
+                    ProviderOperation = "payment-complement-stamp",
+                    Uuid = "UUID-PC-AUTO-3",
+                    XmlContent = "<xml/>",
+                    StampedAtUtc = new DateTime(2026, 5, 26, 3, 47, 0, DateTimeKind.Utc)
+                }
+            },
+            receiverEmail: "cliente@example.com",
+            emailException: new SmtpException("SMTP down"));
+
+        var result = await fixture.Service.ExecuteAsync(new StampAndEmailPaymentComplementCommand
+        {
+            PaymentComplementId = document.Id
+        });
+
+        Assert.True(result.Stamped);
+        Assert.True(result.Email.Attempted);
+        Assert.False(result.Email.Sent);
+        Assert.Equal(StampAndEmailPaymentComplementEmailStatus.Failed, result.Email.Status);
+        Assert.Contains("No fue posible enviar el complemento de pago por correo", result.Email.Message, StringComparison.Ordinal);
+        Assert.Contains("no fue posible enviar el correo", result.WarningMessages.Single(), StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(fixture.EmailSender.SentMessages);
+    }
+
+    [Fact]
+    public async Task StampAndEmailPaymentComplement_Does_Not_Attempt_Email_When_Stamp_Fails()
+    {
+        var document = CreatePaymentComplementDocument();
+        var fixture = CreateStampAndEmailServiceFixture(
+            document,
+            new PcFakePaymentComplementStampRepository(),
+            new PcFakePaymentComplementStampingGateway
+            {
+                NextResult = new PaymentComplementStampingGatewayResult
+                {
+                    Outcome = PaymentComplementStampingGatewayOutcome.Rejected,
+                    ProviderName = "FacturaloPlus",
+                    ProviderOperation = "payment-complement-stamp",
+                    ErrorMessage = "Rejected by PAC."
+                }
+            },
+            receiverEmail: "cliente@example.com");
+
+        var result = await fixture.Service.ExecuteAsync(new StampAndEmailPaymentComplementCommand
+        {
+            PaymentComplementId = document.Id
+        });
+
+        Assert.False(result.Stamped);
+        Assert.False(result.Email.Attempted);
+        Assert.False(result.Email.Sent);
+        Assert.Equal(StampAndEmailPaymentComplementEmailStatus.NotAttempted, result.Email.Status);
+        Assert.Empty(fixture.EmailSender.SentMessages);
+    }
+
+    [Fact]
+    public async Task StampAndEmailPaymentComplement_Sends_Email_When_Retrying_Previously_Rejected_Complement()
+    {
+        var document = CreatePaymentComplementDocument();
+        document.Status = PaymentComplementDocumentStatus.StampingRejected;
+
+        var fixture = CreateStampAndEmailServiceFixture(
+            document,
+            new PcFakePaymentComplementStampRepository(),
+            new PcFakePaymentComplementStampingGateway
+            {
+                NextResult = new PaymentComplementStampingGatewayResult
+                {
+                    Outcome = PaymentComplementStampingGatewayOutcome.Stamped,
+                    ProviderName = "FacturaloPlus",
+                    ProviderOperation = "payment-complement-stamp",
+                    Uuid = "UUID-PC-AUTO-4",
+                    XmlContent = "<xml/>",
+                    StampedAtUtc = new DateTime(2026, 5, 26, 3, 47, 0, DateTimeKind.Utc)
+                }
+            },
+            receiverEmail: "cliente@example.com");
+
+        var result = await fixture.Service.ExecuteAsync(new StampAndEmailPaymentComplementCommand
+        {
+            PaymentComplementId = document.Id,
+            RetryRejected = true
+        });
+
+        Assert.True(result.Stamped);
+        Assert.True(result.Email.Sent);
+        Assert.Single(fixture.EmailSender.SentMessages);
+    }
+
+    [Fact]
+    public async Task StampAndEmailPaymentComplement_Does_Not_Send_Email_When_Complement_Is_Already_Stamped()
+    {
+        var document = CreatePaymentComplementDocument();
+        document.Status = PaymentComplementDocumentStatus.Stamped;
+
+        var fixture = CreateStampAndEmailServiceFixture(
+            document,
+            new PcFakePaymentComplementStampRepository
+            {
+                ExistingTracked = CreatePaymentComplementStamp(paymentComplementDocumentId: document.Id)
+            },
+            new PcFakePaymentComplementStampingGateway(),
+            receiverEmail: "cliente@example.com");
+
+        var result = await fixture.Service.ExecuteAsync(new StampAndEmailPaymentComplementCommand
+        {
+            PaymentComplementId = document.Id
+        });
+
+        Assert.False(result.Stamped);
+        Assert.False(result.Email.Attempted);
+        Assert.False(result.Email.Sent);
+        Assert.Equal(StampAndEmailPaymentComplementEmailStatus.NotAttempted, result.Email.Status);
+        Assert.Empty(fixture.EmailSender.SentMessages);
+    }
+
+    [Fact]
     public async Task PaymentComplementPdfRenderer_Generates_A_Real_Pdf_From_Stamped_Rep_Xml()
     {
         var document = CreatePaymentComplementDocument();
@@ -1922,6 +2122,60 @@ public class PaymentComplementServicesTests
             },
             gateway,
             new PcFakeUnitOfWork());
+    }
+
+    private static StampAndEmailPaymentComplementServiceFixture CreateStampAndEmailServiceFixture(
+        PaymentComplementDocument document,
+        PcFakePaymentComplementStampRepository stampRepository,
+        IPaymentComplementStampingGateway gateway,
+        string? receiverEmail,
+        Exception? emailException = null,
+        AccountsReceivablePayment? payment = null,
+        FiscalDocument? fiscalDocument = null,
+        ExternalRepBaseDocument? externalRepBaseDocument = null,
+        PcFakePaymentComplementDocumentRepository? paymentComplementRepository = null)
+    {
+        paymentComplementRepository ??= new PcFakePaymentComplementDocumentRepository
+        {
+            ExistingTrackedById = document
+        };
+
+        var receiverRepository = new PcFakeFiscalReceiverRepository();
+        receiverRepository.ByRfc[document.ReceiverRfc] = CreateFiscalReceiver(
+            id: document.FiscalReceiverId ?? 11,
+            rfc: document.ReceiverRfc,
+            email: receiverEmail);
+
+        var emailSender = new PcFakeEmailSender
+        {
+            Exception = emailException
+        };
+
+        var stampService = CreateStampService(
+            document,
+            stampRepository,
+            gateway,
+            payment,
+            fiscalDocument,
+            externalRepBaseDocument);
+        var draftService = new GetPaymentComplementEmailDraftService(
+            paymentComplementRepository,
+            stampRepository,
+            receiverRepository);
+        var sendService = new SendPaymentComplementEmailService(
+            paymentComplementRepository,
+            stampRepository,
+            emailSender,
+            new PcFakePaymentComplementPdfRenderer());
+
+        return new StampAndEmailPaymentComplementServiceFixture
+        {
+            Service = new StampAndEmailPaymentComplementService(
+                stampService,
+                draftService,
+                sendService),
+            EmailSender = emailSender
+        };
     }
 
     private static RegisterInternalRepBaseDocumentPaymentService CreateRegisterPaymentService(
@@ -2888,6 +3142,8 @@ public class PaymentComplementServicesTests
                 paymentComplementStamp.Id = 777;
             }
 
+            ExistingTracked = paymentComplementStamp;
+
             return Task.CompletedTask;
         }
     }
@@ -2948,6 +3204,13 @@ public class PaymentComplementServicesTests
 
             return Task.FromResult("%PDF-payment-complement-test"u8.ToArray());
         }
+    }
+
+    private sealed class StampAndEmailPaymentComplementServiceFixture
+    {
+        public required StampAndEmailPaymentComplementService Service { get; init; }
+
+        public required PcFakeEmailSender EmailSender { get; init; }
     }
 
     private sealed class PcFakeIssuerProfileLogoStorage : IIssuerProfileLogoStorage

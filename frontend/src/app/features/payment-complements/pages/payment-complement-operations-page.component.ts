@@ -4,6 +4,7 @@ import { firstValueFrom } from 'rxjs';
 import { FeedbackService } from '../../../core/ui/feedback.service';
 import { PermissionService } from '../../../core/auth/permission.service';
 import { AccountsReceivableApiService } from '../../accounts-receivable/infrastructure/accounts-receivable-api.service';
+import { buildPaymentComplementStampFeedbackMessage } from '../application/payment-complement-stamp-feedback';
 import { PaymentComplementsApiService } from '../infrastructure/payment-complements-api.service';
 import {
   PaymentComplementCancellationResponse,
@@ -148,7 +149,20 @@ export class PaymentComplementOperationsPageComponent {
 
     await this.run(async () => {
       const response = await firstValueFrom(this.paymentComplementsApi.stamp(paymentComplementId));
-      this.feedbackService.show(response.isSuccess ? 'success' : 'warning', response.providerMessage || response.supportMessage || response.errorMessage || getDisplayLabel(response.outcome));
+      if (response.warningMessages.length) {
+        this.feedbackService.show('warning', response.warningMessages.join(' | '));
+      }
+
+      const successMessage = buildPaymentComplementStampFeedbackMessage(
+        response.email,
+        'Complemento de pago timbrado correctamente.',
+      );
+      this.feedbackService.show(
+        response.isSuccess ? 'success' : 'warning',
+        response.isSuccess
+          ? successMessage
+          : response.providerMessage || response.supportMessage || response.errorMessage || getDisplayLabel(response.outcome),
+      );
       await this.loadComplementByPayment(complement.accountsReceivablePaymentId);
       await this.loadStamp(paymentComplementId);
     });

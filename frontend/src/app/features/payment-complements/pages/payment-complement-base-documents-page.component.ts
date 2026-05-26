@@ -9,12 +9,17 @@ import { getDisplayLabel } from '../../../shared/ui/display-labels';
 import { AccountsReceivableApiService } from '../../accounts-receivable/infrastructure/accounts-receivable-api.service';
 import { PaymentComplementStampEvidenceDetailComponent } from '../components/payment-complement-stamp-evidence-detail.component';
 import { PaymentContextModalComponent } from '../components/payment-context-modal.component';
+import {
+  buildPaymentComplementStampFeedbackMessage,
+  shouldOpenPaymentComplementEmailComposerAfterStamp,
+} from '../application/payment-complement-stamp-feedback';
 import { PaymentComplementsApiService } from '../infrastructure/payment-complements-api.service';
 import {
   RepBaseDocumentBulkRefreshResponse,
   InternalRepBaseDocumentDetailResponse,
   InternalRepBaseDocumentItemResponse,
   PaymentComplementEmailDraftResponse,
+  StampAndEmailPaymentComplementEmailResponse,
   PaymentComplementStampResponse,
   InternalRepBaseDocumentPaymentComplementResponse,
   InternalRepBaseDocumentPaymentHistoryResponse,
@@ -1001,7 +1006,8 @@ export class PaymentComplementBaseDocumentsPageComponent {
   }
 
   protected async openPaymentComplementEmailComposer(
-    complement: InternalRepBaseDocumentPaymentComplementResponse
+    complement: InternalRepBaseDocumentPaymentComplementResponse,
+    automaticEmailResult?: StampAndEmailPaymentComplementEmailResponse | null
   ): Promise<void> {
     this.selectedPaymentComplementForEmail.set(complement);
     this.paymentComplementEmailDraft.set(null);
@@ -1016,6 +1022,12 @@ export class PaymentComplementBaseDocumentsPageComponent {
       const draft = await firstValueFrom(this.api.getPaymentComplementEmailDraft(complement.paymentComplementId));
       this.paymentComplementEmailDraft.set(draft);
       this.paymentComplementEmailRecipientsInput = draft.recipients.join(', ');
+      if (!draft.recipients.length) {
+        const fallbackRecipients = automaticEmailResult?.status === 'invalid'
+          ? automaticEmailResult.invalidRecipients
+          : automaticEmailResult?.recipients ?? [];
+        this.paymentComplementEmailRecipientsInput = fallbackRecipients.join(', ');
+      }
       this.paymentComplementEmailSubject = draft.subject ?? '';
       this.paymentComplementEmailBody = draft.body ?? '';
       this.showPaymentComplementEmailComposer.set(true);
@@ -1272,14 +1284,25 @@ export class PaymentComplementBaseDocumentsPageComponent {
     fiscalDocumentId: number,
     result: StampInternalRepBaseDocumentPaymentComplementResponse
   ): Promise<void> {
+    const successMessage = buildPaymentComplementStampFeedbackMessage(
+      result.email,
+      'Complemento de pago timbrado correctamente.',
+    );
+
     if (result.warningMessages.length) {
       this.feedbackService.show('warning', result.warningMessages.join(' | '));
     }
 
-    const suffix = result.stampUuid ? ` UUID ${result.stampUuid}.` : '.';
-    this.feedbackService.show('success', `REP ${result.paymentComplementDocumentId ?? 'preparado'} timbrado${suffix}`);
+    this.feedbackService.show('success', successMessage);
     await this.loadDetail(fiscalDocumentId);
     await this.load();
+
+    if (shouldOpenPaymentComplementEmailComposerAfterStamp(result.email.status)) {
+      const updatedComplement = this.findSelectedPaymentComplement(result.paymentComplementDocumentId);
+      if (updatedComplement) {
+        await this.openPaymentComplementEmailComposer(updatedComplement, result.email);
+      }
+    }
   }
 
   private async loadDetail(fiscalDocumentId: number, openRegisterPayment = false): Promise<void> {
@@ -1396,6 +1419,16 @@ export class PaymentComplementBaseDocumentsPageComponent {
     return this.groupedPaymentIds()
       .filter((paymentId) => paymentId !== anchorPaymentId)
       .sort((left, right) => left - right);
+  }
+
+  private findSelectedPaymentComplement(
+    paymentComplementId: number | null | undefined,
+  ): InternalRepBaseDocumentPaymentComplementResponse | null {
+    if (!paymentComplementId) {
+      return null;
+    }
+
+    return this.selectedDetail()?.issuedReps.find((item) => item.paymentComplementId === paymentComplementId) ?? null;
   }
 
   private forceClosePaymentComplementEmailComposer(): void {

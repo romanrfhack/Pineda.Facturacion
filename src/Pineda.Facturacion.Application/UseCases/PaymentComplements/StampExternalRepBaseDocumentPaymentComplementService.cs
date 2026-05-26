@@ -6,16 +6,16 @@ public sealed class StampExternalRepBaseDocumentPaymentComplementService
 {
     private readonly GetPaymentComplementStampByPaymentComplementIdService _getPaymentComplementStampByPaymentComplementIdService;
     private readonly GetExternalRepBaseDocumentByIdService _getExternalRepBaseDocumentByIdService;
-    private readonly StampPaymentComplementService _stampPaymentComplementService;
+    private readonly StampAndEmailPaymentComplementService _stampAndEmailPaymentComplementService;
 
     public StampExternalRepBaseDocumentPaymentComplementService(
         GetPaymentComplementStampByPaymentComplementIdService getPaymentComplementStampByPaymentComplementIdService,
         GetExternalRepBaseDocumentByIdService getExternalRepBaseDocumentByIdService,
-        StampPaymentComplementService stampPaymentComplementService)
+        StampAndEmailPaymentComplementService stampAndEmailPaymentComplementService)
     {
         _getPaymentComplementStampByPaymentComplementIdService = getPaymentComplementStampByPaymentComplementIdService;
         _getExternalRepBaseDocumentByIdService = getExternalRepBaseDocumentByIdService;
-        _stampPaymentComplementService = stampPaymentComplementService;
+        _stampAndEmailPaymentComplementService = stampAndEmailPaymentComplementService;
     }
 
     public async Task<StampExternalRepBaseDocumentPaymentComplementResult> ExecuteAsync(
@@ -62,15 +62,15 @@ public sealed class StampExternalRepBaseDocumentPaymentComplementService
                 ["El REP externo ya estaba timbrado. Se reutiliza la evidencia existente."]);
         }
 
-        var stampResult = await _stampPaymentComplementService.ExecuteAsync(
-            new StampPaymentComplementCommand
+        var stampResult = await _stampAndEmailPaymentComplementService.ExecuteAsync(
+            new StampAndEmailPaymentComplementCommand
             {
                 PaymentComplementId = complement.PaymentComplementId,
                 RetryRejected = command.RetryRejected
             },
             cancellationToken);
 
-        var outcome = stampResult.Outcome switch
+        var outcome = stampResult.StampOutcome switch
         {
             StampPaymentComplementOutcome.Stamped => StampExternalRepBaseDocumentPaymentComplementOutcome.Stamped,
             StampPaymentComplementOutcome.NotFound => StampExternalRepBaseDocumentPaymentComplementOutcome.NotFound,
@@ -80,10 +80,10 @@ public sealed class StampExternalRepBaseDocumentPaymentComplementService
             _ => StampExternalRepBaseDocumentPaymentComplementOutcome.Conflict
         };
 
-        var warningMessages = new List<string>();
-        if (stampResult.Outcome == StampPaymentComplementOutcome.ProviderRejected)
+        var warningMessages = new List<string>(stampResult.WarningMessages);
+        if (stampResult.StampOutcome == StampPaymentComplementOutcome.ProviderRejected)
         {
-            warningMessages.Add("El PAC rechazó el timbrado del REP externo. Revisa el detalle antes de reintentar.");
+            warningMessages.Insert(0, "El PAC rechazó el timbrado del REP externo. Revisa el detalle antes de reintentar.");
         }
 
         return await BuildResponseAsync(
@@ -95,10 +95,11 @@ public sealed class StampExternalRepBaseDocumentPaymentComplementService
             stampResult.PaymentComplementStampId,
             stampResult.Uuid,
             stampResult.StampedAtUtc,
-            stampResult.Outcome == StampPaymentComplementOutcome.Stamped,
+            stampResult.Stamped,
             cancellationToken,
             warningMessages,
-            stampResult.ErrorMessage);
+            stampResult.ErrorMessage,
+            stampResult.Email);
     }
 
     private async Task<StampExternalRepBaseDocumentPaymentComplementResult> BuildResponseAsync(
@@ -113,7 +114,8 @@ public sealed class StampExternalRepBaseDocumentPaymentComplementService
         bool xmlAvailable,
         CancellationToken cancellationToken,
         IReadOnlyCollection<string>? warningMessages = null,
-        string? errorMessage = null)
+        string? errorMessage = null,
+        StampAndEmailPaymentComplementEmailResult? email = null)
     {
         var refreshedDetail = await _getExternalRepBaseDocumentByIdService.ExecuteAsync(externalRepBaseDocumentId, cancellationToken);
         return new StampExternalRepBaseDocumentPaymentComplementResult
@@ -130,6 +132,10 @@ public sealed class StampExternalRepBaseDocumentPaymentComplementService
             StampUuid = stampUuid,
             StampedAtUtc = stampedAtUtc,
             XmlAvailable = xmlAvailable,
+            Email = email ?? new StampAndEmailPaymentComplementEmailResult
+            {
+                Status = StampAndEmailPaymentComplementEmailStatus.NotAttempted
+            },
             UpdatedSummary = refreshedDetail.Document?.Summary
         };
     }

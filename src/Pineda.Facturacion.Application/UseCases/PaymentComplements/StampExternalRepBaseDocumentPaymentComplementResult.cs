@@ -26,5 +26,10 @@ public sealed class StampExternalRepBaseDocumentPaymentComplementResult
 
     public bool XmlAvailable { get; set; }
 
+    public StampAndEmailPaymentComplementEmailResult Email { get; set; } = new()
+    {
+        Status = StampAndEmailPaymentComplementEmailStatus.NotAttempted
+    };
+
     public ExternalRepBaseDocumentListItem? UpdatedSummary { get; set; }
 }

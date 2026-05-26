@@ -13,6 +13,8 @@ public sealed class GetPaymentComplementEmailDraftResult
 
     public bool IsSuccess { get; set; }
 
+    public string? DefaultRecipientEmail { get; set; }
+
     public IReadOnlyList<string> Recipients { get; set; } = [];
 
     public string? Subject { get; set; }

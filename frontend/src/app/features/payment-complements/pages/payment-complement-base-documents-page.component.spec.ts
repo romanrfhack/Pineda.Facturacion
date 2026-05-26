@@ -1,7 +1,9 @@
 import { TestBed } from '@angular/core/testing';
-import { of, throwError } from 'rxjs';
+import { By } from '@angular/platform-browser';
+import { Subject, of, throwError } from 'rxjs';
 import { PermissionService } from '../../../core/auth/permission.service';
 import { FeedbackService } from '../../../core/ui/feedback.service';
+import { PaymentContextModalComponent } from '../components/payment-context-modal.component';
 import { PaymentComplementsApiService } from '../infrastructure/payment-complements-api.service';
 import { PaymentComplementBaseDocumentsPageComponent } from './payment-complement-base-documents-page.component';
 
@@ -418,13 +420,21 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
         accountsReceivablePaymentId: 9002,
         paymentComplementDocumentId: 7002,
         status: 'Stamped',
-        paymentComplementStampId: 7102,
-        stampUuid: 'UUID-PC-2',
-        stampedAtUtc: '2026-04-03T09:15:00Z',
-        xmlAvailable: true,
-        operationalState: {
-          lastEligibilityEvaluatedAtUtc: '2026-04-03T09:15:00Z',
-          lastEligibilityStatus: 'Eligible',
+      paymentComplementStampId: 7102,
+      stampUuid: 'UUID-PC-2',
+      stampedAtUtc: '2026-04-03T09:15:00Z',
+      xmlAvailable: true,
+      email: {
+        attempted: true,
+        sent: true,
+        status: 'sent',
+        recipients: ['cliente@example.com'],
+        invalidRecipients: [],
+        message: 'El correo fue enviado automáticamente a: cliente@example.com.'
+      },
+      operationalState: {
+        lastEligibilityEvaluatedAtUtc: '2026-04-03T09:15:00Z',
+        lastEligibilityStatus: 'Eligible',
           lastPrimaryReasonCode: 'EligibleInternalRep',
           lastPrimaryReasonMessage: 'CFDI interno vigente, timbrado, con PPD/99 y saldo pendiente.',
           repPendingFlag: true,
@@ -1638,6 +1648,14 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
       stampUuid: 'UUID-PC-2',
       stampedAtUtc: '2026-04-03T09:15:00Z',
       xmlAvailable: true,
+      email: {
+        attempted: true,
+        sent: true,
+        status: 'sent',
+        recipients: ['cliente@example.com'],
+        invalidRecipients: [],
+        message: 'El correo fue enviado automáticamente a: cliente@example.com.'
+      },
       operationalState: null
     }));
     const fixture = await configure({
@@ -1693,6 +1711,110 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).toContain('No existe un REP preparado elegible para timbrar en este CFDI.');
+  });
+
+  it('shows the automatic email confirmation after stamping a REP successfully', async () => {
+    const fixture = await configure();
+    const feedback = TestBed.inject(FeedbackService) as unknown as { show: ReturnType<typeof vi.fn> };
+
+    await fixture.componentInstance['openDetailModal'](fixture.componentInstance['items']()[0]);
+    await fixture.componentInstance['stampPaymentComplement'](fixture.componentInstance['selectedDetail']()!.issuedReps[0]);
+
+    expect(feedback.show).toHaveBeenCalledWith(
+      'success',
+      'Complemento de pago timbrado correctamente. El correo fue enviado automáticamente a: cliente@example.com.',
+    );
+  });
+
+  it('shows stamp success plus warning and keeps the email composer available when auto-email fails', async () => {
+    const fixture = await configure({
+      stampInternalBaseDocumentPaymentComplement: vi.fn().mockReturnValue(of({
+        outcome: 'Stamped',
+        isSuccess: true,
+        errorMessage: null,
+        warningMessages: ['El complemento de pago se timbró correctamente, pero no fue posible enviar el correo.'],
+        fiscalDocumentId: 501,
+        accountsReceivablePaymentId: 9001,
+        paymentComplementDocumentId: 7001,
+        status: 'Stamped',
+        paymentComplementStampId: 7101,
+        stampUuid: 'UUID-PC-1',
+        stampedAtUtc: '2026-04-03T09:15:00Z',
+        xmlAvailable: true,
+        email: {
+          attempted: true,
+          sent: false,
+          status: 'failed',
+          recipients: ['cliente@example.com'],
+          invalidRecipients: [],
+          message: 'SMTP no disponible.'
+        },
+        operationalState: null
+      }))
+    });
+    const feedback = TestBed.inject(FeedbackService) as unknown as { show: ReturnType<typeof vi.fn> };
+
+    await fixture.componentInstance['openDetailModal'](fixture.componentInstance['items']()[0]);
+    await fixture.componentInstance['stampPaymentComplement'](fixture.componentInstance['selectedDetail']()!.issuedReps[0]);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(feedback.show).toHaveBeenCalledWith(
+      'warning',
+      'El complemento de pago se timbró correctamente, pero no fue posible enviar el correo.',
+    );
+    expect(feedback.show).toHaveBeenCalledWith('success', 'Complemento de pago timbrado correctamente.');
+    expect(fixture.componentInstance['showPaymentComplementEmailComposer']()).toBe(true);
+    expect(fixture.componentInstance['paymentComplementEmailRecipientsInput']).toBe('cliente@example.com');
+  });
+
+  it('shows the stamp action as processing while the REP stamp request is in flight', async () => {
+    const stampResponse = new Subject<unknown>();
+    const fixture = await configure({
+      stampInternalBaseDocumentPaymentComplement: vi.fn().mockReturnValue(stampResponse.asObservable())
+    });
+
+    await fixture.componentInstance['openDetailModal'](fixture.componentInstance['items']()[0]);
+    fixture.componentInstance['selectedDetail']()!.issuedReps[0].status = 'ReadyForStamping';
+    let tabs = Array.from(fixture.nativeElement.querySelectorAll('[role="tab"]')) as HTMLButtonElement[];
+    tabs.find((button) => button.textContent?.includes('Pagos y REP'))?.click();
+    fixture.detectChanges();
+    tabs = Array.from(fixture.nativeElement.querySelectorAll('[role="tab"]')) as HTMLButtonElement[];
+    tabs.find((button) => button.textContent?.includes('REP relacionados'))?.click();
+    fixture.detectChanges();
+
+    const stampPromise = fixture.componentInstance['stampPaymentComplement'](fixture.componentInstance['selectedDetail']()!.issuedReps[0]);
+    fixture.detectChanges();
+
+    const modal = fixture.debugElement.query(By.directive(PaymentContextModalComponent)).componentInstance as PaymentContextModalComponent;
+    expect(fixture.componentInstance['stampingComplement']()).toBe(7001);
+    expect(modal['repActionDisabled']()).toBe(true);
+
+    stampResponse.next({
+      outcome: 'Stamped',
+      isSuccess: true,
+      errorMessage: null,
+      warningMessages: [],
+      fiscalDocumentId: 501,
+      accountsReceivablePaymentId: 9001,
+      paymentComplementDocumentId: 7001,
+      status: 'Stamped',
+      paymentComplementStampId: 7101,
+      stampUuid: 'UUID-PC-1',
+      stampedAtUtc: '2026-04-02T12:05:00Z',
+      xmlAvailable: true,
+      email: {
+        attempted: true,
+        sent: true,
+        status: 'sent',
+        recipients: ['cliente@example.com'],
+        invalidRecipients: [],
+        message: 'El correo fue enviado automáticamente a: cliente@example.com.'
+      },
+      operationalState: null
+    });
+    stampResponse.complete();
+    await stampPromise;
   });
 
   it('renders explicit eligibility explanation for blocked documents in the tray', async () => {

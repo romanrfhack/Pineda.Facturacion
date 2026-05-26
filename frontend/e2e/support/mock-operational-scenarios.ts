@@ -550,13 +550,22 @@ export async function mockPaymentComplementJourney(page: Page): Promise<void> {
       json: {
         outcome: 'Stamped',
         isSuccess: true,
+        warningMessages: [],
         paymentComplementId: 802,
         status: 'Stamped',
         paymentComplementStampId: 902,
         uuid: 'UUID-PC-702',
         stampedAtUtc: '2026-03-20T15:00:00Z',
         providerName: 'FacturaloPlus',
-        providerTrackingId: 'TRACK-PC-702'
+        providerTrackingId: 'TRACK-PC-702',
+        email: {
+          attempted: true,
+          sent: true,
+          status: 'sent',
+          recipients: ['cliente@example.com'],
+          invalidRecipients: [],
+          message: 'El correo fue enviado automáticamente a: cliente@example.com.'
+        }
       }
     });
   });

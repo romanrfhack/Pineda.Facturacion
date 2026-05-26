@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { extractApiErrorMessage } from '../../../core/http/api-error-message';
 import { getDisplayLabel } from '../../../shared/ui/display-labels';
+import { buildPaymentComplementStampFeedbackMessage } from '../application/payment-complement-stamp-feedback';
 import { ExternalRepBaseDocumentImportCardComponent } from '../components/external-rep-base-document-import-card.component';
 import { PaymentComplementsApiService } from '../infrastructure/payment-complements-api.service';
 import {
@@ -817,9 +818,16 @@ export class PaymentComplementExternalBaseDocumentsPageComponent {
         detail.summary.externalRepBaseDocumentId,
         {}
       ));
-      this.operationMessage.set(response.outcome === 'AlreadyStamped'
-        ? 'El REP externo ya estaba timbrado.'
-        : `REP timbrado correctamente${response.stampUuid ? ` (${response.stampUuid})` : ''}.`);
+      if (response.outcome === 'AlreadyStamped') {
+        this.operationMessage.set('El REP externo ya estaba timbrado.');
+      } else {
+        const successMessage = buildPaymentComplementStampFeedbackMessage(
+          response.email,
+          'Complemento de pago timbrado correctamente.',
+        );
+        const warningSuffix = response.warningMessages.length ? ` ${response.warningMessages.join(' | ')}` : '';
+        this.operationMessage.set(`${successMessage}${warningSuffix}`);
+      }
       await this.loadDetail(detail.summary.externalRepBaseDocumentId);
       await this.load();
     } catch (error) {

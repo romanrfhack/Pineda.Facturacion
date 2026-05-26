@@ -49,6 +49,7 @@ export interface StampPaymentComplementResponse {
   outcome: string;
   isSuccess: boolean;
   errorMessage?: string | null;
+  warningMessages: string[];
   paymentComplementId: number;
   status?: string | null;
   paymentComplementStampId?: number | null;
@@ -61,6 +62,7 @@ export interface StampPaymentComplementResponse {
   errorCode?: string | null;
   supportMessage?: string | null;
   rawResponseSummaryJson?: string | null;
+  email: StampAndEmailPaymentComplementEmailResponse;
 }
 
 export interface PaymentComplementStampResponse {
@@ -343,6 +345,7 @@ export interface StampInternalRepBaseDocumentPaymentComplementResponse {
   stampUuid?: string | null;
   stampedAtUtc?: string | null;
   xmlAvailable: boolean;
+  email: StampAndEmailPaymentComplementEmailResponse;
   operationalState?: InternalRepBaseDocumentOperationalStateResponse | null;
 }
 
@@ -642,10 +645,20 @@ export interface StampExternalRepBaseDocumentPaymentComplementResponse {
   stampUuid?: string | null;
   stampedAtUtc?: string | null;
   xmlAvailable: boolean;
+  email: StampAndEmailPaymentComplementEmailResponse;
   repOperationalStatus?: string | null;
   isEligible?: boolean | null;
   isBlocked?: boolean | null;
   eligibilityReason?: string | null;
+}
+
+export interface StampAndEmailPaymentComplementEmailResponse {
+  attempted: boolean;
+  sent: boolean;
+  status: 'sent' | 'missing' | 'invalid' | 'failed' | 'not_attempted';
+  recipients: string[];
+  invalidRecipients: string[];
+  message?: string | null;
 }
 
 export interface RefreshExternalRepBaseDocumentPaymentComplementStatusRequest {

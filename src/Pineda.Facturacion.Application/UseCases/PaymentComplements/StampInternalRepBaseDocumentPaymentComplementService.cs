@@ -8,18 +8,18 @@ public sealed class StampInternalRepBaseDocumentPaymentComplementService
     private readonly IRepBaseDocumentRepository _repBaseDocumentRepository;
     private readonly GetPaymentComplementStampByPaymentComplementIdService _getPaymentComplementStampByPaymentComplementIdService;
     private readonly GetInternalRepBaseDocumentByFiscalDocumentIdService _getInternalRepBaseDocumentByFiscalDocumentIdService;
-    private readonly StampPaymentComplementService _stampPaymentComplementService;
+    private readonly StampAndEmailPaymentComplementService _stampAndEmailPaymentComplementService;
 
     public StampInternalRepBaseDocumentPaymentComplementService(
         IRepBaseDocumentRepository repBaseDocumentRepository,
         GetPaymentComplementStampByPaymentComplementIdService getPaymentComplementStampByPaymentComplementIdService,
         GetInternalRepBaseDocumentByFiscalDocumentIdService getInternalRepBaseDocumentByFiscalDocumentIdService,
-        StampPaymentComplementService stampPaymentComplementService)
+        StampAndEmailPaymentComplementService stampAndEmailPaymentComplementService)
     {
         _repBaseDocumentRepository = repBaseDocumentRepository;
         _getPaymentComplementStampByPaymentComplementIdService = getPaymentComplementStampByPaymentComplementIdService;
         _getInternalRepBaseDocumentByFiscalDocumentIdService = getInternalRepBaseDocumentByFiscalDocumentIdService;
-        _stampPaymentComplementService = stampPaymentComplementService;
+        _stampAndEmailPaymentComplementService = stampAndEmailPaymentComplementService;
     }
 
     public async Task<StampInternalRepBaseDocumentPaymentComplementResult> ExecuteAsync(
@@ -66,15 +66,15 @@ public sealed class StampInternalRepBaseDocumentPaymentComplementService
                 ["El REP ya estaba timbrado. Se reutiliza la evidencia existente."]);
         }
 
-        var stampResult = await _stampPaymentComplementService.ExecuteAsync(
-            new StampPaymentComplementCommand
+        var stampResult = await _stampAndEmailPaymentComplementService.ExecuteAsync(
+            new StampAndEmailPaymentComplementCommand
             {
                 PaymentComplementId = complement.PaymentComplementId,
                 RetryRejected = command.RetryRejected
             },
             cancellationToken);
 
-        var outcome = stampResult.Outcome switch
+        var outcome = stampResult.StampOutcome switch
         {
             StampPaymentComplementOutcome.Stamped => StampInternalRepBaseDocumentPaymentComplementOutcome.Stamped,
             StampPaymentComplementOutcome.NotFound => StampInternalRepBaseDocumentPaymentComplementOutcome.NotFound,
@@ -84,10 +84,10 @@ public sealed class StampInternalRepBaseDocumentPaymentComplementService
             _ => StampInternalRepBaseDocumentPaymentComplementOutcome.Conflict
         };
 
-        var warningMessages = new List<string>();
-        if (stampResult.Outcome == StampPaymentComplementOutcome.ProviderRejected)
+        var warningMessages = new List<string>(stampResult.WarningMessages);
+        if (stampResult.StampOutcome == StampPaymentComplementOutcome.ProviderRejected)
         {
-            warningMessages.Add("El proveedor rechazó el timbrado. Revisa el detalle del complemento antes de reintentar.");
+            warningMessages.Insert(0, "El proveedor rechazó el timbrado. Revisa el detalle del complemento antes de reintentar.");
         }
 
         return await BuildResponseAsync(
@@ -99,10 +99,11 @@ public sealed class StampInternalRepBaseDocumentPaymentComplementService
             stampResult.PaymentComplementStampId,
             stampResult.Uuid,
             stampResult.StampedAtUtc,
-            stampResult.Outcome == StampPaymentComplementOutcome.Stamped,
+            stampResult.Stamped,
             cancellationToken,
             warningMessages,
-            stampResult.ErrorMessage);
+            stampResult.ErrorMessage,
+            stampResult.Email);
     }
 
     private async Task<StampInternalRepBaseDocumentPaymentComplementResult> BuildResponseAsync(
@@ -117,7 +118,8 @@ public sealed class StampInternalRepBaseDocumentPaymentComplementService
         bool xmlAvailable,
         CancellationToken cancellationToken,
         IReadOnlyCollection<string>? warningMessages = null,
-        string? errorMessage = null)
+        string? errorMessage = null,
+        StampAndEmailPaymentComplementEmailResult? email = null)
     {
         var refreshedDetail = await _getInternalRepBaseDocumentByFiscalDocumentIdService.ExecuteAsync(fiscalDocumentId, cancellationToken);
         return new StampInternalRepBaseDocumentPaymentComplementResult
@@ -134,6 +136,10 @@ public sealed class StampInternalRepBaseDocumentPaymentComplementService
             StampUuid = stampUuid,
             StampedAtUtc = stampedAtUtc,
             XmlAvailable = xmlAvailable,
+            Email = email ?? new StampAndEmailPaymentComplementEmailResult
+            {
+                Status = StampAndEmailPaymentComplementEmailStatus.NotAttempted
+            },
             OperationalState = refreshedDetail.Document?.OperationalState
         };
     }

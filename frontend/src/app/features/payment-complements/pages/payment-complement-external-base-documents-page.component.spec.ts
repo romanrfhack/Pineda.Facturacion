@@ -214,7 +214,15 @@ describe('PaymentComplementExternalBaseDocumentsPageComponent', () => {
               paymentComplementStampId: 8001,
               stampUuid: 'UUID-REP-1',
               stampedAtUtc: '2026-04-01T13:00:00Z',
-              xmlAvailable: true
+              xmlAvailable: true,
+              email: {
+                attempted: true,
+                sent: true,
+                status: 'sent',
+                recipients: ['cliente@example.com'],
+                invalidRecipients: [],
+                message: 'El correo fue enviado automáticamente a: cliente@example.com.'
+              }
             })),
             refreshExternalBaseDocumentPaymentComplementStatus: vi.fn().mockReturnValue(of({
               outcome: 'Refreshed',

@@ -275,7 +275,15 @@ describe('PaymentComplementsApiService', () => {
       paymentComplementStampId: 8002,
       stampUuid: 'UUID-PC-2',
       stampedAtUtc: '2026-04-05T12:00:00Z',
-      xmlAvailable: true
+      xmlAvailable: true,
+      email: {
+        attempted: true,
+        sent: true,
+        status: 'sent',
+        recipients: ['cliente@example.com'],
+        invalidRecipients: [],
+        message: 'El correo fue enviado automáticamente a: cliente@example.com.'
+      }
     });
     httpTesting.verify();
   });
@@ -554,7 +562,15 @@ describe('PaymentComplementsApiService', () => {
       paymentComplementStampId: 801,
       stampUuid: 'UUID-REP-EXT-1',
       stampedAtUtc: '2026-04-01T13:00:00Z',
-      xmlAvailable: true
+      xmlAvailable: true,
+      email: {
+        attempted: true,
+        sent: true,
+        status: 'sent',
+        recipients: ['cliente@example.com'],
+        invalidRecipients: [],
+        message: 'El correo fue enviado automáticamente a: cliente@example.com.'
+      }
     });
 
     httpTesting.verify();
