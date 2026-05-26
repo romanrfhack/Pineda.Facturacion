@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Xml.Linq;
+using Microsoft.Extensions.Logging;
 using Pineda.Facturacion.Application.Abstractions.Pac;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Common;
@@ -18,6 +19,8 @@ public class StampPaymentComplementService
     private readonly IExternalRepBaseDocumentRepository _externalRepBaseDocumentRepository;
     private readonly IPaymentComplementStampingGateway _paymentComplementStampingGateway;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly TimeProvider _timeProvider;
+    private readonly ILogger<StampPaymentComplementService> _logger;
 
     public StampPaymentComplementService(
         IPaymentComplementDocumentRepository paymentComplementDocumentRepository,
@@ -26,7 +29,9 @@ public class StampPaymentComplementService
         IFiscalDocumentRepository fiscalDocumentRepository,
         IExternalRepBaseDocumentRepository externalRepBaseDocumentRepository,
         IPaymentComplementStampingGateway paymentComplementStampingGateway,
-        IUnitOfWork unitOfWork)
+        IUnitOfWork unitOfWork,
+        TimeProvider timeProvider,
+        ILogger<StampPaymentComplementService> logger)
     {
         _paymentComplementDocumentRepository = paymentComplementDocumentRepository;
         _paymentComplementStampRepository = paymentComplementStampRepository;
@@ -35,6 +40,8 @@ public class StampPaymentComplementService
         _externalRepBaseDocumentRepository = externalRepBaseDocumentRepository;
         _paymentComplementStampingGateway = paymentComplementStampingGateway;
         _unitOfWork = unitOfWork;
+        _timeProvider = timeProvider;
+        _logger = logger;
     }
 
     public async Task<StampPaymentComplementResult> ExecuteAsync(StampPaymentComplementCommand command, CancellationToken cancellationToken = default)
@@ -73,7 +80,7 @@ public class StampPaymentComplementService
         }
 
         var existingStamp = await _paymentComplementStampRepository.GetTrackedByPaymentComplementDocumentIdAsync(document.Id, cancellationToken);
-        if (existingStamp is not null && existingStamp.Status == FiscalStampStatus.Succeeded && !string.IsNullOrWhiteSpace(existingStamp.Uuid))
+        if (existingStamp is not null && HasSuccessfulStampEvidence(existingStamp))
         {
             return new StampPaymentComplementResult
             {
@@ -86,18 +93,27 @@ public class StampPaymentComplementService
                 StampedAtUtc = existingStamp.StampedAtUtc,
                 ProviderName = existingStamp.ProviderName,
                 ProviderTrackingId = existingStamp.ProviderTrackingId,
-                ErrorMessage = "Payment complement already has a successful persisted stamp."
+                ErrorMessage = "No se puede reintentar el REP porque ya existe evidencia de timbrado o el estado no permite recuperación segura."
             };
         }
 
-        var requestBuildResult = await TryBuildRequestAsync(document, cancellationToken);
+        var duplicateValidation = await ValidateNoConflictingComplementForSamePaymentsAsync(document, cancellationToken);
+        if (duplicateValidation is not null)
+        {
+            return duplicateValidation;
+        }
+
+        var recoveryCorrelationId = Guid.NewGuid().ToString("N");
+        var effectiveIssuedAt = ResolveEffectiveIssuedAtUtc(document, existingStamp, command.RetryRejected, recoveryCorrelationId);
+
+        var requestBuildResult = await TryBuildRequestAsync(document, effectiveIssuedAt.IssuedAtUtc, cancellationToken);
         if (!requestBuildResult.IsSuccess)
         {
             return ValidationFailure(document.Id, requestBuildResult.ErrorMessage!);
         }
         var request = requestBuildResult.Request;
 
-        var requestStartedAtUtc = DateTime.UtcNow;
+        var requestStartedAtUtc = GetUtcNow();
         document.Status = PaymentComplementDocumentStatus.StampingRequested;
         document.UpdatedAtUtc = requestStartedAtUtc;
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -119,13 +135,14 @@ public class StampPaymentComplementService
             };
         }
 
-        var now = DateTime.UtcNow;
+        var now = GetUtcNow();
         var stamp = existingStamp ?? new PaymentComplementStamp
         {
             PaymentComplementDocumentId = document.Id,
             CreatedAtUtc = now
         };
 
+        LogPreviousRejectedStampBeforeOverwrite(document, stamp, effectiveIssuedAt, recoveryCorrelationId);
         ApplyGatewayResult(stamp, gatewayResult, now);
 
         StampPaymentComplementResult result;
@@ -134,6 +151,10 @@ public class StampPaymentComplementService
             case PaymentComplementStampingGatewayOutcome.Stamped:
                 document.Status = PaymentComplementDocumentStatus.Stamped;
                 document.ProviderName = stamp.ProviderName;
+                if (effectiveIssuedAt.RefreshedForRejectedRetry)
+                {
+                    document.IssuedAtUtc = effectiveIssuedAt.IssuedAtUtc;
+                }
                 result = Success(document, stamp);
                 break;
             case PaymentComplementStampingGatewayOutcome.Rejected:
@@ -173,8 +194,110 @@ public class StampPaymentComplementService
         return result;
     }
 
+    private EffectiveIssuedAt ResolveEffectiveIssuedAtUtc(
+        PaymentComplementDocument document,
+        PaymentComplementStamp? existingStamp,
+        bool retryRejected,
+        string correlationId)
+    {
+        if (!ShouldRefreshIssuedAtForRejectedRetry(document, existingStamp, retryRejected))
+        {
+            return new EffectiveIssuedAt(document.IssuedAtUtc, RefreshedForRejectedRetry: false);
+        }
+
+        var effectiveIssuedAtUtc = GetUtcNow();
+        _logger.LogInformation(
+            "Refreshing Comprobante.Fecha for rejected REP retry. PaymentComplementId={PaymentComplementId} PreviousIssuedAtUtc={PreviousIssuedAtUtc} EffectiveIssuedAtUtc={EffectiveIssuedAtUtc} CorrelationId={CorrelationId}",
+            document.Id,
+            document.IssuedAtUtc,
+            effectiveIssuedAtUtc,
+            correlationId);
+
+        return new EffectiveIssuedAt(effectiveIssuedAtUtc, RefreshedForRejectedRetry: true);
+    }
+
+    private static bool ShouldRefreshIssuedAtForRejectedRetry(
+        PaymentComplementDocument document,
+        PaymentComplementStamp? existingStamp,
+        bool retryRejected)
+    {
+        return retryRejected
+            && document.Status == PaymentComplementDocumentStatus.StampingRejected
+            && !HasSuccessfulStampEvidence(existingStamp);
+    }
+
+    private async Task<StampPaymentComplementResult?> ValidateNoConflictingComplementForSamePaymentsAsync(
+        PaymentComplementDocument document,
+        CancellationToken cancellationToken)
+    {
+        var paymentIds = document.Payments.Count > 0
+            ? document.Payments.Select(x => x.AccountsReceivablePaymentId).Distinct().ToArray()
+            : [document.AccountsReceivablePaymentId];
+
+        if (paymentIds.Length == 0)
+        {
+            return null;
+        }
+
+        var relatedComplements = await _paymentComplementDocumentRepository.GetByPaymentIdsAsync(paymentIds, cancellationToken);
+        foreach (var relatedComplement in relatedComplements.Where(x => x.Id != document.Id))
+        {
+            var relatedStamp = await _paymentComplementStampRepository.GetByPaymentComplementDocumentIdAsync(relatedComplement.Id, cancellationToken);
+            return new StampPaymentComplementResult
+            {
+                Outcome = StampPaymentComplementOutcome.Conflict,
+                IsSuccess = false,
+                PaymentComplementId = document.Id,
+                Status = document.Status,
+                PaymentComplementStampId = relatedStamp?.Id,
+                Uuid = relatedStamp?.Uuid,
+                StampedAtUtc = relatedStamp?.StampedAtUtc,
+                ProviderName = relatedStamp?.ProviderName,
+                ProviderTrackingId = relatedStamp?.ProviderTrackingId,
+                ErrorMessage = "No se puede reintentar el REP porque ya existe evidencia de timbrado o el estado no permite recuperación segura."
+            };
+        }
+
+        return null;
+    }
+
+    private static bool HasSuccessfulStampEvidence(PaymentComplementStamp? stamp)
+    {
+        return stamp is not null
+            && (stamp.Status == FiscalStampStatus.Succeeded
+                || !string.IsNullOrWhiteSpace(stamp.Uuid)
+                || !string.IsNullOrWhiteSpace(stamp.XmlContent));
+    }
+
+    private void LogPreviousRejectedStampBeforeOverwrite(
+        PaymentComplementDocument document,
+        PaymentComplementStamp stamp,
+        EffectiveIssuedAt effectiveIssuedAt,
+        string correlationId)
+    {
+        if (!effectiveIssuedAt.RefreshedForRejectedRetry)
+        {
+            return;
+        }
+
+        _logger.LogInformation(
+            "Overwriting previous rejected REP stamp metadata after refreshed Comprobante.Fecha retry. PaymentComplementId={PaymentComplementId} PaymentComplementStampId={PaymentComplementStampId} PreviousIssuedAtUtc={PreviousIssuedAtUtc} EffectiveIssuedAtUtc={EffectiveIssuedAtUtc} PreviousStampStatus={PreviousStampStatus} PreviousProviderCode={PreviousProviderCode} PreviousProviderMessage={PreviousProviderMessage} PreviousProviderTrackingId={PreviousProviderTrackingId} CorrelationId={CorrelationId}",
+            document.Id,
+            stamp.Id,
+            document.IssuedAtUtc,
+            effectiveIssuedAt.IssuedAtUtc,
+            stamp.Status,
+            stamp.ProviderCode,
+            stamp.ProviderMessage,
+            stamp.ProviderTrackingId,
+            correlationId);
+    }
+
+    private DateTime GetUtcNow() => _timeProvider.GetUtcNow().UtcDateTime;
+
     private async Task<RequestBuildResult> TryBuildRequestAsync(
         PaymentComplementDocument document,
+        DateTime effectiveIssuedAtUtc,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(document.PacEnvironment))
@@ -313,7 +436,7 @@ public class StampPaymentComplementService
             PrivateKeyPasswordReference = document.PrivateKeyPasswordReference,
             CfdiVersion = document.CfdiVersion,
             DocumentType = document.DocumentType,
-            IssuedAtUtc = document.IssuedAtUtc,
+            IssuedAtUtc = effectiveIssuedAtUtc,
             PaymentDateUtc = requestPayments[0].PaymentDateUtc,
             PaymentFormSat = requestPayments[0].PaymentFormSat,
             CurrencyCode = "MXN",
@@ -682,6 +805,8 @@ public class StampPaymentComplementService
             };
         }
     }
+
+    private readonly record struct EffectiveIssuedAt(DateTime IssuedAtUtc, bool RefreshedForRejectedRetry);
 
     private static void ApplyGatewayResult(PaymentComplementStamp stamp, PaymentComplementStampingGatewayResult gatewayResult, DateTime now)
     {

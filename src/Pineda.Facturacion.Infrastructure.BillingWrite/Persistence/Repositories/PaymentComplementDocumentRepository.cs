@@ -36,7 +36,8 @@ public class PaymentComplementDocumentRepository : IPaymentComplementDocumentRep
             .AsNoTracking()
             .Include(x => x.Payments)
             .Include(x => x.RelatedDocuments)
-            .FirstOrDefaultAsync(x => x.Payments.Any(payment => payment.AccountsReceivablePaymentId == accountsReceivablePaymentId), cancellationToken);
+            .FirstOrDefaultAsync(x => x.AccountsReceivablePaymentId == accountsReceivablePaymentId
+                || x.Payments.Any(payment => payment.AccountsReceivablePaymentId == accountsReceivablePaymentId), cancellationToken);
     }
 
     public Task<PaymentComplementDocument?> GetTrackedByPaymentIdAsync(long accountsReceivablePaymentId, CancellationToken cancellationToken = default)
@@ -44,7 +45,8 @@ public class PaymentComplementDocumentRepository : IPaymentComplementDocumentRep
         return _dbContext.PaymentComplementDocuments
             .Include(x => x.Payments)
             .Include(x => x.RelatedDocuments)
-            .FirstOrDefaultAsync(x => x.Payments.Any(payment => payment.AccountsReceivablePaymentId == accountsReceivablePaymentId), cancellationToken);
+            .FirstOrDefaultAsync(x => x.AccountsReceivablePaymentId == accountsReceivablePaymentId
+                || x.Payments.Any(payment => payment.AccountsReceivablePaymentId == accountsReceivablePaymentId), cancellationToken);
     }
 
     public async Task<IReadOnlyList<PaymentComplementDocument>> GetByPaymentIdsAsync(IReadOnlyCollection<long> accountsReceivablePaymentIds, CancellationToken cancellationToken = default)
@@ -58,7 +60,8 @@ public class PaymentComplementDocumentRepository : IPaymentComplementDocumentRep
             .AsNoTracking()
             .Include(x => x.Payments)
             .Include(x => x.RelatedDocuments)
-            .Where(x => x.Payments.Any(payment => accountsReceivablePaymentIds.Contains(payment.AccountsReceivablePaymentId)))
+            .Where(x => accountsReceivablePaymentIds.Contains(x.AccountsReceivablePaymentId)
+                || x.Payments.Any(payment => accountsReceivablePaymentIds.Contains(payment.AccountsReceivablePaymentId)))
             .ToListAsync(cancellationToken);
     }
 
