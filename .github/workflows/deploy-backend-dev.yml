@@ -5,17 +5,197 @@ on:
     workflows: ["CI"]
     types: [completed]
   workflow_dispatch:
+    inputs:
+      forceDeploy:
+        description: "Force backend DEV deploy"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
-  group: deploy-backend-dev
+  group: deploy-backend-dev-${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
+  deploy-context:
+    runs-on: ubuntu-latest
+    outputs:
+      should_deploy: ${{ steps.decision.outputs.should_deploy }}
+      skip_reason: ${{ steps.decision.outputs.skip_reason }}
+      backend_changed: ${{ steps.decision.outputs.backend_changed }}
+      force_deploy: ${{ steps.decision.outputs.force_deploy }}
+      detector_source: ${{ steps.decision.outputs.detector_source }}
+      head_branch: ${{ steps.event.outputs.head_branch }}
+      head_sha: ${{ steps.event.outputs.head_sha }}
+      workflow_run_conclusion: ${{ steps.event.outputs.workflow_run_conclusion }}
+
+    steps:
+      - name: Resolve event context
+        id: event
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_RUN_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch || '' }}
+          WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha || '' }}
+          WORKFLOW_RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion || '' }}
+          REF_NAME: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            head_branch="$WORKFLOW_RUN_HEAD_BRANCH"
+            head_sha="$WORKFLOW_RUN_HEAD_SHA"
+            workflow_run_conclusion="$WORKFLOW_RUN_CONCLUSION"
+          else
+            head_branch="$REF_NAME"
+            head_sha="$SHA"
+            workflow_run_conclusion="n/a"
+          fi
+
+          {
+            printf 'head_branch=%s\n' "$head_branch"
+            printf 'head_sha=%s\n' "$head_sha"
+            printf 'workflow_run_conclusion=%s\n' "$workflow_run_conclusion"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout deploy ref for path detection
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.event.outputs.head_sha }}
+          fetch-depth: 2
+
+      - name: Download CI change context
+        if: github.event_name == 'workflow_run'
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: ci-change-context
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          path: .ci-change-context
+
+      - name: Decide deploy
+        id: decision
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_BRANCH: ${{ steps.event.outputs.head_branch }}
+          HEAD_SHA: ${{ steps.event.outputs.head_sha }}
+          WORKFLOW_RUN_CONCLUSION: ${{ steps.event.outputs.workflow_run_conclusion }}
+          FORCE_DEPLOY: ${{ inputs.forceDeploy == true }}
+        run: |
+          set -euo pipefail
+
+          backend_changed=""
+          matched_backend_paths=""
+          detector_source="ci-artifact"
+
+          if [ -f .ci-change-context/change-context.env ]; then
+            backend_changed="$(sed -n 's/^backend_changed=//p' .ci-change-context/change-context.env | tail -n 1)"
+            matched_backend_paths="$(cat .ci-change-context/backend-paths.txt 2>/dev/null || true)"
+          else
+            detector_source="git-diff-tree"
+            mapfile -t changed_files < <(git diff-tree --no-commit-id --name-only -r --root -m "$HEAD_SHA" | sort -u)
+            matched=()
+            for file in "${changed_files[@]}"; do
+              case "$file" in
+                src/Pineda.Facturacion.Api/*|\
+                src/Pineda.Facturacion.Application/*|\
+                src/Pineda.Facturacion.Domain/*|\
+                src/Pineda.Facturacion.Infrastructure/Documents/*|\
+                src/Pineda.Facturacion.Infrastructure*/*|\
+                tests/Pineda.Facturacion.*Tests/*|\
+                .github/workflows/ci.yml|\
+                .github/workflows/deploy-backend-dev.yml|\
+                .github/workflows/deploy-backend.yml|\
+                Directory.Build.props|\
+                Pineda.Facturacion.slnx)
+                  matched+=("$file")
+                  ;;
+              esac
+            done
+
+            if [ "${#matched[@]}" -gt 0 ]; then
+              backend_changed="true"
+              matched_backend_paths="$(printf '%s\n' "${matched[@]}")"
+            else
+              backend_changed="false"
+            fi
+          fi
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            should_deploy="true"
+            if [ "$FORCE_DEPLOY" = "true" ]; then
+              reason="manual workflow_dispatch with forceDeploy=true"
+            else
+              reason="manual workflow_dispatch"
+            fi
+          elif [ "$WORKFLOW_RUN_CONCLUSION" != "success" ]; then
+            should_deploy="false"
+            reason="workflow_run conclusion is '$WORKFLOW_RUN_CONCLUSION'"
+          elif [ "$HEAD_BRANCH" != "dev" ]; then
+            should_deploy="false"
+            reason="workflow_run head_branch '$HEAD_BRANCH' is not 'dev'"
+          elif [ "$backend_changed" != "true" ]; then
+            should_deploy="false"
+            reason="backend_changed=false"
+          else
+            should_deploy="true"
+            reason="successful CI on dev with backend changes"
+          fi
+
+          echo "event_name=$EVENT_NAME"
+          echo "workflow_run.head_branch=$HEAD_BRANCH"
+          echo "workflow_run.head_sha=$HEAD_SHA"
+          echo "workflow_run.conclusion=$WORKFLOW_RUN_CONCLUSION"
+          echo "backend_changed=$backend_changed"
+          echo "forceDeploy=$FORCE_DEPLOY"
+          echo "detector_source=$detector_source"
+          echo "should_deploy=$should_deploy"
+          echo "decision_reason=$reason"
+          echo "matched backend paths:"
+          if [ -n "$matched_backend_paths" ]; then
+            printf '%s\n' "$matched_backend_paths"
+          else
+            echo "(none)"
+          fi
+
+          {
+            echo "### Deploy Backend DEV decision"
+            echo "- event_name: \`$EVENT_NAME\`"
+            echo "- workflow_run.head_branch: \`$HEAD_BRANCH\`"
+            echo "- workflow_run.head_sha: \`$HEAD_SHA\`"
+            echo "- workflow_run.conclusion: \`$WORKFLOW_RUN_CONCLUSION\`"
+            echo "- backend_changed: \`$backend_changed\`"
+            echo "- forceDeploy: \`$FORCE_DEPLOY\`"
+            echo "- detector_source: \`$detector_source\`"
+            echo "- should_deploy: \`$should_deploy\`"
+            echo "- reason: \`$reason\`"
+            echo "- matched backend paths:"
+            if [ -n "$matched_backend_paths" ]; then
+              printf '%s\n' "$matched_backend_paths" | sed '/^$/d; s/^/- `/' | sed 's/$/`/'
+            else
+              echo "- (none)"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          {
+            printf 'should_deploy=%s\n' "$should_deploy"
+            printf 'skip_reason=%s\n' "$reason"
+            printf 'backend_changed=%s\n' "$backend_changed"
+            printf 'force_deploy=%s\n' "$FORCE_DEPLOY"
+            printf 'detector_source=%s\n' "$detector_source"
+            echo "matched_backend_paths<<EOF"
+            printf '%s\n' "$matched_backend_paths"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
   build-and-deploy:
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'dev') }}
+    needs: deploy-context
+    if: ${{ needs.deploy-context.outputs.should_deploy == 'true' }}
     runs-on: ubuntu-latest
     environment: facturas-dev
 
@@ -30,12 +210,13 @@ jobs:
       SERVICE_NAME: facturas-dev-api
       PERSISTENT_ENV_FILE: /etc/facturas-dev/facturas-dev-api.env
       SMOKE_BASE_URL: http://localhost:5007
+      DEPLOY_SHA: ${{ needs.deploy-context.outputs.head_sha }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ needs.deploy-context.outputs.head_sha }}
           fetch-depth: 1
 
       - name: Setup .NET
@@ -49,6 +230,10 @@ jobs:
       - name: Publish API
         run: dotnet publish src/Pineda.Facturacion.Api/Pineda.Facturacion.Api.csproj -c Release -o out/api
 
+      - name: Stamp deployed commit
+        shell: bash
+        run: printf '%s\n' "$DEPLOY_SHA" > out/api/DEPLOYED_SHA.txt
+
       - name: Validate publish output
         shell: bash
         run: |
@@ -56,7 +241,9 @@ jobs:
           test -d out/api
           test -f out/api/Pineda.Facturacion.Api.dll
           test -f out/api/appsettings.json
+          test -f out/api/DEPLOYED_SHA.txt
           echo "Expected VPS environment: $ASPNETCORE_ENVIRONMENT"
+          echo "Deploy SHA: $DEPLOY_SHA"
           ls -la out/api
 
       - name: Validate deploy secrets
@@ -105,7 +292,7 @@ jobs:
           set -euo pipefail
           ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" \
             "$SSH_USER@$SSH_HOST" \
-            "ls -la '$DEPLOY_PATH' && test -f '$DEPLOY_PATH/Pineda.Facturacion.Api.dll' && test -f '$DEPLOY_PATH/appsettings.json'"
+            "ls -la '$DEPLOY_PATH' && test -f '$DEPLOY_PATH/Pineda.Facturacion.Api.dll' && test -f '$DEPLOY_PATH/appsettings.json' && grep -Fx '$DEPLOY_SHA' '$DEPLOY_PATH/DEPLOYED_SHA.txt'"
 
       - name: Set ownership and permissions
         shell: bash

@@ -24,15 +24,47 @@ jobs:
         id: filter
         uses: dorny/paths-filter@v3
         with:
+          list-files: shell
           filters: |
             backend:
-              - 'src/**'
-              - 'tests/**'
-              - '.github/workflows/**'
+              - 'src/Pineda.Facturacion.Api/**'
+              - 'src/Pineda.Facturacion.Application/**'
+              - 'src/Pineda.Facturacion.Domain/**'
+              - 'src/Pineda.Facturacion.Infrastructure/Documents/**'
+              - 'src/Pineda.Facturacion.Infrastructure*/**'
+              - 'tests/Pineda.Facturacion.*Tests/**'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/deploy-backend*.yml'
               - 'Directory.Build.props'
+              - 'Pineda.Facturacion.slnx'
             frontend:
               - 'frontend/**'
               - '.github/workflows/**'
+
+      - name: Write change context
+        shell: bash
+        env:
+          BACKEND_CHANGED: ${{ steps.filter.outputs.backend }}
+          FRONTEND_CHANGED: ${{ steps.filter.outputs.frontend }}
+          BACKEND_FILES: ${{ steps.filter.outputs.backend_files }}
+          FRONTEND_FILES: ${{ steps.filter.outputs.frontend_files }}
+        run: |
+          set -euo pipefail
+          mkdir -p .ci-change-context
+          {
+            printf 'backend_changed=%s\n' "$BACKEND_CHANGED"
+            printf 'frontend_changed=%s\n' "$FRONTEND_CHANGED"
+          } > .ci-change-context/change-context.env
+          printf '%s\n' "$BACKEND_FILES" > .ci-change-context/backend-paths.txt
+          printf '%s\n' "$FRONTEND_FILES" > .ci-change-context/frontend-paths.txt
+
+      - name: Upload change context
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-change-context
+          path: .ci-change-context/
+          if-no-files-found: error
+          retention-days: 7
 
   backend_tests:
     needs: changes
