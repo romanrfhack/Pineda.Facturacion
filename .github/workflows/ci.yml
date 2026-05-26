@@ -18,6 +18,8 @@ jobs:
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
+      backend_changed: ${{ steps.filter.outputs.backend }}
+      frontend_changed: ${{ steps.filter.outputs.frontend }}
     steps:
       - uses: actions/checkout@v4
       - name: Detect changed areas
@@ -48,27 +50,66 @@ jobs:
           FRONTEND_CHANGED: ${{ steps.filter.outputs.frontend }}
           BACKEND_FILES: ${{ steps.filter.outputs.backend_files }}
           FRONTEND_FILES: ${{ steps.filter.outputs.frontend_files }}
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_BRANCH: ${{ github.ref_name }}
+          HEAD_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           mkdir -p .ci-change-context
+
           {
             printf 'backend_changed=%s\n' "$BACKEND_CHANGED"
             printf 'frontend_changed=%s\n' "$FRONTEND_CHANGED"
+            printf 'head_branch=%s\n' "$HEAD_BRANCH"
+            printf 'head_sha=%s\n' "$HEAD_SHA"
+            printf 'event_name=%s\n' "$EVENT_NAME"
           } > .ci-change-context/change-context.env
-          printf '%s\n' "$BACKEND_FILES" > .ci-change-context/backend-paths.txt
-          printf '%s\n' "$FRONTEND_FILES" > .ci-change-context/frontend-paths.txt
+          cp .ci-change-context/change-context.env .ci-change-context/context.env
+
+          printf '%s\n' "$BACKEND_CHANGED" > .ci-change-context/backend_changed.txt
+          printf '%s\n' "$FRONTEND_CHANGED" > .ci-change-context/frontend_changed.txt
+
+          : > .ci-change-context/backend-paths.txt
+          : > .ci-change-context/frontend-paths.txt
+          if [ -n "$BACKEND_FILES" ]; then
+            printf '%s\n' "$BACKEND_FILES" > .ci-change-context/backend-paths.txt
+          fi
+          if [ -n "$FRONTEND_FILES" ]; then
+            printf '%s\n' "$FRONTEND_FILES" > .ci-change-context/frontend-paths.txt
+          fi
+
+          {
+            printf 'event_name=%s\n' "$EVENT_NAME"
+            printf 'head_branch=%s\n' "$HEAD_BRANCH"
+            printf 'head_sha=%s\n' "$HEAD_SHA"
+            printf 'backend_changed=%s\n' "$BACKEND_CHANGED"
+            printf 'frontend_changed=%s\n' "$FRONTEND_CHANGED"
+            printf '\nmatched_backend_paths:\n'
+            if [ -s .ci-change-context/backend-paths.txt ]; then
+              cat .ci-change-context/backend-paths.txt
+            else
+              printf 'No backend paths matched.\n'
+            fi
+            printf '\nmatched_frontend_paths:\n'
+            if [ -s .ci-change-context/frontend-paths.txt ]; then
+              cat .ci-change-context/frontend-paths.txt
+            else
+              printf 'No frontend paths matched.\n'
+            fi
+          } > .ci-change-context/changed-files.txt
 
       - name: Upload change context
         uses: actions/upload-artifact@v4
         with:
           name: ci-change-context
           path: .ci-change-context/
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 7
 
   backend_tests:
     needs: changes
-    if: needs.changes.outputs.backend == 'true'
+    if: needs.changes.outputs.backend_changed == 'true'
     runs-on: ubuntu-latest
     services:
       mysql:
@@ -127,7 +168,7 @@ jobs:
 
   frontend_tests:
     needs: changes
-    if: needs.changes.outputs.frontend == 'true'
+    if: needs.changes.outputs.frontend_changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
