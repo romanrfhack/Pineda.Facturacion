@@ -584,6 +584,203 @@ public class FiscalStampingServicesTests
     }
 
     [Fact]
+    public async Task StampFiscalDocument_RetryRejected_WithPriorProviderCode307_DoesNotCallProvider()
+    {
+        var fiscalDocument = CreateFiscalDocument();
+        fiscalDocument.Status = FiscalDocumentStatus.StampingRejected;
+        var existingStamp = CreateRejectedStamp(
+            fiscalDocument.Id,
+            providerCode: "307",
+            providerMessage: "El CFDI contiene un timbre previo. -  El comprobante contiene un timbre previo.");
+        var gateway = new FakeFiscalStampingGateway();
+
+        var service = new StampFiscalDocumentService(
+            new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
+            new FakeFiscalStampRepository { ExistingTracked = existingStamp },
+            gateway,
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new StampFiscalDocumentCommand
+        {
+            FiscalDocumentId = fiscalDocument.Id,
+            RetryRejected = true
+        });
+
+        Assert.Equal(StampFiscalDocumentOutcome.Conflict, result.Outcome);
+        Assert.Equal(0, gateway.CallCount);
+        Assert.Equal(FiscalDocumentStatus.StampingRejected, fiscalDocument.Status);
+        Assert.Contains("conciliación", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task StampFiscalDocument_RetryRejected_WithPriorTimbrePrevioMessage_DoesNotCallProvider()
+    {
+        var fiscalDocument = CreateFiscalDocument();
+        fiscalDocument.Status = FiscalDocumentStatus.StampingRejected;
+        var existingStamp = CreateRejectedStamp(
+            fiscalDocument.Id,
+            providerCode: "PAC_409",
+            providerMessage: "El comprobante contiene un timbre previo.");
+        var gateway = new FakeFiscalStampingGateway();
+
+        var service = new StampFiscalDocumentService(
+            new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
+            new FakeFiscalStampRepository { ExistingTracked = existingStamp },
+            gateway,
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new StampFiscalDocumentCommand
+        {
+            FiscalDocumentId = fiscalDocument.Id,
+            RetryRejected = true
+        });
+
+        Assert.Equal(StampFiscalDocumentOutcome.Conflict, result.Outcome);
+        Assert.Equal(0, gateway.CallCount);
+        Assert.Contains("conciliación", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task StampFiscalDocument_RetryRejected_WithNormalPriorRejection_CallsProvider()
+    {
+        var fiscalDocument = CreateFiscalDocument();
+        fiscalDocument.Status = FiscalDocumentStatus.StampingRejected;
+        var existingStamp = CreateRejectedStamp(
+            fiscalDocument.Id,
+            providerCode: "CFDI_400",
+            providerMessage: "Receiver data invalid.");
+        var gateway = new FakeFiscalStampingGateway
+        {
+            NextResult = new FiscalStampingGatewayResult
+            {
+                Outcome = FiscalStampingGatewayOutcome.Stamped,
+                ProviderName = "FacturaloPlus",
+                ProviderOperation = "stamp",
+                ProviderCode = "200",
+                Uuid = "UUID-RETRY-OK",
+                XmlContent = "<cfdi:Comprobante />",
+                StampedAtUtc = DateTime.UtcNow
+            }
+        };
+
+        var service = new StampFiscalDocumentService(
+            new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
+            new FakeFiscalStampRepository { ExistingTracked = existingStamp },
+            gateway,
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new StampFiscalDocumentCommand
+        {
+            FiscalDocumentId = fiscalDocument.Id,
+            RetryRejected = true
+        });
+
+        Assert.Equal(StampFiscalDocumentOutcome.Stamped, result.Outcome);
+        Assert.Equal(1, gateway.CallCount);
+        Assert.Equal("UUID-RETRY-OK", existingStamp.Uuid);
+        Assert.Equal(FiscalStampStatus.Succeeded, existingStamp.Status);
+    }
+
+    [Fact]
+    public async Task StampFiscalDocument_WithExistingUuidEvidence_DoesNotCallProvider()
+    {
+        var fiscalDocument = CreateFiscalDocument();
+        fiscalDocument.Status = FiscalDocumentStatus.StampingRejected;
+        var existingStamp = CreateRejectedStamp(fiscalDocument.Id, providerCode: "TIMEOUT", providerMessage: "Timeout.");
+        existingStamp.Uuid = "UUID-RECOVERED";
+        var gateway = new FakeFiscalStampingGateway();
+
+        var service = new StampFiscalDocumentService(
+            new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
+            new FakeFiscalStampRepository { ExistingTracked = existingStamp },
+            gateway,
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new StampFiscalDocumentCommand
+        {
+            FiscalDocumentId = fiscalDocument.Id,
+            RetryRejected = true
+        });
+
+        Assert.Equal(StampFiscalDocumentOutcome.Conflict, result.Outcome);
+        Assert.Equal(0, gateway.CallCount);
+        Assert.Equal("UUID-RECOVERED", result.Uuid);
+    }
+
+    [Fact]
+    public async Task StampFiscalDocument_WithExistingTimbreXmlEvidence_DoesNotCallProvider()
+    {
+        var fiscalDocument = CreateFiscalDocument();
+        fiscalDocument.Status = FiscalDocumentStatus.StampingRejected;
+        var existingStamp = CreateRejectedStamp(fiscalDocument.Id, providerCode: "TIMEOUT", providerMessage: "Timeout.");
+        existingStamp.XmlContent = """
+            <cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital">
+              <cfdi:Complemento>
+                <tfd:TimbreFiscalDigital UUID="UUID-IN-XML" />
+              </cfdi:Complemento>
+            </cfdi:Comprobante>
+            """;
+        var gateway = new FakeFiscalStampingGateway();
+
+        var service = new StampFiscalDocumentService(
+            new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
+            new FakeFiscalStampRepository { ExistingTracked = existingStamp },
+            gateway,
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new StampFiscalDocumentCommand
+        {
+            FiscalDocumentId = fiscalDocument.Id,
+            RetryRejected = true
+        });
+
+        Assert.Equal(StampFiscalDocumentOutcome.Conflict, result.Outcome);
+        Assert.Equal(0, gateway.CallCount);
+        Assert.Contains("evidencia local de timbrado", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void StampFiscalDocument_ApplyGatewayResult_DoesNotClearExistingEvidence_OnLaterRejection()
+    {
+        var fiscalStamp = new FiscalStamp
+        {
+            Id = 701,
+            FiscalDocumentId = 50,
+            ProviderName = "FacturaloPlus",
+            ProviderOperation = "stamp",
+            Status = FiscalStampStatus.Succeeded,
+            Uuid = "UUID-PERSISTED",
+            StampedAtUtc = new DateTime(2026, 5, 29, 18, 11, 13, DateTimeKind.Utc),
+            XmlContent = "<cfdi:Complemento><tfd:TimbreFiscalDigital UUID=\"UUID-PERSISTED\" /></cfdi:Complemento>",
+            XmlHash = "XML-HASH",
+            CreatedAtUtc = DateTime.UtcNow.AddMinutes(-10),
+            UpdatedAtUtc = DateTime.UtcNow.AddMinutes(-10)
+        };
+        var gatewayResult = new FiscalStampingGatewayResult
+        {
+            Outcome = FiscalStampingGatewayOutcome.Rejected,
+            ProviderName = "FacturaloPlus",
+            ProviderOperation = "stamp",
+            ProviderCode = "307",
+            ProviderMessage = "El CFDI contiene un timbre previo.",
+            ErrorMessage = "El CFDI contiene un timbre previo."
+        };
+
+        var method = typeof(StampFiscalDocumentService).GetMethod(
+            "ApplyGatewayResult",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+        Assert.NotNull(method);
+
+        method!.Invoke(null, new object?[] { fiscalStamp, gatewayResult, DateTime.UtcNow });
+
+        Assert.Equal("UUID-PERSISTED", fiscalStamp.Uuid);
+        Assert.Contains("TimbreFiscalDigital", fiscalStamp.XmlContent, StringComparison.Ordinal);
+        Assert.Equal("XML-HASH", fiscalStamp.XmlHash);
+        Assert.Equal(FiscalStampStatus.Succeeded, fiscalStamp.Status);
+        Assert.Equal("307", fiscalStamp.ProviderCode);
+    }
+
+    [Fact]
     public void StampFiscalDocumentService_DoesNotDependOnLiveMasterDataRepositories()
     {
         var dependencyNames = typeof(StampFiscalDocumentService)
@@ -763,6 +960,26 @@ public class FiscalStampingServicesTests
                     CreatedAtUtc = DateTime.UtcNow
                 }
             ]
+        };
+    }
+
+    private static FiscalStamp CreateRejectedStamp(
+        long fiscalDocumentId,
+        string providerCode,
+        string providerMessage)
+    {
+        return new FiscalStamp
+        {
+            Id = 700,
+            FiscalDocumentId = fiscalDocumentId,
+            ProviderName = "FacturaloPlus",
+            ProviderOperation = "stamp",
+            Status = FiscalStampStatus.Rejected,
+            ProviderCode = providerCode,
+            ProviderMessage = providerMessage,
+            ErrorMessage = providerMessage,
+            CreatedAtUtc = DateTime.UtcNow.AddMinutes(-10),
+            UpdatedAtUtc = DateTime.UtcNow.AddMinutes(-10)
         };
     }
 

@@ -110,14 +110,52 @@ public class StampAndEmailFiscalDocumentServiceTests
         Assert.Equal(0, fixture.EmailSender.SendCallCount);
     }
 
+    [Fact]
+    public async Task StampAndEmailFiscalDocument_Does_Not_Attempt_Email_When_PreviousStampRequiresReconciliation()
+    {
+        var existingStamp = new FiscalStamp
+        {
+            Id = 700,
+            FiscalDocumentId = 50,
+            ProviderName = "FacturaloPlus",
+            ProviderOperation = "stamp",
+            Status = FiscalStampStatus.Rejected,
+            ProviderCode = "307",
+            ProviderMessage = "El CFDI contiene un timbre previo.",
+            ErrorMessage = "El CFDI contiene un timbre previo.",
+            CreatedAtUtc = DateTime.UtcNow.AddMinutes(-10),
+            UpdatedAtUtc = DateTime.UtcNow.AddMinutes(-10)
+        };
+        var fixture = CreateFixture(
+            "cliente@example.com",
+            existingStamp: existingStamp,
+            configureDocument: document => document.Status = FiscalDocumentStatus.StampingRejected);
+
+        var result = await fixture.Service.ExecuteAsync(new StampAndEmailFiscalDocumentCommand
+        {
+            FiscalDocumentId = 50,
+            RetryRejected = true
+        });
+
+        Assert.False(result.Stamped);
+        Assert.False(result.EmailAttempted);
+        Assert.False(result.EmailSent);
+        Assert.Equal(StampAndEmailFiscalDocumentEmailStatus.NotAttempted, result.EmailStatus);
+        Assert.Equal(0, fixture.EmailSender.SendCallCount);
+        Assert.Contains("conciliación", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static TestFixture CreateFixture(
         string? receiverEmail,
         Exception? emailException = null,
-        FiscalStampingGatewayResult? gatewayResult = null)
+        FiscalStampingGatewayResult? gatewayResult = null,
+        FiscalStamp? existingStamp = null,
+        Action<FiscalDocument>? configureDocument = null)
     {
         var fiscalDocument = CreateFiscalDocument();
+        configureDocument?.Invoke(fiscalDocument);
         var fiscalDocumentRepository = new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument };
-        var fiscalStampRepository = new FakeFiscalStampRepository();
+        var fiscalStampRepository = new FakeFiscalStampRepository { ExistingTracked = existingStamp };
         var fiscalReceiverRepository = new FakeFiscalReceiverRepository
         {
             Existing = new FiscalReceiver

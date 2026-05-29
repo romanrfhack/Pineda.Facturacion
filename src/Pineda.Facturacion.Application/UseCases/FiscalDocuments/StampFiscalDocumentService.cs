@@ -128,6 +128,22 @@ public class StampFiscalDocumentService
             };
         }
 
+        if (existingStamp is not null && HasLocalStampEvidence(existingStamp))
+        {
+            return ReconciliationRequired(
+                fiscalDocument,
+                existingStamp,
+                "El documento fiscal ya tiene evidencia local de timbrado. Se requiere conciliación antes de continuar.");
+        }
+
+        if (existingStamp is not null && IndicatesPreviousStamp(existingStamp))
+        {
+            return ReconciliationRequired(
+                fiscalDocument,
+                existingStamp,
+                "El PAC indica que este CFDI ya fue timbrado previamente. Se requiere conciliación antes de continuar.");
+        }
+
         if (!TryBuildStampingRequest(fiscalDocument, out var stampingRequest, out var validationError))
         {
             return ValidationFailure(fiscalDocument.Id, validationError!);
@@ -217,29 +233,114 @@ public class StampFiscalDocumentService
 
     private static void ApplyGatewayResult(FiscalStamp fiscalStamp, FiscalStampingGatewayResult gatewayResult, DateTime now)
     {
+        var hasExistingStampEvidence = HasLocalStampEvidence(fiscalStamp);
+
         fiscalStamp.ProviderName = gatewayResult.ProviderName;
         fiscalStamp.ProviderOperation = gatewayResult.ProviderOperation;
         fiscalStamp.ProviderRequestHash = gatewayResult.ProviderRequestHash;
         fiscalStamp.ProviderTrackingId = gatewayResult.ProviderTrackingId;
         fiscalStamp.ProviderCode = gatewayResult.ProviderCode;
         fiscalStamp.ProviderMessage = gatewayResult.ProviderMessage;
-        fiscalStamp.Uuid = gatewayResult.Uuid;
-        fiscalStamp.StampedAtUtc = gatewayResult.StampedAtUtc;
-        fiscalStamp.XmlContent = gatewayResult.XmlContent;
-        fiscalStamp.XmlHash = gatewayResult.XmlHash;
-        fiscalStamp.OriginalString = gatewayResult.OriginalString;
-        fiscalStamp.QrCodeTextOrUrl = gatewayResult.QrCodeTextOrUrl;
+
+        if (gatewayResult.Outcome == FiscalStampingGatewayOutcome.Stamped || !hasExistingStampEvidence)
+        {
+            fiscalStamp.Uuid = gatewayResult.Uuid;
+            fiscalStamp.StampedAtUtc = gatewayResult.StampedAtUtc;
+            fiscalStamp.XmlContent = gatewayResult.XmlContent;
+            fiscalStamp.XmlHash = gatewayResult.XmlHash;
+            fiscalStamp.OriginalString = gatewayResult.OriginalString;
+            fiscalStamp.QrCodeTextOrUrl = gatewayResult.QrCodeTextOrUrl;
+        }
+        else
+        {
+            fiscalStamp.Uuid = string.IsNullOrWhiteSpace(gatewayResult.Uuid)
+                ? fiscalStamp.Uuid
+                : gatewayResult.Uuid;
+            fiscalStamp.StampedAtUtc = gatewayResult.StampedAtUtc ?? fiscalStamp.StampedAtUtc;
+            fiscalStamp.XmlContent = string.IsNullOrWhiteSpace(gatewayResult.XmlContent)
+                ? fiscalStamp.XmlContent
+                : gatewayResult.XmlContent;
+            fiscalStamp.XmlHash = string.IsNullOrWhiteSpace(gatewayResult.XmlHash)
+                ? fiscalStamp.XmlHash
+                : gatewayResult.XmlHash;
+            fiscalStamp.OriginalString = string.IsNullOrWhiteSpace(gatewayResult.OriginalString)
+                ? fiscalStamp.OriginalString
+                : gatewayResult.OriginalString;
+            fiscalStamp.QrCodeTextOrUrl = string.IsNullOrWhiteSpace(gatewayResult.QrCodeTextOrUrl)
+                ? fiscalStamp.QrCodeTextOrUrl
+                : gatewayResult.QrCodeTextOrUrl;
+        }
+
         fiscalStamp.RawResponseSummaryJson = gatewayResult.RawResponseSummaryJson;
         fiscalStamp.ErrorCode = gatewayResult.ErrorCode;
         fiscalStamp.ErrorMessage = gatewayResult.ErrorMessage;
-        fiscalStamp.Status = gatewayResult.Outcome switch
+
+        if (gatewayResult.Outcome == FiscalStampingGatewayOutcome.Stamped || !hasExistingStampEvidence)
         {
-            FiscalStampingGatewayOutcome.Stamped => FiscalStampStatus.Succeeded,
-            FiscalStampingGatewayOutcome.Rejected => FiscalStampStatus.Rejected,
-            FiscalStampingGatewayOutcome.ValidationFailed => FiscalStampStatus.ValidationFailed,
-            _ => FiscalStampStatus.Unavailable
-        };
+            fiscalStamp.Status = gatewayResult.Outcome switch
+            {
+                FiscalStampingGatewayOutcome.Stamped => FiscalStampStatus.Succeeded,
+                FiscalStampingGatewayOutcome.Rejected => FiscalStampStatus.Rejected,
+                FiscalStampingGatewayOutcome.ValidationFailed => FiscalStampStatus.ValidationFailed,
+                _ => FiscalStampStatus.Unavailable
+            };
+        }
+
         fiscalStamp.UpdatedAtUtc = now;
+    }
+
+    private static bool HasLocalStampEvidence(FiscalStamp fiscalStamp)
+    {
+        return !string.IsNullOrWhiteSpace(fiscalStamp.Uuid)
+            || ContainsTimbreFiscalDigital(fiscalStamp.XmlContent);
+    }
+
+    private static bool IndicatesPreviousStamp(FiscalStamp fiscalStamp)
+    {
+        return string.Equals(fiscalStamp.ProviderCode?.Trim(), "307", StringComparison.OrdinalIgnoreCase)
+            || ContainsTimbrePrevio(fiscalStamp.ProviderMessage)
+            || ContainsTimbrePrevio(fiscalStamp.ErrorMessage);
+    }
+
+    private static bool ContainsTimbreFiscalDigital(string? value)
+    {
+        return value?.IndexOf("TimbreFiscalDigital", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    private static bool ContainsTimbrePrevio(string? value)
+    {
+        return value?.IndexOf("timbre previo", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    private static StampFiscalDocumentResult ReconciliationRequired(
+        FiscalDocument fiscalDocument,
+        FiscalStamp fiscalStamp,
+        string errorMessage)
+    {
+        return new StampFiscalDocumentResult
+        {
+            Outcome = StampFiscalDocumentOutcome.Conflict,
+            IsSuccess = false,
+            ErrorMessage = errorMessage,
+            FiscalDocumentId = fiscalDocument.Id,
+            FiscalDocumentStatus = fiscalDocument.Status,
+            FiscalStampId = fiscalStamp.Id,
+            Uuid = fiscalStamp.Uuid,
+            StampedAtUtc = fiscalStamp.StampedAtUtc,
+            ProviderName = fiscalStamp.ProviderName,
+            ProviderTrackingId = fiscalStamp.ProviderTrackingId,
+            ProviderCode = fiscalStamp.ProviderCode,
+            ProviderMessage = fiscalStamp.ProviderMessage,
+            ErrorCode = fiscalStamp.ErrorCode,
+            SupportMessage = FiscalOperationRobustnessPolicy.BuildStampSupportMessage(
+                fiscalStamp.ProviderCode,
+                fiscalStamp.ProviderMessage,
+                fiscalStamp.ErrorCode,
+                fiscalStamp.ProviderTrackingId),
+            RawResponseSummaryJson = fiscalStamp.RawResponseSummaryJson,
+            IsRetryable = false,
+            RetryAdvice = "No reintentes el timbrado. Concilia la evidencia del PAC antes de continuar."
+        };
     }
 
     private static bool TryBuildStampingRequest(
