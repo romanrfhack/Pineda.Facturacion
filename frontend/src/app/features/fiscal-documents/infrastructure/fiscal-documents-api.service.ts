@@ -1,7 +1,8 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpContext } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { buildApiUrl } from '../../../core/config/api-url';
+import { SUPPRESS_GLOBAL_ERROR_TOAST } from '../../../core/http/api-error-context.tokens';
 import {
   BillingDocumentLookupResponse,
   AssignPendingBillingItemsRequest,
@@ -187,7 +188,10 @@ export class FiscalDocumentsApiService {
   }
 
   listPendingCancellationAuthorizations(): Observable<PendingCancellationAuthorizationsResponse> {
-    return this.http.get<PendingCancellationAuthorizationsResponse>(buildApiUrl('/fiscal-documents/cancellation-authorizations/pending'));
+    return this.http.get<PendingCancellationAuthorizationsResponse>(
+      buildApiUrl('/fiscal-documents/cancellation-authorizations/pending'),
+      { context: new HttpContext().set(SUPPRESS_GLOBAL_ERROR_TOAST, true) },
+    );
   }
 
   respondCancellationAuthorization(request: RespondCancellationAuthorizationRequest): Observable<RespondCancellationAuthorizationResponse> {

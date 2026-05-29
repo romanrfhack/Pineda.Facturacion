@@ -1,4 +1,4 @@
-import { provideHttpClient, withInterceptors } from '@angular/common/http';
+import { HttpContext, provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
@@ -6,6 +6,7 @@ import { firstValueFrom } from 'rxjs';
 import { SessionService } from '../../auth/session.service';
 import { buildApiUrl } from '../../config/api-url';
 import { FeedbackService } from '../../ui/feedback.service';
+import { SUPPRESS_GLOBAL_ERROR_TOAST } from '../api-error-context.tokens';
 import { apiErrorInterceptor } from './api-error.interceptor';
 
 describe('apiErrorInterceptor', () => {
@@ -71,6 +72,24 @@ describe('apiErrorInterceptor', () => {
       error: { errorMessage: 'Boom' }
     });
     expect(feedbackService.show).toHaveBeenCalledTimes(1);
+    httpTesting.verify();
+  });
+
+  it('does not show the global server-error toast when the request suppresses it', async () => {
+    const http = TestBed.inject(HttpClient);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    const request = firstValueFrom(http.get('/api/secondary-error', {
+      context: new HttpContext().set(SUPPRESS_GLOBAL_ERROR_TOAST, true),
+    }));
+    const req = httpTesting.expectOne('/api/secondary-error');
+    req.flush({ errorMessage: 'Provider timeout.' }, { status: 503, statusText: 'Service Unavailable' });
+
+    await expect(request).rejects.toMatchObject({
+      status: 503,
+      error: { errorMessage: 'Provider timeout.' }
+    });
+    expect(feedbackService.show).not.toHaveBeenCalled();
     httpTesting.verify();
   });
 });

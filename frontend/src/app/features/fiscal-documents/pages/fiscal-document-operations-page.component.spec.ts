@@ -4207,7 +4207,28 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Movimientos manuales');
   });
 
-  it('lists pending cancellation authorizations and allows responding from the page', async () => {
+  it('does not load pending cancellation authorizations automatically on initial page load', async () => {
+    const listPendingCancellationAuthorizations = vi.fn().mockReturnValue(
+      of({
+        outcome: 'Retrieved',
+        isSuccess: true,
+        items: [],
+      }),
+    );
+
+    const fixture = await configure(
+      { listPendingCancellationAuthorizations },
+      { id: null, billingDocumentId: '30' },
+    );
+
+    expect(listPendingCancellationAuthorizations).not.toHaveBeenCalled();
+    expect(fixture.nativeElement.textContent).toContain('Consultar pendientes');
+    expect(fixture.nativeElement.textContent).toContain(
+      'Consulta esta bandeja solo cuando necesites revisar solicitudes de cancelación',
+    );
+  });
+
+  it('lists pending cancellation authorizations manually and allows responding from the page', async () => {
     const listPendingCancellationAuthorizations = vi.fn().mockReturnValue(
       of({
         outcome: 'Retrieved',
@@ -4257,5 +4278,37 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       uuid: 'UUID-PENDING-1',
       response: 'Accept',
     });
+  });
+
+  it('shows a contextual warning when pending cancellation authorization lookup fails', async () => {
+    const listPendingCancellationAuthorizations = vi.fn().mockReturnValue(
+      throwError(() => ({
+        status: 503,
+        error: {
+          outcome: 'ProviderUnavailable',
+          isSuccess: false,
+          errorMessage: 'Provider timeout.',
+        },
+      })),
+    );
+
+    const fixture = await configure(
+      { listPendingCancellationAuthorizations },
+      { id: null, billingDocumentId: '30' },
+    );
+    const feedbackService = TestBed.inject(FeedbackService) as unknown as {
+      show: ReturnType<typeof vi.fn>;
+    };
+
+    await fixture.componentInstance['loadPendingCancellationAuthorizations']();
+    fixture.detectChanges();
+
+    expect(listPendingCancellationAuthorizations).toHaveBeenCalledTimes(1);
+    expect(fixture.componentInstance['billingDocumentContext']()?.billingDocumentId).toBe(30);
+    expect(fixture.nativeElement.textContent).toContain(
+      'No se pudieron consultar las autorizaciones pendientes con el proveedor. El documento de facturación no fue afectado.',
+    );
+    expect(fixture.nativeElement.textContent).toContain('Detalle técnico: Provider timeout.');
+    expect(feedbackService.show).not.toHaveBeenCalled();
   });
 });

@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
 import { FiscalDocumentsApiService } from './fiscal-documents-api.service';
+import { SUPPRESS_GLOBAL_ERROR_TOAST } from '../../../core/http/api-error-context.tokens';
 
 describe('FiscalDocumentsApiService', () => {
   beforeEach(() => {
@@ -141,6 +142,18 @@ describe('FiscalDocumentsApiService', () => {
 
     const req = httpTesting.expectOne('/api/billing-documents/30');
     expect(req.request.method).toBe('GET');
+    httpTesting.verify();
+  });
+
+  it('gets pending cancellation authorizations as a secondary request without global error toast', () => {
+    const service = TestBed.inject(FiscalDocumentsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.listPendingCancellationAuthorizations().subscribe();
+
+    const req = httpTesting.expectOne('/api/fiscal-documents/cancellation-authorizations/pending');
+    expect(req.request.method).toBe('GET');
+    expect(req.request.context.get(SUPPRESS_GLOBAL_ERROR_TOAST)).toBe(true);
     httpTesting.verify();
   });
 

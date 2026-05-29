@@ -1078,15 +1078,27 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
               {{
                 loadingPendingCancellationAuthorizations()
                   ? 'Actualizando...'
-                  : 'Actualizar pendientes'
+                  : pendingCancellationAuthorizationsLoaded()
+                    ? 'Actualizar pendientes'
+                    : 'Consultar pendientes'
               }}
             </button>
           </div>
 
           @if (pendingCancellationAuthorizationsError()) {
-            <p class="error">{{ pendingCancellationAuthorizationsError() }}</p>
+            <section class="context-warning" aria-live="polite">
+              <p>{{ pendingCancellationAuthorizationsError() }}</p>
+              @if (pendingCancellationAuthorizationsErrorDetail()) {
+                <small>Detalle técnico: {{ pendingCancellationAuthorizationsErrorDetail() }}</small>
+              }
+            </section>
           } @else if (loadingPendingCancellationAuthorizations()) {
             <p class="helper">Consultando autorizaciones pendientes...</p>
+          } @else if (!pendingCancellationAuthorizationsLoaded()) {
+            <p class="helper">
+              Consulta esta bandeja solo cuando necesites revisar solicitudes de cancelación
+              pendientes con el proveedor.
+            </p>
           } @else if (!pendingCancellationAuthorizations().length) {
             <p class="helper">No hay solicitudes pendientes de autorización en este momento.</p>
           } @else {
@@ -1903,6 +1915,22 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
         margin: 0;
         color: #7a2020;
       }
+      .context-warning {
+        display: grid;
+        gap: 0.35rem;
+        margin: 0;
+        border: 1px solid #e1bd70;
+        border-radius: 0.8rem;
+        padding: 0.8rem 0.95rem;
+        background: #fff8e8;
+        color: #704913;
+      }
+      .context-warning p {
+        margin: 0;
+      }
+      .context-warning small {
+        color: #806139;
+      }
       @media (max-width: 720px) {
         .search-row {
           flex-direction: column;
@@ -2060,7 +2088,9 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected readonly pendingCancellationAuthorizations = signal<
     PendingCancellationAuthorizationItemResponse[]
   >([]);
+  protected readonly pendingCancellationAuthorizationsLoaded = signal(false);
   protected readonly pendingCancellationAuthorizationsError = signal<string | null>(null);
+  protected readonly pendingCancellationAuthorizationsErrorDetail = signal<string | null>(null);
   protected readonly selectedPendingBillingRemovalIds = signal<number[]>([]);
   protected readonly specialFieldDrafts = signal<ReceiverSpecialFieldDraft[]>([]);
   protected readonly paymentMethodCatalog = signal<FiscalReceiverSatCatalogOption[]>([]);
@@ -2136,9 +2166,6 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   constructor() {
     void this.loadIssuer();
     void this.loadSatCatalogs();
-    if (this.permissionService.canCancelFiscal()) {
-      void this.loadPendingCancellationAuthorizations();
-    }
     if (this.fiscalDocumentId()) {
       void this.loadFiscalDocument(this.fiscalDocumentId()!);
     } else if (this.billingDocumentId()) {
@@ -3279,7 +3306,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       } else {
         await this.loadCancellation(fiscalDocumentId, false);
       }
-      await this.loadPendingCancellationAuthorizations(false);
+      await this.loadPendingCancellationAuthorizations();
       const feedbackMessage = this.buildCancellationFeedbackMessage(response);
       this.feedbackService.show(
         response.isSuccess ? 'success' : 'error',
@@ -3306,7 +3333,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       await this.loadFiscalDocument(fiscalDocumentId);
       await this.loadStamp(fiscalDocumentId);
       await this.loadCancellation(fiscalDocumentId, false);
-      await this.loadPendingCancellationAuthorizations(false);
+      await this.loadPendingCancellationAuthorizations();
     });
   }
 
@@ -3323,23 +3350,23 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     });
   }
 
-  protected async loadPendingCancellationAuthorizations(notifyOnError = true): Promise<void> {
+  protected async loadPendingCancellationAuthorizations(): Promise<void> {
     this.loadingPendingCancellationAuthorizations.set(true);
     this.pendingCancellationAuthorizationsError.set(null);
+    this.pendingCancellationAuthorizationsErrorDetail.set(null);
 
     try {
       const response = await firstValueFrom(this.api.listPendingCancellationAuthorizations());
       this.pendingCancellationAuthorizations.set(response.items ?? []);
+      this.pendingCancellationAuthorizationsLoaded.set(true);
     } catch (error) {
       this.pendingCancellationAuthorizations.set([]);
-      const message = extractApiErrorMessage(
-        error,
-        'No fue posible consultar las autorizaciones pendientes de cancelación.',
+      this.pendingCancellationAuthorizationsLoaded.set(true);
+      this.pendingCancellationAuthorizationsError.set(
+        'No se pudieron consultar las autorizaciones pendientes con el proveedor. El documento de facturación no fue afectado.',
       );
-      this.pendingCancellationAuthorizationsError.set(message);
-      if (notifyOnError) {
-        this.feedbackService.show('error', message);
-      }
+      const detail = extractApiErrorMessage(error, '').trim();
+      this.pendingCancellationAuthorizationsErrorDetail.set(detail || null);
     } finally {
       this.loadingPendingCancellationAuthorizations.set(false);
     }
@@ -3374,7 +3401,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
           `Respuesta de autorización registrada para ${item.uuid}.`,
       );
 
-      await this.loadPendingCancellationAuthorizations(false);
+      await this.loadPendingCancellationAuthorizations();
       if (result.fiscalDocumentId && result.fiscalDocumentId === this.fiscalDocumentId()) {
         await this.loadFiscalDocument(result.fiscalDocumentId);
       }
