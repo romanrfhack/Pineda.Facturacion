@@ -11,6 +11,7 @@ using Pineda.Facturacion.Application.UseCases.ImportLegacyOrderPreview;
 using Pineda.Facturacion.Application.UseCases.IssuerProfiles;
 using Pineda.Facturacion.Application.UseCases.Orders;
 using Pineda.Facturacion.Application.UseCases.PaymentComplements;
+using Pineda.Facturacion.Application.UseCases.Pos;
 using Pineda.Facturacion.Application.UseCases.ProductFiscalProfiles;
 using Pineda.Facturacion.Application.UseCases.Reports;
 using Pineda.Facturacion.Application.UseCases.SatCatalogs;
@@ -129,6 +130,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<GetFiscalReceiverByRfcService>();
         services.AddScoped<CreateFiscalReceiverService>();
         services.AddScoped<UpdateFiscalReceiverService>();
+        services.AddScoped<GetPosReceiverCreditStatusService>();
+        services.AddScoped<SearchPosReceiversService>();
+        services.AddScoped<CheckPosReceiverCreditService>();
         services.AddScoped<PreviewFiscalReceiverImportFromExcelService>();
         services.AddScoped<GetFiscalReceiverImportBatchService>();
         services.AddScoped<ListFiscalReceiverImportRowsService>();

@@ -13,12 +13,16 @@ public class FiscalReceiverRepository : IFiscalReceiverRepository
         _dbContext = dbContext;
     }
 
-    public async Task<IReadOnlyList<FiscalReceiver>> SearchAsync(string query, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<FiscalReceiver>> SearchAsync(
+        string query,
+        CancellationToken cancellationToken = default,
+        bool activeOnly = false)
     {
         var prefix = $"{query}%";
 
         return await _dbContext.FiscalReceivers
             .AsNoTracking()
+            .Where(x => !activeOnly || x.IsActive)
             .Where(x =>
                 EF.Functions.Like(x.Rfc, prefix)
                 || EF.Functions.Like(x.NormalizedLegalName, prefix)

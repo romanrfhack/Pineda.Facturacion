@@ -88,6 +88,31 @@ public class FiscalReceiverConfiguration : IEntityTypeConfiguration<FiscalReceiv
             .HasColumnType("varchar(200)")
             .IsRequired(false);
 
+        builder.Property(x => x.ApprovedCreditLimitAmount)
+            .HasColumnName("approved_credit_limit_amount")
+            .HasPrecision(18, 6)
+            .HasDefaultValue(0m)
+            .IsRequired();
+
+        builder.Property(x => x.CreditEnabled)
+            .HasColumnName("credit_enabled")
+            .HasDefaultValue(false)
+            .IsRequired();
+
+        builder.Property(x => x.CreditDays)
+            .HasColumnName("credit_days")
+            .IsRequired(false);
+
+        builder.Property(x => x.CreditUpdatedAtUtc)
+            .HasColumnName("credit_updated_at_utc")
+            .IsRequired(false);
+
+        builder.Property(x => x.CreditUpdatedBy)
+            .HasColumnName("credit_updated_by")
+            .HasMaxLength(150)
+            .HasColumnType("nvarchar(150)")
+            .IsRequired(false);
+
         builder.Property(x => x.IsActive)
             .HasColumnName("is_active")
             .IsRequired();

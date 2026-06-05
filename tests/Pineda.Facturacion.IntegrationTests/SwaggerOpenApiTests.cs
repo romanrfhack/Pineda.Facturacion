@@ -1,12 +1,15 @@
 using System.Net;
 using System.Text.Json;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Pineda.Facturacion.Application.Security;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Infrastructure.BillingWrite.Persistence;
 using Xunit.Sdk;
@@ -36,6 +39,9 @@ public class SwaggerOpenApiTests
         Assert.True(securitySchemes.TryGetProperty("Bearer", out var bearerScheme));
         Assert.Equal("http", bearerScheme.GetProperty("type").GetString());
         Assert.Equal("bearer", bearerScheme.GetProperty("scheme").GetString());
+        Assert.True(document.RootElement.GetProperty("paths").TryGetProperty("/api/pos/receivers/search", out _));
+        Assert.True(document.RootElement.GetProperty("paths").TryGetProperty("/api/pos/receivers/{fiscalReceiverId}/credit-status", out _));
+        Assert.True(document.RootElement.GetProperty("paths").TryGetProperty("/api/pos/receivers/{fiscalReceiverId}/credit-check", out _));
     }
 
     [Fact]
@@ -50,6 +56,18 @@ public class SwaggerOpenApiTests
 
         var jsonResponse = await client.GetAsync("/swagger/v1/swagger.json");
         await AssertStatusCodeWithDiagnosticsAsync(jsonResponse, "/swagger/v1/swagger.json", HttpStatusCode.NotFound, diagnostics);
+    }
+
+    [Fact]
+    public void PosEndpoints_UsePosCreditReadAuthorizationPolicy()
+    {
+        using var factory = new SwaggerApiFactory("Development", enableSwagger: true);
+        using var scope = factory.Services.CreateScope();
+        var dataSource = scope.ServiceProvider.GetRequiredService<EndpointDataSource>();
+
+        AssertEndpointPolicy(dataSource, "/api/pos/receivers/search", "GET");
+        AssertEndpointPolicy(dataSource, "/api/pos/receivers/{fiscalReceiverId:long}/credit-status", "GET");
+        AssertEndpointPolicy(dataSource, "/api/pos/receivers/{fiscalReceiverId:long}/credit-check", "POST");
     }
 
     private static async Task AssertSuccessWithDiagnosticsAsync(HttpResponseMessage response, string url, SwaggerHostDiagnostics diagnostics)
@@ -73,6 +91,18 @@ public class SwaggerOpenApiTests
             + $"Body='{body}'.";
 
         throw new XunitException(message);
+    }
+
+    private static void AssertEndpointPolicy(EndpointDataSource dataSource, string routePattern, string httpMethod)
+    {
+        var endpoint = dataSource.Endpoints
+            .OfType<RouteEndpoint>()
+            .Single(x =>
+                string.Equals(x.RoutePattern.RawText, routePattern, StringComparison.Ordinal)
+                && x.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods.Contains(httpMethod, StringComparer.OrdinalIgnoreCase) == true);
+
+        var authorizeData = endpoint.Metadata.OfType<IAuthorizeData>().ToList();
+        Assert.Contains(authorizeData, metadata => string.Equals(metadata.Policy, AuthorizationPolicyNames.PosCreditRead, StringComparison.Ordinal));
     }
 }
 

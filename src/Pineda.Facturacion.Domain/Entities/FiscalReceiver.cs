@@ -28,6 +28,16 @@ public class FiscalReceiver
 
     public string? NormalizedSearchAlias { get; set; }
 
+    public decimal ApprovedCreditLimitAmount { get; set; }
+
+    public bool CreditEnabled { get; set; }
+
+    public int? CreditDays { get; set; }
+
+    public DateTime? CreditUpdatedAtUtc { get; set; }
+
+    public string? CreditUpdatedBy { get; set; }
+
     public bool IsActive { get; set; }
 
     public DateTime CreatedAtUtc { get; set; }

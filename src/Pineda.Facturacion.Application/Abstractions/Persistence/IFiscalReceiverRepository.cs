@@ -4,7 +4,7 @@ namespace Pineda.Facturacion.Application.Abstractions.Persistence;
 
 public interface IFiscalReceiverRepository
 {
-    Task<IReadOnlyList<FiscalReceiver>> SearchAsync(string query, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<FiscalReceiver>> SearchAsync(string query, CancellationToken cancellationToken = default, bool activeOnly = false);
 
     Task<FiscalReceiver?> GetByRfcAsync(string normalizedRfc, CancellationToken cancellationToken = default);
 

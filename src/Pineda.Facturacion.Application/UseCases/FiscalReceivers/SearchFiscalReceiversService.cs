@@ -13,7 +13,10 @@ public class SearchFiscalReceiversService
         _fiscalReceiverRepository = fiscalReceiverRepository;
     }
 
-    public async Task<SearchFiscalReceiversResult> ExecuteAsync(string query, CancellationToken cancellationToken = default)
+    public async Task<SearchFiscalReceiversResult> ExecuteAsync(
+        string query,
+        CancellationToken cancellationToken = default,
+        bool activeOnly = false)
     {
         if (string.IsNullOrWhiteSpace(query))
         {
@@ -21,7 +24,7 @@ public class SearchFiscalReceiversService
         }
 
         var normalizedQuery = FiscalMasterDataNormalization.NormalizeRequiredCode(query);
-        var matches = await _fiscalReceiverRepository.SearchAsync(normalizedQuery, cancellationToken);
+        var matches = await _fiscalReceiverRepository.SearchAsync(normalizedQuery, cancellationToken, activeOnly);
 
         var ordered = matches
             .OrderBy(receiver => GetRank(receiver, normalizedQuery))

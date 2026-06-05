@@ -1,5 +1,6 @@
-using System.Text;
 using System.Net;
+using System.Security.Claims;
+using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
@@ -11,6 +12,7 @@ using Pineda.Facturacion.Api.OperationalHardening;
 using Pineda.Facturacion.Application.Security;
 using Pineda.Facturacion.Application.DependencyInjection;
 using Pineda.Facturacion.Api.Endpoints;
+using Pineda.Facturacion.Api.Security;
 using Pineda.Facturacion.Infrastructure.DependencyInjection;
 using Pineda.Facturacion.Infrastructure.BillingWrite.DependencyInjection;
 using Pineda.Facturacion.Infrastructure.BillingWrite.Operations.AccountsReceivable;
@@ -103,6 +105,29 @@ builder.Services.AddForwardedHeadersHardening(builder.Configuration);
 builder.Services.AddLegacyReadInfrastructure(builder.Configuration);
 builder.Services.AddBillingWriteInfrastructure(builder.Configuration);
 builder.Services.AddFacturaloPlusInfrastructure(builder.Configuration);
+var posCorsOrigins = ResolvePosCorsOrigins(builder.Configuration, builder.Environment);
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(CorsPolicyNames.PosClient, policy =>
+    {
+        if (posCorsOrigins.Length == 0)
+        {
+            return;
+        }
+
+        if (posCorsOrigins.Length == 1 && string.Equals(posCorsOrigins[0], "*", StringComparison.Ordinal))
+        {
+            policy.AllowAnyOrigin()
+                .AllowAnyHeader()
+                .AllowAnyMethod();
+            return;
+        }
+
+        policy.WithOrigins(posCorsOrigins)
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
+});
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -126,6 +151,11 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy(AuthorizationPolicyNames.SupervisorOrAdmin, policy => policy.RequireRole(AppRoleNames.Admin, AppRoleNames.FiscalSupervisor));
     options.AddPolicy(AuthorizationPolicyNames.OperatorOrAbove, policy => policy.RequireRole(AppRoleNames.Admin, AppRoleNames.FiscalSupervisor, AppRoleNames.FiscalOperator));
     options.AddPolicy(AuthorizationPolicyNames.AuditRead, policy => policy.RequireRole(AppRoleNames.Admin, AppRoleNames.FiscalSupervisor, AppRoleNames.Auditor));
+    options.AddPolicy(AuthorizationPolicyNames.PosCreditRead, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.RequireAssertion(context => HasPosCreditReadAccess(context.User));
+    });
 });
 
 var app = builder.Build();
@@ -252,6 +282,7 @@ app.Use(async (context, next) =>
     context.Response.Headers["X-Correlation-Id"] = correlationId;
     await next();
 });
+app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapHealthChecks("/health/live", HealthCheckJsonResponseWriter.CreateOptions("live"));
@@ -284,6 +315,7 @@ app.MapProductFiscalProfilesEndpoints();
 app.MapFiscalImportEndpoints();
 app.MapFiscalDocumentsEndpoints();
 app.MapAccountsReceivableEndpoints();
+app.MapPosEndpoints();
 app.MapPaymentComplementsEndpoints();
 app.MapReportsEndpoints();
 
@@ -299,6 +331,64 @@ static bool IsSwaggerEnabledByEnvironment(IHostEnvironment environment)
 static string FormatList(IReadOnlyCollection<string> values)
 {
     return values.Count == 0 ? "(none)" : string.Join(", ", values);
+}
+
+static string[] ResolvePosCorsOrigins(IConfiguration configuration, IHostEnvironment environment)
+{
+    var configuredOrigins = configuration
+        .GetSection("Cors:Pos:Origins")
+        .Get<string[]>()?
+        .Where(origin => !string.IsNullOrWhiteSpace(origin))
+        .Select(origin => origin.Trim())
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToArray()
+        ?? [];
+
+    if (configuredOrigins.Any(origin => string.Equals(origin, "*", StringComparison.Ordinal)))
+    {
+        if (environment.IsProduction())
+        {
+            throw new InvalidOperationException("POS CORS origins cannot use '*' in Production.");
+        }
+
+        return ["*"];
+    }
+
+    if (configuredOrigins.Length > 0)
+    {
+        return configuredOrigins;
+    }
+
+    if (environment.IsDevelopment() || environment.IsEnvironment("Local") || environment.IsEnvironment("Sandbox") || environment.IsEnvironment("Testing"))
+    {
+        return
+        [
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://localhost:4200",
+            "http://127.0.0.1:4200",
+            "http://localhost:5173",
+            "http://127.0.0.1:5173"
+        ];
+    }
+
+    return [];
+}
+
+static bool HasPosCreditReadAccess(ClaimsPrincipal user)
+{
+    return user.IsInRole(AppRoleNames.Admin)
+        || user.IsInRole(AppRoleNames.FiscalSupervisor)
+        || user.IsInRole(AppRoleNames.FiscalOperator)
+        || HasPosCreditClaim(user, "scope")
+        || HasPosCreditClaim(user, "permission");
+}
+
+static bool HasPosCreditClaim(ClaimsPrincipal user, string claimType)
+{
+    return user.FindAll(claimType)
+        .SelectMany(claim => claim.Value.Split(' ', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+        .Any(value => string.Equals(value, AuthorizationPolicyNames.PosCreditReadPermission, StringComparison.OrdinalIgnoreCase));
 }
 
 public partial class Program;
