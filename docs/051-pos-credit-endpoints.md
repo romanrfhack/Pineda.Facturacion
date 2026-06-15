@@ -27,8 +27,35 @@ Reglas:
 - `term` es requerido
 - Se aplica `Trim()`
 - `term` debe tener al menos 3 caracteres
+- Busca por prefijo de RFC, nombre legal normalizado o alias normalizado
 - El máximo de resultados es 20
 - No devuelve montos, saldos ni flags de crédito
+
+Ejemplo DEV:
+
+```bash
+curl -H "Authorization: Bearer $POS_TOKEN" \
+  "http://127.0.0.1:5096/api/pos/receivers/search?term=VALLEJO"
+```
+
+```json
+[
+  {
+    "fiscalReceiverId": 2658,
+    "rfc": "VAL010101AAA",
+    "legalName": "VALLEJO POS CLIENTE"
+  }
+]
+```
+
+Error por termino corto:
+
+```json
+{
+  "errorCode": "TERM_TOO_SHORT",
+  "errorMessage": "Search term must contain at least 3 characters."
+}
+```
 
 `GET /api/pos/receivers/{fiscalReceiverId}/credit-status`
 
@@ -50,6 +77,31 @@ Devuelve el snapshot operativo de crédito para un receptor activo:
 
 Los montos de crédito y saldo solo se consultan aquí, no en `search`.
 
+Ejemplo DEV:
+
+```bash
+curl -H "Authorization: Bearer $POS_TOKEN" \
+  "http://127.0.0.1:5096/api/pos/receivers/2658/credit-status"
+```
+
+```json
+{
+  "fiscalReceiverId": 2658,
+  "rfc": "VAL010101AAA",
+  "legalName": "VALLEJO POS CLIENTE",
+  "creditEnabled": true,
+  "approvedCreditLimitAmount": 10000.000000,
+  "pendingBalanceTotal": 3500.000000,
+  "overdueBalanceTotal": 2500.000000,
+  "currentBalanceTotal": 1000.000000,
+  "availableCreditAmount": 6500.000000,
+  "openInvoicesCount": 2,
+  "overdueInvoicesCount": 1,
+  "canSellOnCredit": true,
+  "blockReason": null
+}
+```
+
 `POST /api/pos/receivers/{fiscalReceiverId}/credit-check`
 
 Valida si una venta puede aprobarse contra la línea de crédito del receptor activo.
@@ -68,11 +120,32 @@ Response aprobada:
 ```json
 {
   "approved": true,
-  "availableCreditAmount": 5208.00,
+  "availableCreditAmount": 6500.000000,
   "saleAmount": 3000.00,
-  "remainingCreditAmount": 2208.00,
+  "remainingCreditAmount": 3500.000000,
   "blockReason": null
 }
+```
+
+Response bloqueada:
+
+```json
+{
+  "approved": false,
+  "availableCreditAmount": 6500.000000,
+  "saleAmount": 7000.00,
+  "remainingCreditAmount": -500.000000,
+  "blockReason": "INSUFFICIENT_CREDIT"
+}
+```
+
+Ejemplo DEV:
+
+```bash
+curl -X POST -H "Authorization: Bearer $POS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"saleAmount":3000,"currencyCode":"MXN"}' \
+  "http://127.0.0.1:5096/api/pos/receivers/2658/credit-check"
 ```
 
 ## Reglas operativas
