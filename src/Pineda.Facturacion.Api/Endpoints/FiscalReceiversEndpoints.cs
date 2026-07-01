@@ -57,10 +57,11 @@ public static class FiscalReceiversEndpoints
 
     private static async Task<Ok<IReadOnlyList<FiscalReceiverSearchResponse>>> SearchFiscalReceiversAsync(
         string q,
+        bool? activeOnly,
         SearchFiscalReceiversService service,
         CancellationToken cancellationToken)
     {
-        var result = await service.ExecuteAsync(q, cancellationToken);
+        var result = await service.ExecuteAsync(q, cancellationToken, activeOnly ?? false);
         IReadOnlyList<FiscalReceiverSearchResponse> items = result.Items.Select(MapSearchItem).ToList();
         return TypedResults.Ok(items);
     }

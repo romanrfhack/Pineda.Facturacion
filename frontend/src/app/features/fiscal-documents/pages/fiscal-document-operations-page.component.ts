@@ -600,6 +600,9 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
                       >Código postal {{ currentReceiver.postalCode }} · Régimen
                       {{ currentReceiver.fiscalRegimeCode }}</span
                     >
+                    @if (selectedReceiverOperationalWarning()) {
+                      <p class="warning">{{ selectedReceiverOperationalWarning() }}</p>
+                    }
                   </div>
                   <button type="button" class="secondary" (click)="clearSelectedReceiver()">
                     Cambiar
@@ -1020,6 +1023,9 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
             >
           </div>
 
+          @if (selectedReceiverOperationalWarning()) {
+            <p class="warning">{{ selectedReceiverOperationalWarning() }}</p>
+          }
           @if (lastOperationMessage()) {
             <p class="helper">{{ lastOperationMessage() }}</p>
           }
@@ -1789,6 +1795,10 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
       .selected-receiver span {
         color: #5f6b76;
       }
+      .warning {
+        margin: 0;
+        color: #8a5b16;
+      }
       .recovery-panel {
         display: grid;
         gap: 0.75rem;
@@ -2129,6 +2139,16 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
         !!this.receiverSearchError() ||
         this.receiverSearchTouched()),
   );
+  protected readonly selectedReceiverOperationalWarning = computed(() => {
+    const receiver = this.selectedReceiver();
+    if (!receiver || receiver.isActive) {
+      return null;
+    }
+
+    return this.fiscalDocument()
+      ? 'El receptor asociado al snapshot está inactivo; puedes verlo como histórico, pero no usarlo para preparar nuevos CFDI hasta reactivarlo.'
+      : 'El receptor fiscal seleccionado está inactivo. Reactívalo desde el catálogo de Receptores fiscales o selecciona otro receptor.';
+  });
   protected readonly associatedOrders = computed(() => {
     const context = this.billingDocumentContext();
     if (!context) {
@@ -2230,7 +2250,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       this.currentBillingDocumentIsDraft() &&
       !this.loadingPrepare() &&
       !this.savingMissingProductProfile() &&
-      !!this.selectedReceiverId &&
+      this.hasActiveSelectedReceiver() &&
       !this.validateSpecialFields() &&
       !this.getPaymentPreparationValidationError()
     );
@@ -2379,8 +2399,24 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   }
 
   protected async selectReceiver(receiver: FiscalReceiverSearchResponse): Promise<void> {
+    if (!receiver.isActive) {
+      this.feedbackService.show(
+        'warning',
+        'El receptor fiscal seleccionado está inactivo. Reactívalo desde el catálogo de Receptores fiscales o selecciona otro receptor.',
+      );
+      return;
+    }
+
     try {
       const fullReceiver = await firstValueFrom(this.fiscalReceiversApi.getByRfc(receiver.rfc));
+      if (!fullReceiver.isActive) {
+        this.feedbackService.show(
+          'warning',
+          'El receptor fiscal seleccionado está inactivo. Reactívalo desde el catálogo de Receptores fiscales o selecciona otro receptor.',
+        );
+        return;
+      }
+
       this.applySelectedReceiver(fullReceiver);
     } catch (error) {
       this.receiverSearchError.set(
@@ -2390,13 +2426,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   }
 
   protected clearSelectedReceiver(): void {
-    this.selectedReceiver.set(null);
-    this.selectedReceiverId = null;
-    this.specialFieldDrafts.set([]);
-    this.receiverQuery.set('');
-    this.receiverResults.set([]);
-    this.receiverSearchError.set(null);
-    this.receiverSearchTouched.set(false);
+    this.resetReceiverSelectionState();
   }
 
   protected openReceiverCreateModal(): void {
@@ -2484,6 +2514,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     this.pendingBillingItems.set([]);
     this.pendingBillingItemsError.set(null);
     this.selectedPendingBillingRemovalIds.set([]);
+    this.resetReceiverSelectionState();
     this.billingDocumentId.set(null);
     this.billingDocumentQuery = '';
     this.billingDocumentSearchResults.set([]);
@@ -2526,7 +2557,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     }
 
     const fiscalDocument = this.fiscalDocument();
-    if (!fiscalDocument || this.hasPersistedStampedUuid()) {
+    if (!fiscalDocument || this.hasPersistedStampedUuid() || !this.hasActiveSelectedReceiver()) {
       return false;
     }
 
@@ -2837,7 +2868,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
 
     try {
       const results = await firstValueFrom(this.api.searchReceivers(query));
-      this.receiverResults.set(results.slice(0, 5));
+      this.receiverResults.set(results.filter((receiver) => receiver.isActive).slice(0, 5));
       this.receiverSearchTouched.set(true);
     } catch (error) {
       this.receiverResults.set([]);
@@ -2850,14 +2881,17 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     }
   }
 
-  private applySelectedReceiver(receiver: FiscalReceiver): void {
+  private applySelectedReceiver(
+    receiver: FiscalReceiver,
+    fiscalDocument: FiscalDocumentResponse | null = this.fiscalDocument(),
+  ): void {
     this.selectedReceiver.set(receiver);
     this.selectedReceiverId = receiver.id;
     this.receiverQuery.set(`${receiver.rfc} · ${receiver.legalName}`);
     this.receiverResults.set([]);
     this.receiverSearchError.set(null);
     this.receiverSearchTouched.set(false);
-    this.specialFieldDrafts.set(this.buildSpecialFieldDrafts(receiver, this.fiscalDocument()));
+    this.specialFieldDrafts.set(this.buildSpecialFieldDrafts(receiver, fiscalDocument));
   }
 
   private validateSpecialFields(): string | null {
@@ -2927,13 +2961,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   private async loadReceiverForFiscalDocument(document: FiscalDocumentResponse): Promise<void> {
     try {
       const receiver = await firstValueFrom(this.fiscalReceiversApi.getByRfc(document.receiverRfc));
-      this.selectedReceiver.set(receiver);
-      this.selectedReceiverId = receiver.id;
-      this.receiverQuery.set(`${receiver.rfc} · ${receiver.legalName}`);
-      this.receiverResults.set([]);
-      this.receiverSearchError.set(null);
-      this.receiverSearchTouched.set(false);
-      this.specialFieldDrafts.set(this.buildSpecialFieldDrafts(receiver, document));
+      this.applySelectedReceiver(receiver, document);
     } catch {
       this.selectedReceiver.set(null);
       this.selectedReceiverId = document.fiscalReceiverId;
@@ -2977,6 +3005,16 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     try {
       await firstValueFrom(this.fiscalReceiversApi.create(request));
       const createdReceiver = await firstValueFrom(this.fiscalReceiversApi.getByRfc(request.rfc));
+      if (!createdReceiver.isActive) {
+        this.showReceiverCreateModal.set(false);
+        this.receiverCreateDraft.set(null);
+        this.feedbackService.show(
+          'warning',
+          'El receptor fiscal se creó en estado inactivo. Reactívalo desde el catálogo de Receptores fiscales para poder usarlo en documentos fiscales.',
+        );
+        return;
+      }
+
       this.applySelectedReceiver(createdReceiver);
       this.showReceiverCreateModal.set(false);
       this.receiverCreateDraft.set(null);
@@ -2993,10 +3031,18 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
 
   protected async prepare(): Promise<void> {
     const billingDocumentId = this.billingDocumentId();
-    if (!billingDocumentId || !this.selectedReceiverId) {
+    if (!billingDocumentId) {
       this.feedbackService.show(
         'error',
-        'Selecciona un receptor y abre esta página desde un documento de facturación.',
+        'Selecciona un documento de facturación antes de preparar el CFDI.',
+      );
+      return;
+    }
+
+    if (!this.hasActiveSelectedReceiver()) {
+      this.feedbackService.show(
+        'error',
+        'Selecciona un receptor fiscal activo para preparar el documento.',
       );
       return;
     }
@@ -3013,8 +3059,9 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       return;
     }
 
+    const selectedReceiver = this.selectedReceiver()!;
     const request: PrepareFiscalDocumentRequest = {
-      fiscalReceiverId: this.selectedReceiverId,
+      fiscalReceiverId: selectedReceiver.id,
       issuerProfileId: this.activeIssuer()?.id ?? null,
       paymentMethodSat: this.normalizedPaymentMethodSat(),
       paymentFormSat: normalizeSatCode(this.paymentFormSat),
@@ -3244,6 +3291,12 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected async reprepare(): Promise<void> {
     const fiscalDocumentId = this.fiscalDocumentId();
     if (!fiscalDocumentId || !this.canReprepareCurrentFiscalDocument()) {
+      if (fiscalDocumentId && this.selectedReceiver()?.isActive === false) {
+        this.feedbackService.show(
+          'warning',
+          'El receptor fiscal seleccionado está inactivo. Reactívalo desde el catálogo de Receptores fiscales o selecciona otro receptor.',
+        );
+      }
       return;
     }
 
@@ -3567,7 +3620,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     const document = await firstValueFrom(this.api.getFiscalDocumentById(fiscalDocumentId));
     this.fiscalDocument.set(document);
     await this.loadReceiverForFiscalDocument(document);
-    await this.loadBillingDocumentContext(document.billingDocumentId, false);
+    await this.loadBillingDocumentContext(document.billingDocumentId, false, true);
 
     if (syncRoute) {
       await this.router.navigate(['/app/fiscal-documents', fiscalDocumentId], {
@@ -3582,15 +3635,26 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   private async loadBillingDocumentContext(
     billingDocumentId: number,
     syncRoute = false,
+    preserveCurrentFiscalDocument = false,
   ): Promise<void> {
     try {
       const billingDocument = await firstValueFrom(
         this.api.getBillingDocumentById(billingDocumentId),
       );
+      const isDifferentBillingDocument =
+        this.billingDocumentId() !== null &&
+        this.billingDocumentId() !== billingDocument.billingDocumentId;
+
       this.clearMissingProductFiscalProfileState();
       this.closeEmailComposer();
       this.closeRemoveBillingItemDialog();
       this.resetFiscalItemProfileDialogState();
+
+      if (!preserveCurrentFiscalDocument && isDifferentBillingDocument) {
+        this.resetReceiverSelectionState();
+        this.clearOpenFiscalDocumentState();
+      }
+
       this.billingDocumentContext.set(billingDocument);
       this.selectedPendingBillingRemovalIds.set([]);
       this.billingDocumentId.set(billingDocument.billingDocumentId);
@@ -3628,6 +3692,35 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     if (billingDocumentId) {
       await this.loadBillingDocumentContext(billingDocumentId);
     }
+  }
+
+  private hasActiveSelectedReceiver(): boolean {
+    const receiver = this.selectedReceiver();
+    return (
+      !!this.selectedReceiverId &&
+      !!receiver &&
+      receiver.id === this.selectedReceiverId &&
+      receiver.isActive
+    );
+  }
+
+  private resetReceiverSelectionState(): void {
+    this.selectedReceiver.set(null);
+    this.selectedReceiverId = null;
+    this.specialFieldDrafts.set([]);
+    this.receiverQuery.set('');
+    this.receiverResults.set([]);
+    this.receiverSearchError.set(null);
+    this.receiverSearchTouched.set(false);
+  }
+
+  private clearOpenFiscalDocumentState(): void {
+    this.fiscalDocument.set(null);
+    this.stampEvidence.set(null);
+    this.cancellation.set(null);
+    this.pendingAutomaticEmailStatus.set(null);
+    this.fiscalDocumentId.set(null);
+    this.lastOperationMessage.set(null);
   }
 
   private applyUpdatedFiscalDocumentItem(item: FiscalDocumentItemResponse): void {

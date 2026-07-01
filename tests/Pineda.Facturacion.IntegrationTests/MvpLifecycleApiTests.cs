@@ -204,6 +204,64 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
+    public async Task SearchFiscalReceivers_AllowsOperationalActiveFiltering_WithoutChangingCatalogDefault()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        var now = DateTime.UtcNow;
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+            db.Set<FiscalReceiver>().AddRange(
+                new FiscalReceiver
+                {
+                    Rfc = "MOGA010101AAA",
+                    LegalName = "Receiver Active",
+                    NormalizedLegalName = "RECEIVER ACTIVE",
+                    FiscalRegimeCode = "601",
+                    CfdiUseCodeDefault = "G03",
+                    PostalCode = "01000",
+                    CountryCode = "MX",
+                    IsActive = true,
+                    CreatedAtUtc = now,
+                    UpdatedAtUtc = now
+                },
+                new FiscalReceiver
+                {
+                    Rfc = "MOGA851219P50",
+                    LegalName = "ARTURO MONTOYA GRIMALDO",
+                    NormalizedLegalName = "ARTURO MONTOYA GRIMALDO",
+                    FiscalRegimeCode = "612",
+                    CfdiUseCodeDefault = "G01",
+                    PostalCode = "55360",
+                    CountryCode = "MX",
+                    SearchAlias = "MOGA INACTIVO",
+                    NormalizedSearchAlias = "MOGA INACTIVO",
+                    IsActive = false,
+                    CreatedAtUtc = now,
+                    UpdatedAtUtc = now
+                });
+            await db.SaveChangesAsync();
+        }
+
+        var defaultResponse = await client.GetAsync("/api/fiscal/receivers/search?q=MOGA");
+        Assert.Equal(HttpStatusCode.OK, defaultResponse.StatusCode);
+        var defaultBody = await defaultResponse.Content.ReadFromJsonAsync<List<FiscalReceiversEndpoints.FiscalReceiverSearchResponse>>();
+        Assert.NotNull(defaultBody);
+        Assert.Equal(2, defaultBody!.Count);
+        Assert.Contains(defaultBody, receiver => !receiver.IsActive && receiver.Rfc == "MOGA851219P50");
+
+        var activeOnlyResponse = await client.GetAsync("/api/fiscal/receivers/search?q=MOGA&activeOnly=true");
+        Assert.Equal(HttpStatusCode.OK, activeOnlyResponse.StatusCode);
+        var activeOnlyBody = await activeOnlyResponse.Content.ReadFromJsonAsync<List<FiscalReceiversEndpoints.FiscalReceiverSearchResponse>>();
+        Assert.NotNull(activeOnlyBody);
+        var activeReceiver = Assert.Single(activeOnlyBody!);
+        Assert.True(activeReceiver.IsActive);
+        Assert.Equal("MOGA010101AAA", activeReceiver.Rfc);
+    }
+
+    [Fact]
     public async Task IssuerProfile_Logo_Can_Be_Uploaded_And_Retrieved()
     {
         await using var factory = new MvpApiFactory();

@@ -29,6 +29,17 @@ describe('FiscalDocumentsApiService', () => {
     httpTesting.verify();
   });
 
+  it('searches only active fiscal receivers for the operational flow', () => {
+    const service = TestBed.inject(FiscalDocumentsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.searchReceivers('BBB').subscribe();
+
+    const req = httpTesting.expectOne('/api/fiscal/receivers/search?q=BBB&activeOnly=true');
+    expect(req.request.method).toBe('GET');
+    httpTesting.verify();
+  });
+
   it('gets fiscal stamp xml as plain text', () => {
     const service = TestBed.inject(FiscalDocumentsApiService);
     const httpTesting = TestBed.inject(HttpTestingController);

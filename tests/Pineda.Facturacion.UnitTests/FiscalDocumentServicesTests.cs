@@ -128,6 +128,34 @@ public class FiscalDocumentServicesTests
     }
 
     [Fact]
+    public async Task PrepareFiscalDocument_ReturnsMissingReceiver_WhenReceiverIsInactive()
+    {
+        var receiver = CreateReceiver();
+        receiver.IsActive = false;
+
+        var service = new PrepareFiscalDocumentService(
+            new FakeBillingDocumentRepository { BillingDocumentById = CreateBillingDocument() },
+            new FakeFiscalDocumentRepository(),
+            new FakeIssuerProfileRepository { Active = CreateIssuerProfile() },
+            new FakeFiscalReceiverRepository { ExistingById = receiver },
+            new FakeProductFiscalProfileRepository { ExistingByCode = CreateProductFiscalProfile() },
+            new FakeSatCatalogDescriptionProvider(),
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new PrepareFiscalDocumentCommand
+        {
+            BillingDocumentId = 5,
+            FiscalReceiverId = receiver.Id,
+            PaymentMethodSat = "PUE",
+            PaymentFormSat = "03",
+            PaymentCondition = "Contado"
+        });
+
+        Assert.Equal(PrepareFiscalDocumentOutcome.MissingReceiver, result.Outcome);
+        Assert.Contains("inactive", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task PrepareFiscalDocument_FailsWholeOperation_WhenProductFiscalMappingIsMissing()
     {
         var service = new PrepareFiscalDocumentService(

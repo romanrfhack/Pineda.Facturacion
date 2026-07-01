@@ -91,6 +91,43 @@ public class FiscalMasterDataServicesTests
     }
 
     [Fact]
+    public async Task SearchFiscalReceivers_FiltersInactive_WhenActiveOnlyTrue()
+    {
+        var service = new SearchFiscalReceiversService(new FakeFiscalReceiverRepository
+        {
+            SearchResults =
+            [
+                new FiscalReceiver { Id = 1, Rfc = "MOGA010101AAA", LegalName = "Activo", IsActive = true },
+                new FiscalReceiver { Id = 2, Rfc = "MOGA851219P50", LegalName = "Inactivo", IsActive = false }
+            ]
+        });
+
+        var result = await service.ExecuteAsync("moga", activeOnly: true);
+
+        var activeReceiver = Assert.Single(result.Items);
+        Assert.Equal(1, activeReceiver.Id);
+        Assert.True(activeReceiver.IsActive);
+    }
+
+    [Fact]
+    public async Task SearchFiscalReceivers_IncludesInactive_ByDefault()
+    {
+        var service = new SearchFiscalReceiversService(new FakeFiscalReceiverRepository
+        {
+            SearchResults =
+            [
+                new FiscalReceiver { Id = 1, Rfc = "MOGA010101AAA", LegalName = "Activo", IsActive = true },
+                new FiscalReceiver { Id = 2, Rfc = "MOGA851219P50", LegalName = "Inactivo", IsActive = false }
+            ]
+        });
+
+        var result = await service.ExecuteAsync("moga");
+
+        Assert.Equal(2, result.Items.Count);
+        Assert.Contains(result.Items, receiver => !receiver.IsActive);
+    }
+
+    [Fact]
     public async Task SearchProductFiscalProfiles_RemainsCaseInsensitive_WithNormalizedDescription()
     {
         var service = new SearchProductFiscalProfilesService(new FakeProductFiscalProfileRepository

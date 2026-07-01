@@ -613,6 +613,37 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     });
   }
 
+  function setActiveSelectedReceiver(
+    fixture: ComponentFixture<FiscalDocumentOperationsPageComponent>,
+    overrides?: Partial<{
+      id: number;
+      rfc: string;
+      legalName: string;
+      postalCode: string;
+      fiscalRegimeCode: string;
+      cfdiUseCodeDefault: string;
+    }>,
+  ): void {
+    const id = overrides?.id ?? 9;
+    fixture.componentInstance['selectedReceiverId'] = id;
+    fixture.componentInstance['selectedReceiver'].set({
+      id,
+      rfc: overrides?.rfc ?? 'BBB010101BBB',
+      legalName: overrides?.legalName ?? 'Receiver One',
+      postalCode: overrides?.postalCode ?? '02000',
+      fiscalRegimeCode: overrides?.fiscalRegimeCode ?? '601',
+      cfdiUseCodeDefault: overrides?.cfdiUseCodeDefault ?? 'G03',
+      countryCode: 'MX',
+      foreignTaxRegistration: null,
+      email: 'cliente@example.com',
+      phone: null,
+      searchAlias: null,
+      isActive: true,
+      createdAtUtc: '2026-03-20T12:00:00Z',
+      updatedAtUtc: '2026-03-20T12:00:00Z',
+    });
+  }
+
   it('shows empty evidence state when the fiscal document is not stamped yet', async () => {
     const fixture = await configure({
       getStamp: vi.fn().mockReturnValue(throwError(() => ({ status: 404 }))),
@@ -1510,6 +1541,54 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('BBB010101BBB · Receiver One');
   });
 
+  it('does not select an inactive receiver returned by the receiver detail lookup', async () => {
+    const getByRfc = vi.fn().mockReturnValue(
+      of({
+        id: 9,
+        rfc: 'BBB010101BBB',
+        legalName: 'Receiver One',
+        postalCode: '02000',
+        fiscalRegimeCode: '601',
+        cfdiUseCodeDefault: 'G03',
+        countryCode: 'MX',
+        foreignTaxRegistration: null,
+        email: 'cliente@example.com',
+        phone: null,
+        searchAlias: null,
+        isActive: false,
+        createdAtUtc: '2026-03-20T12:00:00Z',
+        updatedAtUtc: '2026-03-20T12:00:00Z',
+      }),
+    );
+    const fixture = await configure(
+      undefined,
+      { id: null, billingDocumentId: '30' },
+      undefined,
+      { getByRfc },
+    );
+    const feedback = TestBed.inject(FeedbackService) as unknown as {
+      show: ReturnType<typeof vi.fn>;
+    };
+
+    await fixture.componentInstance['selectReceiver']({
+      id: 9,
+      rfc: 'BBB010101BBB',
+      legalName: 'Receiver One',
+      postalCode: '02000',
+      fiscalRegimeCode: '601',
+      cfdiUseCodeDefault: 'G03',
+      isActive: true,
+    });
+
+    expect(getByRfc).toHaveBeenCalledWith('BBB010101BBB');
+    expect(fixture.componentInstance['selectedReceiverId']).toBeNull();
+    expect(fixture.componentInstance['selectedReceiver']()).toBeNull();
+    expect(feedback.show).toHaveBeenCalledWith(
+      'warning',
+      'El receptor fiscal seleccionado está inactivo. Reactívalo desde el catálogo de Receptores fiscales o selecciona otro receptor.',
+    );
+  });
+
   it('shows no-results state for receiver autocomplete', async () => {
     const fixture = await configure(undefined, { id: null, billingDocumentId: '30' });
 
@@ -1574,6 +1653,45 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(fixture.componentInstance['canPrepareFiscalDocument']()).toBe(true);
   });
 
+  it('keeps prepare disabled when a stale receiver id exists without an active receiver loaded', async () => {
+    const fixture = await configure(undefined, { id: null, billingDocumentId: '30' });
+
+    fixture.componentInstance['selectedReceiverId'] = 9;
+    fixture.componentInstance['selectedReceiver'].set(null);
+    fixture.componentInstance['onPaymentMethodChange']('PUE');
+    fixture.componentInstance['onPaymentFormChange']('03');
+    fixture.componentInstance['onPaymentConditionChange']('Contado');
+
+    expect(fixture.componentInstance['canPrepareFiscalDocument']()).toBe(false);
+  });
+
+  it('keeps prepare disabled when the selected receiver is inactive', async () => {
+    const fixture = await configure(undefined, { id: null, billingDocumentId: '30' });
+
+    fixture.componentInstance['selectedReceiverId'] = 9;
+    fixture.componentInstance['selectedReceiver'].set({
+      id: 9,
+      rfc: 'BBB010101BBB',
+      legalName: 'Receiver One',
+      postalCode: '02000',
+      fiscalRegimeCode: '601',
+      cfdiUseCodeDefault: 'G03',
+      countryCode: 'MX',
+      foreignTaxRegistration: null,
+      email: 'cliente@example.com',
+      phone: null,
+      searchAlias: null,
+      isActive: false,
+      createdAtUtc: '2026-03-20T12:00:00Z',
+      updatedAtUtc: '2026-03-20T12:00:00Z',
+    });
+    fixture.componentInstance['onPaymentMethodChange']('PUE');
+    fixture.componentInstance['onPaymentFormChange']('03');
+    fixture.componentInstance['onPaymentConditionChange']('Contado');
+
+    expect(fixture.componentInstance['canPrepareFiscalDocument']()).toBe(false);
+  });
+
   it('choosing PPD forces payment form 99 and suggests a credit condition', async () => {
     const fixture = await configure(undefined, { id: null, billingDocumentId: '30' });
 
@@ -1621,7 +1739,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       { id: null, billingDocumentId: '30' },
     );
 
-    fixture.componentInstance['selectedReceiverId'] = 9;
+    setActiveSelectedReceiver(fixture);
     fixture.componentInstance['onCreditSaleChange'](false);
     fixture.componentInstance['onPaymentMethodChange']('PUE');
     fixture.componentInstance['onPaymentFormChange']('03');
@@ -1637,6 +1755,53 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         paymentFormSat: '03',
         paymentCondition: 'Contado',
       }),
+    );
+  });
+
+  it('does not call prepare api when there is no active selected receiver', async () => {
+    const prepareFiscalDocument = vi.fn().mockReturnValue(
+      of({
+        outcome: 'Created',
+        isSuccess: true,
+        fiscalDocumentId: 40,
+      }),
+    );
+    const fixture = await configure(
+      { prepareFiscalDocument },
+      { id: null, billingDocumentId: '30' },
+    );
+    const feedback = TestBed.inject(FeedbackService) as unknown as {
+      show: ReturnType<typeof vi.fn>;
+    };
+
+    fixture.componentInstance['selectedReceiverId'] = 9;
+    fixture.componentInstance['selectedReceiver'].set({
+      id: 9,
+      rfc: 'BBB010101BBB',
+      legalName: 'Receiver One',
+      postalCode: '02000',
+      fiscalRegimeCode: '601',
+      cfdiUseCodeDefault: 'G03',
+      countryCode: 'MX',
+      foreignTaxRegistration: null,
+      email: 'cliente@example.com',
+      phone: null,
+      searchAlias: null,
+      isActive: false,
+      createdAtUtc: '2026-03-20T12:00:00Z',
+      updatedAtUtc: '2026-03-20T12:00:00Z',
+    });
+    fixture.componentInstance['onCreditSaleChange'](false);
+    fixture.componentInstance['onPaymentMethodChange']('PUE');
+    fixture.componentInstance['onPaymentFormChange']('03');
+    fixture.componentInstance['onPaymentConditionChange']('Contado');
+
+    await fixture.componentInstance['prepare']();
+
+    expect(prepareFiscalDocument).not.toHaveBeenCalled();
+    expect(feedback.show).toHaveBeenCalledWith(
+      'error',
+      'Selecciona un receptor fiscal activo para preparar el documento.',
     );
   });
 
@@ -2178,6 +2343,85 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       'success',
       'Snapshot fiscal regenerado correctamente.',
     );
+  });
+
+  it('shows a historical warning and blocks reprepare when the loaded receiver is inactive', async () => {
+    const readyDocument = {
+      id: 40,
+      billingDocumentId: 30,
+      issuerProfileId: 1,
+      fiscalReceiverId: 9,
+      status: 'ReadyForStamping',
+      cfdiVersion: '4.0',
+      documentType: 'I',
+      series: 'A',
+      folio: '31787',
+      issuedAtUtc: '2026-03-20T12:00:00Z',
+      currencyCode: 'MXN',
+      exchangeRate: 1,
+      paymentMethodSat: 'PPD',
+      paymentFormSat: '99',
+      paymentCondition: 'CREDITO',
+      isCreditSale: true,
+      creditDays: 7,
+      issuerRfc: 'AAA010101AAA',
+      issuerLegalName: 'Issuer SA',
+      issuerFiscalRegimeCode: '601',
+      issuerPostalCode: '01000',
+      pacEnvironment: 'Sandbox',
+      hasCertificateReference: true,
+      hasPrivateKeyReference: true,
+      hasPrivateKeyPasswordReference: true,
+      receiverRfc: 'BBB010101BBB',
+      receiverLegalName: 'Receiver One',
+      receiverFiscalRegimeCode: '601',
+      receiverCfdiUseCode: 'G03',
+      receiverPostalCode: '02000',
+      receiverCountryCode: 'MX',
+      receiverForeignTaxRegistration: null,
+      subtotal: 100,
+      discountTotal: 0,
+      taxTotal: 16,
+      total: 116,
+      items: [],
+    };
+
+    const fixture = await configure(
+      {
+        getFiscalDocumentById: vi.fn().mockReturnValue(of(readyDocument)),
+        getStamp: vi.fn().mockReturnValue(throwError(() => ({ status: 404 }))),
+      },
+      undefined,
+      undefined,
+      {
+        getByRfc: vi.fn().mockReturnValue(
+          of({
+            id: 9,
+            rfc: 'BBB010101BBB',
+            legalName: 'Receiver One',
+            postalCode: '02000',
+            fiscalRegimeCode: '601',
+            cfdiUseCodeDefault: 'G03',
+            countryCode: 'MX',
+            foreignTaxRegistration: null,
+            email: 'cliente@example.com',
+            phone: null,
+            searchAlias: null,
+            isActive: false,
+            createdAtUtc: '2026-03-20T12:00:00Z',
+            updatedAtUtc: '2026-03-20T12:00:00Z',
+          }),
+        ),
+      },
+    );
+
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['canReprepareCurrentFiscalDocument']()).toBe(false);
+    expect(fixture.componentInstance['selectedReceiverOperationalWarning']()).toBe(
+      'El receptor asociado al snapshot está inactivo; puedes verlo como histórico, pero no usarlo para preparar nuevos CFDI hasta reactivarlo.',
+    );
+    expect(fixture.nativeElement.textContent).not.toContain('Regenerar snapshot');
   });
 
   it('keeps the SAT reason selection when the user closes the final cancellation confirmation', async () => {
@@ -3085,6 +3329,80 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('LEG-1001');
   });
 
+  it('clears receiver selection state when loading a different billing document without fiscal document', async () => {
+    const getBillingDocumentById = vi.fn().mockImplementation((billingDocumentId: number) =>
+      of({
+        billingDocumentId,
+        salesOrderId: billingDocumentId === 30 ? 20 : 21,
+        legacyOrderId: billingDocumentId === 30 ? 'LEG-1001' : 'LEG-2002',
+        status: 'Draft',
+        documentType: 'I',
+        currencyCode: 'MXN',
+        total: billingDocumentId === 30 ? 100 : 150,
+        createdAtUtc: '2026-03-20T12:00:00Z',
+        fiscalDocumentId: null,
+        fiscalDocumentStatus: null,
+        items: [],
+      }),
+    );
+
+    const fixture = await configure(
+      { getBillingDocumentById },
+      { id: null, billingDocumentId: '30' },
+    );
+
+    fixture.componentInstance['receiverQuery'].set('BBB010101BBB');
+    fixture.componentInstance['receiverResults'].set([
+      {
+        id: 9,
+        rfc: 'BBB010101BBB',
+        legalName: 'Receiver One',
+        postalCode: '02000',
+        fiscalRegimeCode: '601',
+        cfdiUseCodeDefault: 'G03',
+        isActive: true,
+      },
+    ]);
+    fixture.componentInstance['selectedReceiverId'] = 9;
+    fixture.componentInstance['selectedReceiver'].set({
+      id: 9,
+      rfc: 'BBB010101BBB',
+      legalName: 'Receiver One',
+      postalCode: '02000',
+      fiscalRegimeCode: '601',
+      cfdiUseCodeDefault: 'G03',
+      countryCode: 'MX',
+      foreignTaxRegistration: null,
+      email: 'cliente@example.com',
+      phone: null,
+      searchAlias: null,
+      isActive: true,
+      createdAtUtc: '2026-03-20T12:00:00Z',
+      updatedAtUtc: '2026-03-20T12:00:00Z',
+    });
+    fixture.componentInstance['specialFieldDrafts'].set([
+      {
+        fieldCode: 'PEDIDO',
+        label: 'Pedido',
+        dataType: 'text',
+        isRequired: false,
+        isActive: true,
+        maxLength: null,
+        helpText: null,
+        value: '12345',
+      },
+    ]);
+
+    await fixture.componentInstance['loadBillingDocumentContext'](31);
+
+    expect(fixture.componentInstance['billingDocumentId']()).toBe(31);
+    expect(fixture.componentInstance['selectedReceiverId']).toBeNull();
+    expect(fixture.componentInstance['selectedReceiver']()).toBeNull();
+    expect(fixture.componentInstance['receiverQuery']()).toBe('');
+    expect(fixture.componentInstance['receiverResults']()).toEqual([]);
+    expect(fixture.componentInstance['specialFieldDrafts']()).toEqual([]);
+  });
+
   it('searches and loads an existing billing document from the selector', async () => {
     const searchBillingDocuments = vi.fn().mockReturnValue(
       of([
@@ -3241,7 +3559,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     const fixture = TestBed.createComponent(FiscalDocumentOperationsPageComponent);
     fixture.detectChanges();
     await fixture.whenStable();
-    fixture.componentInstance['selectedReceiverId'] = 9;
+    setActiveSelectedReceiver(fixture);
     fixture.componentInstance['onPaymentMethodChange']('PUE');
     fixture.componentInstance['onPaymentFormChange']('03');
     fixture.componentInstance['onPaymentConditionChange']('Contado');
@@ -3353,7 +3671,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     const fixture = TestBed.createComponent(FiscalDocumentOperationsPageComponent);
     fixture.detectChanges();
     await fixture.whenStable();
-    fixture.componentInstance['selectedReceiverId'] = 9;
+    setActiveSelectedReceiver(fixture);
     fixture.componentInstance['onPaymentMethodChange']('PUE');
     fixture.componentInstance['onPaymentFormChange']('03');
     fixture.componentInstance['onPaymentConditionChange']('Contado');
@@ -3476,7 +3794,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     const fixture = TestBed.createComponent(FiscalDocumentOperationsPageComponent);
     fixture.detectChanges();
     await fixture.whenStable();
-    fixture.componentInstance['selectedReceiverId'] = 9;
+    setActiveSelectedReceiver(fixture);
     fixture.componentInstance['onPaymentMethodChange']('PUE');
     fixture.componentInstance['onPaymentFormChange']('03');
     fixture.componentInstance['onPaymentConditionChange']('Contado');
@@ -3548,7 +3866,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       { id: null, billingDocumentId: '30' },
     );
 
-    fixture.componentInstance['selectedReceiverId'] = 9;
+    setActiveSelectedReceiver(fixture);
     fixture.componentInstance['onPaymentMethodChange']('PUE');
     fixture.componentInstance['onPaymentFormChange']('03');
     fixture.componentInstance['onPaymentConditionChange']('Contado');
@@ -3576,7 +3894,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       { id: null, billingDocumentId: '30' },
     );
 
-    fixture.componentInstance['selectedReceiverId'] = 9;
+    setActiveSelectedReceiver(fixture);
     fixture.componentInstance['onPaymentMethodChange']('PUE');
     fixture.componentInstance['onPaymentFormChange']('03');
     fixture.componentInstance['onPaymentConditionChange']('Contado');
@@ -3619,7 +3937,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       { create },
     );
 
-    fixture.componentInstance['selectedReceiverId'] = 9;
+    setActiveSelectedReceiver(fixture);
     fixture.componentInstance['onPaymentMethodChange']('PUE');
     fixture.componentInstance['onPaymentFormChange']('03');
     fixture.componentInstance['onPaymentConditionChange']('Contado');
@@ -3673,7 +3991,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       { id: null, billingDocumentId: '30' },
     );
 
-    fixture.componentInstance['selectedReceiverId'] = 9;
+    setActiveSelectedReceiver(fixture);
     fixture.componentInstance['onPaymentMethodChange']('PUE');
     fixture.componentInstance['onPaymentFormChange']('03');
     fixture.componentInstance['onPaymentConditionChange']('Contado');

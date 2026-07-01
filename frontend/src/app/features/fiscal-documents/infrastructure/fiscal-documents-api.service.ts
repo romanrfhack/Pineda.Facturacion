@@ -51,7 +51,9 @@ export class FiscalDocumentsApiService {
   }
 
   searchReceivers(query: string): Observable<FiscalReceiverSearchResponse[]> {
-    return this.http.get<FiscalReceiverSearchResponse[]>(buildApiUrl(`/fiscal/receivers/search?q=${encodeURIComponent(query)}`));
+    return this.http.get<FiscalReceiverSearchResponse[]>(
+      buildApiUrl(`/fiscal/receivers/search?q=${encodeURIComponent(query)}&activeOnly=true`),
+    );
   }
 
   getBillingDocumentById(billingDocumentId: number): Observable<BillingDocumentLookupResponse> {
