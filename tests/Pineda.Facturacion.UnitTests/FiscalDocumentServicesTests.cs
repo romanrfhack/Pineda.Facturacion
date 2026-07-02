@@ -228,6 +228,80 @@ public class FiscalDocumentServicesTests
     }
 
     [Fact]
+    public async Task PrepareFiscalDocument_ReturnsValidationFailure_WhenActiveProfileHasInvalidSatProductCode()
+    {
+        var billingDocument = CreateBillingDocument();
+        billingDocument.Items[0].ProductInternalCode = "GA-490";
+        billingDocument.Items[0].Sku = "GA-490";
+        billingDocument.Items[0].Description = "FILTRO DE AIRE";
+        var invalidProfile = CreateProductFiscalProfile();
+        invalidProfile.Id = 1420;
+        invalidProfile.InternalCode = "GA-490";
+        invalidProfile.Description = "FILTRO DE AIRE";
+        invalidProfile.NormalizedDescription = "FILTRO DE AIRE";
+        invalidProfile.SatProductServiceCode = "14101505";
+        invalidProfile.SatUnitCode = "H87";
+        invalidProfile.TaxObjectCode = "02";
+        invalidProfile.VatRate = 0.16m;
+        invalidProfile.IsActive = true;
+        var productRepository = new FakeProductFiscalProfileRepository
+        {
+            ExistingByCode = invalidProfile,
+            EffectiveByCode = invalidProfile
+        };
+        var satProductServiceCatalogRepository = new FakeSatProductServiceCatalogRepository
+        {
+            ActiveCodes = ["40161505"]
+        };
+        var satClaveUnidadRepository = new FakeSatClaveUnidadRepository
+        {
+            ActiveCodes = ["H87"]
+        };
+        var suggestionService = new SuggestSatAssignmentForLegacyItemService(
+            productRepository,
+            satProductServiceCatalogRepository,
+            satClaveUnidadRepository,
+            new SearchSatProductServicesService(satProductServiceCatalogRepository),
+            new SearchSatClaveUnidadService(satClaveUnidadRepository));
+        var resolver = new ProductFiscalProfileResolver(
+            productRepository,
+            new FakeLegacyFiscalProductMappingRepository(),
+            satProductServiceCatalogRepository,
+            satClaveUnidadRepository,
+            suggestionService);
+        var fiscalDocumentRepository = new FakeFiscalDocumentRepository();
+        var service = new PrepareFiscalDocumentService(
+            new FakeBillingDocumentRepository { BillingDocumentById = billingDocument },
+            fiscalDocumentRepository,
+            new FakeIssuerProfileRepository { Active = CreateIssuerProfile() },
+            new FakeFiscalReceiverRepository { ExistingById = CreateReceiver() },
+            productRepository,
+            new FakeSatCatalogDescriptionProvider(),
+            suggestionService,
+            new FakeUnitOfWork(),
+            resolver,
+            satProductServiceCatalogRepository,
+            satClaveUnidadRepository);
+
+        var result = await service.ExecuteAsync(new PrepareFiscalDocumentCommand
+        {
+            BillingDocumentId = billingDocument.Id,
+            FiscalReceiverId = 11,
+            PaymentMethodSat = "PUE",
+            PaymentFormSat = "03",
+            PaymentCondition = "Contado"
+        });
+
+        Assert.Equal(PrepareFiscalDocumentOutcome.ValidationFailed, result.Outcome);
+        Assert.Null(fiscalDocumentRepository.Added);
+        Assert.Contains("La línea 1", result.ErrorMessage, StringComparison.Ordinal);
+        Assert.Contains("GA-490", result.ErrorMessage, StringComparison.Ordinal);
+        Assert.Contains("FILTRO DE AIRE", result.ErrorMessage, StringComparison.Ordinal);
+        Assert.Contains("ClaveProdServ", result.ErrorMessage, StringComparison.Ordinal);
+        Assert.Contains("14101505", result.ErrorMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task PrepareFiscalDocument_ReturnsPendingReviewContext_AndDoesNotAutoprefillGenericCode()
     {
         var billingDocument = CreateBillingDocument();
@@ -1791,6 +1865,90 @@ public class FiscalDocumentServicesTests
         public Task AddAsync(ProductFiscalProfile productFiscalProfile, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
         public Task UpdateAsync(ProductFiscalProfile productFiscalProfile, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class FakeLegacyFiscalProductMappingRepository : ILegacyFiscalProductMappingRepository
+    {
+        public Task<FiscalProductMappingImportBatch?> FindBatchByChecksumAsync(
+            string sourceChecksum,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<FiscalProductMappingImportBatch?>(null);
+
+        public Task AddBatchAsync(
+            FiscalProductMappingImportBatch batch,
+            CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task<IReadOnlyList<FiscalProductMappingImportBatch>> ListRecentBatchesAsync(
+            int maxResults,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<FiscalProductMappingImportBatch>>([]);
+
+        public Task<IReadOnlyList<LegacyFiscalProductMapping>> FindActiveExactCandidatesAsync(
+            string? normalizedInternalCode,
+            string? normalizedDescription,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<LegacyFiscalProductMapping>>([]);
+
+        public Task<IReadOnlyList<LegacyFiscalProductMapping>> FindActiveDescriptionCandidatesAsync(
+            string normalizedDescription,
+            int maxCandidates,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<LegacyFiscalProductMapping>>([]);
+    }
+
+    private sealed class FakeSatProductServiceCatalogRepository : ISatProductServiceCatalogRepository
+    {
+        public HashSet<string> ActiveCodes { get; init; } = new(StringComparer.Ordinal);
+
+        public Task<IReadOnlyList<SatProductServiceCatalogEntry>> SearchAsync(
+            string normalizedQuery,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<SatProductServiceCatalogEntry>>([]);
+
+        public Task<SatProductServiceCatalogEntry?> GetByCodeAsync(
+            string normalizedCode,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(
+                ActiveCodes.Contains(normalizedCode)
+                    ? new SatProductServiceCatalogEntry
+                    {
+                        Code = normalizedCode,
+                        Description = "SAT item",
+                        IsActive = true
+                    }
+                    : null);
+    }
+
+    private sealed class FakeSatClaveUnidadRepository : ISatClaveUnidadRepository
+    {
+        public HashSet<string> ActiveCodes { get; init; } = new(StringComparer.Ordinal);
+
+        public Task<IReadOnlyList<SatClaveUnidad>> SearchAsync(
+            string normalizedQuery,
+            int maxCandidates,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<SatClaveUnidad>>([]);
+
+        public Task<SatClaveUnidad?> GetByCodeAsync(
+            string normalizedCode,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(
+                ActiveCodes.Contains(normalizedCode)
+                    ? new SatClaveUnidad
+                    {
+                        Code = normalizedCode,
+                        Description = "Unidad SAT",
+                        IsActive = true
+                    }
+                    : null);
+
+        public Task<SatCatalogSyncResult> SyncAsync(
+            IReadOnlyList<SatClaveUnidad> entries,
+            string sourceVersion,
+            DateTime syncedAtUtc,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new SatCatalogSyncResult());
     }
 
     private sealed class FakeUnitOfWork : IUnitOfWork

@@ -283,6 +283,136 @@ public class FiscalMasterDataServicesTests
     }
 
     [Fact]
+    public async Task UpdateProductFiscalProfile_ReturnsValidationFailure_WhenGa490UsesInvalidSatProductCode()
+    {
+        var existingProfile = new ProductFiscalProfile
+        {
+            Id = 1420,
+            InternalCode = "GA-490",
+            Description = "FILTRO DE AIRE",
+            NormalizedDescription = "FILTRO DE AIRE",
+            SatProductServiceCode = "40161505",
+            SatUnitCode = "H87",
+            TaxObjectCode = "02",
+            VatRate = 0.16m,
+            DefaultUnitText = "PIEZA",
+            IsActive = true
+        };
+        var repository = new FakeProductFiscalProfileRepository
+        {
+            ExistingByCode = existingProfile,
+            ExistingById = existingProfile
+        };
+        var service = new UpdateProductFiscalProfileService(
+            repository,
+            new FakeUnitOfWork(),
+            new FakeSatProductServiceCatalogRepository
+            {
+                ExistingByCode = new SatProductServiceCatalogEntry
+                {
+                    Code = "40161505",
+                    Description = "Filtros de aire",
+                    IsActive = true
+                }
+            },
+            new FakeSatClaveUnidadRepository
+            {
+                ExistingByCode = new SatClaveUnidad
+                {
+                    Code = "H87",
+                    Description = "Pieza",
+                    IsActive = true
+                }
+            });
+
+        var result = await service.ExecuteAsync(new UpdateProductFiscalProfileCommand
+        {
+            Id = 1420,
+            InternalCode = "GA-490",
+            Description = "FILTRO DE AIRE",
+            SatProductServiceCode = "14101505",
+            SatUnitCode = "H87",
+            TaxObjectCode = "02",
+            VatRate = 0.16m,
+            DefaultUnitText = "PIEZA",
+            IsActive = true
+        });
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(UpdateProductFiscalProfileOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("SAT product/service code '14101505' was not found or is inactive.", result.ErrorMessage);
+        Assert.Null(repository.Updated);
+        Assert.Equal("40161505", existingProfile.SatProductServiceCode);
+    }
+
+    [Fact]
+    public async Task UpdateProductFiscalProfile_AllowsGa490ValidFiscalProfile()
+    {
+        var existingProfile = new ProductFiscalProfile
+        {
+            Id = 1420,
+            InternalCode = "GA-490",
+            Description = "FILTRO DE AIRE",
+            NormalizedDescription = "FILTRO DE AIRE",
+            SatProductServiceCode = "14101505",
+            SatUnitCode = "H87",
+            TaxObjectCode = "02",
+            VatRate = 0.16m,
+            DefaultUnitText = "PIEZA",
+            IsActive = true
+        };
+        var repository = new FakeProductFiscalProfileRepository
+        {
+            ExistingByCode = existingProfile,
+            ExistingById = existingProfile
+        };
+        var unitOfWork = new FakeUnitOfWork();
+        var service = new UpdateProductFiscalProfileService(
+            repository,
+            unitOfWork,
+            new FakeSatProductServiceCatalogRepository
+            {
+                ExistingByCode = new SatProductServiceCatalogEntry
+                {
+                    Code = "40161505",
+                    Description = "Filtros de aire",
+                    IsActive = true
+                }
+            },
+            new FakeSatClaveUnidadRepository
+            {
+                ExistingByCode = new SatClaveUnidad
+                {
+                    Code = "H87",
+                    Description = "Pieza",
+                    IsActive = true
+                }
+            });
+
+        var result = await service.ExecuteAsync(new UpdateProductFiscalProfileCommand
+        {
+            Id = 1420,
+            InternalCode = "GA-490",
+            Description = "FILTRO DE AIRE",
+            SatProductServiceCode = "40161505",
+            SatUnitCode = "H87",
+            TaxObjectCode = "02",
+            VatRate = 0.16m,
+            DefaultUnitText = "PIEZA",
+            IsActive = true
+        });
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(UpdateProductFiscalProfileOutcome.Updated, result.Outcome);
+        Assert.Equal(1, unitOfWork.SaveChangesCallCount);
+        Assert.Same(existingProfile, repository.Updated);
+        Assert.Equal("40161505", existingProfile.SatProductServiceCode);
+        Assert.Equal("H87", existingProfile.SatUnitCode);
+        Assert.Equal("02", existingProfile.TaxObjectCode);
+        Assert.Equal(0.16m, existingProfile.VatRate);
+    }
+
+    [Fact]
     public async Task GetByRfc_And_ByCode_ReturnHappyPaths()
     {
         var receiverService = new GetFiscalReceiverByRfcService(new FakeFiscalReceiverRepository
@@ -610,6 +740,7 @@ public class FiscalMasterDataServicesTests
         public ProductFiscalProfile? ExistingByCode { get; init; }
         public ProductFiscalProfile? ExistingById { get; init; }
         public IReadOnlyList<ProductFiscalProfile> SearchResults { get; init; } = [];
+        public ProductFiscalProfile? Updated { get; private set; }
         public ProductFiscalProfile? AssignmentSyncedProfile { get; private set; }
         public string? AssignmentSyncSource { get; private set; }
         public decimal AssignmentSyncConfidence { get; private set; }
@@ -630,7 +761,11 @@ public class FiscalMasterDataServicesTests
             return Task.CompletedTask;
         }
 
-        public Task UpdateAsync(ProductFiscalProfile productFiscalProfile, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task UpdateAsync(ProductFiscalProfile productFiscalProfile, CancellationToken cancellationToken = default)
+        {
+            Updated = productFiscalProfile;
+            return Task.CompletedTask;
+        }
 
         public Task EnsureEffectiveAssignmentAsync(
             ProductFiscalProfile productFiscalProfile,

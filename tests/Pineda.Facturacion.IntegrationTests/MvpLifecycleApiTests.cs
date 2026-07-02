@@ -5632,6 +5632,7 @@ internal sealed class MvpApiFactory : WebApplicationFactory<Program>, IAsyncDisp
     {
         await using var scope = Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+        var now = DateTime.UtcNow;
 
         var issuer = await db.Set<IssuerProfile>().FirstOrDefaultAsync(x => x.Rfc == "AAA010101AAA");
         if (issuer is null)
@@ -5650,8 +5651,8 @@ internal sealed class MvpApiFactory : WebApplicationFactory<Program>, IAsyncDisp
                 FiscalSeries = "A",
                 NextFiscalFolio = 31787,
                 IsActive = true,
-                CreatedAtUtc = DateTime.UtcNow,
-                UpdatedAtUtc = DateTime.UtcNow
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now
             };
             db.Add(issuer);
         }
@@ -5659,7 +5660,7 @@ internal sealed class MvpApiFactory : WebApplicationFactory<Program>, IAsyncDisp
         {
             issuer.FiscalSeries ??= "A";
             issuer.NextFiscalFolio ??= 31787;
-            issuer.UpdatedAtUtc = DateTime.UtcNow;
+            issuer.UpdatedAtUtc = now;
         }
 
         var receiver = await db.Set<FiscalReceiver>().FirstOrDefaultAsync(x => x.Rfc == "BBB010101BBB");
@@ -5677,10 +5678,41 @@ internal sealed class MvpApiFactory : WebApplicationFactory<Program>, IAsyncDisp
                 SearchAlias = "Receiver One",
                 NormalizedSearchAlias = "RECEIVER ONE",
                 IsActive = true,
-                CreatedAtUtc = DateTime.UtcNow,
-                UpdatedAtUtc = DateTime.UtcNow
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now
             };
             db.Add(receiver);
+        }
+
+        if (!await db.Set<SatProductServiceCatalogEntry>().AnyAsync(x => x.Code == StandardProductSatProductServiceCode))
+        {
+            db.Add(new SatProductServiceCatalogEntry
+            {
+                Code = StandardProductSatProductServiceCode,
+                Description = "Filtros",
+                NormalizedDescription = "FILTROS",
+                KeywordsNormalized = "FILTRO",
+                IsActive = true,
+                SourceVersion = "integration-test",
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now
+            });
+        }
+
+        if (!await db.Set<SatClaveUnidad>().AnyAsync(x => x.Code == "H87"))
+        {
+            db.Add(new SatClaveUnidad
+            {
+                Code = "H87",
+                Description = "Pieza",
+                NormalizedDescription = "PIEZA",
+                Symbol = "PZA",
+                Notes = "Unidad de pieza",
+                IsActive = true,
+                SourceVersion = "integration-test",
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now
+            });
         }
 
         var product = await db.Set<ProductFiscalProfile>().FirstOrDefaultAsync(x => x.InternalCode == "SKU-1");
@@ -5697,15 +5729,15 @@ internal sealed class MvpApiFactory : WebApplicationFactory<Program>, IAsyncDisp
                 VatRate = 0.16m,
                 DefaultUnitText = "Pieza",
                 IsActive = true,
-                CreatedAtUtc = DateTime.UtcNow,
-                UpdatedAtUtc = DateTime.UtcNow
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now
             };
             db.Add(product);
         }
         else if (string.Equals(product.SatProductServiceCode, "01010101", StringComparison.Ordinal))
         {
             product.SatProductServiceCode = StandardProductSatProductServiceCode;
-            product.UpdatedAtUtc = DateTime.UtcNow;
+            product.UpdatedAtUtc = now;
         }
 
         await db.SaveChangesAsync();

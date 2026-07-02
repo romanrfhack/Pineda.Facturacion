@@ -20,6 +20,7 @@ public class PrepareFiscalDocumentService
     private readonly ISatCatalogDescriptionProvider _satCatalogDescriptionProvider;
     private readonly SuggestSatAssignmentForLegacyItemService _suggestSatAssignmentForLegacyItemService;
     private readonly ProductFiscalProfileResolver _productFiscalProfileResolver;
+    private readonly ProductFiscalProfileSatCatalogValidation _satCatalogValidation;
     private readonly IUnitOfWork _unitOfWork;
 
     public PrepareFiscalDocumentService(
@@ -52,6 +53,59 @@ public class PrepareFiscalDocumentService
         SuggestSatAssignmentForLegacyItemService suggestSatAssignmentForLegacyItemService,
         IUnitOfWork unitOfWork,
         ProductFiscalProfileResolver? productFiscalProfileResolver = null)
+        : this(
+            billingDocumentRepository,
+            fiscalDocumentRepository,
+            issuerProfileRepository,
+            fiscalReceiverRepository,
+            productFiscalProfileRepository,
+            satCatalogDescriptionProvider,
+            suggestSatAssignmentForLegacyItemService,
+            unitOfWork,
+            productFiscalProfileResolver,
+            new ProductFiscalProfileSatCatalogValidation())
+    {
+    }
+
+    public PrepareFiscalDocumentService(
+        IBillingDocumentRepository billingDocumentRepository,
+        IFiscalDocumentRepository fiscalDocumentRepository,
+        IIssuerProfileRepository issuerProfileRepository,
+        IFiscalReceiverRepository fiscalReceiverRepository,
+        IProductFiscalProfileRepository productFiscalProfileRepository,
+        ISatCatalogDescriptionProvider satCatalogDescriptionProvider,
+        SuggestSatAssignmentForLegacyItemService suggestSatAssignmentForLegacyItemService,
+        IUnitOfWork unitOfWork,
+        ProductFiscalProfileResolver productFiscalProfileResolver,
+        ISatProductServiceCatalogRepository satProductServiceCatalogRepository,
+        ISatClaveUnidadRepository satClaveUnidadRepository)
+        : this(
+            billingDocumentRepository,
+            fiscalDocumentRepository,
+            issuerProfileRepository,
+            fiscalReceiverRepository,
+            productFiscalProfileRepository,
+            satCatalogDescriptionProvider,
+            suggestSatAssignmentForLegacyItemService,
+            unitOfWork,
+            productFiscalProfileResolver,
+            new ProductFiscalProfileSatCatalogValidation(
+                satProductServiceCatalogRepository,
+                satClaveUnidadRepository))
+    {
+    }
+
+    private PrepareFiscalDocumentService(
+        IBillingDocumentRepository billingDocumentRepository,
+        IFiscalDocumentRepository fiscalDocumentRepository,
+        IIssuerProfileRepository issuerProfileRepository,
+        IFiscalReceiverRepository fiscalReceiverRepository,
+        IProductFiscalProfileRepository productFiscalProfileRepository,
+        ISatCatalogDescriptionProvider satCatalogDescriptionProvider,
+        SuggestSatAssignmentForLegacyItemService suggestSatAssignmentForLegacyItemService,
+        IUnitOfWork unitOfWork,
+        ProductFiscalProfileResolver? productFiscalProfileResolver,
+        ProductFiscalProfileSatCatalogValidation satCatalogValidation)
     {
         _billingDocumentRepository = billingDocumentRepository;
         _fiscalDocumentRepository = fiscalDocumentRepository;
@@ -62,6 +116,7 @@ public class PrepareFiscalDocumentService
         _suggestSatAssignmentForLegacyItemService = suggestSatAssignmentForLegacyItemService;
         _productFiscalProfileResolver = productFiscalProfileResolver
             ?? CreateNoOpProductFiscalProfileResolver(productFiscalProfileRepository, suggestSatAssignmentForLegacyItemService);
+        _satCatalogValidation = satCatalogValidation;
         _unitOfWork = unitOfWork;
     }
 
@@ -285,6 +340,23 @@ public class PrepareFiscalDocumentService
                 return ValidationFailure(
                     command.BillingDocumentId,
                     $"Billing document item line '{billingDocumentItem.LineNumber}' tax rate '{billingDocumentItem.TaxRate}' does not match product fiscal profile VAT rate '{productFiscalProfile.VatRate}'.");
+            }
+
+            var satCatalogValidationError = await _satCatalogValidation.ValidateDetailedAsync(
+                productFiscalProfile.SatProductServiceCode,
+                productFiscalProfile.SatUnitCode,
+                productFiscalProfile.TaxObjectCode,
+                cancellationToken);
+            if (satCatalogValidationError is not null)
+            {
+                return ValidationFailure(
+                    command.BillingDocumentId,
+                    FiscalDocumentSatCatalogValidationMessages.BuildLineMessage(
+                        billingDocumentItem.LineNumber,
+                        internalCode,
+                        billingDocumentItem.Description,
+                        satCatalogValidationError,
+                        "Corrige el perfil fiscal del producto antes de preparar el CFDI."));
             }
 
             itemResults.Add(new FiscalDocumentItem

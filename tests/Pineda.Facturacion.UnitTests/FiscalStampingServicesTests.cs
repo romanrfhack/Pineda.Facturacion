@@ -236,6 +236,76 @@ public class FiscalStampingServicesTests
     }
 
     [Fact]
+    public async Task StampFiscalDocument_BlocksInvalidSatProductServiceCodeFromSnapshotBeforeProvider()
+    {
+        var fiscalDocument = CreateFiscalDocument();
+        fiscalDocument.Items[0].InternalCode = "GA-490";
+        fiscalDocument.Items[0].Description = "FILTRO DE AIRE";
+        fiscalDocument.Items[0].SatProductServiceCode = "14101505";
+        fiscalDocument.Items[0].SatUnitCode = "H87";
+        fiscalDocument.Items[0].TaxObjectCode = "02";
+
+        var gateway = new FakeFiscalStampingGateway();
+        var fiscalStampRepository = new FakeFiscalStampRepository();
+        var unitOfWork = new FakeUnitOfWork();
+        var service = new StampFiscalDocumentService(
+            new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
+            fiscalStampRepository,
+            gateway,
+            unitOfWork,
+            new FakeSatProductServiceCatalogRepository { ActiveCodes = ["40161505"] },
+            new FakeSatClaveUnidadRepository { ActiveCodes = ["H87"] });
+
+        var result = await service.ExecuteAsync(new StampFiscalDocumentCommand
+        {
+            FiscalDocumentId = fiscalDocument.Id
+        });
+
+        Assert.Equal(StampFiscalDocumentOutcome.ValidationFailed, result.Outcome);
+        Assert.Equal(FiscalDocumentStatus.ReadyForStamping, fiscalDocument.Status);
+        Assert.Equal(0, gateway.CallCount);
+        Assert.Equal(0, unitOfWork.SaveChangesCallCount);
+        Assert.Null(fiscalStampRepository.Added);
+        Assert.Contains("La línea 1", result.ErrorMessage, StringComparison.Ordinal);
+        Assert.Contains("GA-490", result.ErrorMessage, StringComparison.Ordinal);
+        Assert.Contains("FILTRO DE AIRE", result.ErrorMessage, StringComparison.Ordinal);
+        Assert.Contains("ClaveProdServ", result.ErrorMessage, StringComparison.Ordinal);
+        Assert.Contains("14101505", result.ErrorMessage, StringComparison.Ordinal);
+        Assert.Contains("c_ClaveProdServ", result.ErrorMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task StampFiscalDocument_AllowsValidSatCatalogSnapshotAndCallsProvider()
+    {
+        var fiscalDocument = CreateFiscalDocument();
+        fiscalDocument.Items[0].InternalCode = "GA-490";
+        fiscalDocument.Items[0].Description = "FILTRO DE AIRE";
+        fiscalDocument.Items[0].SatProductServiceCode = "40161505";
+        fiscalDocument.Items[0].SatUnitCode = "H87";
+        fiscalDocument.Items[0].TaxObjectCode = "02";
+        fiscalDocument.Items[0].VatRate = 0.16m;
+
+        var gateway = new FakeFiscalStampingGateway();
+        var service = new StampFiscalDocumentService(
+            new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
+            new FakeFiscalStampRepository(),
+            gateway,
+            new FakeUnitOfWork(),
+            new FakeSatProductServiceCatalogRepository { ActiveCodes = ["40161505"] },
+            new FakeSatClaveUnidadRepository { ActiveCodes = ["H87"] });
+
+        var result = await service.ExecuteAsync(new StampFiscalDocumentCommand
+        {
+            FiscalDocumentId = fiscalDocument.Id
+        });
+
+        Assert.Equal(StampFiscalDocumentOutcome.Stamped, result.Outcome);
+        Assert.Equal(1, gateway.CallCount);
+        Assert.NotNull(gateway.LastRequest);
+        Assert.Equal("40161505", gateway.LastRequest!.Items[0].SatProductServiceCode);
+    }
+
+    [Fact]
     public async Task StampFiscalDocument_Reclassifies_ZeroBase_Taxable_Line_BeforeCallingProvider()
     {
         var fiscalDocument = CreateFiscalDocument();
@@ -682,6 +752,44 @@ public class FiscalStampingServicesTests
     }
 
     [Fact]
+    public async Task StampFiscalDocument_RetryRejected_WithInvalidSnapshotFailsBeforeProvider()
+    {
+        var fiscalDocument = CreateFiscalDocument();
+        fiscalDocument.Status = FiscalDocumentStatus.StampingRejected;
+        fiscalDocument.Items[0].InternalCode = "GA-490";
+        fiscalDocument.Items[0].Description = "FILTRO DE AIRE";
+        fiscalDocument.Items[0].SatProductServiceCode = "14101505";
+        fiscalDocument.Items[0].SatUnitCode = "H87";
+        fiscalDocument.Items[0].TaxObjectCode = "02";
+        var existingStamp = CreateRejectedStamp(
+            fiscalDocument.Id,
+            providerCode: "CFDI40162",
+            providerMessage: "ClaveProdServ no valida.");
+        var gateway = new FakeFiscalStampingGateway();
+
+        var service = new StampFiscalDocumentService(
+            new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
+            new FakeFiscalStampRepository { ExistingTracked = existingStamp },
+            gateway,
+            new FakeUnitOfWork(),
+            new FakeSatProductServiceCatalogRepository { ActiveCodes = ["40161505"] },
+            new FakeSatClaveUnidadRepository { ActiveCodes = ["H87"] });
+
+        var result = await service.ExecuteAsync(new StampFiscalDocumentCommand
+        {
+            FiscalDocumentId = fiscalDocument.Id,
+            RetryRejected = true
+        });
+
+        Assert.Equal(StampFiscalDocumentOutcome.ValidationFailed, result.Outcome);
+        Assert.Equal(FiscalDocumentStatus.StampingRejected, fiscalDocument.Status);
+        Assert.Equal(FiscalStampStatus.Rejected, existingStamp.Status);
+        Assert.Equal(0, gateway.CallCount);
+        Assert.Contains("GA-490", result.ErrorMessage, StringComparison.Ordinal);
+        Assert.Contains("14101505", result.ErrorMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task StampFiscalDocument_WithExistingUuidEvidence_DoesNotCallProvider()
     {
         var fiscalDocument = CreateFiscalDocument();
@@ -785,11 +893,14 @@ public class FiscalStampingServicesTests
     {
         var dependencyNames = typeof(StampFiscalDocumentService)
             .GetConstructors()
-            .Single()
+            .OrderByDescending(x => x.GetParameters().Length)
+            .First()
             .GetParameters()
             .Select(x => x.ParameterType.FullName ?? x.ParameterType.Name)
             .ToList();
 
+        Assert.Contains(dependencyNames, x => x.Contains("ISatProductServiceCatalogRepository", StringComparison.Ordinal));
+        Assert.Contains(dependencyNames, x => x.Contains("ISatClaveUnidadRepository", StringComparison.Ordinal));
         Assert.DoesNotContain(dependencyNames, x => x.Contains("BillingDocument", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(dependencyNames, x => x.Contains("SalesOrder", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(dependencyNames, x => x.Contains("IssuerProfile", StringComparison.OrdinalIgnoreCase));
@@ -1067,6 +1178,60 @@ public class FiscalStampingServicesTests
             RemoteQueryCallCount++;
             return Task.FromResult(RemoteQueryResult);
         }
+    }
+
+    private sealed class FakeSatProductServiceCatalogRepository : ISatProductServiceCatalogRepository
+    {
+        public HashSet<string> ActiveCodes { get; init; } = new(StringComparer.Ordinal);
+
+        public Task<IReadOnlyList<SatProductServiceCatalogEntry>> SearchAsync(
+            string normalizedQuery,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<SatProductServiceCatalogEntry>>([]);
+
+        public Task<SatProductServiceCatalogEntry?> GetByCodeAsync(
+            string normalizedCode,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(
+                ActiveCodes.Contains(normalizedCode)
+                    ? new SatProductServiceCatalogEntry
+                    {
+                        Code = normalizedCode,
+                        Description = "SAT item",
+                        IsActive = true
+                    }
+                    : null);
+    }
+
+    private sealed class FakeSatClaveUnidadRepository : ISatClaveUnidadRepository
+    {
+        public HashSet<string> ActiveCodes { get; init; } = new(StringComparer.Ordinal);
+
+        public Task<IReadOnlyList<SatClaveUnidad>> SearchAsync(
+            string normalizedQuery,
+            int maxCandidates,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<SatClaveUnidad>>([]);
+
+        public Task<SatClaveUnidad?> GetByCodeAsync(
+            string normalizedCode,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(
+                ActiveCodes.Contains(normalizedCode)
+                    ? new SatClaveUnidad
+                    {
+                        Code = normalizedCode,
+                        Description = "Unidad SAT",
+                        IsActive = true
+                    }
+                    : null);
+
+        public Task<SatCatalogSyncResult> SyncAsync(
+            IReadOnlyList<SatClaveUnidad> entries,
+            string sourceVersion,
+            DateTime syncedAtUtc,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new SatCatalogSyncResult());
     }
 
     private sealed class FakeUnitOfWork : IUnitOfWork

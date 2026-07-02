@@ -4,6 +4,7 @@ using Pineda.Facturacion.Application.Abstractions.Pac;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Common;
 using Pineda.Facturacion.Application.Contracts.Pac;
+using Pineda.Facturacion.Application.UseCases.ProductFiscalProfiles;
 using Pineda.Facturacion.Domain.Entities;
 using Pineda.Facturacion.Domain.Enums;
 
@@ -37,17 +38,52 @@ public class StampFiscalDocumentService
     private readonly IFiscalStampRepository _fiscalStampRepository;
     private readonly IFiscalStampingGateway _fiscalStampingGateway;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly ProductFiscalProfileSatCatalogValidation _satCatalogValidation;
 
     public StampFiscalDocumentService(
         IFiscalDocumentRepository fiscalDocumentRepository,
         IFiscalStampRepository fiscalStampRepository,
         IFiscalStampingGateway fiscalStampingGateway,
         IUnitOfWork unitOfWork)
+        : this(
+            fiscalDocumentRepository,
+            fiscalStampRepository,
+            fiscalStampingGateway,
+            unitOfWork,
+            new ProductFiscalProfileSatCatalogValidation())
+    {
+    }
+
+    public StampFiscalDocumentService(
+        IFiscalDocumentRepository fiscalDocumentRepository,
+        IFiscalStampRepository fiscalStampRepository,
+        IFiscalStampingGateway fiscalStampingGateway,
+        IUnitOfWork unitOfWork,
+        ISatProductServiceCatalogRepository satProductServiceCatalogRepository,
+        ISatClaveUnidadRepository satClaveUnidadRepository)
+        : this(
+            fiscalDocumentRepository,
+            fiscalStampRepository,
+            fiscalStampingGateway,
+            unitOfWork,
+            new ProductFiscalProfileSatCatalogValidation(
+                satProductServiceCatalogRepository,
+                satClaveUnidadRepository))
+    {
+    }
+
+    private StampFiscalDocumentService(
+        IFiscalDocumentRepository fiscalDocumentRepository,
+        IFiscalStampRepository fiscalStampRepository,
+        IFiscalStampingGateway fiscalStampingGateway,
+        IUnitOfWork unitOfWork,
+        ProductFiscalProfileSatCatalogValidation satCatalogValidation)
     {
         _fiscalDocumentRepository = fiscalDocumentRepository;
         _fiscalStampRepository = fiscalStampRepository;
         _fiscalStampingGateway = fiscalStampingGateway;
         _unitOfWork = unitOfWork;
+        _satCatalogValidation = satCatalogValidation;
     }
 
     public async Task<StampFiscalDocumentResult> ExecuteAsync(
@@ -147,6 +183,14 @@ public class StampFiscalDocumentService
         if (!TryBuildStampingRequest(fiscalDocument, out var stampingRequest, out var validationError))
         {
             return ValidationFailure(fiscalDocument.Id, validationError!);
+        }
+
+        var satCatalogSnapshotValidationError = await ValidateSnapshotSatCatalogsAsync(
+            fiscalDocument,
+            cancellationToken);
+        if (satCatalogSnapshotValidationError is not null)
+        {
+            return ValidationFailure(fiscalDocument.Id, satCatalogSnapshotValidationError);
         }
 
         var requestStartedAtUtc = DateTime.UtcNow;
@@ -498,6 +542,32 @@ public class StampFiscalDocumentService
         };
 
         return true;
+    }
+
+    private async Task<string?> ValidateSnapshotSatCatalogsAsync(
+        FiscalDocument fiscalDocument,
+        CancellationToken cancellationToken)
+    {
+        foreach (var item in fiscalDocument.Items.OrderBy(x => x.LineNumber))
+        {
+            var validationError = await _satCatalogValidation.ValidateDetailedAsync(
+                item.SatProductServiceCode,
+                item.SatUnitCode,
+                item.TaxObjectCode,
+                cancellationToken);
+
+            if (validationError is not null)
+            {
+                return FiscalDocumentSatCatalogValidationMessages.BuildLineMessage(
+                    item.LineNumber,
+                    item.InternalCode,
+                    item.Description,
+                    validationError,
+                    "Corrige el perfil fiscal del producto o captura un override válido antes de timbrar.");
+            }
+        }
+
+        return null;
     }
 
     private static bool RequiresGlobalInformation(FiscalDocument fiscalDocument)
