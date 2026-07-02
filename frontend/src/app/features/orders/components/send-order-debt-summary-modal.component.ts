@@ -9,6 +9,11 @@ import { FiscalReceiver, FiscalReceiverSearchItem } from '../../catalogs/models/
 import { normalizeOrderCurrency, summarizeOrderSelection } from '../application/order-selection-summary';
 import { OrdersApiService } from '../infrastructure/orders-api.service';
 import {
+  findInvalidEmailRecipients,
+  formatEmailRecipientsInput,
+  parseEmailRecipients,
+} from '../../../shared/utils/email-recipients';
+import {
   LegacyOrderListItem,
   OrderDebtSummaryFormat,
   OrderDebtSummaryIncludeOptionsRequest,
@@ -472,7 +477,7 @@ export class SendOrderDebtSummaryModalComponent {
       this.selectedReceiver.set(detail);
       this.receiverQuery = detail.legalName;
       this.receiverSearchResults.set([]);
-      this.toInput = detail.email?.trim() ?? '';
+      this.toInput = formatEmailRecipientsInput(detail.email);
       this.subject = `Resumen de notas pendientes - ${detail.legalName}`;
       this.message =
         `Estimado ${detail.legalName}, compartimos el resumen de notas/órdenes pendientes para su revisión. Favor de indicarnos cuáles desea que facturemos y confirmar cualquier aclaración sobre pago o datos fiscales.`;
@@ -581,13 +586,13 @@ export class SendOrderDebtSummaryModalComponent {
   }
 
   private validateEmailConfiguration(): boolean {
-    if (!parseRecipients(this.toInput).length) {
+    if (!parseEmailRecipients(this.toInput).length) {
       this.errorMessage.set('Captura al menos un correo válido en Para.');
       return false;
     }
 
     const invalid = [this.toInput, this.ccInput, this.bccInput]
-      .flatMap((value) => parseInvalidRecipients(value));
+      .flatMap((value) => findInvalidEmailRecipients(value));
     if (invalid.length) {
       this.errorMessage.set(`Correo inválido: ${invalid.join(', ')}`);
       return false;
@@ -611,9 +616,9 @@ export class SendOrderDebtSummaryModalComponent {
     return {
       legacyOrderIds: this.selectedOrders().map((order) => order.legacyOrderId),
       receiverId: this.selectedReceiver()!.id,
-      to: parseRecipients(this.toInput),
-      cc: parseRecipients(this.ccInput),
-      bcc: parseRecipients(this.bccInput),
+      to: parseEmailRecipients(this.toInput),
+      cc: parseEmailRecipients(this.ccInput),
+      bcc: parseEmailRecipients(this.bccInput),
       subject: this.subject.trim(),
       message: this.message.trim(),
       format: this.format,
@@ -678,25 +683,6 @@ export class SendOrderDebtSummaryModalComponent {
       })
       .join(' · ');
   }
-}
-
-function parseRecipients(value: string): string[] {
-  return splitRecipients(value).filter((recipient) => isValidEmail(recipient));
-}
-
-function parseInvalidRecipients(value: string): string[] {
-  return splitRecipients(value).filter((recipient) => !isValidEmail(recipient));
-}
-
-function splitRecipients(value: string): string[] {
-  return value
-    .split(/[;,]/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function isValidEmail(value: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
 const MIXED_CUSTOMERS_ERROR_MESSAGE = 'No se puede enviar el resumen porque la selección contiene órdenes de distintos clientes. Selecciona únicamente órdenes del mismo cliente.';

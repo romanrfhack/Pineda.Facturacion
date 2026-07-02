@@ -83,6 +83,28 @@ public class FiscalDocumentDeliveryServicesTests
     }
 
     [Fact]
+    public async Task SendFiscalDocumentEmail_Splits_Multiple_Recipients_From_A_Single_String()
+    {
+        var emailSender = new FakeEmailSender();
+        var service = new SendFiscalDocumentEmailService(
+            new FakeFiscalDocumentRepository { Existing = CreateFiscalDocument() },
+            new FakeFiscalStampRepository { Existing = CreateFiscalStamp() },
+            emailSender,
+            new FakeFiscalDocumentPdfRenderer());
+
+        var result = await service.ExecuteAsync(
+            new SendFiscalDocumentEmailCommand
+            {
+                FiscalDocumentId = 8,
+                Recipients = ["cliente@example.com; cobranza@example.com"]
+            });
+
+        Assert.Equal(SendFiscalDocumentEmailOutcome.Sent, result.Outcome);
+        Assert.Equal(["cliente@example.com", "cobranza@example.com"], result.Recipients);
+        Assert.Equal(["cliente@example.com", "cobranza@example.com"], emailSender.LastMessage!.Recipients);
+    }
+
+    [Fact]
     public async Task SendFiscalDocumentEmail_Does_Not_Change_Stamping_State_When_Email_Fails()
     {
         var fiscalStamp = CreateFiscalStamp();

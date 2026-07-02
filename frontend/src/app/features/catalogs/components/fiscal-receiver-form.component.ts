@@ -1,8 +1,9 @@
-import { ChangeDetectionStrategy, Component, OnChanges, SimpleChanges, inject, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnChanges, SimpleChanges, inject, input, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FiscalReceiverSatCatalogService } from '../application/fiscal-receiver-sat-catalog.service';
 import { FiscalReceiver, FiscalReceiverSatCatalog, FiscalReceiverSatCatalogOption, FiscalReceiverSpecialFieldDefinition, UpsertFiscalReceiverRequest } from '../models/catalogs.models';
+import { findInvalidEmailRecipients, formatEmailRecipientsInput, parseEmailRecipients } from '../../../shared/utils/email-recipients';
 
 @Component({
   selector: 'app-fiscal-receiver-form',
@@ -61,8 +62,9 @@ import { FiscalReceiver, FiscalReceiverSatCatalog, FiscalReceiverSatCatalogOptio
       </label>
 
       <label>
-        <span>Email</span>
-        <input [(ngModel)]="draft.email" name="email" type="email" />
+        <span>Correo(s)</span>
+        <input [(ngModel)]="draft.email" name="email" type="text" maxlength="200" />
+        <small class="helper">Para varios correos, sepáralos con punto y coma (;).</small>
       </label>
 
       <label>
@@ -152,8 +154,8 @@ import { FiscalReceiver, FiscalReceiverSatCatalog, FiscalReceiverSatCatalogOptio
         }
       </section>
 
-      @if (errorMessage()) {
-        <p class="error">{{ errorMessage() }}</p>
+      @if (displayErrorMessage(); as currentErrorMessage) {
+        <p class="error">{{ currentErrorMessage }}</p>
       }
 
       <button type="submit" [disabled]="readOnly() || submitting()">{{ submitting() ? 'Guardando...' : submitLabel() }}</button>
@@ -193,6 +195,8 @@ import { FiscalReceiver, FiscalReceiverSatCatalog, FiscalReceiverSatCatalogOptio
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class FiscalReceiverFormComponent implements OnChanges {
+  private static readonly emailMaxLength = 200;
+
   private readonly fiscalReceiverSatCatalogService = inject(FiscalReceiverSatCatalogService);
 
   readonly receiver = input<FiscalReceiver | null>(null);
@@ -204,6 +208,7 @@ export class FiscalReceiverFormComponent implements OnChanges {
   readonly submitted = output<UpsertFiscalReceiverRequest>();
 
   protected readonly satCatalog = toSignal(this.fiscalReceiverSatCatalogService.getCatalog(), { initialValue: null });
+  protected readonly localErrorMessage = signal<string | null>(null);
   protected draft: UpsertFiscalReceiverRequest = emptyReceiver();
   private hydratingDraft = false;
 
@@ -213,6 +218,7 @@ export class FiscalReceiverFormComponent implements OnChanges {
     }
 
     const receiver = this.receiver();
+    this.localErrorMessage.set(null);
     this.hydratingDraft = true;
     this.draft = receiver
       ? {
@@ -234,6 +240,33 @@ export class FiscalReceiverFormComponent implements OnChanges {
   }
 
   protected submitForm(): void {
+    const rawEmail = this.draft.email?.trim() ?? '';
+    const invalidRecipients = findInvalidEmailRecipients(rawEmail);
+    const normalizedRecipients = parseEmailRecipients(rawEmail);
+    const normalizedEmail = rawEmail ? formatEmailRecipientsInput(rawEmail) : '';
+
+    if (invalidRecipients.length > 0) {
+      this.localErrorMessage.set(
+        `Correo inválido: ${invalidRecipients.join(', ')}. Para varios correos, sepáralos con punto y coma (;).`,
+      );
+      return;
+    }
+
+    if (rawEmail && normalizedRecipients.length === 0) {
+      this.localErrorMessage.set(
+        'Correo inválido. Para varios correos, sepáralos con punto y coma (;).',
+      );
+      return;
+    }
+
+    if (normalizedEmail.length > FiscalReceiverFormComponent.emailMaxLength) {
+      this.localErrorMessage.set(
+        `El campo Correo(s) permite máximo ${FiscalReceiverFormComponent.emailMaxLength} caracteres.`,
+      );
+      return;
+    }
+
+    this.localErrorMessage.set(null);
     this.submitted.emit({
       ...this.draft,
       rfc: this.draft.rfc.trim(),
@@ -243,7 +276,7 @@ export class FiscalReceiverFormComponent implements OnChanges {
       postalCode: this.draft.postalCode.trim(),
       countryCode: this.draft.countryCode?.trim() || null,
       foreignTaxRegistration: this.draft.foreignTaxRegistration?.trim() || null,
-      email: this.draft.email?.trim() || null,
+      email: normalizedEmail || null,
       phone: this.draft.phone?.trim() || null,
       searchAlias: this.draft.searchAlias?.trim() || null,
       specialFields: this.draft.specialFields.map((field, index) => ({
@@ -321,6 +354,10 @@ export class FiscalReceiverFormComponent implements OnChanges {
     if (!isCompatible) {
       this.draft.cfdiUseCodeDefault = '';
     }
+  }
+
+  protected displayErrorMessage(): string | null {
+    return this.localErrorMessage() ?? this.errorMessage();
   }
 }
 

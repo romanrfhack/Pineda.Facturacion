@@ -1,4 +1,5 @@
 using Pineda.Facturacion.Application.Abstractions.Persistence;
+using Pineda.Facturacion.Application.Common;
 using Pineda.Facturacion.Domain.Enums;
 
 namespace Pineda.Facturacion.Application.UseCases.FiscalDocuments;
@@ -53,9 +54,22 @@ public class GetFiscalDocumentEmailDraftService
         {
             Outcome = GetFiscalDocumentEmailDraftOutcome.Found,
             IsSuccess = true,
-            DefaultRecipientEmail = fiscalReceiver?.Email,
+            DefaultRecipientEmail = NormalizeDraftRecipientEmail(fiscalReceiver?.Email),
             SuggestedSubject = $"{documentLabel} timbrado",
             SuggestedBody = $"Adjuntamos el CFDI timbrado {documentLabel} en formatos XML y PDF."
         };
+    }
+
+    private static string? NormalizeDraftRecipientEmail(string? value)
+    {
+        var normalizedValue = value?.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedValue))
+        {
+            return null;
+        }
+
+        return EmailRecipientParser.FindInvalidRecipients([normalizedValue]).Count == 0
+            ? EmailRecipientParser.JoinNormalizedRecipients([normalizedValue])
+            : normalizedValue;
     }
 }

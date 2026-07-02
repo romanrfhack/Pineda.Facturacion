@@ -38,6 +38,7 @@ import { FiscalCancellationCardComponent } from '../components/fiscal-cancellati
 import { FiscalStampEvidenceDetailComponent } from '../components/fiscal-stamp-evidence-detail.component';
 import { XmlViewerPanelComponent } from '../../../shared/components/xml-viewer-panel.component';
 import { getDisplayLabel } from '../../../shared/ui/display-labels';
+import { findInvalidEmailRecipients, parseEmailRecipients } from '../../../shared/utils/email-recipients';
 import { extractApiErrorMessage } from '../../../core/http/api-error-message';
 import { ProductFiscalProfileFormComponent } from '../../catalogs/components/product-fiscal-profile-form.component';
 import { ProductFiscalProfilesApiService } from '../../catalogs/infrastructure/product-fiscal-profiles-api.service';
@@ -3541,8 +3542,8 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   }
 
   protected hasValidEmailRecipients(): boolean {
-    const recipients = parseRecipients(this.emailRecipientsInput);
-    return recipients.length > 0 && recipients.every(isValidEmail);
+    return parseEmailRecipients(this.emailRecipientsInput).length > 0
+      && findInvalidEmailRecipients(this.emailRecipientsInput).length === 0;
   }
 
   protected async sendEmail(): Promise<void> {
@@ -3551,8 +3552,16 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       return;
     }
 
-    const recipients = parseRecipients(this.emailRecipientsInput);
-    if (recipients.length === 0 || !recipients.every(isValidEmail)) {
+    const invalidRecipients = findInvalidEmailRecipients(this.emailRecipientsInput);
+    if (invalidRecipients.length > 0) {
+      this.emailRecipientsError.set(
+        `Correo inválido: ${invalidRecipients.join(', ')}. Para varios correos, sepáralos con punto y coma (;).`,
+      );
+      return;
+    }
+
+    const recipients = parseEmailRecipients(this.emailRecipientsInput);
+    if (recipients.length === 0) {
       this.emailRecipientsError.set('Captura al menos un correo válido para continuar.');
       return;
     }
@@ -4201,17 +4210,6 @@ function parseNumber(value: string | null): number | null {
 
 function extractErrorMessage(error: unknown): string {
   return extractApiErrorMessage(error);
-}
-
-function parseRecipients(value: string): string[] {
-  return value
-    .split(/[,;\n]+/)
-    .map((recipient) => recipient.trim())
-    .filter((recipient) => recipient.length > 0);
-}
-
-function isValidEmail(value: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
 function shouldOpenEmailComposerAfterStamp(

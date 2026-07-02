@@ -6,6 +6,11 @@ import { PermissionService } from '../../../core/auth/permission.service';
 import { extractApiErrorMessage } from '../../../core/http/api-error-message';
 import { FeedbackService } from '../../../core/ui/feedback.service';
 import { getDisplayLabel } from '../../../shared/ui/display-labels';
+import {
+  findInvalidEmailRecipients,
+  joinEmailRecipients,
+  parseEmailRecipients,
+} from '../../../shared/utils/email-recipients';
 import { AccountsReceivableApiService } from '../../accounts-receivable/infrastructure/accounts-receivable-api.service';
 import { PaymentComplementStampEvidenceDetailComponent } from '../components/payment-complement-stamp-evidence-detail.component';
 import { PaymentContextModalComponent } from '../components/payment-context-modal.component';
@@ -1021,12 +1026,12 @@ export class PaymentComplementBaseDocumentsPageComponent {
     try {
       const draft = await firstValueFrom(this.api.getPaymentComplementEmailDraft(complement.paymentComplementId));
       this.paymentComplementEmailDraft.set(draft);
-      this.paymentComplementEmailRecipientsInput = draft.recipients.join(', ');
+      this.paymentComplementEmailRecipientsInput = joinEmailRecipients(draft.recipients);
       if (!draft.recipients.length) {
         const fallbackRecipients = automaticEmailResult?.status === 'invalid'
           ? automaticEmailResult.invalidRecipients
           : automaticEmailResult?.recipients ?? [];
-        this.paymentComplementEmailRecipientsInput = fallbackRecipients.join(', ');
+        this.paymentComplementEmailRecipientsInput = joinEmailRecipients(fallbackRecipients);
       }
       this.paymentComplementEmailSubject = draft.subject ?? '';
       this.paymentComplementEmailBody = draft.body ?? '';
@@ -1049,8 +1054,8 @@ export class PaymentComplementBaseDocumentsPageComponent {
   }
 
   protected hasValidPaymentComplementEmailRecipients(): boolean {
-    const recipients = parseRecipients(this.paymentComplementEmailRecipientsInput);
-    return recipients.length > 0 && recipients.every(isValidEmail);
+    return parseEmailRecipients(this.paymentComplementEmailRecipientsInput).length > 0
+      && findInvalidEmailRecipients(this.paymentComplementEmailRecipientsInput).length === 0;
   }
 
   protected paymentComplementEmailAttachments(): string[] {
@@ -1073,14 +1078,17 @@ export class PaymentComplementBaseDocumentsPageComponent {
       return;
     }
 
-    const recipients = parseRecipients(this.paymentComplementEmailRecipientsInput);
-    if (!recipients.length) {
-      this.paymentComplementEmailRecipientsError.set('Captura al menos un destinatario.');
+    const invalidRecipients = findInvalidEmailRecipients(this.paymentComplementEmailRecipientsInput);
+    if (invalidRecipients.length > 0) {
+      this.paymentComplementEmailRecipientsError.set(
+        `Correo inválido: ${invalidRecipients.join(', ')}. Para varios correos, sepáralos con punto y coma (;).`,
+      );
       return;
     }
 
-    if (!recipients.every(isValidEmail)) {
-      this.paymentComplementEmailRecipientsError.set('Captura únicamente correos válidos para continuar.');
+    const recipients = parseEmailRecipients(this.paymentComplementEmailRecipientsInput);
+    if (!recipients.length) {
+      this.paymentComplementEmailRecipientsError.set('Captura al menos un correo válido para continuar.');
       return;
     }
 
@@ -1442,17 +1450,6 @@ export class PaymentComplementBaseDocumentsPageComponent {
     this.paymentComplementEmailSubject = '';
     this.paymentComplementEmailBody = '';
   }
-}
-
-function parseRecipients(value: string): string[] {
-  return value
-    .split(/[,;\n]+/)
-    .map((recipient) => recipient.trim())
-    .filter((recipient) => recipient.length > 0);
-}
-
-function isValidEmail(value: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
 function normalizeOptionalText(value: string): string | null {

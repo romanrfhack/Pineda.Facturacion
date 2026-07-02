@@ -1,4 +1,5 @@
 using Pineda.Facturacion.Application.Abstractions.Persistence;
+using Pineda.Facturacion.Application.Common;
 using Pineda.Facturacion.Domain.Enums;
 
 namespace Pineda.Facturacion.Application.UseCases.PaymentComplements;
@@ -47,15 +48,17 @@ public sealed class GetPaymentComplementEmailDraftService
         var fiscalReceiver = paymentComplementDocument.FiscalReceiverId.HasValue && paymentComplementDocument.FiscalReceiverId.Value > 0
             ? await _fiscalReceiverRepository.GetByIdAsync(paymentComplementDocument.FiscalReceiverId.Value, cancellationToken)
             : null;
-        var recipients = SendPaymentComplementEmailService.NormalizeRecipients(
-            string.IsNullOrWhiteSpace(fiscalReceiver?.Email) ? [] : [fiscalReceiver.Email!]);
+        var normalizedEmail = fiscalReceiver?.Email?.Trim();
+        var recipients = SendPaymentComplementEmailService.FindInvalidRecipients(string.IsNullOrWhiteSpace(normalizedEmail) ? [] : [normalizedEmail]).Count == 0
+            ? SendPaymentComplementEmailService.NormalizeRecipients(string.IsNullOrWhiteSpace(normalizedEmail) ? [] : [normalizedEmail])
+            : [];
         var uuid = paymentComplementStamp.Uuid!;
 
         return new GetPaymentComplementEmailDraftResult
         {
             Outcome = GetPaymentComplementEmailDraftOutcome.Found,
             IsSuccess = true,
-            DefaultRecipientEmail = fiscalReceiver?.Email?.Trim(),
+            DefaultRecipientEmail = NormalizeDraftRecipientEmail(normalizedEmail),
             Recipients = recipients,
             Subject = $"Complemento de pago {uuid}",
             Body = "Adjuntamos el complemento de pago correspondiente.",
@@ -73,5 +76,17 @@ public sealed class GetPaymentComplementEmailDraftService
                 }
             ]
         };
+    }
+
+    private static string? NormalizeDraftRecipientEmail(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return EmailRecipientParser.FindInvalidRecipients([value]).Count == 0
+            ? EmailRecipientParser.JoinNormalizedRecipients([value])
+            : value;
     }
 }

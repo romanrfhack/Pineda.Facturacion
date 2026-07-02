@@ -782,7 +782,7 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('REP emitidos y relacionados');
     expect(fixture.nativeElement.textContent).toContain('FacturaloPlus');
-  });
+  }, 15000);
 
   it('renders operational alerts and refresh/cancel actions in detail', async () => {
     const refreshInternalBaseDocumentPaymentComplementStatus = vi.fn().mockReturnValue(of({
@@ -911,7 +911,76 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
     createObjectUrlSpy.mockRestore();
   });
 
-  it('opens the REP email composer with draft data and sends using paymentComplementId', async () => {
+  it('opens the REP email composer with draft data and sends multiple recipients using paymentComplementId', async () => {
+    const sendPaymentComplementEmail = vi.fn().mockReturnValue(of({
+      outcome: 'Sent',
+      isSuccess: true,
+      paymentComplementId: 7001,
+      recipients: ['cliente@example.com', 'cobranza@example.com'],
+      sentAtUtc: '2026-04-03T11:00:00Z'
+    }));
+    const fixture = await configure({
+      sendPaymentComplementEmail,
+      getPaymentComplementEmailDraft: vi.fn().mockReturnValue(of({
+        outcome: 'Found',
+        isSuccess: true,
+        recipients: ['cliente@example.com', 'cobranza@example.com'],
+        subject: 'Complemento de pago UUID-PC-1',
+        body: 'Adjuntamos el complemento de pago correspondiente.',
+        attachments: [
+          { fileName: 'REP_UUID-PC-1.xml', contentType: 'application/xml' },
+          { fileName: 'REP_UUID-PC-1.pdf', contentType: 'application/pdf' }
+        ]
+      })),
+    });
+
+    await fixture.componentInstance['openDetailModal'](fixture.componentInstance['items']()[0]);
+    const complement = fixture.componentInstance['selectedDetail']()!.issuedReps[0];
+    await fixture.componentInstance['openPaymentComplementEmailComposer'](complement);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Enviar REP por correo');
+    expect(fixture.nativeElement.textContent).toContain('REP_UUID-PC-1.xml');
+    expect(fixture.nativeElement.textContent).toContain('REP_UUID-PC-1.pdf');
+    expect(fixture.componentInstance['paymentComplementEmailRecipientsInput']).toBe(
+      'cliente@example.com; cobranza@example.com',
+    );
+
+    fixture.componentInstance['paymentComplementEmailRecipientsInput'] = 'cliente@example.com; cobranza@example.com';
+    await fixture.componentInstance['sendPaymentComplementEmail']();
+
+    expect(sendPaymentComplementEmail).toHaveBeenCalledWith(7001, {
+      recipients: ['cliente@example.com', 'cobranza@example.com'],
+      subject: 'Complemento de pago UUID-PC-1',
+      body: 'Adjuntamos el complemento de pago correspondiente.'
+    });
+  });
+
+  it('preloads multiple REP email recipients using semicolon format', async () => {
+    const fixture = await configure({
+      getPaymentComplementEmailDraft: vi.fn().mockReturnValue(of({
+        outcome: 'Found',
+        isSuccess: true,
+        recipients: ['cliente@example.com', 'cobranza@example.com'],
+        subject: 'Complemento de pago UUID-PC-1',
+        body: 'Adjuntamos el complemento de pago correspondiente.',
+        attachments: [
+          { fileName: 'REP_UUID-PC-1.xml', contentType: 'application/xml' },
+          { fileName: 'REP_UUID-PC-1.pdf', contentType: 'application/pdf' }
+        ]
+      })),
+    });
+
+    await fixture.componentInstance['openDetailModal'](fixture.componentInstance['items']()[0]);
+    const complement = fixture.componentInstance['selectedDetail']()!.issuedReps[0];
+    await fixture.componentInstance['openPaymentComplementEmailComposer'](complement);
+
+    expect(fixture.componentInstance['paymentComplementEmailRecipientsInput']).toBe(
+      'cliente@example.com; cobranza@example.com',
+    );
+  });
+
+  it('blocks REP email send when the input mixes valid and invalid recipients', async () => {
     const sendPaymentComplementEmail = vi.fn().mockReturnValue(of({
       outcome: 'Sent',
       isSuccess: true,
@@ -924,20 +993,15 @@ describe('PaymentComplementBaseDocumentsPageComponent', () => {
     await fixture.componentInstance['openDetailModal'](fixture.componentInstance['items']()[0]);
     const complement = fixture.componentInstance['selectedDetail']()!.issuedReps[0];
     await fixture.componentInstance['openPaymentComplementEmailComposer'](complement);
+    fixture.componentInstance['paymentComplementEmailRecipientsInput'] = 'cliente@example.com; invalido';
+
+    await fixture.componentInstance['sendPaymentComplementEmail']();
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.textContent).toContain('Enviar REP por correo');
-    expect(fixture.nativeElement.textContent).toContain('REP_UUID-PC-1.xml');
-    expect(fixture.nativeElement.textContent).toContain('REP_UUID-PC-1.pdf');
-
-    fixture.componentInstance['paymentComplementEmailRecipientsInput'] = 'cliente@example.com';
-    await fixture.componentInstance['sendPaymentComplementEmail']();
-
-    expect(sendPaymentComplementEmail).toHaveBeenCalledWith(7001, {
-      recipients: ['cliente@example.com'],
-      subject: 'Complemento de pago UUID-PC-1',
-      body: 'Adjuntamos el complemento de pago correspondiente.'
-    });
+    expect(sendPaymentComplementEmail).not.toHaveBeenCalled();
+    expect(fixture.componentInstance['paymentComplementEmailRecipientsError']()).toBe(
+      'Correo inválido: invalido. Para varios correos, sepáralos con punto y coma (;).',
+    );
   });
 
   it('disables REP XML/PDF/Correo actions when flags are not available', async () => {

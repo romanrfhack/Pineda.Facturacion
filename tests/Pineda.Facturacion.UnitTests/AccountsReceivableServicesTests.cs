@@ -1816,6 +1816,25 @@ public class AccountsReceivableServicesTests
     }
 
     [Fact]
+    public async Task GetReceivablesSummaryCandidates_Returns_Multiple_Default_Recipients_From_Catalog()
+    {
+        var factory = CreateSummaryDocumentFactory(
+            new ArFakeAccountsReceivableInvoiceRepository
+            {
+                PortfolioItems =
+                [
+                    CreatePortfolioItem(201, "MXN", total: 1000m, paid: 100m, outstanding: 900m, dueAtUtc: DateTime.UtcNow.Date.AddDays(3))
+                ]
+            },
+            receiverEmail: "cliente@example.com; cobranza@example.com");
+
+        var result = await factory.GetCandidatesAsync(77);
+
+        Assert.Equal(ReceivablesSummaryOutcome.Found, result.Outcome);
+        Assert.Equal(["cliente@example.com", "cobranza@example.com"], result.DefaultTo);
+    }
+
+    [Fact]
     public async Task PreviewReceivablesSummary_RendersBodySectionsInsidePaddedContentCell()
     {
         var service = new PreviewReceivablesSummaryService(
@@ -2114,6 +2133,33 @@ public class AccountsReceivableServicesTests
 
         Assert.Equal(ReceivablesSummaryOutcome.ValidationFailed, result.Outcome);
         Assert.Contains("cc-invalido", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task PreviewReceivablesSummary_Rejects_Invalid_Recipients_When_A_Single_Entry_Contains_Multiple_Emails()
+    {
+        var service = new PreviewReceivablesSummaryService(
+            CreateSummaryDocumentFactory(new ArFakeAccountsReceivableInvoiceRepository
+            {
+                PortfolioItems =
+                [
+                    CreatePortfolioItem(201, "MXN", total: 1000m, paid: 0m, outstanding: 1000m, dueAtUtc: DateTime.UtcNow.Date.AddDays(3))
+                ]
+            }),
+            new ArFakeReceivablesSummaryPdfRenderer());
+
+        var result = await service.ExecuteAsync(new ReceivablesSummaryCommand
+        {
+            ReceiverId = 77,
+            Scope = "all_pending",
+            To = ["cliente@example.com; invalido"],
+            Subject = "Resumen",
+            Message = "Mensaje",
+            Format = "html"
+        });
+
+        Assert.Equal(ReceivablesSummaryOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("invalido", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

@@ -20,6 +20,12 @@ import {
   selectReceivablesSummaryInvoices,
   summarizeReceivablesSummaryInvoices,
 } from '../application/receivables-summary-selection';
+import {
+  findInvalidEmailRecipients,
+  formatEmailRecipientsInput,
+  joinEmailRecipients,
+  parseEmailRecipients,
+} from '../../../shared/utils/email-recipients';
 
 type SummaryStep = 1 | 2 | 3;
 
@@ -534,7 +540,9 @@ export class SendReceivablesSummaryModalComponent {
     try {
       const response = await firstValueFrom(this.api.getReceivablesSummaryCandidates(this.receiverId()));
       this.candidateResponse.set(response);
-      this.toInput = response.defaultTo.join(', ');
+      this.toInput = response.defaultTo.length
+        ? joinEmailRecipients(response.defaultTo)
+        : formatEmailRecipientsInput(response.receiver.email);
       this.subject = response.defaultSubject;
       this.message = response.defaultMessage;
 
@@ -606,12 +614,12 @@ export class SendReceivablesSummaryModalComponent {
   }
 
   private validateEmailConfiguration(): boolean {
-    if (!parseRecipients(this.toInput).length) {
+    if (!parseEmailRecipients(this.toInput).length) {
       this.errorMessage.set('Captura al menos un correo válido en Para.');
       return false;
     }
     const invalid = [this.toInput, this.ccInput, this.bccInput]
-      .flatMap((value) => parseInvalidRecipients(value));
+      .flatMap((value) => findInvalidEmailRecipients(value));
     if (invalid.length) {
       this.errorMessage.set(`Correo inválido: ${invalid.join(', ')}`);
       return false;
@@ -633,9 +641,9 @@ export class SendReceivablesSummaryModalComponent {
       receiverId: String(this.receiverId()),
       invoiceIds: this.selectedInvoices().map((invoice) => invoice.accountsReceivableInvoiceId),
       scope: this.scope(),
-      to: parseRecipients(this.toInput),
-      cc: parseRecipients(this.ccInput),
-      bcc: parseRecipients(this.bccInput),
+      to: parseEmailRecipients(this.toInput),
+      cc: parseEmailRecipients(this.ccInput),
+      bcc: parseEmailRecipients(this.bccInput),
       subject: this.subject.trim(),
       message: this.message.trim(),
       format: this.format,
@@ -646,25 +654,6 @@ export class SendReceivablesSummaryModalComponent {
   private effectiveSelectedIds(): readonly number[] {
     return this.scope() === 'current_selection' ? this.currentSelection() : this.manualSelectedIds();
   }
-}
-
-function parseRecipients(value: string): string[] {
-  return splitRecipients(value).filter((recipient) => isValidEmail(recipient));
-}
-
-function parseInvalidRecipients(value: string): string[] {
-  return splitRecipients(value).filter((recipient) => !isValidEmail(recipient));
-}
-
-function splitRecipients(value: string): string[] {
-  return value
-    .split(/[;,]/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function isValidEmail(value: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
 function describeOperationError(error: unknown, fallback: string): string {

@@ -32,6 +32,24 @@ public class StampAndEmailFiscalDocumentServiceTests
     }
 
     [Fact]
+    public async Task StampAndEmailFiscalDocument_Sends_Email_To_All_Registered_Recipients()
+    {
+        var fixture = CreateFixture("cliente@example.com; cobranza@example.com");
+
+        var result = await fixture.Service.ExecuteAsync(new StampAndEmailFiscalDocumentCommand
+        {
+            FiscalDocumentId = 50
+        });
+
+        Assert.True(result.Stamped);
+        Assert.True(result.EmailAttempted);
+        Assert.True(result.EmailSent);
+        Assert.Equal(StampAndEmailFiscalDocumentEmailStatus.Sent, result.EmailStatus);
+        Assert.Equal(["cliente@example.com", "cobranza@example.com"], result.EmailRecipients);
+        Assert.Equal(["cliente@example.com", "cobranza@example.com"], fixture.EmailSender.LastMessage!.Recipients);
+    }
+
+    [Fact]
     public async Task StampAndEmailFiscalDocument_Returns_Missing_When_Receiver_Has_No_Email()
     {
         var fixture = CreateFixture(null);
@@ -53,6 +71,24 @@ public class StampAndEmailFiscalDocumentServiceTests
     public async Task StampAndEmailFiscalDocument_Returns_Invalid_When_Receiver_Email_Is_Invalid()
     {
         var fixture = CreateFixture("correo-invalido");
+
+        var result = await fixture.Service.ExecuteAsync(new StampAndEmailFiscalDocumentCommand
+        {
+            FiscalDocumentId = 50
+        });
+
+        Assert.True(result.Stamped);
+        Assert.False(result.EmailAttempted);
+        Assert.False(result.EmailSent);
+        Assert.Equal(StampAndEmailFiscalDocumentEmailStatus.Invalid, result.EmailStatus);
+        Assert.Equal(["correo-invalido"], result.InvalidRecipients);
+        Assert.Equal(0, fixture.EmailSender.SendCallCount);
+    }
+
+    [Fact]
+    public async Task StampAndEmailFiscalDocument_Returns_Invalid_When_Any_Registered_Email_Is_Invalid()
+    {
+        var fixture = CreateFixture("cliente@example.com; correo-invalido");
 
         var result = await fixture.Service.ExecuteAsync(new StampAndEmailFiscalDocumentCommand
         {

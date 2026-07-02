@@ -433,6 +433,45 @@ describe('IssuedCfdisPageComponent', () => {
         outcome: 'Sent',
         isSuccess: true,
         fiscalDocumentId: 40,
+        recipients: ['cliente@example.com', 'cobranza@example.com'],
+        sentAtUtc: '2026-03-24T12:10:00Z',
+      }),
+    );
+    const fixture = await configure({
+      sendByEmail,
+      getEmailDraft: vi.fn().mockReturnValue(
+        of({
+          outcome: 'Found',
+          isSuccess: true,
+          defaultRecipientEmail: 'cliente@example.com; cobranza@example.com',
+          suggestedSubject: 'CFDI A31787',
+          suggestedBody: 'Adjuntamos CFDI.',
+        }),
+      ),
+    });
+
+    await fixture.componentInstance['openDetailModal'](fixture.componentInstance['items']()[0]);
+    await fixture.componentInstance['openEmailComposerForSelected']();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Reenviar CFDI por correo');
+    expect(fixture.componentInstance['emailRecipientsInput']).toBe('cliente@example.com; cobranza@example.com');
+    await fixture.componentInstance['sendEmail']();
+
+    expect(sendByEmail).toHaveBeenCalledWith(
+      40,
+      expect.objectContaining({
+        recipients: ['cliente@example.com', 'cobranza@example.com'],
+      }),
+    );
+  });
+
+  it('blocks email resend when the input mixes valid and invalid recipients', async () => {
+    const sendByEmail = vi.fn().mockReturnValue(
+      of({
+        outcome: 'Sent',
+        isSuccess: true,
+        fiscalDocumentId: 40,
         recipients: ['cliente@example.com'],
         sentAtUtc: '2026-03-24T12:10:00Z',
       }),
@@ -441,17 +480,14 @@ describe('IssuedCfdisPageComponent', () => {
 
     await fixture.componentInstance['openDetailModal'](fixture.componentInstance['items']()[0]);
     await fixture.componentInstance['openEmailComposerForSelected']();
+    fixture.componentInstance['emailRecipientsInput'] = 'cliente@example.com; invalido';
+
+    await fixture.componentInstance['sendEmail']();
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.textContent).toContain('Reenviar CFDI por correo');
-    fixture.componentInstance['emailRecipientsInput'] = 'cliente@example.com';
-    await fixture.componentInstance['sendEmail']();
-
-    expect(sendByEmail).toHaveBeenCalledWith(
-      40,
-      expect.objectContaining({
-        recipients: ['cliente@example.com'],
-      }),
+    expect(sendByEmail).not.toHaveBeenCalled();
+    expect(fixture.componentInstance['emailRecipientsError']()).toBe(
+      'Correo inválido: invalido. Para varios correos, sepáralos con punto y coma (;).',
     );
   });
 

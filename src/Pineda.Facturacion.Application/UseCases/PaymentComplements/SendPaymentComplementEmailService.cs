@@ -2,6 +2,7 @@ using System.Net.Mail;
 using Pineda.Facturacion.Application.Abstractions.Communication;
 using Pineda.Facturacion.Application.Abstractions.Documents;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
+using Pineda.Facturacion.Application.Common;
 using Pineda.Facturacion.Domain.Enums;
 
 namespace Pineda.Facturacion.Application.UseCases.PaymentComplements;
@@ -30,9 +31,15 @@ public sealed class SendPaymentComplementEmailService
         CancellationToken cancellationToken = default)
     {
         var recipients = NormalizeRecipients(command.Recipients);
+        var invalidRecipients = FindInvalidRecipients(command.Recipients);
         if (command.PaymentComplementId <= 0)
         {
             return ValidationFailure(command.PaymentComplementId, recipients, "Payment complement id is required.");
+        }
+
+        if (invalidRecipients.Count > 0)
+        {
+            return ValidationFailure(command.PaymentComplementId, recipients, $"Correo inválido: {string.Join(", ", invalidRecipients)}.");
         }
 
         if (recipients.Count == 0)
@@ -157,34 +164,12 @@ public sealed class SendPaymentComplementEmailService
 
     internal static IReadOnlyList<string> NormalizeRecipients(IEnumerable<string>? recipients)
     {
-        if (recipients is null)
-        {
-            return [];
-        }
+        return EmailRecipientParser.NormalizeRecipients(recipients);
+    }
 
-        var normalizedRecipients = new List<string>();
-
-        foreach (var recipient in recipients)
-        {
-            var candidate = recipient?.Trim();
-            if (string.IsNullOrWhiteSpace(candidate))
-            {
-                continue;
-            }
-
-            try
-            {
-                var mailAddress = new MailAddress(candidate);
-                normalizedRecipients.Add(mailAddress.Address);
-            }
-            catch (FormatException)
-            {
-            }
-        }
-
-        return normalizedRecipients
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+    internal static IReadOnlyList<string> FindInvalidRecipients(IEnumerable<string>? recipients)
+    {
+        return EmailRecipientParser.FindInvalidRecipients(recipients);
     }
 
     private static SendPaymentComplementEmailResult ValidationFailure(long paymentComplementId, IReadOnlyList<string> recipients, string errorMessage)

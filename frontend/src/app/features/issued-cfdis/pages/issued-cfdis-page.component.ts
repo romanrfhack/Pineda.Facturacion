@@ -23,6 +23,7 @@ import { FiscalStampEvidenceDetailComponent } from '../../fiscal-documents/compo
 import { FiscalCancellationCardComponent } from '../../fiscal-documents/components/fiscal-cancellation-card.component';
 import { XmlViewerPanelComponent } from '../../../shared/components/xml-viewer-panel.component';
 import { getDisplayLabel } from '../../../shared/ui/display-labels';
+import { findInvalidEmailRecipients, parseEmailRecipients } from '../../../shared/utils/email-recipients';
 import { buildFiscalDocumentFileName } from '../../fiscal-documents/application/fiscal-document-file-name';
 import {
   buildCancellationConfirmationMessage,
@@ -997,8 +998,8 @@ export class IssuedCfdisPageComponent {
   }
 
   protected hasValidEmailRecipients(): boolean {
-    const recipients = parseRecipients(this.emailRecipientsInput);
-    return recipients.length > 0 && recipients.every(isValidEmail);
+    return parseEmailRecipients(this.emailRecipientsInput).length > 0
+      && findInvalidEmailRecipients(this.emailRecipientsInput).length === 0;
   }
 
   protected async sendEmail(): Promise<void> {
@@ -1006,8 +1007,16 @@ export class IssuedCfdisPageComponent {
       return;
     }
 
-    const recipients = parseRecipients(this.emailRecipientsInput);
-    if (recipients.length === 0 || !recipients.every(isValidEmail)) {
+    const invalidRecipients = findInvalidEmailRecipients(this.emailRecipientsInput);
+    if (invalidRecipients.length > 0) {
+      this.emailRecipientsError.set(
+        `Correo inválido: ${invalidRecipients.join(', ')}. Para varios correos, sepáralos con punto y coma (;).`,
+      );
+      return;
+    }
+
+    const recipients = parseEmailRecipients(this.emailRecipientsInput);
+    if (recipients.length === 0) {
       this.emailRecipientsError.set('Captura al menos un correo válido para continuar.');
       return;
     }
@@ -1430,17 +1439,6 @@ export class IssuedCfdisPageComponent {
       this.actionKey.set(null);
     }
   }
-}
-
-function parseRecipients(value: string): string[] {
-  return value
-    .split(/[,;\n]+/)
-    .map((recipient) => recipient.trim())
-    .filter((recipient) => recipient.length > 0);
-}
-
-function isValidEmail(value: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
 function triggerBlobDownload(blob: Blob, fileName: string): void {

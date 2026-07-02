@@ -11,6 +11,8 @@ public class CreateFiscalReceiverService
     private readonly IFiscalReceiverSatCatalogProvider _fiscalReceiverSatCatalogProvider;
     private readonly IUnitOfWork _unitOfWork;
 
+    internal const int EmailMaxLength = 200;
+
     public CreateFiscalReceiverService(
         IFiscalReceiverRepository fiscalReceiverRepository,
         IFiscalReceiverSatCatalogProvider fiscalReceiverSatCatalogProvider,
@@ -59,7 +61,7 @@ public class CreateFiscalReceiverService
             PostalCode = FiscalMasterDataNormalization.NormalizeRequiredCode(command.PostalCode),
             CountryCode = FiscalMasterDataNormalization.NormalizeOptionalText(command.CountryCode)?.ToUpperInvariant(),
             ForeignTaxRegistration = FiscalMasterDataNormalization.NormalizeOptionalText(command.ForeignTaxRegistration),
-            Email = FiscalMasterDataNormalization.NormalizeOptionalText(command.Email),
+            Email = NormalizeEmail(command.Email),
             Phone = FiscalMasterDataNormalization.NormalizeOptionalText(command.Phone),
             SearchAlias = normalizedSearchAlias,
             NormalizedSearchAlias = normalizedSearchAlias is null
@@ -91,9 +93,36 @@ public class CreateFiscalReceiverService
         if (string.IsNullOrWhiteSpace(command.PostalCode)) return "Postal code is required.";
         var satCatalogValidationError = FiscalReceiverSatCatalogValidation.ValidateCodes(command.FiscalRegimeCode, command.CfdiUseCodeDefault, fiscalReceiverSatCatalogProvider);
         if (satCatalogValidationError is not null) return satCatalogValidationError;
+        var emailValidationError = ValidateEmail(command.Email);
+        if (emailValidationError is not null) return emailValidationError;
         var specialFieldValidationError = ValidateSpecialFields(command.SpecialFields);
         if (specialFieldValidationError is not null) return specialFieldValidationError;
         return null;
+    }
+
+    internal static string? NormalizeEmail(string? value)
+    {
+        return EmailRecipientParser.JoinNormalizedRecipients(string.IsNullOrWhiteSpace(value) ? [] : [value]);
+    }
+
+    internal static string? ValidateEmail(string? value)
+    {
+        var normalizedValue = FiscalMasterDataNormalization.NormalizeOptionalText(value);
+        if (normalizedValue is null)
+        {
+            return null;
+        }
+
+        var invalidRecipients = EmailRecipientParser.FindInvalidRecipients([normalizedValue]);
+        if (invalidRecipients.Count > 0)
+        {
+            return $"Correo inválido: {string.Join(", ", invalidRecipients)}. Para varios correos, sepáralos con punto y coma (;).";
+        }
+
+        var normalizedRecipients = NormalizeEmail(normalizedValue);
+        return normalizedRecipients is { Length: > EmailMaxLength }
+            ? $"El campo Correo(s) permite máximo {EmailMaxLength} caracteres."
+            : null;
     }
 
     internal static List<FiscalReceiverSpecialFieldDefinition> BuildSpecialFieldDefinitions(

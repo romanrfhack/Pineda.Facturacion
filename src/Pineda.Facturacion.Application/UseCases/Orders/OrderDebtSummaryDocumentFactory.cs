@@ -1,5 +1,6 @@
 using Pineda.Facturacion.Application.Abstractions.Legacy;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
+using Pineda.Facturacion.Application.Common;
 using Pineda.Facturacion.Application.Models.Legacy;
 using Pineda.Facturacion.Domain.Entities;
 
@@ -102,9 +103,9 @@ public sealed class OrderDebtSummaryDocumentFactory
             })
             .ToArray();
 
-        var invalidRecipients = FindInvalidRecipients(command.To)
-            .Concat(FindInvalidRecipients(command.Cc))
-            .Concat(FindInvalidRecipients(command.Bcc))
+        var invalidRecipients = EmailRecipientParser.FindInvalidRecipients(command.To)
+            .Concat(EmailRecipientParser.FindInvalidRecipients(command.Cc))
+            .Concat(EmailRecipientParser.FindInvalidRecipients(command.Bcc))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
         if (invalidRecipients.Length > 0)
@@ -113,9 +114,15 @@ public sealed class OrderDebtSummaryDocumentFactory
         }
 
         var to = OrderDebtSummaryComposer.NormalizeRecipients(command.To);
-        if (to.Count == 0 && OrderDebtSummaryComposer.IsValidEmailAddress(receiver.Email))
+        if (to.Count == 0)
         {
-            to = [receiver.Email!.Trim()];
+            var defaultInvalidRecipients = EmailRecipientParser.FindInvalidRecipients(string.IsNullOrWhiteSpace(receiver.Email) ? [] : [receiver.Email]);
+            if (defaultInvalidRecipients.Count > 0)
+            {
+                return ValidationFailure($"Correo inválido: {string.Join(", ", defaultInvalidRecipients)}.");
+            }
+
+            to = OrderDebtSummaryComposer.NormalizeRecipients(string.IsNullOrWhiteSpace(receiver.Email) ? [] : [receiver.Email]);
         }
 
         if (to.Count == 0)
@@ -183,31 +190,6 @@ public sealed class OrderDebtSummaryDocumentFactory
             Outcome = OrderDebtSummaryOutcome.ValidationFailed,
             ErrorMessage = errorMessage
         };
-    }
-
-    private static IReadOnlyList<string> FindInvalidRecipients(IEnumerable<string>? recipients)
-    {
-        if (recipients is null)
-        {
-            return [];
-        }
-
-        var invalid = new List<string>();
-        foreach (var recipient in recipients)
-        {
-            var candidate = recipient?.Trim();
-            if (string.IsNullOrWhiteSpace(candidate))
-            {
-                continue;
-            }
-
-            if (!OrderDebtSummaryComposer.IsValidEmailAddress(candidate))
-            {
-                invalid.Add(candidate);
-            }
-        }
-
-        return invalid;
     }
 
     private static string? ValidateCustomerSelection(

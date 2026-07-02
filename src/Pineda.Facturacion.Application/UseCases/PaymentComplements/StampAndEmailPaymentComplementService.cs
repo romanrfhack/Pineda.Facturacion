@@ -44,6 +44,18 @@ public sealed class StampAndEmailPaymentComplementService
             return result;
         }
 
+        var invalidRecipients = SendPaymentComplementEmailService.FindInvalidRecipients([defaultRecipientEmail]);
+        if (invalidRecipients.Count > 0)
+        {
+            result.Email.Status = StampAndEmailPaymentComplementEmailStatus.Invalid;
+            result.Email.InvalidRecipients = invalidRecipients;
+            result.Email.Message = invalidRecipients.Count == 1
+                ? $"Correo inválido registrado: {invalidRecipients[0]}."
+                : $"Correos inválidos registrados: {string.Join(", ", invalidRecipients)}.";
+            result.WarningMessages.Add("El complemento de pago se timbró correctamente, pero hay correos inválidos registrados para el receptor.");
+            return result;
+        }
+
         var normalizedRecipients = SendPaymentComplementEmailService.NormalizeRecipients([defaultRecipientEmail]);
         if (normalizedRecipients.Count == 0)
         {

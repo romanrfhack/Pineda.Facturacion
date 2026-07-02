@@ -67,7 +67,7 @@ public class UpdateFiscalReceiverService
         fiscalReceiver.PostalCode = FiscalMasterDataNormalization.NormalizeRequiredCode(command.PostalCode);
         fiscalReceiver.CountryCode = FiscalMasterDataNormalization.NormalizeOptionalText(command.CountryCode)?.ToUpperInvariant();
         fiscalReceiver.ForeignTaxRegistration = FiscalMasterDataNormalization.NormalizeOptionalText(command.ForeignTaxRegistration);
-        fiscalReceiver.Email = FiscalMasterDataNormalization.NormalizeOptionalText(command.Email);
+        fiscalReceiver.Email = CreateFiscalReceiverService.NormalizeEmail(command.Email);
         fiscalReceiver.Phone = FiscalMasterDataNormalization.NormalizeOptionalText(command.Phone);
         fiscalReceiver.SearchAlias = normalizedSearchAlias;
         fiscalReceiver.NormalizedSearchAlias = normalizedSearchAlias is null
@@ -107,6 +107,8 @@ public class UpdateFiscalReceiverService
         if (string.IsNullOrWhiteSpace(command.PostalCode)) return "Postal code is required.";
         var satCatalogValidationError = FiscalReceiverSatCatalogValidation.ValidateCodes(command.FiscalRegimeCode, command.CfdiUseCodeDefault, fiscalReceiverSatCatalogProvider);
         if (satCatalogValidationError is not null) return satCatalogValidationError;
+        var emailValidationError = CreateFiscalReceiverService.ValidateEmail(command.Email);
+        if (emailValidationError is not null) return emailValidationError;
         var specialFieldValidationError = CreateFiscalReceiverService.ValidateSpecialFields(command.SpecialFields);
         if (specialFieldValidationError is not null) return specialFieldValidationError;
         return null;

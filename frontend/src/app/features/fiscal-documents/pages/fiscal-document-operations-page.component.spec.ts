@@ -1075,6 +1075,27 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(fixture.componentInstance['emailBody']).toContain('XML y PDF');
   });
 
+  it('opens the email composer with multiple catalog recipients in semicolon format', async () => {
+    const fixture = await configure({
+      getEmailDraft: vi.fn().mockReturnValue(
+        of({
+          outcome: 'Found',
+          isSuccess: true,
+          defaultRecipientEmail: 'cliente@example.com; cobranza@example.com',
+          suggestedSubject: 'CFDI timbrado A8',
+          suggestedBody: 'Adjuntamos XML y PDF.',
+        }),
+      ),
+    });
+    await fixture.componentInstance['loadFiscalDocument'](40);
+    fixture.detectChanges();
+
+    await fixture.componentInstance['openEmailComposer']();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['emailRecipientsInput']).toBe('cliente@example.com; cobranza@example.com');
+  });
+
   it('stamps and auto-sends email with a combined confirmation message', async () => {
     const stampAndEmailFiscalDocument = vi.fn().mockReturnValue(
       of({
@@ -1444,25 +1465,49 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         outcome: 'Sent',
         isSuccess: true,
         fiscalDocumentId: 40,
-        recipients: ['cliente@example.com'],
+        recipients: ['cliente@example.com', 'cobranza@example.com'],
         sentAtUtc: '2026-03-24T12:10:00Z',
       }),
     );
     const fixture = await configure({ sendByEmail });
     await fixture.componentInstance['openEmailComposer']();
-    fixture.componentInstance['emailRecipientsInput'] = 'cliente@example.com';
+    fixture.componentInstance['emailRecipientsInput'] = 'cliente@example.com; cobranza@example.com';
     fixture.componentInstance['emailSubject'] = 'CFDI timbrado A8';
     fixture.componentInstance['emailBody'] = 'Adjuntamos XML y PDF.';
 
     await fixture.componentInstance['sendEmail']();
 
     expect(sendByEmail).toHaveBeenCalledWith(40, {
-      recipients: ['cliente@example.com'],
+      recipients: ['cliente@example.com', 'cobranza@example.com'],
       subject: 'CFDI timbrado A8',
       body: 'Adjuntamos XML y PDF.',
     });
     expect(fixture.componentInstance['lastOperationMessage']()).toContain(
       'CFDI enviado correctamente',
+    );
+  });
+
+  it('blocks email send when the input mixes valid and invalid recipients', async () => {
+    const sendByEmail = vi.fn().mockReturnValue(
+      of({
+        outcome: 'Sent',
+        isSuccess: true,
+        fiscalDocumentId: 40,
+        recipients: ['cliente@example.com'],
+        sentAtUtc: '2026-03-24T12:10:00Z',
+      }),
+    );
+    const fixture = await configure({ sendByEmail });
+
+    await fixture.componentInstance['openEmailComposer']();
+    fixture.componentInstance['emailRecipientsInput'] = 'cliente@example.com; invalido';
+
+    await fixture.componentInstance['sendEmail']();
+    fixture.detectChanges();
+
+    expect(sendByEmail).not.toHaveBeenCalled();
+    expect(fixture.componentInstance['emailRecipientsError']()).toBe(
+      'Correo inválido: invalido. Para varios correos, sepáralos con punto y coma (;).',
     );
   });
 

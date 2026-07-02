@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Net;
-using System.Net.Mail;
 using System.Text;
+using Pineda.Facturacion.Application.Common;
 using Pineda.Facturacion.Domain.Enums;
 
 namespace Pineda.Facturacion.Application.UseCases.AccountsReceivable;
@@ -45,49 +45,12 @@ public static class ReceivablesSummaryComposer
 
     public static IReadOnlyList<string> NormalizeRecipients(IEnumerable<string>? recipients)
     {
-        if (recipients is null)
-        {
-            return [];
-        }
-
-        var normalized = new List<string>();
-        foreach (var recipient in recipients)
-        {
-            var candidate = recipient?.Trim();
-            if (IsValidEmailAddress(candidate))
-            {
-                normalized.Add(new MailAddress(candidate!).Address);
-            }
-        }
-
-        return normalized
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        return EmailRecipientParser.NormalizeRecipients(recipients);
     }
 
     public static bool IsValidEmailAddress(string? value)
     {
-        var candidate = value?.Trim();
-        if (string.IsNullOrWhiteSpace(candidate)
-            || candidate.Contains('\r')
-            || candidate.Contains('\n'))
-        {
-            return false;
-        }
-
-        try
-        {
-            var address = new MailAddress(candidate);
-            return string.Equals(address.Address, candidate, StringComparison.OrdinalIgnoreCase)
-                && !string.IsNullOrWhiteSpace(address.User)
-                && address.Host.Contains('.', StringComparison.Ordinal)
-                && !address.Host.StartsWith(".", StringComparison.Ordinal)
-                && !address.Host.EndsWith(".", StringComparison.Ordinal);
-        }
-        catch (FormatException)
-        {
-            return false;
-        }
+        return EmailRecipientParser.IsValidEmailAddress(value);
     }
 
     public static string BuildDefaultSubject(string receiverName)

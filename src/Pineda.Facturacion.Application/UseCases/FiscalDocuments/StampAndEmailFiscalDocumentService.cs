@@ -43,6 +43,17 @@ public class StampAndEmailFiscalDocumentService
             return result;
         }
 
+        var invalidRecipients = SendFiscalDocumentEmailService.FindInvalidRecipients([defaultRecipientEmail]);
+        if (invalidRecipients.Count > 0)
+        {
+            result.EmailStatus = StampAndEmailFiscalDocumentEmailStatus.Invalid;
+            result.InvalidRecipients = invalidRecipients;
+            result.EmailMessage = invalidRecipients.Count == 1
+                ? $"Correo inválido registrado: {invalidRecipients[0]}."
+                : $"Correos inválidos registrados: {string.Join(", ", invalidRecipients)}.";
+            return result;
+        }
+
         var normalizedRecipients = SendFiscalDocumentEmailService.NormalizeRecipients([defaultRecipientEmail]);
         if (normalizedRecipients.Count == 0)
         {

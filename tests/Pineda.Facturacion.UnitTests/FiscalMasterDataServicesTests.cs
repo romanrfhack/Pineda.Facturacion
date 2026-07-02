@@ -378,6 +378,127 @@ public class FiscalMasterDataServicesTests
     }
 
     [Fact]
+    public async Task CreateFiscalReceiver_Normalizes_Multiple_Emails()
+    {
+        var repository = new FakeFiscalReceiverRepository();
+        var service = new CreateFiscalReceiverService(repository, FakeFiscalReceiverSatCatalogProvider.Default(), new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new CreateFiscalReceiverCommand
+        {
+            Rfc = " xexx010101000 ",
+            LegalName = "Receiver",
+            FiscalRegimeCode = "601",
+            CfdiUseCodeDefault = "G03",
+            PostalCode = "64000",
+            Email = " cliente@example.com , COBRANZA@example.com "
+        });
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(CreateFiscalReceiverOutcome.Created, result.Outcome);
+        Assert.Equal("cliente@example.com; COBRANZA@example.com", repository.Added!.Email);
+    }
+
+    [Fact]
+    public async Task CreateFiscalReceiver_Rejects_Invalid_Email_List()
+    {
+        var repository = new FakeFiscalReceiverRepository();
+        var service = new CreateFiscalReceiverService(repository, FakeFiscalReceiverSatCatalogProvider.Default(), new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new CreateFiscalReceiverCommand
+        {
+            Rfc = " xexx010101000 ",
+            LegalName = "Receiver",
+            FiscalRegimeCode = "601",
+            CfdiUseCodeDefault = "G03",
+            PostalCode = "64000",
+            Email = "cliente@example.com; invalido"
+        });
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(CreateFiscalReceiverOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("Correo inválido: invalido", result.ErrorMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task UpdateFiscalReceiver_Normalizes_Multiple_Emails()
+    {
+        var existing = new FiscalReceiver
+        {
+            Id = 12,
+            Rfc = "XEXX010101000",
+            LegalName = "Receiver",
+            FiscalRegimeCode = "601",
+            CfdiUseCodeDefault = "G03",
+            PostalCode = "64000",
+            IsActive = true,
+            CreatedAtUtc = DateTime.UtcNow.AddDays(-1),
+            UpdatedAtUtc = DateTime.UtcNow.AddDays(-1)
+        };
+        var repository = new FakeFiscalReceiverRepository
+        {
+            ExistingById = existing,
+            ExistingByRfc = existing
+        };
+        var service = new UpdateFiscalReceiverService(repository, FakeFiscalReceiverSatCatalogProvider.Default(), new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new UpdateFiscalReceiverCommand
+        {
+            Id = 12,
+            Rfc = " xexx010101000 ",
+            LegalName = "Receiver",
+            FiscalRegimeCode = "601",
+            CfdiUseCodeDefault = "G03",
+            PostalCode = "64000",
+            Email = "cliente@example.com\ncobranza@example.com",
+            IsActive = true
+        });
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(UpdateFiscalReceiverOutcome.Updated, result.Outcome);
+        Assert.Equal("cliente@example.com; cobranza@example.com", existing.Email);
+        Assert.Same(existing, repository.Updated);
+    }
+
+    [Fact]
+    public async Task UpdateFiscalReceiver_Rejects_Invalid_Email_List()
+    {
+        var existing = new FiscalReceiver
+        {
+            Id = 12,
+            Rfc = "XEXX010101000",
+            LegalName = "Receiver",
+            FiscalRegimeCode = "601",
+            CfdiUseCodeDefault = "G03",
+            PostalCode = "64000",
+            IsActive = true,
+            CreatedAtUtc = DateTime.UtcNow.AddDays(-1),
+            UpdatedAtUtc = DateTime.UtcNow.AddDays(-1)
+        };
+        var repository = new FakeFiscalReceiverRepository
+        {
+            ExistingById = existing,
+            ExistingByRfc = existing
+        };
+        var service = new UpdateFiscalReceiverService(repository, FakeFiscalReceiverSatCatalogProvider.Default(), new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new UpdateFiscalReceiverCommand
+        {
+            Id = 12,
+            Rfc = " xexx010101000 ",
+            LegalName = "Receiver",
+            FiscalRegimeCode = "601",
+            CfdiUseCodeDefault = "G03",
+            PostalCode = "64000",
+            Email = "cliente@example.com; invalido",
+            IsActive = true
+        });
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(UpdateFiscalReceiverOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("Correo inválido: invalido", result.ErrorMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task CreateFiscalReceiver_ReturnsValidationFailure_WhenRegimeAndCfdiUseAreNotCompatible()
     {
         var repository = new FakeFiscalReceiverRepository();
@@ -453,7 +574,9 @@ public class FiscalMasterDataServicesTests
     private sealed class FakeFiscalReceiverRepository : IFiscalReceiverRepository
     {
         public FiscalReceiver? ExistingByRfc { get; init; }
+        public FiscalReceiver? ExistingById { get; init; }
         public FiscalReceiver? Added { get; private set; }
+        public FiscalReceiver? Updated { get; private set; }
         public IReadOnlyList<FiscalReceiver> SearchResults { get; init; } = [];
 
         public Task<IReadOnlyList<FiscalReceiver>> SearchAsync(string query, CancellationToken cancellationToken = default)
@@ -463,7 +586,7 @@ public class FiscalMasterDataServicesTests
             => Task.FromResult(ExistingByRfc);
 
         public Task<FiscalReceiver?> GetByIdAsync(long fiscalReceiverId, CancellationToken cancellationToken = default)
-            => Task.FromResult<FiscalReceiver?>(null);
+            => Task.FromResult(ExistingById?.Id == fiscalReceiverId ? ExistingById : null);
 
         public Task<IReadOnlyList<FiscalReceiverSpecialFieldDefinition>> GetActiveSpecialFieldDefinitionsAsync(CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<FiscalReceiverSpecialFieldDefinition>>([]);
@@ -475,7 +598,11 @@ public class FiscalMasterDataServicesTests
             return Task.CompletedTask;
         }
 
-        public Task UpdateAsync(FiscalReceiver fiscalReceiver, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task UpdateAsync(FiscalReceiver fiscalReceiver, CancellationToken cancellationToken = default)
+        {
+            Updated = fiscalReceiver;
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class FakeProductFiscalProfileRepository : IProductFiscalProfileRepository

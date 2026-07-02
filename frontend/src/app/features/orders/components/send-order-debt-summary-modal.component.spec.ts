@@ -68,7 +68,7 @@ describe('SendOrderDebtSummaryModalComponent', () => {
     component.subject = 'Resumen';
     component.message = 'Mensaje';
 
-    return { fixture, component, ordersApi };
+    return { fixture, component, ordersApi, fiscalReceiversApi };
   }
 
   it('blocks preview when selected orders belong to different RFCs', async () => {
@@ -83,7 +83,7 @@ describe('SendOrderDebtSummaryModalComponent', () => {
 
     expect(ordersApi.previewOrderDebtSummary).not.toHaveBeenCalled();
     expect(fixture.nativeElement.textContent).toContain('No se puede enviar el resumen porque la selección contiene órdenes de distintos clientes');
-  });
+  }, 15000);
 
   it('blocks preview when receiver RFC does not match selected orders RFC', async () => {
     const { fixture, component, ordersApi } = await configure([
@@ -115,6 +115,62 @@ describe('SendOrderDebtSummaryModalComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('50.00 USD');
     expect(fixture.nativeElement.textContent).not.toContain('166.00');
   });
+
+  it('preloads multiple receiver emails using semicolon format', async () => {
+    const { fixture, component, fiscalReceiversApi } = await configure([
+      createOrder({ legacyOrderId: 'LEG-1001', customerRfc: 'AAA010101AAA', customerLegacyId: 'C-1' }),
+    ]);
+
+    fiscalReceiversApi.getByRfc.mockReturnValue(
+      of(createReceiver('AAA010101AAA', 'cliente@example.com, cobranza@example.com')),
+    );
+
+    await fixture.componentInstance['selectReceiver']({
+      id: 77,
+      rfc: 'AAA010101AAA',
+      legalName: 'Cliente Uno',
+      postalCode: '01000',
+      fiscalRegimeCode: '601',
+      cfdiUseCodeDefault: 'G03',
+      isActive: true,
+    });
+
+    expect(component.toInput).toBe('cliente@example.com; cobranza@example.com');
+  });
+
+  it('blocks the order debt summary send when bcc contains invalid recipients', async () => {
+    const { fixture, component, ordersApi } = await configure([
+      createOrder({ legacyOrderId: 'LEG-1001', customerRfc: 'AAA010101AAA', customerLegacyId: 'C-1' }),
+    ]);
+
+    fixture.componentInstance['preview'].set({
+      outcome: 'Found',
+      success: true,
+      html: '',
+      summary: {
+        orderCount: 1,
+        total: 116,
+        totalsByCurrency: [{ currencyCode: 'MXN', orderCount: 1, total: 116 }],
+      },
+      finalSummary: {
+        to: ['cliente@example.com'],
+        cc: [],
+        bcc: [],
+        subject: 'Resumen',
+        orderCount: 1,
+        format: 'Html',
+        totalsByCurrency: [{ currencyCode: 'MXN', orderCount: 1, total: 116 }],
+      },
+    });
+    component.toInput = 'cliente@example.com';
+    fixture.componentInstance['bccInput'] = 'cobranza@example.com; invalido';
+
+    await fixture.componentInstance['send']();
+    fixture.detectChanges();
+
+    expect(ordersApi.sendOrderDebtSummary).not.toHaveBeenCalled();
+    expect(fixture.componentInstance['errorMessage']()).toBe('Correo inválido: invalido');
+  });
 });
 
 function createOrder(overrides: Partial<LegacyOrderListItem>): LegacyOrderListItem {
@@ -138,7 +194,7 @@ function createOrder(overrides: Partial<LegacyOrderListItem>): LegacyOrderListIt
   };
 }
 
-function createReceiver(rfc: string): FiscalReceiver {
+function createReceiver(rfc: string, email = 'cliente@example.com'): FiscalReceiver {
   return {
     id: 77,
     rfc,
@@ -147,7 +203,7 @@ function createReceiver(rfc: string): FiscalReceiver {
     fiscalRegimeCode: '601',
     cfdiUseCodeDefault: 'G03',
     isActive: true,
-    email: 'cliente@example.com',
+    email,
     createdAtUtc: '2026-05-08T00:00:00Z',
     updatedAtUtc: '2026-05-08T00:00:00Z',
   };

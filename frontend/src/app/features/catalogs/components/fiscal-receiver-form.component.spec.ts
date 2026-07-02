@@ -136,4 +136,77 @@ describe('FiscalReceiverFormComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('999 - Régimen legacy no encontrado en catálogo');
     expect(fixture.nativeElement.textContent).toContain('ZZZ - Uso CFDI legacy no encontrado o incompatible');
   });
+
+  it('renders the Correo(s) label and helper guidance for multiple recipients', async () => {
+    const fixture = TestBed.createComponent(FiscalReceiverFormComponent);
+
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Correo(s)');
+    expect(fixture.nativeElement.textContent).toContain('Para varios correos, sepáralos con punto y coma (;).');
+  });
+
+  it('normalizes multiple recipients before emitting the submit payload', async () => {
+    const fixture = TestBed.createComponent(FiscalReceiverFormComponent);
+    const emitted = vi.spyOn(fixture.componentInstance.submitted, 'emit');
+
+    fixture.componentRef.setInput('initialValue', {
+      rfc: 'AAA010101AAA',
+      legalName: 'Receiver',
+      fiscalRegimeCode: '601',
+      cfdiUseCodeDefault: 'G03',
+      postalCode: '01000',
+      countryCode: 'MX',
+      foreignTaxRegistration: null,
+      email: 'cliente@example.com, cobranza@example.com',
+      phone: null,
+      searchAlias: null,
+      isActive: true,
+      specialFields: []
+    });
+
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    fixture.componentInstance['submitForm']();
+
+    expect(emitted).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: 'cliente@example.com; cobranza@example.com',
+      }),
+    );
+  });
+
+  it('shows a clear error and blocks submit when any email is invalid', async () => {
+    const fixture = TestBed.createComponent(FiscalReceiverFormComponent);
+    const emitted = vi.spyOn(fixture.componentInstance.submitted, 'emit');
+
+    fixture.componentRef.setInput('initialValue', {
+      rfc: 'AAA010101AAA',
+      legalName: 'Receiver',
+      fiscalRegimeCode: '601',
+      cfdiUseCodeDefault: 'G03',
+      postalCode: '01000',
+      countryCode: 'MX',
+      foreignTaxRegistration: null,
+      email: 'cliente@example.com; invalido',
+      phone: null,
+      searchAlias: null,
+      isActive: true,
+      specialFields: []
+    });
+
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    fixture.componentInstance['submitForm']();
+    fixture.detectChanges();
+
+    expect(emitted).not.toHaveBeenCalled();
+    expect(fixture.nativeElement.textContent).toContain('Correo inválido: invalido');
+  });
 });

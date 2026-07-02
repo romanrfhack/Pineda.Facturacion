@@ -1,4 +1,5 @@
 using Pineda.Facturacion.Application.Abstractions.Persistence;
+using Pineda.Facturacion.Application.Common;
 
 namespace Pineda.Facturacion.Application.UseCases.AccountsReceivable;
 
@@ -90,7 +91,9 @@ public sealed class ReceivablesSummaryDocumentFactory
             Issuer = issuerParty,
             IssuerLogo = issuerLogo,
             Invoices = invoices,
-            DefaultTo = string.IsNullOrWhiteSpace(receiverParty.Email) ? [] : [receiverParty.Email.Trim()],
+            DefaultTo = EmailRecipientParser.FindInvalidRecipients(string.IsNullOrWhiteSpace(receiverParty.Email) ? [] : [receiverParty.Email]).Count == 0
+                ? EmailRecipientParser.NormalizeRecipients(string.IsNullOrWhiteSpace(receiverParty.Email) ? [] : [receiverParty.Email])
+                : [],
             DefaultSubject = ReceivablesSummaryComposer.BuildDefaultSubject(receiverParty.LegalName),
             DefaultMessage = ReceivablesSummaryComposer.BuildDefaultMessage(receiverParty.LegalName)
         };
@@ -145,9 +148,9 @@ public sealed class ReceivablesSummaryDocumentFactory
                 : "No hay facturas seleccionadas para enviar.");
         }
 
-        var invalidRecipients = FindInvalidRecipients(command.To)
-            .Concat(FindInvalidRecipients(command.Cc))
-            .Concat(FindInvalidRecipients(command.Bcc))
+        var invalidRecipients = EmailRecipientParser.FindInvalidRecipients(command.To)
+            .Concat(EmailRecipientParser.FindInvalidRecipients(command.Cc))
+            .Concat(EmailRecipientParser.FindInvalidRecipients(command.Bcc))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
         if (invalidRecipients.Length > 0)
@@ -230,30 +233,6 @@ public sealed class ReceivablesSummaryDocumentFactory
         };
     }
 
-    private static IReadOnlyList<string> FindInvalidRecipients(IEnumerable<string>? recipients)
-    {
-        if (recipients is null)
-        {
-            return [];
-        }
-
-        var invalid = new List<string>();
-        foreach (var recipient in recipients)
-        {
-            var candidate = recipient?.Trim();
-            if (string.IsNullOrWhiteSpace(candidate))
-            {
-                continue;
-            }
-
-            if (!ReceivablesSummaryComposer.IsValidEmailAddress(candidate))
-            {
-                invalid.Add(candidate);
-            }
-        }
-
-        return invalid;
-    }
 }
 
 public sealed class ReceivablesSummaryDocumentBuildResult

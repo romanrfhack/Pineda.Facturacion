@@ -73,6 +73,48 @@ public class OrderDebtSummaryServicesTests
     }
 
     [Fact]
+    public async Task PreviewOrderDebtSummary_Uses_All_Receiver_Emails_As_Fallback_WhenToIsEmpty()
+    {
+        var service = new PreviewOrderDebtSummaryService(
+            CreateFactoryForOrders(
+                [CreateLegacyOrder("LEG-1001", "PED-1001", total: 116m)],
+                receiver: CreateReceiver("AAA010101AAA", "cliente@example.com; cobranza@example.com")));
+
+        var result = await service.ExecuteAsync(new OrderDebtSummaryCommand
+        {
+            ReceiverId = 77,
+            LegacyOrderIds = ["LEG-1001"],
+            Subject = "Resumen",
+            Message = "Mensaje",
+            Format = "html"
+        });
+
+        Assert.Equal(OrderDebtSummaryOutcome.Found, result.Outcome);
+        Assert.Equal(["cliente@example.com", "cobranza@example.com"], result.Document!.To);
+    }
+
+    [Fact]
+    public async Task PreviewOrderDebtSummary_Rejects_Invalid_Receiver_Email_When_Using_Catalog_Fallback()
+    {
+        var service = new PreviewOrderDebtSummaryService(
+            CreateFactoryForOrders(
+                [CreateLegacyOrder("LEG-1001", "PED-1001", total: 116m)],
+                receiver: CreateReceiver("AAA010101AAA", "cliente@example.com; invalido")));
+
+        var result = await service.ExecuteAsync(new OrderDebtSummaryCommand
+        {
+            ReceiverId = 77,
+            LegacyOrderIds = ["LEG-1001"],
+            Subject = "Resumen",
+            Message = "Mensaje",
+            Format = "html"
+        });
+
+        Assert.Equal(OrderDebtSummaryOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("invalido", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task SendOrderDebtSummary_SendsEmail_AndAuditsSelectedOrders()
     {
         var emailSender = new FakeEmailSender();
@@ -390,14 +432,14 @@ public class OrderDebtSummaryServicesTests
         };
     }
 
-    private static FiscalReceiver CreateReceiver(string rfc)
+    private static FiscalReceiver CreateReceiver(string rfc, string email = "cliente@example.com")
     {
         return new FiscalReceiver
         {
             Id = 77,
             Rfc = rfc,
             LegalName = "Cliente Uno",
-            Email = "cliente@example.com",
+            Email = email,
             FiscalRegimeCode = "601",
             PostalCode = "01000"
         };
