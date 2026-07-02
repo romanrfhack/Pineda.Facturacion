@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError, TimeoutError } from 'rxjs';
 import { IssuedCfdisPageComponent } from './issued-cfdis-page.component';
 import { FiscalDocumentsApiService } from '../../fiscal-documents/infrastructure/fiscal-documents-api.service';
 import { FeedbackService } from '../../../core/ui/feedback.service';
@@ -520,19 +520,592 @@ describe('IssuedCfdisPageComponent', () => {
     expect(fixture.componentInstance['showCancelConfirmationDialog']()).toBe(true);
     await fixture.componentInstance['confirmCancellation']();
 
-    expect(cancelFiscalDocument).toHaveBeenCalledWith(40, {
-      cancellationReasonCode: '03',
-      replacementUuid: undefined,
-    });
+    expect(cancelFiscalDocument).toHaveBeenCalledWith(
+      40,
+      {
+        cancellationReasonCode: '03',
+        replacementUuid: undefined,
+      },
+      {
+        timeoutMs: 75_000,
+        suppressGlobalErrorToast: true,
+      },
+    );
+    expect(fixture.componentInstance['showCancelConfirmationDialog']()).toBe(false);
+    expect(fixture.componentInstance['showCancelDialog']()).toBe(false);
+    expect(fixture.componentInstance['loadingOperation']()).toBe(false);
     expect(fixture.componentInstance['selectedDocument']()?.status).toBe('Cancelled');
     expect(fixture.componentInstance['selectedCancellation']()?.status).toBe('Cancelled');
     expect(fixture.componentInstance['selectedCancellation']()?.providerCode).toBe('201');
+    expect(fixture.componentInstance['items']()[0].status).toBe('Cancelled');
     expect(fixture.componentInstance['canCancelSelectedDocument']()).toBe(false);
     expect(fixture.componentInstance['lastOperationMessage']()).toBeNull();
     expect(feedback.show).toHaveBeenCalledWith(
       'success',
       'CFDI cancelado correctamente ante SAT/PAC.',
     );
+  });
+
+  it('reconciles timeout errors as success when the reloaded CFDI is already cancelled', async () => {
+    const cancelFiscalDocument = vi
+      .fn()
+      .mockReturnValue(throwError(() => new TimeoutError()));
+    const getFiscalDocumentById = vi
+      .fn()
+      .mockReturnValueOnce(
+        of({
+          id: 40,
+          billingDocumentId: 30,
+          issuerProfileId: 1,
+          fiscalReceiverId: 9,
+          status: 'Stamped',
+          cfdiVersion: '4.0',
+          documentType: 'I',
+          series: 'A',
+          folio: '31787',
+          issuedAtUtc: '2026-03-24T12:00:00Z',
+          currencyCode: 'MXN',
+          exchangeRate: 1,
+          paymentMethodSat: 'PPD',
+          paymentFormSat: '99',
+          paymentCondition: 'CREDITO',
+          isCreditSale: true,
+          creditDays: 7,
+          issuerRfc: 'AAA010101AAA',
+          issuerLegalName: 'Issuer SA',
+          issuerFiscalRegimeCode: '601',
+          issuerPostalCode: '01000',
+          pacEnvironment: 'Sandbox',
+          hasCertificateReference: true,
+          hasPrivateKeyReference: true,
+          hasPrivateKeyPasswordReference: true,
+          receiverRfc: 'BBB010101BBB',
+          receiverLegalName: 'Receiver One',
+          receiverFiscalRegimeCode: '601',
+          receiverCfdiUseCode: 'G03',
+          receiverPostalCode: '02000',
+          receiverCountryCode: 'MX',
+          receiverForeignTaxRegistration: null,
+          subtotal: 100,
+          discountTotal: 0,
+          taxTotal: 16,
+          total: 116,
+          items: [],
+          specialFields: [],
+        }),
+      )
+      .mockReturnValueOnce(
+        of({
+          id: 40,
+          billingDocumentId: 30,
+          issuerProfileId: 1,
+          fiscalReceiverId: 9,
+          status: 'Cancelled',
+          cfdiVersion: '4.0',
+          documentType: 'I',
+          series: 'A',
+          folio: '31787',
+          issuedAtUtc: '2026-03-24T12:00:00Z',
+          currencyCode: 'MXN',
+          exchangeRate: 1,
+          paymentMethodSat: 'PPD',
+          paymentFormSat: '99',
+          paymentCondition: 'CREDITO',
+          isCreditSale: true,
+          creditDays: 7,
+          issuerRfc: 'AAA010101AAA',
+          issuerLegalName: 'Issuer SA',
+          issuerFiscalRegimeCode: '601',
+          issuerPostalCode: '01000',
+          pacEnvironment: 'Sandbox',
+          hasCertificateReference: true,
+          hasPrivateKeyReference: true,
+          hasPrivateKeyPasswordReference: true,
+          receiverRfc: 'BBB010101BBB',
+          receiverLegalName: 'Receiver One',
+          receiverFiscalRegimeCode: '601',
+          receiverCfdiUseCode: 'G03',
+          receiverPostalCode: '02000',
+          receiverCountryCode: 'MX',
+          receiverForeignTaxRegistration: null,
+          subtotal: 100,
+          discountTotal: 0,
+          taxTotal: 16,
+          total: 116,
+          items: [],
+          specialFields: [],
+        }),
+      );
+    const getCancellation = vi
+      .fn()
+      .mockReturnValueOnce(throwError(() => ({ status: 404 })))
+      .mockReturnValueOnce(
+        of({
+          fiscalDocumentId: 40,
+          status: 'Cancelled',
+          cancellationReasonCode: '03',
+          replacementUuid: null,
+          providerName: 'FacturaloPlus',
+          providerTrackingId: 'TRACK-CANCEL-201',
+          providerCode: '201',
+          providerMessage: 'Solicitud de cancelación de UUID exitosa. -',
+          errorCode: null,
+          errorMessage: null,
+          supportMessage: null,
+          rawResponseSummaryJson: '{"codigo":"201"}',
+          requestedAtUtc: '2026-03-29T12:00:00Z',
+          cancelledAtUtc: '2026-03-29T12:10:00Z',
+        }),
+      );
+    const fixture = await configure({
+      cancelFiscalDocument,
+      getFiscalDocumentById,
+      getCancellation,
+    });
+    const feedback = TestBed.inject(FeedbackService) as unknown as {
+      show: ReturnType<typeof vi.fn>;
+    };
+
+    await fixture.componentInstance['openDetailModal'](fixture.componentInstance['items']()[0]);
+    fixture.componentInstance['openCancelDialog']();
+    fixture.componentInstance['onCancellationReasonChange']('03');
+
+    await fixture.componentInstance['cancel']();
+    await fixture.componentInstance['confirmCancellation']();
+
+    expect(cancelFiscalDocument).toHaveBeenCalledTimes(1);
+    expect(getFiscalDocumentById).toHaveBeenCalledTimes(2);
+    expect(getCancellation).toHaveBeenCalledTimes(1);
+    expect(fixture.componentInstance['loadingOperation']()).toBe(false);
+    expect(fixture.componentInstance['showCancelConfirmationDialog']()).toBe(false);
+    expect(fixture.componentInstance['showCancelDialog']()).toBe(false);
+    expect(fixture.componentInstance['selectedDocument']()?.status).toBe('Cancelled');
+    expect(fixture.componentInstance['selectedCancellation']()?.status).toBe('Cancelled');
+    expect(fixture.componentInstance['items']()[0].status).toBe('Cancelled');
+    expect(fixture.componentInstance['canCancelSelectedDocument']()).toBe(false);
+    expect(fixture.componentInstance['lastOperationMessage']()).toContain(
+      'ya aparece cancelado',
+    );
+    expect(feedback.show).toHaveBeenCalledWith(
+      'success',
+      'La solicitud tardó más de lo esperado, pero el CFDI ya aparece cancelado después de recargar su estado.',
+    );
+  });
+
+  it('keeps the UI recoverable after a timeout when the CFDI remains pending confirmation', async () => {
+    const cancelFiscalDocument = vi
+      .fn()
+      .mockReturnValue(throwError(() => new TimeoutError()));
+    const getFiscalDocumentById = vi
+      .fn()
+      .mockReturnValueOnce(
+        of({
+          id: 40,
+          billingDocumentId: 30,
+          issuerProfileId: 1,
+          fiscalReceiverId: 9,
+          status: 'Stamped',
+          cfdiVersion: '4.0',
+          documentType: 'I',
+          series: 'A',
+          folio: '31787',
+          issuedAtUtc: '2026-03-24T12:00:00Z',
+          currencyCode: 'MXN',
+          exchangeRate: 1,
+          paymentMethodSat: 'PPD',
+          paymentFormSat: '99',
+          paymentCondition: 'CREDITO',
+          isCreditSale: true,
+          creditDays: 7,
+          issuerRfc: 'AAA010101AAA',
+          issuerLegalName: 'Issuer SA',
+          issuerFiscalRegimeCode: '601',
+          issuerPostalCode: '01000',
+          pacEnvironment: 'Sandbox',
+          hasCertificateReference: true,
+          hasPrivateKeyReference: true,
+          hasPrivateKeyPasswordReference: true,
+          receiverRfc: 'BBB010101BBB',
+          receiverLegalName: 'Receiver One',
+          receiverFiscalRegimeCode: '601',
+          receiverCfdiUseCode: 'G03',
+          receiverPostalCode: '02000',
+          receiverCountryCode: 'MX',
+          receiverForeignTaxRegistration: null,
+          subtotal: 100,
+          discountTotal: 0,
+          taxTotal: 16,
+          total: 116,
+          items: [],
+          specialFields: [],
+        }),
+      )
+      .mockReturnValueOnce(
+        of({
+          id: 40,
+          billingDocumentId: 30,
+          issuerProfileId: 1,
+          fiscalReceiverId: 9,
+          status: 'CancellationRequested',
+          cfdiVersion: '4.0',
+          documentType: 'I',
+          series: 'A',
+          folio: '31787',
+          issuedAtUtc: '2026-03-24T12:00:00Z',
+          currencyCode: 'MXN',
+          exchangeRate: 1,
+          paymentMethodSat: 'PPD',
+          paymentFormSat: '99',
+          paymentCondition: 'CREDITO',
+          isCreditSale: true,
+          creditDays: 7,
+          issuerRfc: 'AAA010101AAA',
+          issuerLegalName: 'Issuer SA',
+          issuerFiscalRegimeCode: '601',
+          issuerPostalCode: '01000',
+          pacEnvironment: 'Sandbox',
+          hasCertificateReference: true,
+          hasPrivateKeyReference: true,
+          hasPrivateKeyPasswordReference: true,
+          receiverRfc: 'BBB010101BBB',
+          receiverLegalName: 'Receiver One',
+          receiverFiscalRegimeCode: '601',
+          receiverCfdiUseCode: 'G03',
+          receiverPostalCode: '02000',
+          receiverCountryCode: 'MX',
+          receiverForeignTaxRegistration: null,
+          subtotal: 100,
+          discountTotal: 0,
+          taxTotal: 16,
+          total: 116,
+          items: [],
+          specialFields: [],
+        }),
+      );
+    const getCancellation = vi
+      .fn()
+      .mockReturnValueOnce(throwError(() => ({ status: 404 })))
+      .mockReturnValueOnce(
+        of({
+          fiscalDocumentId: 40,
+          status: 'Requested',
+          cancellationReasonCode: '03',
+          replacementUuid: null,
+          providerName: 'FacturaloPlus',
+          providerTrackingId: 'TRACK-CANCEL-PENDING',
+          providerCode: 'S',
+          providerMessage: 'Cancelación en proceso',
+          errorCode: null,
+          errorMessage: null,
+          supportMessage: null,
+          rawResponseSummaryJson: '{"estado":"En proceso"}',
+          requestedAtUtc: '2026-03-29T12:00:00Z',
+          cancelledAtUtc: null,
+        }),
+      );
+    const fixture = await configure({
+      cancelFiscalDocument,
+      getFiscalDocumentById,
+      getCancellation,
+    });
+    const feedback = TestBed.inject(FeedbackService) as unknown as {
+      show: ReturnType<typeof vi.fn>;
+    };
+
+    await fixture.componentInstance['openDetailModal'](fixture.componentInstance['items']()[0]);
+    fixture.componentInstance['openCancelDialog']();
+    fixture.componentInstance['onCancellationReasonChange']('03');
+
+    await fixture.componentInstance['cancel']();
+    await fixture.componentInstance['confirmCancellation']();
+
+    expect(cancelFiscalDocument).toHaveBeenCalledTimes(1);
+    expect(getFiscalDocumentById).toHaveBeenCalledTimes(2);
+    expect(fixture.componentInstance['loadingOperation']()).toBe(false);
+    expect(fixture.componentInstance['showCancelConfirmationDialog']()).toBe(false);
+    expect(fixture.componentInstance['showCancelDialog']()).toBe(false);
+    expect(fixture.componentInstance['selectedDocument']()?.status).toBe(
+      'CancellationRequested',
+    );
+    expect(fixture.componentInstance['items']()[0].status).toBe('CancellationRequested');
+    expect(fixture.componentInstance['canCancelSelectedDocument']()).toBe(false);
+    expect(fixture.componentInstance['lastOperationMessage']()).toContain(
+      'La solicitud tardó más de lo esperado.',
+    );
+    expect(fixture.componentInstance['lastOperationMessage']()).toContain(
+      'Cancelación solicitada',
+    );
+    expect(feedback.show).toHaveBeenCalledWith(
+      'warning',
+      expect.stringContaining('Actualizar estatus'),
+    );
+  });
+
+  it('cleans loading state and closes the cancellation dialogs when the HTTP request fails', async () => {
+    const cancelFiscalDocument = vi.fn().mockReturnValue(
+      throwError(() => ({ error: { errorMessage: 'Provider unavailable' } })),
+    );
+    const getFiscalDocumentById = vi
+      .fn()
+      .mockReturnValueOnce(
+        of({
+          id: 40,
+          billingDocumentId: 30,
+          issuerProfileId: 1,
+          fiscalReceiverId: 9,
+          status: 'Stamped',
+          cfdiVersion: '4.0',
+          documentType: 'I',
+          series: 'A',
+          folio: '31787',
+          issuedAtUtc: '2026-03-24T12:00:00Z',
+          currencyCode: 'MXN',
+          exchangeRate: 1,
+          paymentMethodSat: 'PPD',
+          paymentFormSat: '99',
+          paymentCondition: 'CREDITO',
+          isCreditSale: true,
+          creditDays: 7,
+          issuerRfc: 'AAA010101AAA',
+          issuerLegalName: 'Issuer SA',
+          issuerFiscalRegimeCode: '601',
+          issuerPostalCode: '01000',
+          pacEnvironment: 'Sandbox',
+          hasCertificateReference: true,
+          hasPrivateKeyReference: true,
+          hasPrivateKeyPasswordReference: true,
+          receiverRfc: 'BBB010101BBB',
+          receiverLegalName: 'Receiver One',
+          receiverFiscalRegimeCode: '601',
+          receiverCfdiUseCode: 'G03',
+          receiverPostalCode: '02000',
+          receiverCountryCode: 'MX',
+          receiverForeignTaxRegistration: null,
+          subtotal: 100,
+          discountTotal: 0,
+          taxTotal: 16,
+          total: 116,
+          items: [],
+          specialFields: [],
+        }),
+      )
+      .mockReturnValueOnce(
+        of({
+          id: 40,
+          billingDocumentId: 30,
+          issuerProfileId: 1,
+          fiscalReceiverId: 9,
+          status: 'Stamped',
+          cfdiVersion: '4.0',
+          documentType: 'I',
+          series: 'A',
+          folio: '31787',
+          issuedAtUtc: '2026-03-24T12:00:00Z',
+          currencyCode: 'MXN',
+          exchangeRate: 1,
+          paymentMethodSat: 'PPD',
+          paymentFormSat: '99',
+          paymentCondition: 'CREDITO',
+          isCreditSale: true,
+          creditDays: 7,
+          issuerRfc: 'AAA010101AAA',
+          issuerLegalName: 'Issuer SA',
+          issuerFiscalRegimeCode: '601',
+          issuerPostalCode: '01000',
+          pacEnvironment: 'Sandbox',
+          hasCertificateReference: true,
+          hasPrivateKeyReference: true,
+          hasPrivateKeyPasswordReference: true,
+          receiverRfc: 'BBB010101BBB',
+          receiverLegalName: 'Receiver One',
+          receiverFiscalRegimeCode: '601',
+          receiverCfdiUseCode: 'G03',
+          receiverPostalCode: '02000',
+          receiverCountryCode: 'MX',
+          receiverForeignTaxRegistration: null,
+          subtotal: 100,
+          discountTotal: 0,
+          taxTotal: 16,
+          total: 116,
+          items: [],
+          specialFields: [],
+        }),
+      );
+    const fixture = await configure({ cancelFiscalDocument, getFiscalDocumentById });
+    const feedback = TestBed.inject(FeedbackService) as unknown as {
+      show: ReturnType<typeof vi.fn>;
+    };
+
+    await fixture.componentInstance['openDetailModal'](fixture.componentInstance['items']()[0]);
+    fixture.componentInstance['openCancelDialog']();
+    fixture.componentInstance['onCancellationReasonChange']('03');
+
+    await fixture.componentInstance['cancel']();
+    await fixture.componentInstance['confirmCancellation']();
+
+    expect(cancelFiscalDocument).toHaveBeenCalledTimes(1);
+    expect(getFiscalDocumentById).toHaveBeenCalledTimes(2);
+    expect(fixture.componentInstance['loadingOperation']()).toBe(false);
+    expect(fixture.componentInstance['showCancelConfirmationDialog']()).toBe(false);
+    expect(fixture.componentInstance['showCancelDialog']()).toBe(false);
+    expect(fixture.componentInstance['selectedDocument']()?.status).toBe('Stamped');
+    expect(fixture.componentInstance['items']()[0].status).toBe('Stamped');
+    expect(fixture.componentInstance['canCancelSelectedDocument']()).toBe(true);
+    expect(fixture.componentInstance['lastOperationMessage']()).toContain('PAC no disponible.');
+    expect(feedback.show).toHaveBeenCalledWith(
+      'error',
+      expect.stringContaining('PAC no disponible.'),
+    );
+  });
+
+  it('does not open the cancel dialog for a CFDI that is already cancelled', async () => {
+    const searchIssued = vi.fn().mockReturnValue(
+      of({
+        page: 1,
+        pageSize: 25,
+        totalCount: 1,
+        totalPages: 1,
+        items: [
+          {
+            fiscalDocumentId: 40,
+            billingDocumentId: 30,
+            status: 'Cancelled',
+            issuedAtUtc: '2026-03-24T12:00:00Z',
+            stampedAtUtc: '2026-03-24T12:05:00Z',
+            issuerRfc: 'AAA010101AAA',
+            issuerLegalName: 'Issuer SA',
+            series: 'A',
+            folio: '31787',
+            uuid: 'UUID-123',
+            receiverRfc: 'BBB010101BBB',
+            receiverLegalName: 'Receiver One',
+            receiverCfdiUseCode: 'G03',
+            paymentMethodSat: 'PPD',
+            paymentFormSat: '99',
+            documentType: 'I',
+            total: 116,
+          },
+        ],
+      }),
+    );
+    const getFiscalDocumentById = vi.fn().mockReturnValue(
+      of({
+        id: 40,
+        billingDocumentId: 30,
+        issuerProfileId: 1,
+        fiscalReceiverId: 9,
+        status: 'Cancelled',
+        cfdiVersion: '4.0',
+        documentType: 'I',
+        series: 'A',
+        folio: '31787',
+        issuedAtUtc: '2026-03-24T12:00:00Z',
+        currencyCode: 'MXN',
+        exchangeRate: 1,
+        paymentMethodSat: 'PPD',
+        paymentFormSat: '99',
+        paymentCondition: 'CREDITO',
+        isCreditSale: true,
+        creditDays: 7,
+        issuerRfc: 'AAA010101AAA',
+        issuerLegalName: 'Issuer SA',
+        issuerFiscalRegimeCode: '601',
+        issuerPostalCode: '01000',
+        pacEnvironment: 'Sandbox',
+        hasCertificateReference: true,
+        hasPrivateKeyReference: true,
+        hasPrivateKeyPasswordReference: true,
+        receiverRfc: 'BBB010101BBB',
+        receiverLegalName: 'Receiver One',
+        receiverFiscalRegimeCode: '601',
+        receiverCfdiUseCode: 'G03',
+        receiverPostalCode: '02000',
+        receiverCountryCode: 'MX',
+        receiverForeignTaxRegistration: null,
+        subtotal: 100,
+        discountTotal: 0,
+        taxTotal: 16,
+        total: 116,
+        items: [],
+        specialFields: [],
+      }),
+    );
+    const getCancellation = vi.fn().mockReturnValue(
+      of({
+        fiscalDocumentId: 40,
+        status: 'Cancelled',
+        cancellationReasonCode: '03',
+        replacementUuid: null,
+        providerName: 'FacturaloPlus',
+        providerTrackingId: 'TRACK-CANCEL-201',
+        providerCode: '201',
+        providerMessage: 'Cancelado',
+        errorCode: null,
+        errorMessage: null,
+        supportMessage: null,
+        rawResponseSummaryJson: '{"codigo":"201"}',
+        requestedAtUtc: '2026-03-29T12:00:00Z',
+        cancelledAtUtc: '2026-03-29T12:10:00Z',
+      }),
+    );
+    const fixture = await configure({ searchIssued, getFiscalDocumentById, getCancellation });
+
+    await fixture.componentInstance['openDetailModal'](fixture.componentInstance['items']()[0]);
+    fixture.componentInstance['openCancelDialog']();
+
+    expect(fixture.componentInstance['canCancelSelectedDocument']()).toBe(false);
+    expect(fixture.componentInstance['showCancelDialog']()).toBe(false);
+  });
+
+  it('does not duplicate the cancellation request when confirm is triggered twice', async () => {
+    const cancelResponse$ = new Subject<{
+      outcome: string;
+      isSuccess: boolean;
+      fiscalDocumentId: number;
+      fiscalDocumentStatus: string;
+      fiscalCancellationId: number;
+      cancellationStatus: string;
+      providerName: string;
+      providerTrackingId: string;
+      providerCode: string;
+      providerMessage: string;
+      cancelledAtUtc: string;
+    }>();
+    const cancelFiscalDocument = vi.fn().mockReturnValue(cancelResponse$);
+    const fixture = await configure({ cancelFiscalDocument });
+
+    await fixture.componentInstance['openDetailModal'](fixture.componentInstance['items']()[0]);
+    fixture.componentInstance['openCancelDialog']();
+    fixture.componentInstance['onCancellationReasonChange']('03');
+    await fixture.componentInstance['cancel']();
+
+    const firstConfirmation = fixture.componentInstance['confirmCancellation']();
+    const secondConfirmation = fixture.componentInstance['confirmCancellation']();
+
+    expect(cancelFiscalDocument).toHaveBeenCalledTimes(1);
+    expect(fixture.componentInstance['loadingOperation']()).toBe(true);
+
+    cancelResponse$.next({
+      outcome: 'Cancelled',
+      isSuccess: true,
+      fiscalDocumentId: 40,
+      fiscalDocumentStatus: 'Cancelled',
+      fiscalCancellationId: 90,
+      cancellationStatus: 'Cancelled',
+      providerName: 'FacturaloPlus',
+      providerTrackingId: 'TRACK-CANCEL-201',
+      providerCode: '201',
+      providerMessage: 'Solicitud de cancelación de UUID exitosa. -',
+      cancelledAtUtc: '2026-03-29T18:40:00Z',
+    });
+    cancelResponse$.complete();
+
+    await firstConfirmation;
+    await secondConfirmation;
+
+    expect(cancelFiscalDocument).toHaveBeenCalledTimes(1);
+    expect(fixture.componentInstance['loadingOperation']()).toBe(false);
+    expect(fixture.componentInstance['selectedDocument']()?.status).toBe('Cancelled');
   });
 
   it('refreshes SAT status from the issued CFDI detail modal', async () => {

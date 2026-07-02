@@ -93,8 +93,11 @@ export function reconcileCancellationAfterOperation(
   nextDocument: FiscalDocumentResponse | null;
   nextCancellation: FiscalCancellationResponse;
 } {
-  const nextDocument = currentDocument && response.fiscalDocumentStatus
-    ? { ...currentDocument, status: response.fiscalDocumentStatus }
+  const nextDocumentStatus = response.isSuccess
+    ? response.fiscalDocumentStatus ?? 'Cancelled'
+    : response.fiscalDocumentStatus ?? currentDocument?.status ?? null;
+  const nextDocument = currentDocument && nextDocumentStatus
+    ? { ...currentDocument, status: nextDocumentStatus }
     : currentDocument;
 
   const nextStatus = response.isSuccess

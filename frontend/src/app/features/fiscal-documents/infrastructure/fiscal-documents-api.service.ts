@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpContext } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, timeout } from 'rxjs';
 import { buildApiUrl } from '../../../core/config/api-url';
 import { SUPPRESS_GLOBAL_ERROR_TOAST } from '../../../core/http/api-error-context.tokens';
 import {
@@ -188,8 +188,21 @@ export class FiscalDocumentsApiService {
     return this.http.post<SendFiscalDocumentEmailResponse>(buildApiUrl(`/fiscal-documents/${fiscalDocumentId}/email`), request);
   }
 
-  cancelFiscalDocument(fiscalDocumentId: number, request: CancelFiscalDocumentRequest): Observable<CancelFiscalDocumentResponse> {
-    return this.http.post<CancelFiscalDocumentResponse>(buildApiUrl(`/fiscal-documents/${fiscalDocumentId}/cancel`), request);
+  cancelFiscalDocument(
+    fiscalDocumentId: number,
+    request: CancelFiscalDocumentRequest,
+    options?: { timeoutMs?: number; suppressGlobalErrorToast?: boolean },
+  ): Observable<CancelFiscalDocumentResponse> {
+    const context = options?.suppressGlobalErrorToast
+      ? new HttpContext().set(SUPPRESS_GLOBAL_ERROR_TOAST, true)
+      : new HttpContext();
+    const request$ = this.http.post<CancelFiscalDocumentResponse>(
+      buildApiUrl(`/fiscal-documents/${fiscalDocumentId}/cancel`),
+      request,
+      { context },
+    );
+
+    return options?.timeoutMs ? request$.pipe(timeout({ first: options.timeoutMs })) : request$;
   }
 
   getCancellation(fiscalDocumentId: number): Observable<FiscalCancellationResponse> {

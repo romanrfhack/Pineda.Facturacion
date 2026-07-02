@@ -95,6 +95,35 @@ describe('FiscalDocumentsApiService', () => {
     httpTesting.verify();
   });
 
+  it('posts CFDI cancellation with local timeout options and suppressed global toast', () => {
+    const service = TestBed.inject(FiscalDocumentsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.cancelFiscalDocument(
+      40,
+      {
+        cancellationReasonCode: '03',
+      },
+      {
+        timeoutMs: 75_000,
+        suppressGlobalErrorToast: true,
+      },
+    ).subscribe();
+
+    const req = httpTesting.expectOne('/api/fiscal-documents/40/cancel');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ cancellationReasonCode: '03' });
+    expect(req.request.context.get(SUPPRESS_GLOBAL_ERROR_TOAST)).toBe(true);
+    req.flush({
+      outcome: 'Cancelled',
+      isSuccess: true,
+      fiscalDocumentId: 40,
+      fiscalDocumentStatus: 'Cancelled',
+      cancellationStatus: 'Cancelled',
+    });
+    httpTesting.verify();
+  });
+
   it('posts the stamp-and-email orchestration request', () => {
     const service = TestBed.inject(FiscalDocumentsApiService);
     const httpTesting = TestBed.inject(HttpTestingController);
