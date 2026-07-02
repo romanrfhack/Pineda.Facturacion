@@ -3,7 +3,13 @@ import { FormsModule } from '@angular/forms';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FiscalReceiverSatCatalogService } from '../application/fiscal-receiver-sat-catalog.service';
 import { FiscalReceiver, FiscalReceiverSatCatalog, FiscalReceiverSatCatalogOption, FiscalReceiverSpecialFieldDefinition, UpsertFiscalReceiverRequest } from '../models/catalogs.models';
-import { findInvalidEmailRecipients, formatEmailRecipientsInput, parseEmailRecipients } from '../../../shared/utils/email-recipients';
+import {
+  findInvalidEmailRecipients,
+  isValidEmailRecipient,
+  joinEmailRecipients,
+  parseEmailRecipients,
+  splitEmailRecipients,
+} from '../../../shared/utils/email-recipients';
 
 @Component({
   selector: 'app-fiscal-receiver-form',
@@ -61,11 +67,77 @@ import { findInvalidEmailRecipients, formatEmailRecipientsInput, parseEmailRecip
         <input [(ngModel)]="draft.foreignTaxRegistration" name="foreignTaxRegistration" />
       </label>
 
-      <label>
-        <span>Correo(s)</span>
-        <input [(ngModel)]="draft.email" name="email" type="text" maxlength="200" />
-        <small class="helper">Para varios correos, sepáralos con punto y coma (;).</small>
-      </label>
+      <section class="email-field wide-field">
+        <div class="email-field-header">
+          <span>Correo(s)</span>
+          <small class="helper">Para varios correos, agrégalos uno por uno o pégalos separados con punto y coma (;).</small>
+        </div>
+
+        <div class="email-entry-row">
+          <textarea
+            id="emailRecipientsInput"
+            [(ngModel)]="emailInput"
+            name="emailInput"
+            data-testid="email-recipient-input"
+            rows="3"
+            [disabled]="readOnly()"
+            placeholder="correo@cliente.com"
+          ></textarea>
+
+          @if (!readOnly()) {
+            <button
+              type="button"
+              class="secondary-action email-add-button"
+              data-testid="add-email-recipient-button"
+              (click)="addEmailRecipients()"
+            >
+              Agregar correo
+            </button>
+          }
+        </div>
+
+        @if (invalidEmailRecipients.length > 0) {
+          <p class="helper warning">Hay correos inválidos pendientes. Quita o corrige estos valores antes de guardar.</p>
+        }
+
+        @if (emailRecipients.length || invalidEmailRecipients.length) {
+          <div class="email-list">
+            @for (recipient of emailRecipients; track trackEmailRecipient('valid', $index, recipient); let index = $index) {
+              <article class="email-chip" data-testid="email-recipient-chip">
+                <span class="email-chip-text">{{ recipient }}</span>
+
+                @if (!readOnly()) {
+                  <button type="button" class="link danger" data-testid="remove-email-recipient-button" (click)="removeEmailRecipient(index)">
+                    Quitar
+                  </button>
+                }
+              </article>
+            }
+
+            @for (recipient of invalidEmailRecipients; track trackEmailRecipient('invalid', $index, recipient); let index = $index) {
+              <article class="email-chip invalid" data-testid="invalid-email-recipient-chip">
+                <div class="email-chip-content">
+                  <span class="email-chip-text">{{ recipient }}</span>
+                  <small>Inválido</small>
+                </div>
+
+                @if (!readOnly()) {
+                  <button
+                    type="button"
+                    class="link danger"
+                    data-testid="remove-invalid-email-recipient-button"
+                    (click)="removeInvalidEmailRecipient(index)"
+                  >
+                    Quitar
+                  </button>
+                }
+              </article>
+            }
+          </div>
+        } @else {
+          <p class="helper">Sin correos registrados.</p>
+        }
+      </section>
 
       <label>
         <span>Teléfono</span>
@@ -164,8 +236,9 @@ import { findInvalidEmailRecipients, formatEmailRecipientsInput, parseEmailRecip
   styles: [`
     .form-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:1rem; align-items:end; }
     label { display:grid; gap:0.35rem; }
-    input, button, select { font:inherit; }
-    input, select {
+    .wide-field { grid-column:1 / -1; }
+    input, button, select, textarea { font:inherit; }
+    input, select, textarea {
       border:1px solid #c9d1da;
       border-radius:0.8rem;
       padding:0.75rem 0.9rem;
@@ -173,6 +246,7 @@ import { findInvalidEmailRecipients, formatEmailRecipientsInput, parseEmailRecip
       min-width: 0;
       box-sizing: border-box;
     }
+    textarea { resize:vertical; min-height:6.5rem; }
     select option {
       white-space: normal;
       word-break: break-word;
@@ -182,15 +256,40 @@ import { findInvalidEmailRecipients, formatEmailRecipientsInput, parseEmailRecip
     button { border:none; border-radius:0.8rem; padding:0.75rem 1rem; background:#182533; color:#fff; cursor:pointer; }
     button:disabled { opacity:0.6; cursor:not-allowed; }
     .error { color:#7a2020; margin:0; grid-column:1 / -1; }
+    .email-field { display:grid; gap:0.75rem; align-self:stretch; }
+    .email-field-header { display:grid; gap:0.35rem; }
+    .email-entry-row { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:0.75rem; align-items:end; }
+    .email-add-button { min-width:fit-content; }
+    .email-list { display:grid; gap:0.6rem; }
+    .email-chip {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:0.75rem;
+      padding:0.75rem 0.9rem;
+      border:1px solid #d8d1c2;
+      border-radius:0.9rem;
+      background:#fcfbf8;
+    }
+    .email-chip.invalid { border-color:#e5b8b8; background:#fff6f6; }
+    .email-chip-content { display:grid; gap:0.15rem; }
+    .email-chip-text { overflow-wrap:anywhere; }
     .special-fields { grid-column:1 / -1; display:grid; gap:0.75rem; padding-top:0.25rem; }
     .special-fields-header { display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; }
     .special-fields-header p, .helper { margin:0; color:#5f6b76; }
+    .helper.warning { color:#8a5a00; }
+    .email-chip.invalid small { color:#7a2020; font-weight:600; }
     .special-field-list { display:grid; gap:0.75rem; }
     .special-field-card { border:1px solid #ece5d7; border-radius:0.9rem; padding:0.9rem; background:#fcfbf8; display:grid; gap:0.75rem; }
     .special-field-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:0.75rem; align-items:end; }
     .secondary-action { background:#d8c49b; color:#182533; }
     .link { background:transparent; color:#182533; padding:0; justify-self:flex-start; }
     .link.danger { color:#7a2020; }
+    @media (max-width: 640px) {
+      .email-entry-row { grid-template-columns:1fr; }
+      .email-add-button { width:100%; }
+      .email-chip { align-items:flex-start; flex-direction:column; }
+    }
   `],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -209,7 +308,11 @@ export class FiscalReceiverFormComponent implements OnChanges {
 
   protected readonly satCatalog = toSignal(this.fiscalReceiverSatCatalogService.getCatalog(), { initialValue: null });
   protected readonly localErrorMessage = signal<string | null>(null);
+  protected readonly emailStateMessage = signal<string | null>(null);
   protected draft: UpsertFiscalReceiverRequest = emptyReceiver();
+  protected emailInput = '';
+  protected emailRecipients: string[] = [];
+  protected invalidEmailRecipients: string[] = [];
   private hydratingDraft = false;
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -219,6 +322,7 @@ export class FiscalReceiverFormComponent implements OnChanges {
 
     const receiver = this.receiver();
     this.localErrorMessage.set(null);
+    this.emailStateMessage.set(null);
     this.hydratingDraft = true;
     this.draft = receiver
       ? {
@@ -236,25 +340,27 @@ export class FiscalReceiverFormComponent implements OnChanges {
           specialFields: (receiver.specialFields ?? []).map(cloneSpecialField)
       }
       : cloneDraft(this.initialValue() ?? emptyReceiver());
+    this.syncEmailRecipients(this.draft.email);
     this.hydratingDraft = false;
   }
 
   protected submitForm(): void {
-    const rawEmail = this.draft.email?.trim() ?? '';
-    const invalidRecipients = findInvalidEmailRecipients(rawEmail);
-    const normalizedRecipients = parseEmailRecipients(rawEmail);
-    const normalizedEmail = rawEmail ? formatEmailRecipientsInput(rawEmail) : '';
+    const pendingEmailInput = this.emailInput.trim();
+    const normalizedEmail = joinEmailRecipients(this.emailRecipients);
 
-    if (invalidRecipients.length > 0) {
+    if (pendingEmailInput) {
+      const pendingInvalidRecipients = findInvalidEmailRecipients(pendingEmailInput);
       this.localErrorMessage.set(
-        `Correo inválido: ${invalidRecipients.join(', ')}. Para varios correos, sepáralos con punto y coma (;).`,
+        pendingInvalidRecipients.length > 0
+          ? `Correo inválido: ${pendingInvalidRecipients.join(', ')}. Corrige el correo antes de agregarlo.`
+          : 'Agrega o limpia el contenido del campo Correo(s) antes de guardar.',
       );
       return;
     }
 
-    if (rawEmail && normalizedRecipients.length === 0) {
+    if (this.invalidEmailRecipients.length > 0) {
       this.localErrorMessage.set(
-        'Correo inválido. Para varios correos, sepáralos con punto y coma (;).',
+        `Correo inválido: ${this.invalidEmailRecipients.join(', ')}. Corrige o quita esos valores antes de guardar.`,
       );
       return;
     }
@@ -267,6 +373,7 @@ export class FiscalReceiverFormComponent implements OnChanges {
     }
 
     this.localErrorMessage.set(null);
+    this.syncDraftEmail();
     this.submitted.emit({
       ...this.draft,
       rfc: this.draft.rfc.trim(),
@@ -291,6 +398,48 @@ export class FiscalReceiverFormComponent implements OnChanges {
     });
   }
 
+  protected addEmailRecipients(): void {
+    const rawInput = this.emailInput.trim();
+    if (!rawInput) {
+      return;
+    }
+
+    const invalidRecipients = findInvalidEmailRecipients(rawInput);
+    if (invalidRecipients.length > 0) {
+      this.localErrorMessage.set(
+        `Correo inválido: ${invalidRecipients.join(', ')}. Corrige el correo antes de agregarlo.`,
+      );
+      return;
+    }
+
+    const nextRecipients = mergeEmailRecipients(this.emailRecipients, parseEmailRecipients(rawInput));
+    const normalizedEmail = joinEmailRecipients(nextRecipients);
+
+    if (normalizedEmail.length > FiscalReceiverFormComponent.emailMaxLength) {
+      this.localErrorMessage.set(
+        `El campo Correo(s) permite máximo ${FiscalReceiverFormComponent.emailMaxLength} caracteres.`,
+      );
+      return;
+    }
+
+    this.emailRecipients = nextRecipients;
+    this.syncDraftEmail();
+    this.emailInput = '';
+    this.localErrorMessage.set(null);
+  }
+
+  protected removeEmailRecipient(index: number): void {
+    this.emailRecipients = this.emailRecipients.filter((_, currentIndex) => currentIndex !== index);
+    this.syncDraftEmail();
+    this.localErrorMessage.set(null);
+  }
+
+  protected removeInvalidEmailRecipient(index: number): void {
+    this.invalidEmailRecipients = this.invalidEmailRecipients.filter((_, currentIndex) => currentIndex !== index);
+    this.refreshEmailStateMessage();
+    this.localErrorMessage.set(null);
+  }
+
   protected addSpecialField(): void {
     this.draft = {
       ...this.draft,
@@ -307,6 +456,10 @@ export class FiscalReceiverFormComponent implements OnChanges {
 
   protected trackSpecialField(index: number, field: FiscalReceiverSpecialFieldDefinition): string {
     return field.code || `new-${index}`;
+  }
+
+  protected trackEmailRecipient(type: 'valid' | 'invalid', index: number, recipient: string): string {
+    return `${type}-${recipient}-${index}`;
   }
 
   protected catalogReady(): boolean {
@@ -357,7 +510,51 @@ export class FiscalReceiverFormComponent implements OnChanges {
   }
 
   protected displayErrorMessage(): string | null {
-    return this.localErrorMessage() ?? this.errorMessage();
+    return this.localErrorMessage() ?? this.emailStateMessage() ?? this.errorMessage();
+  }
+
+  private syncEmailRecipients(rawEmail: string | null | undefined): void {
+    const validRecipients: string[] = [];
+    const invalidRecipients: string[] = [];
+    const seenValidRecipients = new Set<string>();
+
+    splitEmailRecipients(rawEmail).forEach((recipient) => {
+      const trimmedRecipient = recipient.trim();
+      if (!trimmedRecipient) {
+        return;
+      }
+
+      if (!isValidEmailRecipient(trimmedRecipient)) {
+        invalidRecipients.push(trimmedRecipient);
+        return;
+      }
+
+      const key = trimmedRecipient.toLowerCase();
+      if (seenValidRecipients.has(key)) {
+        return;
+      }
+
+      seenValidRecipients.add(key);
+      validRecipients.push(trimmedRecipient);
+    });
+
+    this.emailInput = '';
+    this.emailRecipients = validRecipients;
+    this.invalidEmailRecipients = invalidRecipients;
+    this.syncDraftEmail();
+    this.refreshEmailStateMessage();
+  }
+
+  private syncDraftEmail(): void {
+    this.draft.email = this.emailRecipients.length > 0 ? joinEmailRecipients(this.emailRecipients) : '';
+  }
+
+  private refreshEmailStateMessage(): void {
+    this.emailStateMessage.set(
+      this.invalidEmailRecipients.length > 0
+        ? `Se detectaron correos inválidos en este receptor: ${this.invalidEmailRecipients.join(', ')}. Corrige o quita esos valores antes de guardar.`
+        : null,
+    );
   }
 }
 
@@ -444,4 +641,21 @@ function cloneSpecialField(field: FiscalReceiverSpecialFieldDefinition): FiscalR
     isActive: field.isActive,
     displayOrder: field.displayOrder
   };
+}
+
+function mergeEmailRecipients(currentRecipients: readonly string[], incomingRecipients: readonly string[]): string[] {
+  const seenRecipients = new Set(currentRecipients.map((recipient) => recipient.toLowerCase()));
+  const mergedRecipients = [...currentRecipients];
+
+  incomingRecipients.forEach((recipient) => {
+    const key = recipient.toLowerCase();
+    if (seenRecipients.has(key)) {
+      return;
+    }
+
+    seenRecipients.add(key);
+    mergedRecipients.push(recipient);
+  });
+
+  return mergedRecipients;
 }
