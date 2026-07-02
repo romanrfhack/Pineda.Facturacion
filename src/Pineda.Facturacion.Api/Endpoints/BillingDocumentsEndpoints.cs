@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http.HttpResults;
+using System.Text.Json.Serialization;
 using Pineda.Facturacion.Api.Security;
 using Pineda.Facturacion.Domain.Enums;
 using Pineda.Facturacion.Application.Abstractions.Security;
@@ -28,6 +29,11 @@ public static class BillingDocumentsEndpoints
             .WithName("SearchBillingDocuments")
             .WithSummary("Search billing documents by billing id, sales order id, or legacy order id")
             .Produces<IReadOnlyList<BillingDocumentLookupResponse>>(StatusCodes.Status200OK);
+
+        group.MapGet("/search/grouped", SearchBillingDocumentsGroupedAsync)
+            .WithName("SearchBillingDocumentsGrouped")
+            .WithSummary("Search billing documents grouped by billing id, fiscal id, sales order id, or legacy order id")
+            .Produces<GroupedBillingDocumentSearchResponse>(StatusCodes.Status200OK);
 
         group.MapGet("/pending-items", ListPendingBillingItemsAsync)
             .WithName("ListPendingBillingItems")
@@ -104,6 +110,16 @@ public static class BillingDocumentsEndpoints
     {
         var results = await service.ExecuteAsync(q, 5, cancellationToken);
         return TypedResults.Ok(results.Select(MapBillingDocumentLookup).ToArray());
+    }
+
+    private static async Task<Ok<GroupedBillingDocumentSearchResponse>> SearchBillingDocumentsGroupedAsync(
+        string q,
+        int? takePerGroup,
+        SearchBillingDocumentsService service,
+        CancellationToken cancellationToken)
+    {
+        var results = await service.ExecuteGroupedAsync(q, takePerGroup ?? 5, cancellationToken);
+        return TypedResults.Ok(MapGroupedBillingDocumentSearch(results));
     }
 
     private static async Task<Ok<PendingBillingItemResponse[]>> ListPendingBillingItemsAsync(
@@ -514,9 +530,31 @@ public static class BillingDocumentsEndpoints
         public DateTime CreatedAtUtc { get; init; }
         public long? FiscalDocumentId { get; init; }
         public string? FiscalDocumentStatus { get; init; }
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? SearchMatchField { get; init; }
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? SearchMatchLabel { get; init; }
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? SearchMatchValue { get; init; }
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? SearchMatchKind { get; init; }
         public IReadOnlyList<BillingDocumentLookupItemResponse> Items { get; init; } = [];
         public IReadOnlyList<BillingDocumentAssociatedOrderResponse> AssociatedOrders { get; init; } = [];
         public IReadOnlyList<BillingDocumentRemovedItemTraceResponse> RemovedItems { get; init; } = [];
+    }
+
+    public sealed class GroupedBillingDocumentSearchResponse
+    {
+        public string Query { get; init; } = string.Empty;
+        public int TakePerGroup { get; init; }
+        public IReadOnlyList<BillingDocumentSearchGroupResponse> Groups { get; init; } = [];
+    }
+
+    public sealed class BillingDocumentSearchGroupResponse
+    {
+        public string Field { get; init; } = string.Empty;
+        public string Label { get; init; } = string.Empty;
+        public IReadOnlyList<BillingDocumentLookupResponse> Items { get; init; } = [];
     }
 
     public sealed class BillingDocumentLookupItemResponse
@@ -741,6 +779,10 @@ public static class BillingDocumentsEndpoints
             CreatedAtUtc = billingDocument.CreatedAtUtc,
             FiscalDocumentId = billingDocument.FiscalDocumentId,
             FiscalDocumentStatus = billingDocument.FiscalDocumentStatus,
+            SearchMatchField = billingDocument.SearchMatchField,
+            SearchMatchLabel = billingDocument.SearchMatchLabel,
+            SearchMatchValue = billingDocument.SearchMatchValue,
+            SearchMatchKind = billingDocument.SearchMatchKind,
             Items = billingDocument.Items
                 .Select(item => new BillingDocumentLookupItemResponse
                 {
@@ -814,6 +856,24 @@ public static class BillingDocumentsEndpoints
                             ReleasedByDisplayName = assignment.ReleasedByDisplayName
                         })
                         .ToArray()
+                })
+                .ToArray()
+        };
+    }
+
+    private static GroupedBillingDocumentSearchResponse MapGroupedBillingDocumentSearch(
+        Application.Abstractions.Persistence.GroupedBillingDocumentSearchModel search)
+    {
+        return new GroupedBillingDocumentSearchResponse
+        {
+            Query = search.Query,
+            TakePerGroup = search.TakePerGroup,
+            Groups = search.Groups
+                .Select(group => new BillingDocumentSearchGroupResponse
+                {
+                    Field = group.Field,
+                    Label = group.Label,
+                    Items = group.Items.Select(MapBillingDocumentLookup).ToArray()
                 })
                 .ToArray()
         };

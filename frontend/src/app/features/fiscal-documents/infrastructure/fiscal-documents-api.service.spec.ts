@@ -179,6 +179,17 @@ describe('FiscalDocumentsApiService', () => {
     httpTesting.verify();
   });
 
+  it('searches grouped billing documents by query', () => {
+    const service = TestBed.inject(FiscalDocumentsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.searchBillingDocumentsGrouped('1723').subscribe();
+
+    const req = httpTesting.expectOne('/api/billing-documents/search/grouped?q=1723&takePerGroup=5');
+    expect(req.request.method).toBe('GET');
+    httpTesting.verify();
+  });
+
   it('searches issued CFDI with paged filters', () => {
     const service = TestBed.inject(FiscalDocumentsApiService);
     const httpTesting = TestBed.inject(HttpTestingController);

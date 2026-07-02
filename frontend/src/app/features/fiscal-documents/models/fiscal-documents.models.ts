@@ -38,9 +38,25 @@ export interface BillingDocumentLookupResponse {
   createdAtUtc: string;
   fiscalDocumentId?: number | null;
   fiscalDocumentStatus?: string | null;
+  searchMatchField?: string | null;
+  searchMatchLabel?: string | null;
+  searchMatchValue?: string | null;
+  searchMatchKind?: string | null;
   items?: BillingDocumentLookupItemResponse[];
   associatedOrders?: BillingDocumentAssociatedOrderResponse[];
   removedItems?: BillingDocumentRemovedItemTraceResponse[];
+}
+
+export interface GroupedBillingDocumentSearchResponse {
+  query: string;
+  takePerGroup: number;
+  groups: BillingDocumentSearchGroupResponse[];
+}
+
+export interface BillingDocumentSearchGroupResponse {
+  field: string;
+  label: string;
+  items: BillingDocumentLookupResponse[];
 }
 
 export interface BillingDocumentLookupItemResponse {

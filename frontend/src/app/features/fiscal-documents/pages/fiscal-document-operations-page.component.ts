@@ -13,6 +13,7 @@ import { FiscalDocumentsApiService } from '../infrastructure/fiscal-documents-ap
 import {
   BillingDocumentRemovedItemTraceResponse,
   BillingDocumentRemovedItemAssignmentTraceResponse,
+  BillingDocumentSearchGroupResponse,
   BillingDocumentLookupResponse,
   BillingDocumentLookupItemResponse,
   AssignPendingBillingItemsResponse,
@@ -116,7 +117,8 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
       <section class="card">
         <h3>Seleccionar documento de facturación</h3>
         <p class="helper">
-          Busca por id de documento, id de orden o id legado para continuar con el flujo fiscal.
+          Busca por ID documento de facturación, ID documento fiscal, ID de orden o ID legado para
+          continuar con el flujo fiscal.
         </p>
 
         <form class="context-search" (ngSubmit)="searchBillingDocuments()">
@@ -126,7 +128,7 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
               <input
                 [(ngModel)]="billingDocumentQuery"
                 name="billingDocumentQuery"
-                placeholder="Id de documento, id de orden o id legado"
+                placeholder="ID documento de facturación, ID documento fiscal, ID de orden o ID legado"
               />
               <button type="submit" class="secondary" [disabled]="loadingBillingDocumentSearch()">
                 {{ loadingBillingDocumentSearch() ? 'Buscando...' : 'Buscar' }}
@@ -139,27 +141,34 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
           <p class="error">{{ billingDocumentSearchError() }}</p>
         }
 
-        @if (billingDocumentSearchResults().length) {
+        @if (billingDocumentSearchGroupsWithItems().length) {
           <section class="context-results">
-            @for (
-              billingDocument of billingDocumentSearchResults();
-              track billingDocument.billingDocumentId
-            ) {
-              <button
-                type="button"
-                class="context-result"
-                (click)="selectBillingDocument(billingDocument)"
-              >
-                <strong>Documento #{{ billingDocument.billingDocumentId }}</strong>
-                <span
-                  >Orden {{ billingDocument.salesOrderId }} · Legado
-                  {{ billingDocument.legacyOrderId }}</span
-                >
-                <small
-                  >Estatus {{ getDisplayLabel(billingDocument.status) }} ·
-                  {{ billingDocument.currencyCode }} {{ billingDocument.total }}</small
-                >
-              </button>
+            @for (group of billingDocumentSearchGroupsWithItems(); track group.field) {
+              <section class="context-result-group">
+                <h4>{{ group.label }}</h4>
+                <div class="context-result-group-items">
+                  @for (billingDocument of group.items; track billingDocument.billingDocumentId) {
+                    <button
+                      type="button"
+                      class="context-result"
+                      (click)="selectBillingDocument(billingDocument)"
+                    >
+                      <strong>{{ buildBillingDocumentSearchMatchText(billingDocument) }}</strong>
+                      <span
+                        >Documento de facturación #{{
+                          billingDocument.billingDocumentId
+                        }}</span
+                      >
+                      <span>{{
+                        buildBillingDocumentSearchIdentifiersText(billingDocument)
+                      }}</span>
+                      <small>{{
+                        buildBillingDocumentSearchOperationalText(billingDocument)
+                      }}</small>
+                    </button>
+                  }
+                </div>
+              </section>
             }
           </section>
         } @else if (billingDocumentSearchTouched() && !loadingBillingDocumentSearch()) {
@@ -1609,13 +1618,26 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
       }
       .context-results {
         display: grid;
-        gap: 0.5rem;
+        gap: 0.85rem;
         margin-top: 1rem;
+      }
+      .context-result-group {
+        display: grid;
+        gap: 0.5rem;
+      }
+      .context-result-group h4 {
+        margin: 0;
+        font-size: 0.95rem;
+        color: #8a6a32;
+      }
+      .context-result-group-items {
+        display: grid;
+        gap: 0.5rem;
       }
       .context-result {
         width: 100%;
         display: grid;
-        gap: 0.15rem;
+        gap: 0.2rem;
         text-align: left;
         border: 1px solid #ece5d7;
         border-radius: 0.8rem;
@@ -1626,6 +1648,9 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
       }
       .context-result:hover {
         background: #f7f2e7;
+      }
+      .context-result span {
+        color: #314254;
       }
       .context-result small {
         color: #5f6b76;
@@ -2006,7 +2031,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected readonly activeIssuer = signal<IssuerProfileResponse | null>(null);
   protected readonly billingDocumentContext = signal<BillingDocumentLookupResponse | null>(null);
   protected readonly loadingBillingDocumentSearch = signal(false);
-  protected readonly billingDocumentSearchResults = signal<BillingDocumentLookupResponse[]>([]);
+  protected readonly billingDocumentSearchGroups = signal<BillingDocumentSearchGroupResponse[]>([]);
   protected readonly billingDocumentSearchError = signal<string | null>(null);
   protected readonly billingDocumentSearchTouched = signal(false);
   protected readonly receiverResults = signal<FiscalReceiverSearchResponse[]>([]);
@@ -2170,6 +2195,9 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       },
     ];
   });
+  protected readonly billingDocumentSearchGroupsWithItems = computed(() =>
+    this.billingDocumentSearchGroups().filter((group) => group.items.length > 0),
+  );
   protected readonly includedBillingItems = computed(() => {
     return this.billingDocumentContext()?.items ?? [];
   });
@@ -2472,17 +2500,17 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     this.billingDocumentSearchError.set(null);
 
     if (!query) {
-      this.billingDocumentSearchResults.set([]);
+      this.billingDocumentSearchGroups.set([]);
       return;
     }
 
     this.loadingBillingDocumentSearch.set(true);
     try {
-      this.billingDocumentSearchResults.set(
-        await firstValueFrom(this.api.searchBillingDocuments(query)),
+      this.billingDocumentSearchGroups.set(
+        (await firstValueFrom(this.api.searchBillingDocumentsGrouped(query))).groups,
       );
     } catch (error) {
-      this.billingDocumentSearchResults.set([]);
+      this.billingDocumentSearchGroups.set([]);
       this.billingDocumentSearchError.set(
         extractApiErrorMessage(error, 'No fue posible buscar documentos de facturación.'),
       );
@@ -2494,7 +2522,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected async selectBillingDocument(
     billingDocument: BillingDocumentLookupResponse,
   ): Promise<void> {
-    this.billingDocumentSearchResults.set([]);
+    this.billingDocumentSearchGroups.set([]);
     this.billingDocumentSearchTouched.set(false);
     await this.loadBillingDocumentContext(billingDocument.billingDocumentId, true);
   }
@@ -2518,7 +2546,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     this.resetReceiverSelectionState();
     this.billingDocumentId.set(null);
     this.billingDocumentQuery = '';
-    this.billingDocumentSearchResults.set([]);
+    this.billingDocumentSearchGroups.set([]);
     this.billingDocumentSearchTouched.set(false);
     this.fiscalDocument.set(null);
     this.stampEvidence.set(null);
@@ -2528,6 +2556,54 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     this.resetFiscalItemProfileDialogState();
     this.showBillingCancelConfirmationDialog.set(false);
     await this.router.navigate(['/app/fiscal-documents'], { queryParams: {} });
+  }
+
+  protected buildBillingDocumentSearchMatchText(
+    billingDocument: BillingDocumentLookupResponse,
+  ): string {
+    const label = billingDocument.searchMatchLabel?.trim();
+    const field = billingDocument.searchMatchField?.trim();
+    const value = billingDocument.searchMatchValue?.trim();
+    const matchKind = billingDocument.searchMatchKind?.trim();
+
+    if (label && field === 'LegacyOrderId') {
+      const legacyValue = value || billingDocument.legacyOrderId;
+      if (matchKind === 'StartsWith') {
+        return `Coincidencia: ${label} inicia con ${legacyValue}`;
+      }
+
+      if (matchKind === 'Contains') {
+        return `Coincidencia: ${label} contiene ${legacyValue}`;
+      }
+
+      return `Coincidencia: ${label} ${legacyValue}`;
+    }
+
+    if (label) {
+      const displayValue = value || `${billingDocument.billingDocumentId}`;
+      return `Coincidencia: ${label} #${displayValue}`;
+    }
+
+    return `Coincidencia: Documento de facturación #${billingDocument.billingDocumentId}`;
+  }
+
+  protected buildBillingDocumentSearchIdentifiersText(
+    billingDocument: BillingDocumentLookupResponse,
+  ): string {
+    const parts: string[] = [];
+    if (billingDocument.fiscalDocumentId) {
+      parts.push(`Documento fiscal #${billingDocument.fiscalDocumentId}`);
+    }
+
+    parts.push(`Orden #${billingDocument.salesOrderId}`);
+    parts.push(`ID legado ${billingDocument.legacyOrderId}`);
+    return parts.join(' · ');
+  }
+
+  protected buildBillingDocumentSearchOperationalText(
+    billingDocument: BillingDocumentLookupResponse,
+  ): string {
+    return `Estatus ${this.getDisplayLabel(billingDocument.status)} · ${billingDocument.currencyCode} ${billingDocument.total}`;
   }
 
   protected canEditCurrentBillingComposition(): boolean {

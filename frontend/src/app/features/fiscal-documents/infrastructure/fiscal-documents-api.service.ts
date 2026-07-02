@@ -5,6 +5,7 @@ import { buildApiUrl } from '../../../core/config/api-url';
 import { SUPPRESS_GLOBAL_ERROR_TOAST } from '../../../core/http/api-error-context.tokens';
 import {
   BillingDocumentLookupResponse,
+  GroupedBillingDocumentSearchResponse,
   AssignPendingBillingItemsRequest,
   AssignPendingBillingItemsResponse,
   CancelBillingDocumentResponse,
@@ -62,6 +63,12 @@ export class FiscalDocumentsApiService {
 
   searchBillingDocuments(query: string): Observable<BillingDocumentLookupResponse[]> {
     return this.http.get<BillingDocumentLookupResponse[]>(buildApiUrl(`/billing-documents/search?q=${encodeURIComponent(query)}`));
+  }
+
+  searchBillingDocumentsGrouped(query: string): Observable<GroupedBillingDocumentSearchResponse> {
+    return this.http.get<GroupedBillingDocumentSearchResponse>(
+      buildApiUrl(`/billing-documents/search/grouped?q=${encodeURIComponent(query)}&takePerGroup=5`),
+    );
   }
 
   searchIssued(filters: IssuedFiscalDocumentFilters): Observable<IssuedFiscalDocumentListResponse> {

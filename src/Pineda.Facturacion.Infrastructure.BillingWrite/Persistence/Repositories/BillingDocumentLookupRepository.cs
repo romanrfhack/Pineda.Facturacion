@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using System.Linq.Expressions;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Domain.Enums;
 
@@ -6,6 +7,21 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Repositorie
 
 public sealed class BillingDocumentLookupRepository : IBillingDocumentLookupRepository
 {
+    private const string BillingDocumentIdField = "BillingDocumentId";
+    private const string FiscalDocumentIdField = "FiscalDocumentId";
+    private const string SalesOrderIdField = "SalesOrderId";
+    private const string LegacyOrderIdField = "LegacyOrderId";
+    private const string BillingDocumentsGroupLabel = "Documentos de facturación";
+    private const string FiscalDocumentsGroupLabel = "Documentos fiscales";
+    private const string SalesOrdersGroupLabel = "Órdenes";
+    private const string LegacyIdsGroupLabel = "IDs legado";
+    private const string BillingDocumentMatchLabel = "Documento de facturación";
+    private const string FiscalDocumentMatchLabel = "Documento fiscal";
+    private const string SalesOrderMatchLabel = "Orden";
+    private const string LegacyOrderMatchLabel = "ID legado";
+    private const string ExactMatchKind = "Exact";
+    private const string StartsWithMatchKind = "StartsWith";
+    private const string ContainsMatchKind = "Contains";
     private readonly BillingDbContext _dbContext;
 
     public BillingDocumentLookupRepository(BillingDbContext dbContext)
@@ -144,6 +160,140 @@ public sealed class BillingDocumentLookupRepository : IBillingDocumentLookupRepo
         return results;
     }
 
+    public async Task<GroupedBillingDocumentSearchModel> SearchGroupedAsync(
+        string query,
+        int takePerGroup = 5,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedQuery = query.Trim();
+        var normalizedTakePerGroup = Math.Clamp(takePerGroup, 1, 5);
+        var parsedNumeric = long.TryParse(normalizedQuery, out var numericValue);
+
+        var groups = new List<BillingDocumentSearchGroupModel>();
+        if (parsedNumeric)
+        {
+            groups.Add(new BillingDocumentSearchGroupModel
+            {
+                Field = BillingDocumentIdField,
+                Label = BillingDocumentsGroupLabel,
+                Items = await SearchExactMatchesAsync(
+                    x => x.BillingDocumentId == numericValue,
+                    normalizedQuery,
+                    normalizedTakePerGroup,
+                    BillingDocumentIdField,
+                    BillingDocumentMatchLabel,
+                    cancellationToken)
+            });
+            groups.Add(new BillingDocumentSearchGroupModel
+            {
+                Field = FiscalDocumentIdField,
+                Label = FiscalDocumentsGroupLabel,
+                Items = await SearchExactMatchesAsync(
+                    x => x.FiscalDocumentId == numericValue,
+                    normalizedQuery,
+                    normalizedTakePerGroup,
+                    FiscalDocumentIdField,
+                    FiscalDocumentMatchLabel,
+                    cancellationToken)
+            });
+            groups.Add(new BillingDocumentSearchGroupModel
+            {
+                Field = SalesOrderIdField,
+                Label = SalesOrdersGroupLabel,
+                Items = await SearchExactMatchesAsync(
+                    x => x.SalesOrderId == numericValue,
+                    normalizedQuery,
+                    normalizedTakePerGroup,
+                    SalesOrderIdField,
+                    SalesOrderMatchLabel,
+                    cancellationToken)
+            });
+        }
+
+        groups.Add(new BillingDocumentSearchGroupModel
+        {
+            Field = LegacyOrderIdField,
+            Label = LegacyIdsGroupLabel,
+            Items = await SearchLegacyMatchesAsync(
+                normalizedQuery,
+                normalizedTakePerGroup,
+                cancellationToken)
+        });
+
+        return new GroupedBillingDocumentSearchModel
+        {
+            Query = normalizedQuery,
+            TakePerGroup = normalizedTakePerGroup,
+            Groups = groups
+        };
+    }
+
+    private Task<List<BillingDocumentLookupModel>> SearchExactMatchesAsync(
+        Expression<Func<BillingDocumentLookupModel, bool>> predicate,
+        string query,
+        int take,
+        string searchMatchField,
+        string searchMatchLabel,
+        CancellationToken cancellationToken)
+    {
+        return SearchCandidatesQuery()
+            .Where(predicate)
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .Take(take)
+            .Select(x => new BillingDocumentLookupModel
+            {
+                BillingDocumentId = x.BillingDocumentId,
+                SalesOrderId = x.SalesOrderId,
+                LegacyOrderId = x.LegacyOrderId,
+                Status = x.Status,
+                DocumentType = x.DocumentType,
+                CurrencyCode = x.CurrencyCode,
+                Total = x.Total,
+                CreatedAtUtc = x.CreatedAtUtc,
+                FiscalDocumentId = x.FiscalDocumentId,
+                FiscalDocumentStatus = x.FiscalDocumentStatus,
+                SearchMatchField = searchMatchField,
+                SearchMatchLabel = searchMatchLabel,
+                SearchMatchValue = query,
+                SearchMatchKind = ExactMatchKind
+            })
+            .ToListAsync(cancellationToken);
+    }
+
+    private Task<List<BillingDocumentLookupModel>> SearchLegacyMatchesAsync(
+        string query,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        return SearchCandidatesQuery()
+            .Where(x => x.LegacyOrderId.Contains(query))
+            .OrderBy(x => x.LegacyOrderId == query ? 0 : x.LegacyOrderId.StartsWith(query) ? 1 : 2)
+            .ThenByDescending(x => x.CreatedAtUtc)
+            .Take(take)
+            .Select(x => new BillingDocumentLookupModel
+            {
+                BillingDocumentId = x.BillingDocumentId,
+                SalesOrderId = x.SalesOrderId,
+                LegacyOrderId = x.LegacyOrderId,
+                Status = x.Status,
+                DocumentType = x.DocumentType,
+                CurrencyCode = x.CurrencyCode,
+                Total = x.Total,
+                CreatedAtUtc = x.CreatedAtUtc,
+                FiscalDocumentId = x.FiscalDocumentId,
+                FiscalDocumentStatus = x.FiscalDocumentStatus,
+                SearchMatchField = LegacyOrderIdField,
+                SearchMatchLabel = LegacyOrderMatchLabel,
+                SearchMatchValue = query,
+                SearchMatchKind = x.LegacyOrderId == query
+                    ? ExactMatchKind
+                    : x.LegacyOrderId.StartsWith(query)
+                        ? StartsWithMatchKind
+                        : ContainsMatchKind
+            })
+            .ToListAsync(cancellationToken);
+    }
+
     private IQueryable<BillingDocumentLookupModel> Query()
     {
         return
@@ -195,6 +345,43 @@ public sealed class BillingDocumentLookupRepository : IBillingDocumentLookupRepo
                          IsPrimary = linkedSalesOrder.Id == billingDocument.SalesOrderId
                      })
                     .ToList()
+            };
+    }
+
+    private IQueryable<BillingDocumentLookupModel> SearchCandidatesQuery()
+    {
+        return
+            from billingDocument in _dbContext.BillingDocuments.AsNoTracking()
+            join salesOrder in _dbContext.SalesOrders.AsNoTracking()
+                on billingDocument.SalesOrderId equals salesOrder.Id
+            join legacyImportRecord in _dbContext.LegacyImportRecords.AsNoTracking()
+                on salesOrder.LegacyImportRecordId equals legacyImportRecord.Id
+            select new BillingDocumentLookupModel
+            {
+                BillingDocumentId = billingDocument.Id,
+                SalesOrderId = billingDocument.SalesOrderId,
+                LegacyOrderId = string.IsNullOrEmpty(legacyImportRecord.SourceDocumentId)
+                    ? salesOrder.LegacyOrderNumber
+                    : string.IsNullOrEmpty(salesOrder.LegacyOrderNumber)
+                        ? legacyImportRecord.SourceDocumentId
+                        : legacyImportRecord.SourceDocumentId + "-" + salesOrder.LegacyOrderNumber,
+                Status = billingDocument.Status.ToString(),
+                DocumentType = billingDocument.DocumentType,
+                CurrencyCode = billingDocument.CurrencyCode,
+                Total = billingDocument.Total,
+                CreatedAtUtc = billingDocument.CreatedAtUtc,
+                FiscalDocumentId = _dbContext.FiscalDocuments
+                    .Where(fiscalDocument =>
+                        fiscalDocument.BillingDocumentId == billingDocument.Id
+                        && fiscalDocument.Status != FiscalDocumentStatus.DiscardedUnstamped)
+                    .Select(fiscalDocument => (long?)fiscalDocument.Id)
+                    .FirstOrDefault(),
+                FiscalDocumentStatus = _dbContext.FiscalDocuments
+                    .Where(fiscalDocument =>
+                        fiscalDocument.BillingDocumentId == billingDocument.Id
+                        && fiscalDocument.Status != FiscalDocumentStatus.DiscardedUnstamped)
+                    .Select(fiscalDocument => fiscalDocument.Status.ToString())
+                    .FirstOrDefault()
             };
     }
 

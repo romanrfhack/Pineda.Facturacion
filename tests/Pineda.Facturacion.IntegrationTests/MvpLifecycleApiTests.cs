@@ -1130,6 +1130,173 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
+    public async Task BillingDocument_GroupedSearch_ReturnsExactMatches_ForBillingFiscalAndSalesOrder_AndKeepsExistingSearch()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        var seed = await factory.SeedStandardFiscalMasterDataAsync();
+
+        factory.LegacyOrderReader.Orders["LEG-GROUPED-1001"] = CreateLegacyOrder("LEG-GROUPED-1001", "SKU-1", 100m);
+
+        var importBody = await (await client.PostAsync("/api/orders/LEG-GROUPED-1001/import", null))
+            .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+        var salesOrderId = importBody!.SalesOrderId!.Value;
+
+        var billingBody = await (await client.PostAsJsonAsync($"/api/sales-orders/{salesOrderId}/billing-documents", new SalesOrdersEndpoints.CreateBillingDocumentRequest
+        {
+            DocumentType = "I"
+        })).Content.ReadFromJsonAsync<SalesOrdersEndpoints.CreateBillingDocumentResponse>();
+        var billingDocumentId = billingBody!.BillingDocumentId!.Value;
+
+        var prepareBody = await (await client.PostAsJsonAsync($"/api/billing-documents/{billingDocumentId}/fiscal-documents", new BillingDocumentsEndpoints.PrepareFiscalDocumentRequest
+        {
+            FiscalReceiverId = seed.ReceiverId,
+            IssuerProfileId = seed.IssuerId,
+            PaymentMethodSat = "PPD",
+            PaymentFormSat = "99",
+            PaymentCondition = "CREDITO",
+            IsCreditSale = true,
+            CreditDays = 7
+        })).Content.ReadFromJsonAsync<BillingDocumentsEndpoints.PrepareFiscalDocumentResponse>();
+        var fiscalDocumentId = prepareBody!.FiscalDocumentId!.Value;
+
+        var billingGroupedResponse = await client.GetAsync($"/api/billing-documents/search/grouped?q={billingDocumentId}&takePerGroup=5");
+        Assert.Equal(HttpStatusCode.OK, billingGroupedResponse.StatusCode);
+        var billingGroupedBody = await billingGroupedResponse.Content.ReadFromJsonAsync<BillingDocumentsEndpoints.GroupedBillingDocumentSearchResponse>();
+        Assert.NotNull(billingGroupedBody);
+        Assert.Equal(billingDocumentId.ToString(), billingGroupedBody!.Query);
+        Assert.Equal(5, billingGroupedBody.TakePerGroup);
+        var billingGroup = billingGroupedBody.Groups.Single(x => x.Field == "BillingDocumentId");
+        Assert.Equal("Documentos de facturación", billingGroup.Label);
+        var billingMatch = Assert.Single(billingGroup.Items);
+        Assert.Equal(billingDocumentId, billingMatch.BillingDocumentId);
+        Assert.Equal("Documento de facturación", billingMatch.SearchMatchLabel);
+        Assert.Equal(billingDocumentId.ToString(), billingMatch.SearchMatchValue);
+        Assert.Equal("Exact", billingMatch.SearchMatchKind);
+
+        var fiscalGroupedResponse = await client.GetAsync($"/api/billing-documents/search/grouped?q={fiscalDocumentId}&takePerGroup=5");
+        Assert.Equal(HttpStatusCode.OK, fiscalGroupedResponse.StatusCode);
+        var fiscalGroupedBody = await fiscalGroupedResponse.Content.ReadFromJsonAsync<BillingDocumentsEndpoints.GroupedBillingDocumentSearchResponse>();
+        Assert.NotNull(fiscalGroupedBody);
+        var fiscalGroup = fiscalGroupedBody!.Groups.Single(x => x.Field == "FiscalDocumentId");
+        var fiscalMatch = Assert.Single(fiscalGroup.Items);
+        Assert.Equal(billingDocumentId, fiscalMatch.BillingDocumentId);
+        Assert.Equal(fiscalDocumentId, fiscalMatch.FiscalDocumentId);
+        Assert.Equal("Documento fiscal", fiscalMatch.SearchMatchLabel);
+        Assert.Equal(fiscalDocumentId.ToString(), fiscalMatch.SearchMatchValue);
+        Assert.Equal("Exact", fiscalMatch.SearchMatchKind);
+
+        var salesOrderGroupedResponse = await client.GetAsync($"/api/billing-documents/search/grouped?q={salesOrderId}&takePerGroup=5");
+        Assert.Equal(HttpStatusCode.OK, salesOrderGroupedResponse.StatusCode);
+        var salesOrderGroupedBody = await salesOrderGroupedResponse.Content.ReadFromJsonAsync<BillingDocumentsEndpoints.GroupedBillingDocumentSearchResponse>();
+        Assert.NotNull(salesOrderGroupedBody);
+        var salesOrderGroup = salesOrderGroupedBody!.Groups.Single(x => x.Field == "SalesOrderId");
+        var salesOrderMatch = Assert.Single(salesOrderGroup.Items);
+        Assert.Equal(billingDocumentId, salesOrderMatch.BillingDocumentId);
+        Assert.Equal(salesOrderId, salesOrderMatch.SalesOrderId);
+        Assert.Equal("Orden", salesOrderMatch.SearchMatchLabel);
+        Assert.Equal(salesOrderId.ToString(), salesOrderMatch.SearchMatchValue);
+        Assert.Equal("Exact", salesOrderMatch.SearchMatchKind);
+
+        var existingSearchResponse = await client.GetAsync($"/api/billing-documents/search?q={salesOrderId}");
+        Assert.Equal(HttpStatusCode.OK, existingSearchResponse.StatusCode);
+        var existingSearchBody = await existingSearchResponse.Content.ReadFromJsonAsync<BillingDocumentsEndpoints.BillingDocumentLookupResponse[]>();
+        Assert.NotNull(existingSearchBody);
+        Assert.Contains(existingSearchBody!, x => x.BillingDocumentId == billingDocumentId);
+    }
+
+    [Fact]
+    public async Task BillingDocument_GroupedSearch_OrdersLegacyMatchesByRelevance_AndLimitsEachGroupToFiveResults()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        await factory.SeedStandardFiscalMasterDataAsync();
+
+        var legacyOrders = new (string LegacyOrderId, DateTime CreatedAtUtc)[]
+        {
+            ("1723", new DateTime(2026, 03, 07, 12, 0, 0, DateTimeKind.Utc)),
+            ("1723-B", new DateTime(2026, 03, 06, 12, 0, 0, DateTimeKind.Utc)),
+            ("1723-A", new DateTime(2026, 03, 05, 12, 0, 0, DateTimeKind.Utc)),
+            ("D-1723", new DateTime(2026, 03, 04, 12, 0, 0, DateTimeKind.Utc)),
+            ("C-1723", new DateTime(2026, 03, 03, 12, 0, 0, DateTimeKind.Utc)),
+            ("B-1723", new DateTime(2026, 03, 02, 12, 0, 0, DateTimeKind.Utc)),
+            ("A-1723", new DateTime(2026, 03, 01, 12, 0, 0, DateTimeKind.Utc))
+        };
+
+        foreach (var (legacyOrderId, _) in legacyOrders)
+        {
+            factory.LegacyOrderReader.Orders[legacyOrderId] = CreateLegacyOrder(legacyOrderId, "SKU-1", 100m);
+
+            var importBody = await (await client.PostAsync($"/api/orders/{legacyOrderId}/import", null))
+                .Content.ReadFromJsonAsync<OrdersEndpoints.ImportLegacyOrderResponse>();
+
+            await client.PostAsJsonAsync($"/api/sales-orders/{importBody!.SalesOrderId}/billing-documents", new SalesOrdersEndpoints.CreateBillingDocumentRequest
+            {
+                DocumentType = "I"
+            });
+        }
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+            var createdAtByLegacyOrderId = legacyOrders.ToDictionary(x => x.LegacyOrderId, x => x.CreatedAtUtc);
+
+            var salesOrders = await (
+                    from salesOrder in db.Set<SalesOrder>()
+                    join legacyImportRecord in db.Set<LegacyImportRecord>()
+                        on salesOrder.LegacyImportRecordId equals legacyImportRecord.Id
+                    where createdAtByLegacyOrderId.Keys.Contains(legacyImportRecord.SourceDocumentId)
+                    select new
+                    {
+                        SalesOrder = salesOrder,
+                        legacyImportRecord.SourceDocumentId
+                    })
+                .ToListAsync();
+
+            foreach (var entry in salesOrders)
+            {
+                entry.SalesOrder.LegacyOrderNumber = string.Empty;
+            }
+
+            var createdAtBySalesOrderId = salesOrders.ToDictionary(
+                x => x.SalesOrder.Id,
+                x => createdAtByLegacyOrderId[x.SourceDocumentId!]);
+
+            var billingDocuments = await db.Set<BillingDocument>()
+                .Where(x => createdAtBySalesOrderId.Keys.Contains(x.SalesOrderId))
+                .ToListAsync();
+
+            foreach (var billingDocument in billingDocuments)
+            {
+                var createdAtUtc = createdAtBySalesOrderId[billingDocument.SalesOrderId];
+                billingDocument.CreatedAtUtc = createdAtUtc;
+                billingDocument.UpdatedAtUtc = createdAtUtc;
+            }
+
+            await db.SaveChangesAsync();
+        }
+
+        var groupedResponse = await client.GetAsync("/api/billing-documents/search/grouped?q=1723&takePerGroup=5");
+        Assert.Equal(HttpStatusCode.OK, groupedResponse.StatusCode);
+
+        var groupedBody = await groupedResponse.Content.ReadFromJsonAsync<BillingDocumentsEndpoints.GroupedBillingDocumentSearchResponse>();
+        Assert.NotNull(groupedBody);
+        Assert.All(groupedBody!.Groups, group => Assert.True(group.Items.Count <= 5));
+
+        var legacyGroup = groupedBody.Groups.Single(x => x.Field == "LegacyOrderId");
+        Assert.Equal("IDs legado", legacyGroup.Label);
+        Assert.Equal(5, legacyGroup.Items.Count);
+        Assert.Equal(
+            ["1723", "1723-B", "1723-A", "D-1723", "C-1723"],
+            legacyGroup.Items.Select(x => x.LegacyOrderId).ToArray());
+        Assert.Equal(
+            ["Exact", "StartsWith", "StartsWith", "Contains", "Contains"],
+            legacyGroup.Items.Select(x => x.SearchMatchKind ?? string.Empty).ToArray());
+        Assert.All(legacyGroup.Items, item => Assert.Equal("ID legado", item.SearchMatchLabel));
+        Assert.All(legacyGroup.Items, item => Assert.Equal("1723", item.SearchMatchValue));
+    }
+
+    [Fact]
     public async Task BillingDocument_Can_Associate_And_Remove_Multiple_LegacyOrders_Before_Stamping()
     {
         await using var factory = new MvpApiFactory();

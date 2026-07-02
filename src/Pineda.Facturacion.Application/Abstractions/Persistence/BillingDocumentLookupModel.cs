@@ -22,6 +22,14 @@ public sealed class BillingDocumentLookupModel
 
     public string? FiscalDocumentStatus { get; init; }
 
+    public string? SearchMatchField { get; init; }
+
+    public string? SearchMatchLabel { get; init; }
+
+    public string? SearchMatchValue { get; init; }
+
+    public string? SearchMatchKind { get; init; }
+
     public IReadOnlyList<BillingDocumentLookupItemModel> Items { get; init; } = [];
 
     public IReadOnlyList<BillingDocumentAssociatedOrderLookupModel> AssociatedOrders { get; init; } = [];

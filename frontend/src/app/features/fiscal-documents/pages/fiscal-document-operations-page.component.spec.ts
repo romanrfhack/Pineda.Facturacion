@@ -126,6 +126,13 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         }),
       ),
       searchBillingDocuments: vi.fn().mockReturnValue(of([])),
+      searchBillingDocumentsGrouped: vi.fn().mockReturnValue(
+        of({
+          query: '',
+          takePerGroup: 5,
+          groups: [],
+        }),
+      ),
       prepareFiscalDocument: vi.fn(),
       addSalesOrderToBillingDocument: vi.fn().mockReturnValue(
         of({
@@ -3448,22 +3455,36 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(fixture.componentInstance['specialFieldDrafts']()).toEqual([]);
   });
 
-  it('searches and loads an existing billing document from the selector', async () => {
-    const searchBillingDocuments = vi.fn().mockReturnValue(
-      of([
-        {
-          billingDocumentId: 31,
-          salesOrderId: 21,
-          legacyOrderId: 'LEG-2002',
-          status: 'Draft',
-          documentType: 'I',
-          currencyCode: 'MXN',
-          total: 150,
-          createdAtUtc: '2026-03-20T12:00:00Z',
-          fiscalDocumentId: null,
-          fiscalDocumentStatus: null,
-        },
-      ]),
+  it('searches and loads an existing billing document from the grouped selector', async () => {
+    const searchBillingDocumentsGrouped = vi.fn().mockReturnValue(
+      of({
+        query: 'LEG-2002',
+        takePerGroup: 5,
+        groups: [
+          {
+            field: 'LegacyOrderId',
+            label: 'IDs legado',
+            items: [
+              {
+                billingDocumentId: 31,
+                salesOrderId: 21,
+                legacyOrderId: 'LEG-2002',
+                status: 'Draft',
+                documentType: 'I',
+                currencyCode: 'MXN',
+                total: 150,
+                createdAtUtc: '2026-03-20T12:00:00Z',
+                fiscalDocumentId: 42,
+                fiscalDocumentStatus: 'Draft',
+                searchMatchField: 'LegacyOrderId',
+                searchMatchLabel: 'ID legado',
+                searchMatchValue: 'LEG-2002',
+                searchMatchKind: 'Contains',
+              },
+            ],
+          },
+        ],
+      }),
     );
     const getBillingDocumentById = vi.fn().mockReturnValue(
       of({
@@ -3481,7 +3502,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     );
 
     const fixture = await configure(
-      { searchBillingDocuments, getBillingDocumentById },
+      { searchBillingDocumentsGrouped, getBillingDocumentById },
       { id: null },
     );
 
@@ -3489,8 +3510,12 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     await fixture.componentInstance['searchBillingDocuments']();
     fixture.detectChanges();
 
-    expect(searchBillingDocuments).toHaveBeenCalledWith('LEG-2002');
-    expect(fixture.nativeElement.textContent).toContain('Documento #31');
+    expect(searchBillingDocumentsGrouped).toHaveBeenCalledWith('LEG-2002');
+    expect(fixture.nativeElement.textContent).toContain('IDs legado');
+    expect(fixture.nativeElement.textContent).toContain('Coincidencia: ID legado contiene LEG-2002');
+    expect(fixture.nativeElement.textContent).toContain('Documento de facturación #31');
+    expect(fixture.nativeElement.textContent).toContain('Documento fiscal #42 · Orden #21 · ID legado LEG-2002');
+    expect(fixture.nativeElement.textContent).toContain('Estatus Borrador · MXN 150');
 
     await fixture.componentInstance['selectBillingDocument']({
       billingDocumentId: 31,
@@ -3508,6 +3533,29 @@ describe('FiscalDocumentOperationsPageComponent', () => {
 
     expect(getBillingDocumentById).toHaveBeenCalledWith(31);
     expect(fixture.nativeElement.textContent).toContain('Documento seleccionado');
+  });
+
+  it('shows the grouped empty-state message when no billing document matches exist', async () => {
+    const searchBillingDocumentsGrouped = vi.fn().mockReturnValue(
+      of({
+        query: '9999',
+        takePerGroup: 5,
+        groups: [
+          { field: 'BillingDocumentId', label: 'Documentos de facturación', items: [] },
+          { field: 'FiscalDocumentId', label: 'Documentos fiscales', items: [] },
+          { field: 'SalesOrderId', label: 'Órdenes', items: [] },
+          { field: 'LegacyOrderId', label: 'IDs legado', items: [] },
+        ],
+      }),
+    );
+
+    const fixture = await configure({ searchBillingDocumentsGrouped }, { id: null });
+
+    fixture.componentInstance['billingDocumentQuery'] = '9999';
+    await fixture.componentInstance['searchBillingDocuments']();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('No se encontraron coincidencias.');
   });
 
   it('opens the recovery form automatically when preparation fails due to missing product fiscal profile via HttpErrorResponse', async () => {
