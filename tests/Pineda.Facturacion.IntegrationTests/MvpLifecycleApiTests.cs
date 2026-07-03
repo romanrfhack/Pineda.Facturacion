@@ -5853,6 +5853,7 @@ internal sealed class FakeLegacyOrderReader : ILegacyOrderReader
             .Where(x => !search.ToDateUtcExclusive.HasValue || x.OrderDateUtc < search.ToDateUtcExclusive.Value)
             .Where(x => string.IsNullOrWhiteSpace(search.LegacyOrderId) || string.Equals(x.LegacyOrderId, search.LegacyOrderId, StringComparison.Ordinal))
             .Where(x => string.IsNullOrWhiteSpace(search.CustomerQuery) || x.CustomerName.Contains(search.CustomerQuery, StringComparison.OrdinalIgnoreCase))
+            .Where(x => string.IsNullOrWhiteSpace(search.CustomerRfc) || string.Equals(NormalizeRfc(x.CustomerRfc), NormalizeRfc(search.CustomerRfc), StringComparison.Ordinal))
             .OrderByDescending(x => x.OrderDateUtc)
             .ThenByDescending(x => x.LegacyOrderId)
             .ToArray();
@@ -5869,6 +5870,13 @@ internal sealed class FakeLegacyOrderReader : ILegacyOrderReader
             Page = search.Page,
             PageSize = search.PageSize
         });
+    }
+
+    private static string? NormalizeRfc(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? null
+            : value.Trim().ToUpperInvariant();
     }
 }
 

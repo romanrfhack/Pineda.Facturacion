@@ -215,12 +215,7 @@ public class LegacyOrderReader : ILegacyOrderReader
                 p.{Q(schema.Orders["refPedido"])} AS LegacyOrderNumber,
                 p.{Q(schema.Orders["TipoPedido"])} AS LegacyOrderType,
                 p.{Q(schema.Orders["noCliente"])} AS CustomerLegacyId,
-                COALESCE(
-                    NULLIF(TRIM(c.{Q(schema.Customers["XRazonSocial"])}), ''),
-                    NULLIF(TRIM(CONCAT_WS(' ', NULLIF(c.{Q(schema.Customers["Nombre"])}, ''), NULLIF(c.{Q(schema.Customers["Paterno"])}, ''), NULLIF(c.{Q(schema.Customers["Materno"])}, ''))), ''),
-                    NULLIF(TRIM(c.{Q(schema.Customers["Cliente"])}), ''),
-                    CONCAT('Cliente ', p.{Q(schema.Orders["noCliente"])})
-                ) AS CustomerName,
+                {BuildCustomerNameExpression(schema)} AS CustomerName,
                 c.{Q(schema.Customers["RFC"])} AS CustomerRfc,
                 p.{Q(schema.Orders["condPagoPedido"])} AS PaymentCondition,
                 c.{Q(schema.Customers["TipoCliente"])} AS PriceListCode,
@@ -284,7 +279,8 @@ public class LegacyOrderReader : ILegacyOrderReader
             WHERE (@fromDateUtc IS NULL OR p.{Q(schema.OrderDateColumn)} >= @fromDateUtc)
               AND (@toDateUtcExclusive IS NULL OR p.{Q(schema.OrderDateColumn)} < @toDateUtcExclusive)
               AND (@legacyOrderId IS NULL OR p.{Q(schema.Orders["noPedido"])} = @legacyOrderId)
-              AND (@customerQueryLike IS NULL OR UPPER({BuildCustomerNameExpression(schema)}) LIKE @customerQueryLike)
+              AND {BuildCustomerQueryPredicate(schema)}
+              AND (@customerRfc IS NULL OR UPPER(TRIM(c.{Q(schema.Customers["RFC"])})) = @customerRfc)
               AND p.{Q(schema.Orders["noCliente"])} <> 0
               AND p.{Q(schema.Orders["MontoPedido"])} <> 0.00
               AND p.{Q(schema.Orders["refPedido"])} IS NOT NULL
@@ -300,12 +296,7 @@ public class LegacyOrderReader : ILegacyOrderReader
                 p.{Q(schema.OrderDateColumn)} AS OrderDateUtc,
                 p.{Q(schema.Orders["TipoPedido"])} AS LegacyOrderType,
                 p.{Q(schema.Orders["noCliente"])} AS CustomerLegacyId,
-                COALESCE(
-                    NULLIF(TRIM(c.{Q(schema.Customers["XRazonSocial"])}), ''),
-                    NULLIF(TRIM(CONCAT_WS(' ', NULLIF(c.{Q(schema.Customers["Nombre"])}, ''), NULLIF(c.{Q(schema.Customers["Paterno"])}, ''), NULLIF(c.{Q(schema.Customers["Materno"])}, ''))), ''),
-                    NULLIF(TRIM(c.{Q(schema.Customers["Cliente"])}), ''),
-                    CONCAT('Cliente ', p.{Q(schema.Orders["noCliente"])})
-                ) AS CustomerName,
+                {BuildCustomerNameExpression(schema)} AS CustomerName,
                 c.{Q(schema.Customers["RFC"])} AS CustomerRfc,
                 'MXN' AS CurrencyCode,
                 p.{Q(schema.Orders["MontoPedido"])} AS Total
@@ -315,7 +306,8 @@ public class LegacyOrderReader : ILegacyOrderReader
             WHERE (@fromDateUtc IS NULL OR p.{Q(schema.OrderDateColumn)} >= @fromDateUtc)
               AND (@toDateUtcExclusive IS NULL OR p.{Q(schema.OrderDateColumn)} < @toDateUtcExclusive)
               AND (@legacyOrderId IS NULL OR p.{Q(schema.Orders["noPedido"])} = @legacyOrderId)
-              AND (@customerQueryLike IS NULL OR UPPER({BuildCustomerNameExpression(schema)}) LIKE @customerQueryLike)
+              AND {BuildCustomerQueryPredicate(schema)}
+              AND (@customerRfc IS NULL OR UPPER(TRIM(c.{Q(schema.Customers["RFC"])})) = @customerRfc)
               AND p.{Q(schema.Orders["noCliente"])} <> 0
               AND p.{Q(schema.Orders["MontoPedido"])} <> 0.00
               AND p.{Q(schema.Orders["refPedido"])} IS NOT NULL
@@ -342,10 +334,28 @@ public class LegacyOrderReader : ILegacyOrderReader
         return $"""
             COALESCE(
                 NULLIF(TRIM(c.{Q(schema.Customers["XRazonSocial"])}), ''),
-                NULLIF(TRIM(CONCAT_WS(' ', NULLIF(c.{Q(schema.Customers["Nombre"])}, ''), NULLIF(c.{Q(schema.Customers["Paterno"])}, ''), NULLIF(c.{Q(schema.Customers["Materno"])}, ''))), ''),
                 NULLIF(TRIM(c.{Q(schema.Customers["Cliente"])}), ''),
+                {BuildCustomerFullNameExpression(schema)},
                 CONCAT('Cliente ', p.{Q(schema.Orders["noCliente"])})
             )
+            """;
+    }
+
+    private static string BuildCustomerQueryPredicate(LegacyOrderReadSchema schema)
+    {
+        return $"""
+            (@customerQueryLike IS NULL
+                OR UPPER(TRIM(c.{Q(schema.Customers["XRazonSocial"])})) LIKE @customerQueryLike
+                OR UPPER(TRIM(c.{Q(schema.Customers["Cliente"])})) LIKE @customerQueryLike
+                OR UPPER({BuildCustomerFullNameExpression(schema)}) LIKE @customerQueryLike
+                OR UPPER(TRIM(c.{Q(schema.Customers["RFC"])})) LIKE @customerQueryLike)
+            """;
+    }
+
+    private static string BuildCustomerFullNameExpression(LegacyOrderReadSchema schema)
+    {
+        return $"""
+            NULLIF(TRIM(CONCAT_WS(' ', NULLIF(TRIM(c.{Q(schema.Customers["Nombre"])}), ''), NULLIF(TRIM(c.{Q(schema.Customers["Paterno"])}), ''), NULLIF(TRIM(c.{Q(schema.Customers["Materno"])}), ''))), '')
             """;
     }
 
@@ -360,6 +370,7 @@ public class LegacyOrderReader : ILegacyOrderReader
         AddOptionalDateParameter(command, "@toDateUtcExclusive", search.ToDateUtcExclusive);
         command.Parameters.AddWithValue("@legacyOrderId", BuildExactValue(search.LegacyOrderId));
         command.Parameters.AddWithValue("@customerQueryLike", BuildLikeValue(search.CustomerQuery));
+        command.Parameters.AddWithValue("@customerRfc", BuildNormalizedRfcValue(search.CustomerRfc));
 
         var result = await command.ExecuteScalarAsync(cancellationToken);
         return Convert.ToInt32(result, CultureInfo.InvariantCulture);
@@ -378,6 +389,7 @@ public class LegacyOrderReader : ILegacyOrderReader
         AddOptionalDateParameter(command, "@toDateUtcExclusive", search.ToDateUtcExclusive);
         command.Parameters.AddWithValue("@legacyOrderId", BuildExactValue(search.LegacyOrderId));
         command.Parameters.AddWithValue("@customerQueryLike", BuildLikeValue(search.CustomerQuery));
+        command.Parameters.AddWithValue("@customerRfc", BuildNormalizedRfcValue(search.CustomerRfc));
         command.Parameters.AddWithValue("@skip", (search.Page - 1) * search.PageSize);
         command.Parameters.AddWithValue("@take", search.PageSize);
 
@@ -421,6 +433,13 @@ public class LegacyOrderReader : ILegacyOrderReader
         return string.IsNullOrWhiteSpace(value)
             ? DBNull.Value
             : value.Trim();
+    }
+
+    internal static object BuildNormalizedRfcValue(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? DBNull.Value
+            : value.Trim().ToUpperInvariant();
     }
 
     private static string GetRequiredString(MySqlDataReader reader, string columnName)

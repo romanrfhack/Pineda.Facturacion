@@ -72,6 +72,7 @@ export interface SearchLegacyOrdersRequest {
   toDate?: string | null;
   legacyOrderId?: string | null;
   customerQuery?: string | null;
+  customerRfc?: string | null;
   page: number;
   pageSize: number;
 }
@@ -106,6 +107,7 @@ export interface CreateBulkBillingDocumentFiltersRequest {
   toDate?: string | null;
   legacyOrderId?: string | null;
   customerQuery?: string | null;
+  customerRfc?: string | null;
 }
 
 export interface CreateBulkBillingDocumentRequest {

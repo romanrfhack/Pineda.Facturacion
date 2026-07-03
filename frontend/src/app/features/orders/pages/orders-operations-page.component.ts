@@ -112,6 +112,16 @@ interface OrdersBulkSelectionSummary {
           </label>
 
           <label>
+            <span>RFC cliente legacy</span>
+            <input
+              [ngModel]="customerRfc()"
+              (ngModelChange)="setCustomerRfc($event)"
+              name="customerRfc"
+              placeholder="STA890331BZ6"
+            />
+          </label>
+
+          <label>
             <span>Orden</span>
             <input
               [ngModel]="legacyOrderIdFilter()"
@@ -257,7 +267,19 @@ interface OrdersBulkSelectionSummary {
                     </td>
                     <td>{{ order.legacyOrderId }}</td>
                     <td>{{ order.orderDateUtc | date:'dd/MM/yyyy HH:mm' }}</td>
-                    <td>{{ order.customerName }}</td>
+                    <td>
+                      <div class="customer-cell">
+                        <strong>{{ order.customerName }}</strong>
+                        @if (order.customerLegacyId || order.customerRfc) {
+                          <span>
+                            Cliente IPN: {{ order.customerLegacyId || 'N/D' }}
+                            @if (order.customerRfc) {
+                              <span> · RFC: {{ order.customerRfc }}</span>
+                            }
+                          </span>
+                        }
+                      </div>
+                    </td>
                     <td>{{ order.total | currency: (order.currencyCode || 'MXN') : 'symbol' : '1.2-2' }}</td>
                     <td>
                       <app-status-badge
@@ -710,6 +732,8 @@ interface OrdersBulkSelectionSummary {
     .selection-col { width:84px; }
     .selection-disabled { display:grid; gap:0.25rem; font-size:0.78rem; color:#5f6b76; }
     .selection-disabled input { width:auto; margin:0; }
+    .customer-cell { display:grid; gap:0.2rem; }
+    .customer-cell span { color:#5f6b76; font-size:0.82rem; }
     .pager { display:flex; justify-content:space-between; gap:1rem; align-items:center; flex-wrap:wrap; }
     .conflict-panel { border:1px solid #e6c981; border-radius:0.9rem; background:#fff8ea; padding:1rem; display:grid; gap:1rem; }
     .conflict-grid { margin:0; display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:0.75rem; }
@@ -749,6 +773,7 @@ export class OrdersOperationsPageComponent implements OnInit {
   protected readonly toDate = signal('');
   protected readonly legacyOrderIdFilter = signal('');
   protected readonly customerQuery = signal('');
+  protected readonly customerRfc = signal('');
   protected readonly loadingOrders = signal(false);
   protected readonly loadingImportOrderId = signal<string | null>(null);
   protected readonly loadingBilling = signal(false);
@@ -1182,6 +1207,16 @@ export class OrdersOperationsPageComponent implements OnInit {
     this.customerQuery.set(value);
   }
 
+  protected setCustomerRfc(value: string | null): void {
+    const normalized = normalizeCustomerRfcFilter(value);
+    if (this.customerRfc() === normalized) {
+      return;
+    }
+
+    this.clearBulkSelectionForFilterChange();
+    this.customerRfc.set(normalized);
+  }
+
   protected setLegacyOrderIdFilter(value: string | number | null): void {
     const normalized = normalizeLegacyOrderIdFilter(value);
     if (this.legacyOrderIdFilter() === normalized) {
@@ -1307,6 +1342,7 @@ export class OrdersOperationsPageComponent implements OnInit {
         ...(range.toDate ? { toDate: range.toDate } : {}),
         legacyOrderId: this.legacyOrderIdFilter(),
         customerQuery: this.customerQuery(),
+        ...(this.customerRfc() ? { customerRfc: this.customerRfc() } : {}),
         page,
         pageSize: 10
       }));
@@ -1568,6 +1604,7 @@ export class OrdersOperationsPageComponent implements OnInit {
     try {
       this.setLegacyOrderIdFilter(params.get('legacyOrderId'));
       this.setCustomerQuery(params.get('customerQuery')?.trim() ?? '');
+      this.setCustomerRfc(params.get('customerRfc'));
 
       if (quickRange === 'custom' || (!quickRange && (fromDate || toDate))) {
         this.quickRange.set('custom');
@@ -1604,6 +1641,7 @@ export class OrdersOperationsPageComponent implements OnInit {
       || !!filters.toDate
       || !!filters.legacyOrderId
       || !!filters.customerQuery
+      || !!filters.customerRfc
     );
   }
 
@@ -1617,7 +1655,8 @@ export class OrdersOperationsPageComponent implements OnInit {
       ...(range.fromDate ? { fromDate: range.fromDate } : {}),
       ...(range.toDate ? { toDate: range.toDate } : {}),
       ...(this.legacyOrderIdFilter() ? { legacyOrderId: this.legacyOrderIdFilter() } : {}),
-      ...(this.customerQuery().trim() ? { customerQuery: this.customerQuery().trim() } : {})
+      ...(this.customerQuery().trim() ? { customerQuery: this.customerQuery().trim() } : {}),
+      ...(this.customerRfc() ? { customerRfc: this.customerRfc() } : {})
     };
   }
 
@@ -1849,6 +1888,10 @@ function resolveRange(
 
 function normalizeLegacyOrderIdFilter(value: string | number | null | undefined): string {
   return String(value ?? '').replace(/\D+/g, '');
+}
+
+function normalizeCustomerRfcFilter(value: string | null | undefined): string {
+  return String(value ?? '').trim().toUpperCase();
 }
 
 const MAX_BULK_BILLING_ORDERS = 50;

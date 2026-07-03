@@ -76,6 +76,7 @@ public static class OrdersEndpoints
         DateOnly? toDate,
         string? legacyOrderId,
         string? customerQuery,
+        string? customerRfc,
         int? page,
         int? pageSize,
         SearchLegacyOrdersService service,
@@ -117,6 +118,7 @@ public static class OrdersEndpoints
                 ToDateUtcExclusive = toDate?.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
                 LegacyOrderId = legacyOrderId,
                 CustomerQuery = customerQuery,
+                CustomerRfc = customerRfc,
                 Page = normalizedPage,
                 PageSize = normalizedPageSize
             },
@@ -572,6 +574,7 @@ public static class OrdersEndpoints
             ToDateUtcExclusive = filters.ToDate?.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
             LegacyOrderId = filters.LegacyOrderId,
             CustomerQuery = filters.CustomerQuery,
+            CustomerRfc = filters.CustomerRfc,
             Page = 1,
             PageSize = 10
         };
@@ -647,6 +650,8 @@ public static class OrdersEndpoints
         public string? LegacyOrderId { get; init; }
 
         public string? CustomerQuery { get; init; }
+
+        public string? CustomerRfc { get; init; }
     }
 
     public sealed class CreateBulkBillingDocumentResponse
