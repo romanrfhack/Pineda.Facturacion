@@ -30,6 +30,7 @@ describe('OrdersApiService', () => {
       toDate: '2026-03-23',
       legacyOrderId: '1175479',
       customerQuery: 'Cliente Uno',
+      customerRfc: ' sta890331bz6 ',
       page: 1,
       pageSize: 10
     }).subscribe();
@@ -40,6 +41,7 @@ describe('OrdersApiService', () => {
       && request.params.get('toDate') === '2026-03-23'
       && request.params.get('legacyOrderId') === '1175479'
       && request.params.get('customerQuery') === 'Cliente Uno'
+      && request.params.get('customerRfc') === 'STA890331BZ6'
       && request.params.get('page') === '1'
       && request.params.get('pageSize') === '10');
 

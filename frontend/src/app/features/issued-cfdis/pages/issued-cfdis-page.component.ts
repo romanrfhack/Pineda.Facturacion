@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, TimeoutError } from 'rxjs';
 import { extractApiErrorMessage } from '../../../core/http/api-error-message';
 import { FeedbackService } from '../../../core/ui/feedback.service';
 import { PermissionService } from '../../../core/auth/permission.service';
@@ -40,6 +40,10 @@ import {
   StatusBadgeComponent,
   StatusBadgeTone,
 } from '../../../shared/components/status-badge.component';
+
+const CANCEL_FISCAL_DOCUMENT_TIMEOUT_MS = 75_000;
+const CANCEL_FISCAL_DOCUMENT_TIMEOUT_MESSAGE =
+  'La solicitud tardó más de lo esperado. Se actualizará el estado del CFDI para confirmar si la cancelación fue aplicada.';
 
 @Component({
   selector: 'app-issued-cfdis-page',
@@ -1076,13 +1080,23 @@ export class IssuedCfdisPageComponent {
       this.cancellationReasonCode,
       this.cancellationReplacementUuid,
     );
-    if (!currentDocument || !cancellationRequest || !this.showCancelConfirmationDialog()) {
+    if (
+      !currentDocument ||
+      !cancellationRequest ||
+      !this.showCancelConfirmationDialog() ||
+      this.loadingOperation() ||
+      !this.canCancelSelectedDocument()
+    ) {
       return;
     }
 
-    await this.runOperation(async () => {
+    this.loadingOperation.set(true);
+    try {
       const response = await firstValueFrom(
-        this.api.cancelFiscalDocument(currentDocument.id, cancellationRequest),
+        this.api.cancelFiscalDocument(currentDocument.id, cancellationRequest, {
+          timeoutMs: CANCEL_FISCAL_DOCUMENT_TIMEOUT_MS,
+          suppressGlobalErrorToast: true,
+        }),
       );
       const feedbackMessage =
         response.providerMessage ||
@@ -1091,8 +1105,7 @@ export class IssuedCfdisPageComponent {
         response.errorMessage ||
         `Resultado de la cancelación: ${getDisplayLabel(response.outcome)}`;
       this.lastOperationMessage.set(null);
-      this.showCancelConfirmationDialog.set(false);
-      this.showCancelDialog.set(false);
+      this.closeCancellationDialogsImmediately();
       if (!response.isSuccess) {
         await this.reloadSelectedContext(currentDocument.id);
       }
@@ -1101,7 +1114,12 @@ export class IssuedCfdisPageComponent {
         response.isSuccess ? 'success' : 'error',
         response.isSuccess ? 'CFDI cancelado correctamente ante SAT/PAC.' : feedbackMessage,
       );
-    });
+    } catch (error) {
+      this.closeCancellationDialogsImmediately();
+      await this.handleCancellationRequestError(currentDocument.id, cancellationRequest, error);
+    } finally {
+      this.loadingOperation.set(false);
+    }
   }
 
   protected async refreshStatus(): Promise<void> {
@@ -1289,6 +1307,82 @@ export class IssuedCfdisPageComponent {
     this.updateSelectedStatuses(
       reconciliation.nextDocument?.status ?? response.fiscalDocumentStatus ?? null,
     );
+  }
+
+  private closeCancellationDialogsImmediately(): void {
+    this.showCancelConfirmationDialog.set(false);
+    this.showCancelDialog.set(false);
+  }
+
+  private async handleCancellationRequestError(
+    fiscalDocumentId: number,
+    request: CancelFiscalDocumentRequest,
+    error: unknown,
+  ): Promise<void> {
+    const requestTimedOut = error instanceof TimeoutError;
+    const baseErrorMessage = extractApiErrorMessage(
+      error,
+      'No se pudo confirmar la respuesta de la cancelación del CFDI.',
+    );
+
+    try {
+      await this.reloadSelectedContext(fiscalDocumentId);
+    } catch {
+      const reloadFailedMessage = requestTimedOut
+        ? `${CANCEL_FISCAL_DOCUMENT_TIMEOUT_MESSAGE} No fue posible recargar el estado actual del CFDI. Usa Actualizar estatus para confirmar el resultado antes de intentar otra acción.`
+        : `${baseErrorMessage} No fue posible recargar el estado actual del CFDI. Usa Actualizar estatus para confirmar el resultado antes de intentar otra acción.`;
+      this.lastOperationMessage.set(reloadFailedMessage);
+      this.feedbackService.show(requestTimedOut ? 'warning' : 'error', reloadFailedMessage);
+      return;
+    }
+
+    if (this.selectedDocument()?.status === 'Cancelled') {
+      this.reconcileCancellationAfterOperation(
+        this.buildRecoveredCancellationResponse(fiscalDocumentId),
+        request,
+      );
+      const reconciledMessage = requestTimedOut
+        ? 'La solicitud tardó más de lo esperado, pero el CFDI ya aparece cancelado después de recargar su estado.'
+        : 'La respuesta de cancelación no se pudo confirmar, pero el CFDI ya aparece cancelado después de recargar su estado.';
+      this.lastOperationMessage.set(reconciledMessage);
+      this.feedbackService.show('success', reconciledMessage);
+      return;
+    }
+
+    const currentStatus = this.selectedDocument()?.status ?? null;
+    const statusLabel = currentStatus ? getDisplayLabel(currentStatus) : 'sin estatus confirmado';
+    const unresolvedMessage = requestTimedOut
+      ? `${CANCEL_FISCAL_DOCUMENT_TIMEOUT_MESSAGE} El CFDI sigue con estatus ${statusLabel}. Usa Actualizar estatus para confirmar el resultado antes de intentar otra acción.`
+      : `${baseErrorMessage} El estado real del CFDI sigue como ${statusLabel}. Usa Actualizar estatus antes de intentar otra acción.`;
+    this.lastOperationMessage.set(unresolvedMessage);
+    this.feedbackService.show(
+      requestTimedOut || currentStatus === 'CancellationRequested' ? 'warning' : 'error',
+      unresolvedMessage,
+    );
+  }
+
+  private buildRecoveredCancellationResponse(
+    fiscalDocumentId: number,
+  ): CancelFiscalDocumentResponse {
+    const currentCancellation = this.selectedCancellation();
+
+    return {
+      outcome: 'Cancelled',
+      isSuccess: true,
+      fiscalDocumentId,
+      fiscalDocumentStatus: 'Cancelled',
+      cancellationStatus: 'Cancelled',
+      providerName: currentCancellation?.providerName ?? null,
+      providerTrackingId: currentCancellation?.providerTrackingId ?? null,
+      providerCode: currentCancellation?.providerCode ?? null,
+      providerMessage: currentCancellation?.providerMessage ?? null,
+      errorCode: currentCancellation?.errorCode ?? null,
+      rawResponseSummaryJson: currentCancellation?.rawResponseSummaryJson ?? null,
+      supportMessage: currentCancellation?.supportMessage ?? null,
+      cancelledAtUtc: currentCancellation?.cancelledAtUtc ?? null,
+      isRetryable: false,
+      retryAdvice: null,
+    };
   }
 
   private async loadFiscalDocument(

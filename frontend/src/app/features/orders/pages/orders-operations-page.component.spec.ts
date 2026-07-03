@@ -29,6 +29,8 @@ describe('OrdersOperationsPageComponent', () => {
             legacyOrderId: 'LEG-1001',
             orderDateUtc: '2026-03-23T10:00:00Z',
             customerName: 'Cliente Uno',
+            customerLegacyId: 'C-1',
+            customerRfc: 'AAA010101AAA',
             total: 116,
             legacyOrderType: 'F',
             isImported: false,
@@ -326,6 +328,14 @@ describe('OrdersOperationsPageComponent', () => {
     expect(fixture.nativeElement.textContent).not.toContain('Limpiar selección');
   });
 
+  it('renders the legacy RFC filter input and customer metadata in the table', async () => {
+    const { fixture } = await configure();
+
+    expect(fixture.nativeElement.textContent).toContain('RFC cliente legacy');
+    expect(fixture.nativeElement.textContent).toContain('Cliente IPN: C-1');
+    expect(fixture.nativeElement.textContent).toContain('RFC: AAA010101AAA');
+  });
+
   it('selects one eligible order and shows the bulk counter', async () => {
     const { fixture } = await configure();
     const order = fixture.componentInstance['ordersPage']()!.items[0];
@@ -539,6 +549,66 @@ describe('OrdersOperationsPageComponent', () => {
     expect(api.createBulkBillingDocument).toHaveBeenCalledTimes(1);
   });
 
+  it('preserves customerRfc in filtered bulk selection', async () => {
+    const createBulkBillingDocument = vi.fn().mockReturnValue(of({
+      outcome: 'Created',
+      isSuccess: true,
+      billingDocumentId: 46,
+      billingDocumentStatus: 'Draft',
+      selectedOrderCount: 2,
+      importedOrderCount: 2,
+      associatedOrderCount: 2,
+      legacyOrderIds: ['LEG-RFC-1001', 'LEG-RFC-1002'],
+      orderErrors: []
+    }));
+    const visibleOrder = createLegacyOrder({
+      legacyOrderId: 'LEG-RFC-1001',
+      customerName: 'SOMA TALLERES SA DE CV',
+      customerLegacyId: '1257',
+      customerRfc: 'STA890331BZ6'
+    });
+    const allFilteredOrders = [
+      visibleOrder,
+      createLegacyOrder({
+        legacyOrderId: 'LEG-RFC-1002',
+        customerName: 'SOMA TALLERES SA DE CV',
+        customerLegacyId: '1257',
+        customerRfc: 'STA890331BZ6'
+      })
+    ];
+    const searchLegacyOrders = vi
+      .fn()
+      .mockReturnValueOnce(of(createSearchResponse([visibleOrder], { totalCount: 2 })))
+      .mockReturnValueOnce(of(createSearchResponse([visibleOrder], { totalCount: 2 })))
+      .mockReturnValueOnce(of(createSearchResponse(allFilteredOrders, { totalCount: 2 })));
+    const { fixture } = await configure({
+      apiOverrides: {
+        searchLegacyOrders,
+        createBulkBillingDocument
+      }
+    });
+
+    fixture.componentInstance['setCustomerRfc']('sta890331bz6');
+    await fixture.componentInstance['searchCurrentRange']();
+    fixture.componentInstance['toggleVisibleSelection'](true);
+    await fixture.componentInstance['selectAllFilteredOrders']();
+    fixture.componentInstance['openBulkCreateModal']();
+    await fixture.componentInstance['confirmBulkCreateBillingDocument']();
+
+    expect(searchLegacyOrders).toHaveBeenCalledWith({
+      customerRfc: 'STA890331BZ6',
+      page: 1,
+      pageSize: 10
+    });
+    expect(createBulkBillingDocument).toHaveBeenCalledWith({
+      documentType: 'I',
+      selectionMode: 'Filtered',
+      filters: {
+        customerRfc: 'STA890331BZ6'
+      }
+    });
+  });
+
   it('calculates the selected total for all filtered orders across pages', async () => {
     const firstPageOrders = Array.from({ length: 10 }, (_, index) =>
       createLegacyOrder({ legacyOrderId: `LEG-10${index}`, total: 10 }));
@@ -583,6 +653,16 @@ describe('OrdersOperationsPageComponent', () => {
 
     fixture.componentInstance['toggleOrderSelection'](order, true);
     fixture.componentInstance['setCustomerQuery']('Cliente Uno');
+
+    expect(fixture.componentInstance['selectedOrdersCount']()).toBe(0);
+  });
+
+  it('clears the current selection when editing customerRfc', async () => {
+    const { fixture } = await configure();
+    const order = fixture.componentInstance['ordersPage']()!.items[0];
+
+    fixture.componentInstance['toggleOrderSelection'](order, true);
+    fixture.componentInstance['setCustomerRfc']('STA890331BZ6');
 
     expect(fixture.componentInstance['selectedOrdersCount']()).toBe(0);
   });
@@ -767,7 +847,8 @@ describe('OrdersOperationsPageComponent', () => {
       queryParams: {
         quickRange: 'today',
         customerQuery: 'Cliente Uno',
-        legacyOrderId: '1175479'
+        legacyOrderId: '1175479',
+        customerRfc: 'STA890331BZ6'
       }
     });
 
@@ -838,6 +919,21 @@ describe('OrdersOperationsPageComponent', () => {
     });
   });
 
+  it('hydrates customerRfc from the URL', async () => {
+    const { fixture, api } = await configure({
+      queryParams: { customerRfc: 'sta890331bz6' }
+    });
+
+    expect(fixture.componentInstance['customerRfc']()).toBe('STA890331BZ6');
+    expect(api.searchLegacyOrders).toHaveBeenCalledWith({
+      legacyOrderId: '',
+      customerQuery: '',
+      customerRfc: 'STA890331BZ6',
+      page: 1,
+      pageSize: 10
+    });
+  });
+
   it('hydrates explicit date params from the URL as a custom range', async () => {
     const { fixture, api } = await configure({
       queryParams: {
@@ -894,6 +990,22 @@ describe('OrdersOperationsPageComponent', () => {
     expect(api.searchLegacyOrders).toHaveBeenLastCalledWith({
       legacyOrderId: '',
       customerQuery: 'Cliente Uno',
+      page: 1,
+      pageSize: 10
+    });
+    expect(api.importLegacyOrder).toHaveBeenCalledTimes(0);
+  });
+
+  it('applies customer RFC filter to the legacy orders search without importing automatically', async () => {
+    const { fixture, api } = await configure();
+
+    fixture.componentInstance['setCustomerRfc'](' sta890331bz6 ');
+    await fixture.componentInstance['searchCurrentRange']();
+
+    expect(api.searchLegacyOrders).toHaveBeenLastCalledWith({
+      legacyOrderId: '',
+      customerQuery: '',
+      customerRfc: 'STA890331BZ6',
       page: 1,
       pageSize: 10
     });

@@ -197,11 +197,73 @@ public class LegacyOrderReaderTests
 
         var sql = LegacyOrderReader.BuildListSql(schema);
 
-        Assert.Contains("UPPER(COALESCE(", sql, StringComparison.Ordinal);
+        Assert.Contains("UPPER(TRIM(c.`XRazonSocial`)) LIKE @customerQueryLike", sql, StringComparison.Ordinal);
+        Assert.Contains("UPPER(TRIM(c.`Cliente`)) LIKE @customerQueryLike", sql, StringComparison.Ordinal);
+        Assert.Contains("UPPER(NULLIF(TRIM(CONCAT_WS(' ', NULLIF(TRIM(c.`Nombre`), '')", sql, StringComparison.Ordinal);
         Assert.Contains("LIKE @customerQueryLike", sql, StringComparison.Ordinal);
         Assert.Contains("ORDER BY p.`FechaPedido` DESC", sql, StringComparison.Ordinal);
         Assert.Contains("LIMIT @skip, @take", sql, StringComparison.Ordinal);
         Assert.True(sql.IndexOf("LIKE @customerQueryLike", StringComparison.Ordinal) < sql.IndexOf("LIMIT @skip, @take", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void BuildSearchSql_Applies_Exact_CustomerRfc_Filter_Before_Pagination()
+    {
+        var schema = CreateResolvedSchema(
+            ordersTableName: "Pedidos",
+            customersTableName: "Clientes",
+            orderItemsTableName: "PedidosDet",
+            articlesTableName: "Articulos",
+            articleNamesTableName: "NombresArticulos",
+            orderDateColumnName: "FechaPedido");
+
+        var countSql = LegacyOrderReader.BuildCountSql(schema);
+        var listSql = LegacyOrderReader.BuildListSql(schema);
+
+        Assert.Contains("(@customerRfc IS NULL OR UPPER(TRIM(c.`RFC`)) = @customerRfc)", countSql, StringComparison.Ordinal);
+        Assert.Contains("(@customerRfc IS NULL OR UPPER(TRIM(c.`RFC`)) = @customerRfc)", listSql, StringComparison.Ordinal);
+        Assert.DoesNotContain("LIKE @customerRfc", listSql, StringComparison.Ordinal);
+        Assert.True(listSql.IndexOf("@customerRfc", StringComparison.Ordinal) < listSql.IndexOf("LIMIT @skip, @take", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void BuildNormalizedRfcValue_Ignores_Empty_CustomerRfc()
+    {
+        var value = LegacyOrderReader.BuildNormalizedRfcValue("   ");
+
+        Assert.Same(DBNull.Value, value);
+    }
+
+    [Fact]
+    public void BuildNormalizedRfcValue_Trims_And_Uppercases_CustomerRfc()
+    {
+        var value = LegacyOrderReader.BuildNormalizedRfcValue(" sta890331bz6 ");
+
+        Assert.Equal("STA890331BZ6", value);
+    }
+
+    [Fact]
+    public void BuildCustomerNameExpression_Prioritizes_Cliente_Before_Person_Name()
+    {
+        var schema = CreateResolvedSchema(
+            ordersTableName: "Pedidos",
+            customersTableName: "Clientes",
+            orderItemsTableName: "PedidosDet",
+            articlesTableName: "Articulos",
+            articleNamesTableName: "NombresArticulos",
+            orderDateColumnName: "FechaPedido");
+
+        var headerSql = LegacyOrderReader.BuildHeaderSql(schema);
+        var listSql = LegacyOrderReader.BuildListSql(schema);
+        const string clienteExpression = "NULLIF(TRIM(c.`Cliente`), '')";
+        const string fullNameExpression = "NULLIF(TRIM(CONCAT_WS(' ', NULLIF(TRIM(c.`Nombre`), '')";
+
+        Assert.Contains(clienteExpression, headerSql, StringComparison.Ordinal);
+        Assert.Contains(fullNameExpression, headerSql, StringComparison.Ordinal);
+        Assert.Contains(clienteExpression, listSql, StringComparison.Ordinal);
+        Assert.Contains(fullNameExpression, listSql, StringComparison.Ordinal);
+        Assert.True(headerSql.IndexOf(clienteExpression, StringComparison.Ordinal) < headerSql.IndexOf(fullNameExpression, StringComparison.Ordinal));
+        Assert.True(listSql.IndexOf(clienteExpression, StringComparison.Ordinal) < listSql.IndexOf(fullNameExpression, StringComparison.Ordinal));
     }
 
     [Fact]

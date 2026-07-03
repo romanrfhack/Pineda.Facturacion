@@ -24,13 +24,18 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
           <p class="message">{{ message() }}</p>
 
           <div class="actions">
-            <button type="button" class="secondary" (click)="cancelled.emit()" [disabled]="busy()">
+            <button
+              type="button"
+              class="secondary"
+              (click)="handleCancelClick()"
+              [disabled]="busy()"
+            >
               {{ cancelLabel() }}
             </button>
             <button
               type="button"
               [class.danger]="tone() === 'danger'"
-              (click)="confirmed.emit()"
+              (click)="handleConfirmClick()"
               [disabled]="busy()"
             >
               {{ busy() ? busyConfirmLabel() || confirmLabel() : confirmLabel() }}
@@ -137,5 +142,21 @@ export class ConfirmationModalComponent {
     }
 
     this.cancelled.emit();
+  }
+
+  protected handleCancelClick(): void {
+    if (this.busy()) {
+      return;
+    }
+
+    this.cancelled.emit();
+  }
+
+  protected handleConfirmClick(): void {
+    if (this.busy()) {
+      return;
+    }
+
+    this.confirmed.emit();
   }
 }

@@ -27,6 +27,7 @@ public sealed class SearchLegacyOrdersService
             ToDateUtcExclusive = filter.ToDateUtcExclusive,
             LegacyOrderId = string.IsNullOrWhiteSpace(filter.LegacyOrderId) ? null : filter.LegacyOrderId.Trim(),
             CustomerQuery = string.IsNullOrWhiteSpace(filter.CustomerQuery) ? null : filter.CustomerQuery.Trim(),
+            CustomerRfc = string.IsNullOrWhiteSpace(filter.CustomerRfc) ? null : filter.CustomerRfc.Trim().ToUpperInvariant(),
             Page = filter.Page < 1 ? 1 : filter.Page,
             PageSize = filter.PageSize switch
             {

@@ -366,6 +366,7 @@ public sealed class CreateBulkBillingDocumentService
                 ToDateUtcExclusive = filters.ToDateUtcExclusive,
                 LegacyOrderId = string.IsNullOrWhiteSpace(filters.LegacyOrderId) ? null : filters.LegacyOrderId.Trim(),
                 CustomerQuery = string.IsNullOrWhiteSpace(filters.CustomerQuery) ? null : filters.CustomerQuery.Trim(),
+                CustomerRfc = string.IsNullOrWhiteSpace(filters.CustomerRfc) ? null : filters.CustomerRfc.Trim().ToUpperInvariant(),
                 Page = 1,
                 PageSize = MaxSelectableOrders + 1
             },
@@ -401,7 +402,8 @@ public sealed class CreateBulkBillingDocumentService
         return filter.FromDateUtc.HasValue
             || filter.ToDateUtcExclusive.HasValue
             || !string.IsNullOrWhiteSpace(filter.LegacyOrderId)
-            || !string.IsNullOrWhiteSpace(filter.CustomerQuery);
+            || !string.IsNullOrWhiteSpace(filter.CustomerQuery)
+            || !string.IsNullOrWhiteSpace(filter.CustomerRfc);
     }
 
     private static IReadOnlyList<string> NormalizeLegacyOrderIds(IReadOnlyList<string> legacyOrderIds)

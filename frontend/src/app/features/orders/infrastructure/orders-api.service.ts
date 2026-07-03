@@ -45,6 +45,10 @@ export class OrdersApiService {
       params['customerQuery'] = request.customerQuery.trim();
     }
 
+    if (request.customerRfc?.trim()) {
+      params['customerRfc'] = request.customerRfc.trim().toUpperCase();
+    }
+
     return this.http.get<SearchLegacyOrdersResponse>(buildApiUrl('/orders/legacy'), {
       params
     });
