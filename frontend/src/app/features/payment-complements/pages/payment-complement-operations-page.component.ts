@@ -45,7 +45,7 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
         <section class="card actions">
           <div class="button-row">
             @if (permissionService.canStampFiscal()) {
-              <button type="button" (click)="stamp()" [disabled]="loading() || !canStamp(currentComplement)">Timbrar</button>
+              <button type="button" (click)="stamp()" [disabled]="loading() || !canStamp(currentComplement)">{{ getStampActionLabel(currentComplement) }}</button>
               <button type="button" class="danger" (click)="cancel()" [disabled]="loading() || !canCancel(currentComplement)">Cancelar</button>
               <button type="button" class="secondary" (click)="refreshStatus()" [disabled]="loading() || !canRefreshStatus(currentComplement)">Actualizar estatus</button>
             }
@@ -92,9 +92,11 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
     h2 { margin:0.3rem 0 0; }
     .helper { color:#5f6b76; }
     .button-row { display:flex; flex-wrap:wrap; gap:0.75rem; }
-    button { border:none; border-radius:0.8rem; padding:0.75rem 1rem; background:#182533; color:#fff; cursor:pointer; }
+    button { border:none; border-radius:0.8rem; padding:0.75rem 1rem; background:#182533; color:#fff; }
+    button:not(:disabled) { cursor:pointer; }
     button.secondary { background:#d8c49b; color:#182533; }
     button.danger { background:#7a2020; }
+    button:disabled { opacity:0.55; cursor:not-allowed; background:#9aa3ad; color:#eef2f6; }
   `],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -143,7 +145,11 @@ export class PaymentComplementOperationsPageComponent {
   protected async stamp(): Promise<void> {
     const complement = this.complement();
     const paymentComplementId = complement ? resolvePaymentComplementId(complement) : null;
-    if (!complement || !paymentComplementId) {
+    if (!complement || !paymentComplementId || !this.canStamp(complement)) {
+      if (complement?.status === 'Stamped') {
+        this.feedbackService.show('warning', 'Este complemento de pago ya está timbrado.');
+      }
+
       return;
     }
 
@@ -204,6 +210,10 @@ export class PaymentComplementOperationsPageComponent {
 
   protected canStamp(complement: PaymentComplementDocumentResponse): boolean {
     return complement.status === 'ReadyForStamping' || complement.status === 'StampingRejected';
+  }
+
+  protected getStampActionLabel(complement: PaymentComplementDocumentResponse): string {
+    return complement.status === 'Stamped' ? 'Timbrado' : 'Timbrar';
   }
 
   protected canCancel(complement: PaymentComplementDocumentResponse): boolean {

@@ -38,7 +38,7 @@ describe('PaymentComplementOperationsPageComponent', () => {
     };
   }
 
-  function createComplement() {
+  function createComplement(overrides: Record<string, unknown> = {}) {
     return {
       id: 70,
       accountsReceivablePaymentId: 7,
@@ -68,14 +68,18 @@ describe('PaymentComplementOperationsPageComponent', () => {
       hasCertificateReference: true,
       hasPrivateKeyReference: true,
       hasPrivateKeyPasswordReference: true,
-      relatedDocuments: []
+      relatedDocuments: [],
+      ...overrides
     };
   }
 
-  async function configure(paymentOverrides: Record<string, unknown> = {}) {
+  async function configure(
+    paymentOverrides: Record<string, unknown> = {},
+    complementOverrides: Record<string, unknown> = {},
+  ) {
     const arApi = {
       getPaymentById: vi.fn().mockReturnValue(of(createPayment(paymentOverrides))),
-      getPaymentComplementByPaymentId: vi.fn().mockReturnValue(of(createComplement())),
+      getPaymentComplementByPaymentId: vi.fn().mockReturnValue(of(createComplement(complementOverrides))),
       preparePaymentComplement: vi.fn().mockReturnValue(of({
         outcome: 'Created',
         isSuccess: true,
@@ -86,6 +90,15 @@ describe('PaymentComplementOperationsPageComponent', () => {
     };
 
     const paymentComplementsApi = {
+      stamp: vi.fn().mockReturnValue(of({
+        outcome: 'Stamped',
+        isSuccess: true,
+        warningMessages: [],
+        email: null,
+        providerMessage: null,
+        supportMessage: null,
+        errorMessage: null
+      })),
       getStamp: vi.fn().mockReturnValue(of({
         paymentComplementDocumentId: 70,
         outcome: 'Found',
@@ -96,6 +109,10 @@ describe('PaymentComplementOperationsPageComponent', () => {
         paymentComplementDocumentId: 70,
         outcome: 'NotFound'
       }))
+    };
+
+    const feedbackService = {
+      show: vi.fn()
     };
 
     await TestBed.configureTestingModule({
@@ -120,9 +137,7 @@ describe('PaymentComplementOperationsPageComponent', () => {
         },
         {
           provide: FeedbackService,
-          useValue: {
-            show: vi.fn()
-          }
+          useValue: feedbackService
         }
       ]
     }).compileComponents();
@@ -132,7 +147,7 @@ describe('PaymentComplementOperationsPageComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    return { fixture, arApi, paymentComplementsApi };
+    return { fixture, arApi, paymentComplementsApi, feedbackService };
   }
 
   it('skips payment-complement lookup when the payment has no prepared REP yet', async () => {
@@ -154,5 +169,48 @@ describe('PaymentComplementOperationsPageComponent', () => {
     expect(arApi.getPaymentComplementByPaymentId).toHaveBeenCalledWith(7);
     expect(paymentComplementsApi.getStamp).toHaveBeenCalledWith(70);
     expect(fixture.nativeElement.textContent).toContain('Evento de pago #7');
+  });
+
+  it('only allows stamping for ready or rejected complements', async () => {
+    const { fixture } = await configure(
+      {
+        repDocumentStatus: 'ReadyForStamping',
+        repReservedAmount: 1190
+      }
+    );
+
+    expect(fixture.componentInstance['canStamp'](createComplement({ status: 'ReadyForStamping' }))).toBe(true);
+    expect(fixture.componentInstance['canStamp'](createComplement({ status: 'StampingRejected' }))).toBe(true);
+    expect(fixture.componentInstance['canStamp'](createComplement({ status: 'Stamped' }))).toBe(false);
+  });
+
+  it('returns the correct stamp action label for stamped and eligible complements', async () => {
+    const { fixture } = await configure(
+      {
+        repDocumentStatus: 'ReadyForStamping',
+        repReservedAmount: 1190
+      }
+    );
+
+    expect(fixture.componentInstance['getStampActionLabel'](createComplement({ status: 'Stamped' }))).toBe('Timbrado');
+    expect(fixture.componentInstance['getStampActionLabel'](createComplement({ status: 'ReadyForStamping' }))).toBe('Timbrar');
+    expect(fixture.componentInstance['getStampActionLabel'](createComplement({ status: 'StampingRejected' }))).toBe('Timbrar');
+  });
+
+  it('does not call the stamp API when the complement is already stamped', async () => {
+    const { fixture, paymentComplementsApi, feedbackService } = await configure(
+      {
+        repDocumentStatus: 'Stamped',
+        repFiscalizedAmount: 1190
+      },
+      {
+        status: 'Stamped'
+      }
+    );
+
+    await fixture.componentInstance['stamp']();
+
+    expect(paymentComplementsApi.stamp).not.toHaveBeenCalled();
+    expect(feedbackService.show).toHaveBeenCalledWith('warning', 'Este complemento de pago ya está timbrado.');
   });
 });
