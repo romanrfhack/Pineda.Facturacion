@@ -1171,6 +1171,29 @@ public class AccountsReceivableServicesTests
     }
 
     [Fact]
+    public async Task ReassignAccountsReceivablePaymentApplications_ReturnsOperationalProjectionForNewLinkedInvoices()
+    {
+        var (payment, invoice1, invoice2) = CreateAppliedPaymentForReassignment();
+        var service = CreateReassignService(
+            payment,
+            new ArFakeAccountsReceivablePaymentApplicationRepository(),
+            new ArFakePaymentComplementDocumentRepository(),
+            invoice1,
+            invoice2);
+
+        var result = await ExecuteBasicReassignAsync(service, payment.Id, invoice2.Id, 100m);
+
+        Assert.Equal(ReassignAccountsReceivablePaymentApplicationsOutcome.Reassigned, result.Outcome);
+        Assert.NotNull(result.OperationalProjection);
+        Assert.Equal(100m, result.OperationalProjection!.AppliedAmount);
+        Assert.Equal(0m, result.OperationalProjection.UnappliedAmount);
+        Assert.Equal(AccountsReceivablePaymentOperationalStatus.FullyApplied, result.OperationalProjection.OperationalStatus);
+        Assert.Equal(AccountsReceivablePaymentRepStatus.ReadyToPrepare, result.OperationalProjection.RepStatus);
+        Assert.True(result.OperationalProjection.ReadyToPrepareRep);
+        Assert.Null(result.OperationalProjection.RepBlockReason);
+    }
+
+    [Fact]
     public async Task ReassignAccountsReceivablePaymentApplications_Blocks_WhenPaymentComplementDocumentExists()
     {
         var (payment, invoice1, invoice2) = CreateAppliedPaymentForReassignment();

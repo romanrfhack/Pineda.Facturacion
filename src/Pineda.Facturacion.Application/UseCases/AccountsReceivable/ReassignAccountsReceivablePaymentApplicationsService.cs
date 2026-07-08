@@ -400,6 +400,10 @@ public sealed class ReassignAccountsReceivablePaymentApplicationsService
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         newApplicationSnapshots = newApplications.Select(MapSnapshot).ToList();
+        var linkedInvoices = command.Applications
+            .Select(x => invoicesById[x.AccountsReceivableInvoiceId])
+            .ToArray();
+
         return new ReassignAccountsReceivablePaymentApplicationsResult
         {
             Outcome = ReassignAccountsReceivablePaymentApplicationsOutcome.Reassigned,
@@ -409,6 +413,7 @@ public sealed class ReassignAccountsReceivablePaymentApplicationsService
             NewAppliedAmount = newAppliedAmount,
             RemainingPaymentAmount = NormalizeMoney(payment.Amount - newAppliedAmount),
             AccountsReceivablePayment = payment,
+            OperationalProjection = AccountsReceivablePaymentOperationalProjectionBuilder.Build(payment, linkedInvoices, null, null),
             PreviousApplications = previousApplications,
             NewApplications = newApplicationSnapshots,
             AffectedInvoiceIds = affectedInvoiceIds.ToList()

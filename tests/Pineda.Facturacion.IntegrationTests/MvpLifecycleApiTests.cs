@@ -2372,11 +2372,16 @@ public class MvpLifecycleApiTests
         const long paymentId = 94001;
         const long invoice1Id = 94011;
         const long invoice2Id = 94012;
+        const long externalDocument1Id = 94031;
+        const long externalDocument2Id = 94032;
         var now = DateTime.UtcNow;
 
         await using (var scope = factory.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+            db.ExternalRepBaseDocuments.AddRange(
+                CreateExternalRepBaseDocument(externalDocument1Id, "UUID-AR-REASSIGN-1", now.Date),
+                CreateExternalRepBaseDocument(externalDocument2Id, "UUID-AR-REASSIGN-2", now.Date));
             db.AccountsReceivablePayments.Add(new AccountsReceivablePayment
             {
                 Id = paymentId,
@@ -2393,6 +2398,7 @@ public class MvpLifecycleApiTests
                 new AccountsReceivableInvoice
                 {
                     Id = invoice1Id,
+                    ExternalRepBaseDocumentId = externalDocument1Id,
                     FiscalReceiverId = 77,
                     Status = AccountsReceivableInvoiceStatus.PartiallyPaid,
                     PaymentMethodSat = "PPD",
@@ -2409,6 +2415,7 @@ public class MvpLifecycleApiTests
                 new AccountsReceivableInvoice
                 {
                     Id = invoice2Id,
+                    ExternalRepBaseDocumentId = externalDocument2Id,
                     FiscalReceiverId = 77,
                     Status = AccountsReceivableInvoiceStatus.Open,
                     PaymentMethodSat = "PPD",
@@ -2444,7 +2451,7 @@ public class MvpLifecycleApiTests
                 new ReassignAccountsReceivablePaymentApplicationRowRequest
                 {
                     AccountsReceivableInvoiceId = invoice2Id,
-                    AppliedAmount = 50m
+                    AppliedAmount = 100m
                 }
             ]
         });
@@ -2455,12 +2462,30 @@ public class MvpLifecycleApiTests
         Assert.True(body!.IsSuccess);
         Assert.Equal("Reassigned", body.Outcome);
         Assert.Equal(60m, body.PreviousAppliedAmount);
-        Assert.Equal(50m, body.NewAppliedAmount);
-        Assert.Equal(50m, body.RemainingPaymentAmount);
+        Assert.Equal(100m, body.NewAppliedAmount);
+        Assert.Equal(0m, body.RemainingPaymentAmount);
         Assert.NotNull(body.Payment);
+        Assert.Equal(100m, body.Payment!.AppliedTotal);
+        Assert.Equal(0m, body.Payment.RemainingAmount);
+        Assert.Equal("FullyApplied", body.Payment.OperationalStatus);
+        Assert.Equal("ReadyToPrepare", body.Payment.RepStatus);
+        Assert.True(body.Payment.ReadyToPrepareRep);
+        Assert.Null(body.Payment.RepBlockReason);
         Assert.Equal(AccountsReceivablePaymentUnappliedDisposition.PendingAllocation.ToString(), body.Payment!.UnappliedDisposition);
         Assert.Single(body.Payment.Applications);
         Assert.Equal(invoice2Id, body.Payment.Applications.Single().AccountsReceivableInvoiceId);
+        Assert.Single(body.NewApplications);
+        Assert.Equal(invoice2Id, body.NewApplications.Single().AccountsReceivableInvoiceId);
+        Assert.Equal(100m, body.NewApplications.Single().AppliedAmount);
+
+        var getPaymentResponse = await client.GetAsync($"/api/accounts-receivable/payments/{paymentId}");
+        Assert.Equal(HttpStatusCode.OK, getPaymentResponse.StatusCode);
+        var getPaymentBody = await getPaymentResponse.Content.ReadFromJsonAsync<AccountsReceivablePaymentResponse>();
+        Assert.NotNull(getPaymentBody);
+        Assert.Equal("FullyApplied", getPaymentBody!.OperationalStatus);
+        Assert.Equal("ReadyToPrepare", getPaymentBody.RepStatus);
+        Assert.True(getPaymentBody.ReadyToPrepareRep);
+        Assert.Null(getPaymentBody.RepBlockReason);
 
         await using (var scope = factory.Services.CreateAsyncScope())
         {
@@ -2474,9 +2499,9 @@ public class MvpLifecycleApiTests
             Assert.Equal(AccountsReceivableInvoiceStatus.Open, invoice1.Status);
             Assert.Equal(0m, invoice1.PaidTotal);
             Assert.Equal(100m, invoice1.OutstandingBalance);
-            Assert.Equal(AccountsReceivableInvoiceStatus.PartiallyPaid, invoice2.Status);
-            Assert.Equal(50m, invoice2.PaidTotal);
-            Assert.Equal(50m, invoice2.OutstandingBalance);
+            Assert.Equal(AccountsReceivableInvoiceStatus.Paid, invoice2.Status);
+            Assert.Equal(100m, invoice2.PaidTotal);
+            Assert.Equal(0m, invoice2.OutstandingBalance);
             Assert.Single(applications);
             Assert.Equal(invoice2Id, applications.Single().AccountsReceivableInvoiceId);
         }
@@ -5629,6 +5654,40 @@ public class MvpLifecycleApiTests
         Assert.NotNull(body);
         Assert.NotNull(body!.AccountsReceivableInvoice);
         return body;
+    }
+
+    private static ExternalRepBaseDocument CreateExternalRepBaseDocument(long id, string uuid, DateTime issuedAtUtc)
+    {
+        return new ExternalRepBaseDocument
+        {
+            Id = id,
+            Uuid = uuid,
+            CfdiVersion = "4.0",
+            DocumentType = "I",
+            Series = "R",
+            Folio = id.ToString(),
+            IssuedAtUtc = issuedAtUtc,
+            IssuerRfc = "AAA010101AAA",
+            IssuerLegalName = "Issuer SA",
+            ReceiverRfc = "BBB010101BBB",
+            ReceiverLegalName = "Receiver One",
+            CurrencyCode = "MXN",
+            ExchangeRate = 1m,
+            Subtotal = 100m,
+            Total = 100m,
+            PaymentMethodSat = "PPD",
+            PaymentFormSat = "99",
+            ValidationStatus = ExternalRepBaseDocumentValidationStatus.Accepted,
+            ValidationReasonCode = "Accepted",
+            ValidationReasonMessage = "Accepted",
+            SatStatus = ExternalRepBaseDocumentSatStatus.Active,
+            SourceFileName = $"{uuid}.xml",
+            XmlContent = "<cfdi:Comprobante />",
+            XmlHash = $"hash-{id}",
+            ImportedAtUtc = issuedAtUtc,
+            CreatedAtUtc = issuedAtUtc,
+            UpdatedAtUtc = issuedAtUtc
+        };
     }
 }
 

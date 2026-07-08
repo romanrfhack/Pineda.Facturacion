@@ -813,7 +813,7 @@ public static class AccountsReceivableEndpoints
                 .ToList(),
             Payment = result.AccountsReceivablePayment is null
                 ? null
-                : MapPayment(result.AccountsReceivablePayment)
+                : MapPayment(result.AccountsReceivablePayment, result.OperationalProjection)
         };
 
         await AuditApiHelper.RecordAsync(

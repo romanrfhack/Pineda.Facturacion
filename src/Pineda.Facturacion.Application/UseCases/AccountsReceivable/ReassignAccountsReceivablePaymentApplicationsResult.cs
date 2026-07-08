@@ -20,6 +20,8 @@ public class ReassignAccountsReceivablePaymentApplicationsResult
 
     public AccountsReceivablePayment? AccountsReceivablePayment { get; set; }
 
+    public AccountsReceivablePaymentOperationalProjection? OperationalProjection { get; set; }
+
     public List<ReassignAccountsReceivablePaymentApplicationSnapshot> PreviousApplications { get; set; } = [];
 
     public List<ReassignAccountsReceivablePaymentApplicationSnapshot> NewApplications { get; set; } = [];
