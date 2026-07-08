@@ -1128,6 +1128,301 @@ public class AccountsReceivableServicesTests
     }
 
     [Fact]
+    public async Task ReassignAccountsReceivablePaymentApplications_ReplacesApplicationsAndRecalculatesBalances()
+    {
+        var payment = CreatePayment(amount: 100m, receiverId: 77);
+        var invoice1 = CreateInvoice(id: 201, total: 100m);
+        var invoice2 = CreateInvoice(id: 202, total: 100m);
+        var currentApplication = CreatePaymentApplication(payment.Id, invoice1.Id, 60m, 100m, 40m);
+        payment.Applications.Add(currentApplication);
+        invoice1.PaidTotal = 60m;
+        invoice1.OutstandingBalance = 40m;
+        invoice1.Status = AccountsReceivableInvoiceStatus.PartiallyPaid;
+        var applicationRepository = new ArFakeAccountsReceivablePaymentApplicationRepository { NextSequence = 2 };
+        var service = CreateReassignService(payment, applicationRepository, new ArFakePaymentComplementDocumentRepository(), invoice1, invoice2);
+
+        var result = await service.ExecuteAsync(new ReassignAccountsReceivablePaymentApplicationsCommand
+        {
+            AccountsReceivablePaymentId = payment.Id,
+            Reason = "Cliente no reconoce facturas previas",
+            Applications =
+            [
+                new ReassignAccountsReceivablePaymentApplicationInput
+                {
+                    AccountsReceivableInvoiceId = invoice2.Id,
+                    AppliedAmount = 50m
+                }
+            ]
+        });
+
+        Assert.Equal(ReassignAccountsReceivablePaymentApplicationsOutcome.Reassigned, result.Outcome);
+        Assert.Equal(60m, result.PreviousAppliedAmount);
+        Assert.Equal(50m, result.NewAppliedAmount);
+        Assert.Equal(50m, result.RemainingPaymentAmount);
+        Assert.Equal(0m, invoice1.PaidTotal);
+        Assert.Equal(100m, invoice1.OutstandingBalance);
+        Assert.Equal(AccountsReceivableInvoiceStatus.Open, invoice1.Status);
+        Assert.Equal(50m, invoice2.PaidTotal);
+        Assert.Equal(50m, invoice2.OutstandingBalance);
+        Assert.Equal(AccountsReceivableInvoiceStatus.PartiallyPaid, invoice2.Status);
+        Assert.Single(applicationRepository.Removed);
+        Assert.Single(applicationRepository.Added);
+        Assert.Equal(invoice2.Id, payment.Applications.Single().AccountsReceivableInvoiceId);
+    }
+
+    [Fact]
+    public async Task ReassignAccountsReceivablePaymentApplications_Blocks_WhenPaymentComplementDocumentExists()
+    {
+        var (payment, invoice1, invoice2) = CreateAppliedPaymentForReassignment();
+        var service = CreateReassignService(
+            payment,
+            new ArFakeAccountsReceivablePaymentApplicationRepository(),
+            new ArFakePaymentComplementDocumentRepository
+            {
+                ExistingByPaymentId = new PaymentComplementDocument
+                {
+                    Id = 501,
+                    AccountsReceivablePaymentId = payment.Id,
+                    Status = PaymentComplementDocumentStatus.ReadyForStamping
+                }
+            },
+            invoice1,
+            invoice2);
+
+        var result = await ExecuteBasicReassignAsync(service, payment.Id, invoice2.Id, 50m);
+
+        Assert.Equal(ReassignAccountsReceivablePaymentApplicationsOutcome.Conflict, result.Outcome);
+        Assert.Contains("REP", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ReassignAccountsReceivablePaymentApplications_Blocks_WhenPaymentComplementPaymentExists()
+    {
+        var (payment, invoice1, invoice2) = CreateAppliedPaymentForReassignment();
+        var service = CreateReassignService(
+            payment,
+            new ArFakeAccountsReceivablePaymentApplicationRepository(),
+            new ArFakePaymentComplementDocumentRepository
+            {
+                ExistingByPaymentId = new PaymentComplementDocument
+                {
+                    Id = 501,
+                    AccountsReceivablePaymentId = 999,
+                    Status = PaymentComplementDocumentStatus.ReadyForStamping,
+                    Payments =
+                    [
+                        new PaymentComplementPayment
+                        {
+                            Id = 701,
+                            PaymentComplementDocumentId = 501,
+                            AccountsReceivablePaymentId = payment.Id
+                        }
+                    ]
+                }
+            },
+            invoice1,
+            invoice2);
+
+        var result = await ExecuteBasicReassignAsync(service, payment.Id, invoice2.Id, 50m);
+
+        Assert.Equal(ReassignAccountsReceivablePaymentApplicationsOutcome.Conflict, result.Outcome);
+        Assert.Contains("REP", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ReassignAccountsReceivablePaymentApplications_Blocks_WhenAffectedInvoiceHasRepRelatedDocument()
+    {
+        var (payment, invoice1, invoice2) = CreateAppliedPaymentForReassignment();
+        var applicationRepository = new ArFakeAccountsReceivablePaymentApplicationRepository();
+        var service = CreateReassignService(
+            payment,
+            applicationRepository,
+            new ArFakePaymentComplementDocumentRepository
+            {
+                RelatedDocumentInvoiceIds = [invoice2.Id]
+            },
+            invoice1,
+            invoice2);
+
+        var result = await ExecuteBasicReassignAsync(service, payment.Id, invoice2.Id, 50m);
+
+        Assert.Equal(ReassignAccountsReceivablePaymentApplicationsOutcome.Conflict, result.Outcome);
+        Assert.Empty(applicationRepository.Removed);
+        Assert.Contains("facturas afectadas", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ReassignAccountsReceivablePaymentApplications_Blocks_WhenAffectedInvoiceHasLaterApplications()
+    {
+        var (payment, invoice1, invoice2) = CreateAppliedPaymentForReassignment();
+        var applicationRepository = new ArFakeAccountsReceivablePaymentApplicationRepository
+        {
+            LaterApplications =
+            [
+                CreatePaymentApplication(
+                    paymentId: 999,
+                    invoiceId: invoice1.Id,
+                    appliedAmount: 10m,
+                    previousBalance: 40m,
+                    newBalance: 30m,
+                    createdAtUtc: payment.Applications.Single().CreatedAtUtc.AddMinutes(1))
+            ]
+        };
+        var service = CreateReassignService(payment, applicationRepository, new ArFakePaymentComplementDocumentRepository(), invoice1, invoice2);
+
+        var result = await ExecuteBasicReassignAsync(service, payment.Id, invoice2.Id, 50m);
+
+        Assert.Equal(ReassignAccountsReceivablePaymentApplicationsOutcome.Conflict, result.Outcome);
+        Assert.Empty(applicationRepository.Removed);
+        Assert.Contains("posteriores", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ReassignAccountsReceivablePaymentApplications_BlocksDifferentFiscalReceiver()
+    {
+        var (payment, invoice1, invoice2) = CreateAppliedPaymentForReassignment();
+        invoice2.FiscalReceiverId = 88;
+        var service = CreateReassignService(payment, new ArFakeAccountsReceivablePaymentApplicationRepository(), new ArFakePaymentComplementDocumentRepository(), invoice1, invoice2);
+
+        var result = await ExecuteBasicReassignAsync(service, payment.Id, invoice2.Id, 50m);
+
+        Assert.Equal(ReassignAccountsReceivablePaymentApplicationsOutcome.Conflict, result.Outcome);
+        Assert.Contains("different receiver", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ReassignAccountsReceivablePaymentApplications_BlocksDifferentCurrency()
+    {
+        var (payment, invoice1, invoice2) = CreateAppliedPaymentForReassignment();
+        invoice2.CurrencyCode = "USD";
+        var service = CreateReassignService(payment, new ArFakeAccountsReceivablePaymentApplicationRepository(), new ArFakePaymentComplementDocumentRepository(), invoice1, invoice2);
+
+        var result = await ExecuteBasicReassignAsync(service, payment.Id, invoice2.Id, 50m);
+
+        Assert.Equal(ReassignAccountsReceivablePaymentApplicationsOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("MXN", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ReassignAccountsReceivablePaymentApplications_BlocksCancelledInvoice()
+    {
+        var (payment, invoice1, invoice2) = CreateAppliedPaymentForReassignment();
+        invoice2.Status = AccountsReceivableInvoiceStatus.Cancelled;
+        var service = CreateReassignService(payment, new ArFakeAccountsReceivablePaymentApplicationRepository(), new ArFakePaymentComplementDocumentRepository(), invoice1, invoice2);
+
+        var result = await ExecuteBasicReassignAsync(service, payment.Id, invoice2.Id, 50m);
+
+        Assert.Equal(ReassignAccountsReceivablePaymentApplicationsOutcome.Conflict, result.Outcome);
+        Assert.Contains("cancelled", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ReassignAccountsReceivablePaymentApplications_BlocksWhenNewAppliedAmountExceedsPaymentAmount()
+    {
+        var (payment, invoice1, invoice2) = CreateAppliedPaymentForReassignment(paymentAmount: 50m);
+        var service = CreateReassignService(payment, new ArFakeAccountsReceivablePaymentApplicationRepository(), new ArFakePaymentComplementDocumentRepository(), invoice1, invoice2);
+
+        var result = await ExecuteBasicReassignAsync(service, payment.Id, invoice2.Id, 60m);
+
+        Assert.Equal(ReassignAccountsReceivablePaymentApplicationsOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("payment amount", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ReassignAccountsReceivablePaymentApplications_BlocksWhenInvoiceAmountExceedsBalanceAfterReversal()
+    {
+        var (payment, invoice1, invoice2) = CreateAppliedPaymentForReassignment(paymentAmount: 200m, appliedAmount: 40m);
+        var service = CreateReassignService(payment, new ArFakeAccountsReceivablePaymentApplicationRepository(), new ArFakePaymentComplementDocumentRepository(), invoice1, invoice2);
+
+        var result = await ExecuteBasicReassignAsync(service, payment.Id, invoice1.Id, 120m);
+
+        Assert.Equal(ReassignAccountsReceivablePaymentApplicationsOutcome.Conflict, result.Outcome);
+        Assert.Contains("after reverting", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(40m, invoice1.PaidTotal);
+        Assert.Equal(60m, invoice1.OutstandingBalance);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("too short")]
+    public async Task ReassignAccountsReceivablePaymentApplications_BlocksEmptyOrShortReason(string reason)
+    {
+        var (payment, invoice1, invoice2) = CreateAppliedPaymentForReassignment();
+        var applicationRepository = new ArFakeAccountsReceivablePaymentApplicationRepository();
+        var service = CreateReassignService(payment, applicationRepository, new ArFakePaymentComplementDocumentRepository(), invoice1, invoice2);
+
+        var result = await service.ExecuteAsync(new ReassignAccountsReceivablePaymentApplicationsCommand
+        {
+            AccountsReceivablePaymentId = payment.Id,
+            Reason = reason,
+            Applications =
+            [
+                new ReassignAccountsReceivablePaymentApplicationInput
+                {
+                    AccountsReceivableInvoiceId = invoice2.Id,
+                    AppliedAmount = 50m
+                }
+            ]
+        });
+
+        Assert.Equal(ReassignAccountsReceivablePaymentApplicationsOutcome.ValidationFailed, result.Outcome);
+        Assert.Empty(applicationRepository.Removed);
+    }
+
+    [Fact]
+    public async Task ReassignAccountsReceivablePaymentApplications_BlocksPaymentWithoutCurrentApplications()
+    {
+        var payment = CreatePayment(amount: 100m, receiverId: 77);
+        var invoice = CreateInvoice(id: 202, total: 100m);
+        var service = CreateReassignService(payment, new ArFakeAccountsReceivablePaymentApplicationRepository(), new ArFakePaymentComplementDocumentRepository(), invoice);
+
+        var result = await ExecuteBasicReassignAsync(service, payment.Id, invoice.Id, 50m);
+
+        Assert.Equal(ReassignAccountsReceivablePaymentApplicationsOutcome.Conflict, result.Outcome);
+        Assert.Contains("no tiene aplicaciones", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ReassignAccountsReceivablePaymentApplications_IsAtomic_WhenValidationFailsAfterMultipleRows()
+    {
+        var (payment, invoice1, invoice2) = CreateAppliedPaymentForReassignment(paymentAmount: 150m, appliedAmount: 40m);
+        var invoice3 = CreateInvoice(id: 203, total: 20m);
+        var applicationRepository = new ArFakeAccountsReceivablePaymentApplicationRepository();
+        var service = CreateReassignService(payment, applicationRepository, new ArFakePaymentComplementDocumentRepository(), invoice1, invoice2, invoice3);
+
+        var result = await service.ExecuteAsync(new ReassignAccountsReceivablePaymentApplicationsCommand
+        {
+            AccountsReceivablePaymentId = payment.Id,
+            Reason = "Cliente solicita redistribuir pago",
+            Applications =
+            [
+                new ReassignAccountsReceivablePaymentApplicationInput
+                {
+                    AccountsReceivableInvoiceId = invoice2.Id,
+                    AppliedAmount = 30m
+                },
+                new ReassignAccountsReceivablePaymentApplicationInput
+                {
+                    AccountsReceivableInvoiceId = invoice3.Id,
+                    AppliedAmount = 50m
+                }
+            ]
+        });
+
+        Assert.Equal(ReassignAccountsReceivablePaymentApplicationsOutcome.Conflict, result.Outcome);
+        Assert.Empty(applicationRepository.Added);
+        Assert.Empty(applicationRepository.Removed);
+        Assert.Equal(40m, invoice1.PaidTotal);
+        Assert.Equal(60m, invoice1.OutstandingBalance);
+        Assert.Equal(0m, invoice2.PaidTotal);
+        Assert.Equal(100m, invoice2.OutstandingBalance);
+        Assert.Equal(0m, invoice3.PaidTotal);
+        Assert.Equal(20m, invoice3.OutstandingBalance);
+        Assert.Equal(invoice1.Id, payment.Applications.Single().AccountsReceivableInvoiceId);
+    }
+
+    [Fact]
     public async Task GetServices_ReturnPracticalBalanceAndApplicationData()
     {
         var invoice = CreateInvoice();
@@ -2385,6 +2680,61 @@ public class AccountsReceivableServicesTests
             new ArFakeUnitOfWork());
     }
 
+    private static ReassignAccountsReceivablePaymentApplicationsService CreateReassignService(
+        AccountsReceivablePayment payment,
+        ArFakeAccountsReceivablePaymentApplicationRepository applicationRepository,
+        ArFakePaymentComplementDocumentRepository paymentComplementRepository,
+        params AccountsReceivableInvoice[] invoices)
+    {
+        return new ReassignAccountsReceivablePaymentApplicationsService(
+            new ArFakeAccountsReceivablePaymentRepository { ExistingTracked = payment },
+            new ArFakeAccountsReceivableInvoiceRepository
+            {
+                TrackedById = invoices.ToDictionary(x => x.Id, x => x)
+            },
+            applicationRepository,
+            paymentComplementRepository,
+            new ArFakeUnitOfWork());
+    }
+
+    private static (AccountsReceivablePayment Payment, AccountsReceivableInvoice Invoice1, AccountsReceivableInvoice Invoice2) CreateAppliedPaymentForReassignment(
+        decimal paymentAmount = 100m,
+        decimal appliedAmount = 60m)
+    {
+        var payment = CreatePayment(amount: paymentAmount, receiverId: 77);
+        var invoice1 = CreateInvoice(id: 201, total: 100m);
+        var invoice2 = CreateInvoice(id: 202, total: 100m);
+        var currentApplication = CreatePaymentApplication(payment.Id, invoice1.Id, appliedAmount, 100m, 100m - appliedAmount);
+        payment.Applications.Add(currentApplication);
+        invoice1.PaidTotal = appliedAmount;
+        invoice1.OutstandingBalance = 100m - appliedAmount;
+        invoice1.Status = appliedAmount == 100m
+            ? AccountsReceivableInvoiceStatus.Paid
+            : AccountsReceivableInvoiceStatus.PartiallyPaid;
+        return (payment, invoice1, invoice2);
+    }
+
+    private static Task<ReassignAccountsReceivablePaymentApplicationsResult> ExecuteBasicReassignAsync(
+        ReassignAccountsReceivablePaymentApplicationsService service,
+        long paymentId,
+        long invoiceId,
+        decimal appliedAmount)
+    {
+        return service.ExecuteAsync(new ReassignAccountsReceivablePaymentApplicationsCommand
+        {
+            AccountsReceivablePaymentId = paymentId,
+            Reason = "Cliente solicita corregir facturas",
+            Applications =
+            [
+                new ReassignAccountsReceivablePaymentApplicationInput
+                {
+                    AccountsReceivableInvoiceId = invoiceId,
+                    AppliedAmount = appliedAmount
+                }
+            ]
+        });
+    }
+
     private static SearchAccountsReceivablePaymentsService CreateSearchPaymentsService(
         IReadOnlyCollection<AccountsReceivablePayment> payments,
         ArFakeFiscalReceiverRepository receiverRepository)
@@ -2569,6 +2919,29 @@ public class AccountsReceivableServicesTests
             UnappliedDisposition = unappliedDisposition,
             CreatedAtUtc = DateTime.UtcNow,
             UpdatedAtUtc = DateTime.UtcNow
+        };
+    }
+
+    private static AccountsReceivablePaymentApplication CreatePaymentApplication(
+        long paymentId,
+        long invoiceId,
+        decimal appliedAmount,
+        decimal previousBalance,
+        decimal newBalance,
+        DateTime? createdAtUtc = null,
+        long id = 900,
+        int applicationSequence = 1)
+    {
+        return new AccountsReceivablePaymentApplication
+        {
+            Id = id,
+            AccountsReceivablePaymentId = paymentId,
+            AccountsReceivableInvoiceId = invoiceId,
+            ApplicationSequence = applicationSequence,
+            AppliedAmount = appliedAmount,
+            PreviousBalance = previousBalance,
+            NewBalance = newBalance,
+            CreatedAtUtc = createdAtUtc ?? new DateTime(2026, 3, 21, 12, 0, 0, DateTimeKind.Utc)
         };
     }
 
@@ -2853,11 +3226,37 @@ public class AccountsReceivableServicesTests
     {
         public List<AccountsReceivablePaymentApplication> Added { get; } = [];
 
-        public Task<int> GetNextSequenceForPaymentAsync(long accountsReceivablePaymentId, CancellationToken cancellationToken = default) => Task.FromResult(1);
+        public List<AccountsReceivablePaymentApplication> Removed { get; } = [];
+
+        public IReadOnlyList<AccountsReceivablePaymentApplication> LaterApplications { get; set; } = [];
+
+        public int NextSequence { get; set; } = 1;
+
+        public Task<int> GetNextSequenceForPaymentAsync(long accountsReceivablePaymentId, CancellationToken cancellationToken = default) => Task.FromResult(NextSequence);
+
+        public Task<IReadOnlyList<AccountsReceivablePaymentApplication>> ListLaterApplicationsForInvoiceIdsAsync(
+            IReadOnlyCollection<long> accountsReceivableInvoiceIds,
+            long excludedAccountsReceivablePaymentId,
+            DateTime createdAfterUtc,
+            CancellationToken cancellationToken = default)
+        {
+            IReadOnlyList<AccountsReceivablePaymentApplication> items = LaterApplications
+                .Where(x => accountsReceivableInvoiceIds.Contains(x.AccountsReceivableInvoiceId)
+                    && x.AccountsReceivablePaymentId != excludedAccountsReceivablePaymentId
+                    && x.CreatedAtUtc > createdAfterUtc)
+                .ToList();
+            return Task.FromResult(items);
+        }
 
         public Task AddRangeAsync(IReadOnlyCollection<AccountsReceivablePaymentApplication> applications, CancellationToken cancellationToken = default)
         {
             Added.AddRange(applications);
+            return Task.CompletedTask;
+        }
+
+        public Task RemoveRangeAsync(IReadOnlyCollection<AccountsReceivablePaymentApplication> applications, CancellationToken cancellationToken = default)
+        {
+            Removed.AddRange(applications);
             return Task.CompletedTask;
         }
     }
@@ -2964,6 +3363,10 @@ public class AccountsReceivableServicesTests
 
         public IReadOnlyList<PaymentComplementDocument> ExistingByPaymentIds { get; set; } = [];
 
+        public bool HasAnyAssociationForPayment { get; set; }
+
+        public IReadOnlyCollection<long> RelatedDocumentInvoiceIds { get; set; } = [];
+
         public Task<PaymentComplementDocument?> GetByIdAsync(long paymentComplementDocumentId, CancellationToken cancellationToken = default)
             => Task.FromResult<PaymentComplementDocument?>(null);
 
@@ -2982,6 +3385,20 @@ public class AccountsReceivableServicesTests
                 .Where(x => accountsReceivablePaymentIds.Contains(x.AccountsReceivablePaymentId))
                 .ToList();
             return Task.FromResult(items);
+        }
+
+        public Task<bool> HasAnyAssociationForPaymentAsync(long accountsReceivablePaymentId, CancellationToken cancellationToken = default)
+        {
+            var hasExistingByPayment = ExistingByPaymentId is not null
+                && (ExistingByPaymentId.AccountsReceivablePaymentId == accountsReceivablePaymentId
+                    || ExistingByPaymentId.Payments.Any(x => x.AccountsReceivablePaymentId == accountsReceivablePaymentId));
+
+            return Task.FromResult(HasAnyAssociationForPayment || hasExistingByPayment);
+        }
+
+        public Task<bool> HasRelatedDocumentsForInvoiceIdsAsync(IReadOnlyCollection<long> accountsReceivableInvoiceIds, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(RelatedDocumentInvoiceIds.Any(accountsReceivableInvoiceIds.Contains));
         }
 
         public Task AddAsync(PaymentComplementDocument paymentComplementDocument, CancellationToken cancellationToken = default) => Task.CompletedTask;

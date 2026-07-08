@@ -2365,6 +2365,196 @@ public class MvpLifecycleApiTests
     }
 
     [Fact]
+    public async Task ReassignAccountsReceivablePaymentApplications_ReturnsOk_AndReplacesApplications()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        const long paymentId = 94001;
+        const long invoice1Id = 94011;
+        const long invoice2Id = 94012;
+        var now = DateTime.UtcNow;
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+            db.AccountsReceivablePayments.Add(new AccountsReceivablePayment
+            {
+                Id = paymentId,
+                PaymentDateUtc = now.Date,
+                PaymentFormSat = "03",
+                CurrencyCode = "MXN",
+                Amount = 100m,
+                ReceivedFromFiscalReceiverId = 77,
+                UnappliedDisposition = AccountsReceivablePaymentUnappliedDisposition.CustomerCreditBalance,
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now
+            });
+            db.AccountsReceivableInvoices.AddRange(
+                new AccountsReceivableInvoice
+                {
+                    Id = invoice1Id,
+                    FiscalReceiverId = 77,
+                    Status = AccountsReceivableInvoiceStatus.PartiallyPaid,
+                    PaymentMethodSat = "PPD",
+                    PaymentFormSatInitial = "99",
+                    IsCreditSale = true,
+                    CurrencyCode = "MXN",
+                    Total = 100m,
+                    PaidTotal = 60m,
+                    OutstandingBalance = 40m,
+                    IssuedAtUtc = now.Date,
+                    CreatedAtUtc = now,
+                    UpdatedAtUtc = now
+                },
+                new AccountsReceivableInvoice
+                {
+                    Id = invoice2Id,
+                    FiscalReceiverId = 77,
+                    Status = AccountsReceivableInvoiceStatus.Open,
+                    PaymentMethodSat = "PPD",
+                    PaymentFormSatInitial = "99",
+                    IsCreditSale = true,
+                    CurrencyCode = "MXN",
+                    Total = 100m,
+                    PaidTotal = 0m,
+                    OutstandingBalance = 100m,
+                    IssuedAtUtc = now.Date,
+                    CreatedAtUtc = now,
+                    UpdatedAtUtc = now
+                });
+            db.AccountsReceivablePaymentApplications.Add(new AccountsReceivablePaymentApplication
+            {
+                Id = 94021,
+                AccountsReceivablePaymentId = paymentId,
+                AccountsReceivableInvoiceId = invoice1Id,
+                ApplicationSequence = 1,
+                AppliedAmount = 60m,
+                PreviousBalance = 100m,
+                NewBalance = 40m,
+                CreatedAtUtc = now.AddMinutes(-10)
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await client.PostAsJsonAsync($"/api/accounts-receivable/payments/{paymentId}/reassign-applications", new ReassignAccountsReceivablePaymentApplicationsRequest
+        {
+            Reason = "Cliente no reconoce facturas aplicadas originalmente",
+            Applications =
+            [
+                new ReassignAccountsReceivablePaymentApplicationRowRequest
+                {
+                    AccountsReceivableInvoiceId = invoice2Id,
+                    AppliedAmount = 50m
+                }
+            ]
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<ReassignAccountsReceivablePaymentApplicationsResponse>();
+        Assert.NotNull(body);
+        Assert.True(body!.IsSuccess);
+        Assert.Equal("Reassigned", body.Outcome);
+        Assert.Equal(60m, body.PreviousAppliedAmount);
+        Assert.Equal(50m, body.NewAppliedAmount);
+        Assert.Equal(50m, body.RemainingPaymentAmount);
+        Assert.NotNull(body.Payment);
+        Assert.Equal(AccountsReceivablePaymentUnappliedDisposition.PendingAllocation.ToString(), body.Payment!.UnappliedDisposition);
+        Assert.Single(body.Payment.Applications);
+        Assert.Equal(invoice2Id, body.Payment.Applications.Single().AccountsReceivableInvoiceId);
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+            var invoice1 = await db.AccountsReceivableInvoices.SingleAsync(x => x.Id == invoice1Id);
+            var invoice2 = await db.AccountsReceivableInvoices.SingleAsync(x => x.Id == invoice2Id);
+            var applications = await db.AccountsReceivablePaymentApplications
+                .Where(x => x.AccountsReceivablePaymentId == paymentId)
+                .ToListAsync();
+
+            Assert.Equal(AccountsReceivableInvoiceStatus.Open, invoice1.Status);
+            Assert.Equal(0m, invoice1.PaidTotal);
+            Assert.Equal(100m, invoice1.OutstandingBalance);
+            Assert.Equal(AccountsReceivableInvoiceStatus.PartiallyPaid, invoice2.Status);
+            Assert.Equal(50m, invoice2.PaidTotal);
+            Assert.Equal(50m, invoice2.OutstandingBalance);
+            Assert.Single(applications);
+            Assert.Equal(invoice2Id, applications.Single().AccountsReceivableInvoiceId);
+        }
+
+        var auditEvents = await factory.GetAuditEventsAsync();
+        Assert.Contains(auditEvents, x =>
+            x.ActionType == "AccountsReceivablePayment.ReassignApplications"
+            && x.EntityId == paymentId.ToString());
+    }
+
+    [Fact]
+    public async Task ReassignAccountsReceivablePaymentApplications_ReturnsBadRequestNotFoundAndConflict()
+    {
+        await using var factory = new MvpApiFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        const long conflictPaymentId = 94101;
+
+        var badRequestResponse = await client.PostAsJsonAsync("/api/accounts-receivable/payments/999999/reassign-applications", new ReassignAccountsReceivablePaymentApplicationsRequest
+        {
+            Reason = "short",
+            Applications =
+            [
+                new ReassignAccountsReceivablePaymentApplicationRowRequest
+                {
+                    AccountsReceivableInvoiceId = 1,
+                    AppliedAmount = 1m
+                }
+            ]
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, badRequestResponse.StatusCode);
+
+        var notFoundResponse = await client.PostAsJsonAsync("/api/accounts-receivable/payments/999999/reassign-applications", new ReassignAccountsReceivablePaymentApplicationsRequest
+        {
+            Reason = "Cliente solicita corregir facturas",
+            Applications =
+            [
+                new ReassignAccountsReceivablePaymentApplicationRowRequest
+                {
+                    AccountsReceivableInvoiceId = 1,
+                    AppliedAmount = 1m
+                }
+            ]
+        });
+        Assert.Equal(HttpStatusCode.NotFound, notFoundResponse.StatusCode);
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+            db.AccountsReceivablePayments.Add(new AccountsReceivablePayment
+            {
+                Id = conflictPaymentId,
+                PaymentDateUtc = DateTime.UtcNow.Date,
+                PaymentFormSat = "03",
+                CurrencyCode = "MXN",
+                Amount = 100m,
+                UnappliedDisposition = AccountsReceivablePaymentUnappliedDisposition.PendingAllocation,
+                CreatedAtUtc = DateTime.UtcNow,
+                UpdatedAtUtc = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var conflictResponse = await client.PostAsJsonAsync($"/api/accounts-receivable/payments/{conflictPaymentId}/reassign-applications", new ReassignAccountsReceivablePaymentApplicationsRequest
+        {
+            Reason = "Cliente solicita corregir facturas",
+            Applications =
+            [
+                new ReassignAccountsReceivablePaymentApplicationRowRequest
+                {
+                    AccountsReceivableInvoiceId = 1,
+                    AppliedAmount = 1m
+                }
+            ]
+        });
+        Assert.Equal(HttpStatusCode.Conflict, conflictResponse.StatusCode);
+    }
+
+    [Fact]
     public async Task UpdateAccountsReceivablePaymentAmount_UpdatesUnappliedPaymentCapturedFromInvoiceContext()
     {
         await using var factory = new MvpApiFactory();

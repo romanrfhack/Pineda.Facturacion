@@ -160,6 +160,15 @@ public static class AccountsReceivableEndpoints
             .Produces<ApplyAccountsReceivablePaymentResponse>(StatusCodes.Status404NotFound)
             .Produces<ApplyAccountsReceivablePaymentResponse>(StatusCodes.Status409Conflict);
 
+        group.MapPost("/payments/{paymentId:long}/reassign-applications", ReassignAccountsReceivablePaymentApplicationsAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.OperatorOrAbove)
+            .WithName("ReassignAccountsReceivablePaymentApplications")
+            .WithSummary("Replace all current applications for an already applied accounts receivable payment before REP exists")
+            .Produces<ReassignAccountsReceivablePaymentApplicationsResponse>(StatusCodes.Status200OK)
+            .Produces<ReassignAccountsReceivablePaymentApplicationsResponse>(StatusCodes.Status400BadRequest)
+            .Produces<ReassignAccountsReceivablePaymentApplicationsResponse>(StatusCodes.Status404NotFound)
+            .Produces<ReassignAccountsReceivablePaymentApplicationsResponse>(StatusCodes.Status409Conflict);
+
         group.MapPost("/payments/{paymentId:long}/unapplied-disposition", SetAccountsReceivablePaymentUnappliedDispositionAsync)
             .RequireAuthorization(AuthorizationPolicyNames.OperatorOrAbove)
             .WithName("SetAccountsReceivablePaymentUnappliedDisposition")
@@ -762,6 +771,96 @@ public static class AccountsReceivableEndpoints
         };
     }
 
+    private static async Task<Results<Ok<ReassignAccountsReceivablePaymentApplicationsResponse>, BadRequest<ReassignAccountsReceivablePaymentApplicationsResponse>, NotFound<ReassignAccountsReceivablePaymentApplicationsResponse>, Conflict<ReassignAccountsReceivablePaymentApplicationsResponse>>> ReassignAccountsReceivablePaymentApplicationsAsync(
+        long paymentId,
+        ReassignAccountsReceivablePaymentApplicationsRequest? request,
+        ReassignAccountsReceivablePaymentApplicationsService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        request ??= new ReassignAccountsReceivablePaymentApplicationsRequest();
+
+        var result = await service.ExecuteAsync(
+            new ReassignAccountsReceivablePaymentApplicationsCommand
+            {
+                AccountsReceivablePaymentId = paymentId,
+                Reason = request.Reason,
+                Applications = request.Applications.Select(x => new ReassignAccountsReceivablePaymentApplicationInput
+                {
+                    AccountsReceivableInvoiceId = x.AccountsReceivableInvoiceId,
+                    AppliedAmount = x.AppliedAmount
+                }).ToList()
+            },
+            cancellationToken);
+
+        var response = new ReassignAccountsReceivablePaymentApplicationsResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            AccountsReceivablePaymentId = result.AccountsReceivablePaymentId,
+            PreviousAppliedAmount = result.PreviousAppliedAmount,
+            NewAppliedAmount = result.NewAppliedAmount,
+            RemainingPaymentAmount = result.RemainingPaymentAmount,
+            AffectedInvoiceIds = result.AffectedInvoiceIds,
+            PreviousApplications = result.PreviousApplications
+                .OrderBy(x => x.ApplicationSequence)
+                .Select(MapApplicationSnapshot)
+                .ToList(),
+            NewApplications = result.NewApplications
+                .OrderBy(x => x.ApplicationSequence)
+                .Select(MapApplicationSnapshot)
+                .ToList(),
+            Payment = result.AccountsReceivablePayment is null
+                ? null
+                : MapPayment(result.AccountsReceivablePayment)
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "AccountsReceivablePayment.ReassignApplications",
+            "AccountsReceivablePayment",
+            paymentId.ToString(),
+            result.Outcome.ToString(),
+            new
+            {
+                paymentId,
+                reason = request.Reason,
+                applications = request.Applications.Select(x => new { x.AccountsReceivableInvoiceId, x.AppliedAmount }).ToList()
+            },
+            new
+            {
+                result.PreviousAppliedAmount,
+                result.NewAppliedAmount,
+                result.RemainingPaymentAmount,
+                affectedInvoiceIds = result.AffectedInvoiceIds,
+                previousApplications = result.PreviousApplications.Select(x => new
+                {
+                    x.AccountsReceivableInvoiceId,
+                    x.AppliedAmount,
+                    x.PreviousBalance,
+                    x.NewBalance
+                }).ToList(),
+                newApplications = result.NewApplications.Select(x => new
+                {
+                    x.AccountsReceivableInvoiceId,
+                    x.AppliedAmount,
+                    x.PreviousBalance,
+                    x.NewBalance
+                }).ToList()
+            },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            ReassignAccountsReceivablePaymentApplicationsOutcome.Reassigned => TypedResults.Ok(response),
+            ReassignAccountsReceivablePaymentApplicationsOutcome.NotFound => TypedResults.NotFound(response),
+            ReassignAccountsReceivablePaymentApplicationsOutcome.Conflict => TypedResults.Conflict(response),
+            _ => TypedResults.BadRequest(response)
+        };
+    }
+
     private static async Task<Results<Ok<SetAccountsReceivablePaymentUnappliedDispositionResponse>, BadRequest<SetAccountsReceivablePaymentUnappliedDispositionResponse>, NotFound<SetAccountsReceivablePaymentUnappliedDispositionResponse>, Conflict<SetAccountsReceivablePaymentUnappliedDispositionResponse>>> SetAccountsReceivablePaymentUnappliedDispositionAsync(
         long paymentId,
         SetAccountsReceivablePaymentUnappliedDispositionRequest request,
@@ -991,6 +1090,21 @@ public static class AccountsReceivableEndpoints
     }
 
     private static AccountsReceivablePaymentApplicationResponse MapApplication(AccountsReceivablePaymentApplication application)
+    {
+        return new AccountsReceivablePaymentApplicationResponse
+        {
+            Id = application.Id,
+            AccountsReceivablePaymentId = application.AccountsReceivablePaymentId,
+            AccountsReceivableInvoiceId = application.AccountsReceivableInvoiceId,
+            ApplicationSequence = application.ApplicationSequence,
+            AppliedAmount = application.AppliedAmount,
+            PreviousBalance = application.PreviousBalance,
+            NewBalance = application.NewBalance,
+            CreatedAtUtc = application.CreatedAtUtc
+        };
+    }
+
+    private static AccountsReceivablePaymentApplicationResponse MapApplicationSnapshot(ReassignAccountsReceivablePaymentApplicationSnapshot application)
     {
         return new AccountsReceivablePaymentApplicationResponse
         {
@@ -1803,6 +1917,45 @@ public class ApplyAccountsReceivablePaymentResponse
     public AccountsReceivablePaymentResponse? Payment { get; set; }
 
     public List<AccountsReceivablePaymentApplicationResponse> Applications { get; set; } = [];
+}
+
+public class ReassignAccountsReceivablePaymentApplicationsRequest
+{
+    public string? Reason { get; set; }
+
+    public List<ReassignAccountsReceivablePaymentApplicationRowRequest> Applications { get; set; } = [];
+}
+
+public class ReassignAccountsReceivablePaymentApplicationRowRequest
+{
+    public long AccountsReceivableInvoiceId { get; set; }
+
+    public decimal AppliedAmount { get; set; }
+}
+
+public class ReassignAccountsReceivablePaymentApplicationsResponse
+{
+    public string Outcome { get; set; } = string.Empty;
+
+    public bool IsSuccess { get; set; }
+
+    public string? ErrorMessage { get; set; }
+
+    public long AccountsReceivablePaymentId { get; set; }
+
+    public decimal PreviousAppliedAmount { get; set; }
+
+    public decimal NewAppliedAmount { get; set; }
+
+    public decimal RemainingPaymentAmount { get; set; }
+
+    public AccountsReceivablePaymentResponse? Payment { get; set; }
+
+    public List<AccountsReceivablePaymentApplicationResponse> PreviousApplications { get; set; } = [];
+
+    public List<AccountsReceivablePaymentApplicationResponse> NewApplications { get; set; } = [];
+
+    public List<long> AffectedInvoiceIds { get; set; } = [];
 }
 
 public class SetAccountsReceivablePaymentUnappliedDispositionRequest

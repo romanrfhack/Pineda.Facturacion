@@ -65,6 +65,40 @@ public class PaymentComplementDocumentRepository : IPaymentComplementDocumentRep
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<bool> HasAnyAssociationForPaymentAsync(long accountsReceivablePaymentId, CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.PaymentComplementDocuments
+                   .AsNoTracking()
+                   .AnyAsync(x => x.AccountsReceivablePaymentId == accountsReceivablePaymentId, cancellationToken)
+               || await _dbContext.PaymentComplementPayments
+                   .AsNoTracking()
+                   .AnyAsync(x => x.AccountsReceivablePaymentId == accountsReceivablePaymentId, cancellationToken)
+               || await _dbContext.PaymentComplementStamps
+                   .AsNoTracking()
+                   .AnyAsync(stamp =>
+                       _dbContext.PaymentComplementDocuments.Any(document =>
+                           document.Id == stamp.PaymentComplementDocumentId
+                           && document.AccountsReceivablePaymentId == accountsReceivablePaymentId)
+                       || _dbContext.PaymentComplementPayments.Any(payment =>
+                           payment.PaymentComplementDocumentId == stamp.PaymentComplementDocumentId
+                           && payment.AccountsReceivablePaymentId == accountsReceivablePaymentId),
+                       cancellationToken);
+    }
+
+    public async Task<bool> HasRelatedDocumentsForInvoiceIdsAsync(
+        IReadOnlyCollection<long> accountsReceivableInvoiceIds,
+        CancellationToken cancellationToken = default)
+    {
+        if (accountsReceivableInvoiceIds.Count == 0)
+        {
+            return false;
+        }
+
+        return await _dbContext.PaymentComplementRelatedDocuments
+            .AsNoTracking()
+            .AnyAsync(x => accountsReceivableInvoiceIds.Contains(x.AccountsReceivableInvoiceId), cancellationToken);
+    }
+
     public async Task AddAsync(PaymentComplementDocument paymentComplementDocument, CancellationToken cancellationToken = default)
     {
         await _dbContext.PaymentComplementDocuments.AddAsync(paymentComplementDocument, cancellationToken);

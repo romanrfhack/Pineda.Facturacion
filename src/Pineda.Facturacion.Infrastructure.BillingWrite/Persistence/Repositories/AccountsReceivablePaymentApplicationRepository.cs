@@ -22,10 +22,39 @@ public class AccountsReceivablePaymentApplicationRepository : IAccountsReceivabl
         return (maxSequence ?? 0) + 1;
     }
 
+    public async Task<IReadOnlyList<AccountsReceivablePaymentApplication>> ListLaterApplicationsForInvoiceIdsAsync(
+        IReadOnlyCollection<long> accountsReceivableInvoiceIds,
+        long excludedAccountsReceivablePaymentId,
+        DateTime createdAfterUtc,
+        CancellationToken cancellationToken = default)
+    {
+        if (accountsReceivableInvoiceIds.Count == 0)
+        {
+            return [];
+        }
+
+        return await _dbContext.AccountsReceivablePaymentApplications
+            .AsNoTracking()
+            .Where(x => accountsReceivableInvoiceIds.Contains(x.AccountsReceivableInvoiceId)
+                && x.AccountsReceivablePaymentId != excludedAccountsReceivablePaymentId
+                && x.CreatedAtUtc > createdAfterUtc)
+            .OrderBy(x => x.CreatedAtUtc)
+            .ThenBy(x => x.Id)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task AddRangeAsync(
         IReadOnlyCollection<AccountsReceivablePaymentApplication> applications,
         CancellationToken cancellationToken = default)
     {
         await _dbContext.AccountsReceivablePaymentApplications.AddRangeAsync(applications, cancellationToken);
+    }
+
+    public Task RemoveRangeAsync(
+        IReadOnlyCollection<AccountsReceivablePaymentApplication> applications,
+        CancellationToken cancellationToken = default)
+    {
+        _dbContext.AccountsReceivablePaymentApplications.RemoveRange(applications);
+        return Task.CompletedTask;
     }
 }
