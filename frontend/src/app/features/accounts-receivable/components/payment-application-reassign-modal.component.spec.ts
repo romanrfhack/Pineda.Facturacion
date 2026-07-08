@@ -180,7 +180,7 @@ function createInvoice(
     issuedAtUtc: overrides.issuedAtUtc ?? '2026-04-01T00:00:00Z',
     dueAtUtc: overrides.dueAtUtc ?? '2026-04-10T00:00:00Z',
     currencyCode: overrides.currencyCode ?? 'MXN',
-    status: overrides.status ?? 'Paid',
+    status: overrides.status ?? ((overrides.outstandingBalance ?? 0) > 0 ? 'Open' : 'Paid'),
     daysPastDue: overrides.daysPastDue ?? 0,
     agingBucket: overrides.agingBucket ?? 'Current',
     hasPendingCommitment: overrides.hasPendingCommitment ?? false,
