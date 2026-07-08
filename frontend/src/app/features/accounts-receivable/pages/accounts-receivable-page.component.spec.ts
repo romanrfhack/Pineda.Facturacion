@@ -921,9 +921,11 @@ describe('AccountsReceivablePageComponent', () => {
 
     const modal = modalDebugElement.componentInstance as unknown as {
       updateReason: (value: string) => void;
+      updateRemainderAcknowledged: (value: boolean) => void;
       confirmSubmit: () => void;
     };
     modal.updateReason('Corrección validada por cobranza');
+    modal.updateRemainderAcknowledged(true);
     modal.confirmSubmit();
     await fixture.whenStable();
     fixture.detectChanges();

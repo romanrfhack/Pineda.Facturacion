@@ -123,6 +123,27 @@ interface PaymentApplicationReassignInvoiceOption {
           </div>
         </section>
 
+        @if (hasUnappliedRemainder()) {
+          <section class="warning-panel remainder-warning-panel" data-testid="reassign-remainder-warning">
+            Esta reasignación dejará un remanente sin aplicar por
+            {{ remainingAfterReassign() | currency: 'MXN' : 'symbol' : '1.2-2' }}. Mientras exista
+            remanente pendiente, el pago puede no quedar listo para REP.
+          </section>
+
+          <label class="remainder-acknowledgement" data-testid="reassign-remainder-acknowledgement">
+            <input
+              type="checkbox"
+              [ngModel]="remainderAcknowledged()"
+              (ngModelChange)="updateRemainderAcknowledged($event)"
+              [disabled]="submitting()"
+            />
+            <span>
+              Entiendo que este pago quedará con remanente sin aplicar y que deberá asignarse
+              posteriormente o marcarse según la regla operativa correspondiente.
+            </span>
+          </label>
+        }
+
         <section class="modal-section">
           <div class="section-head compact">
             <h4>Nueva distribución</h4>
@@ -306,6 +327,12 @@ interface PaymentApplicationReassignInvoiceOption {
         border: 1px solid #ecd9aa;
         color: #66460f;
       }
+      .remainder-warning-panel {
+        background: #fff1e8;
+        border-color: #e58c5c;
+        color: #7a2e13;
+        font-weight: 600;
+      }
       .error-panel {
         background: #fff2f0;
         border: 1px solid #f0c7c1;
@@ -359,6 +386,26 @@ interface PaymentApplicationReassignInvoiceOption {
       .reason-field {
         display: grid;
         gap: 0.35rem;
+      }
+      .remainder-acknowledgement {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        align-items: flex-start;
+        gap: 0.65rem;
+        border: 1px solid #e58c5c;
+        border-radius: 0.85rem;
+        padding: 0.8rem 0.9rem;
+        background: #fffaf5;
+      }
+      .remainder-acknowledgement input {
+        width: auto;
+        margin-top: 0.2rem;
+        accent-color: #7a2e13;
+      }
+      .remainder-acknowledgement span {
+        color: #182533;
+        font-size: 0.9rem;
+        line-height: 1.45;
       }
       input,
       select,
@@ -471,6 +518,7 @@ export class PaymentApplicationReassignModalComponent {
 
   protected readonly rows = signal<PaymentApplicationReassignRow[]>([]);
   protected readonly reasonText = signal('');
+  protected readonly remainderAcknowledged = signal(false);
   protected readonly currentApplications = computed(() => this.payment().applications ?? []);
   protected readonly reasonLength = computed(() => this.reasonText().length);
   protected readonly currentAppliedByInvoice = computed(() =>
@@ -486,6 +534,7 @@ export class PaymentApplicationReassignModalComponent {
   protected readonly remainingAfterReassign = computed(() =>
     this.roundMoney(this.payment().amount - this.totalAssigned()),
   );
+  protected readonly hasUnappliedRemainder = computed(() => this.remainingAfterReassign() > 0);
   protected readonly validationMessages = computed(() => this.buildValidationMessages());
   protected readonly validationMessage = computed(() => this.validationMessages()[0] ?? null);
   protected readonly canSubmit = computed(
@@ -502,6 +551,10 @@ export class PaymentApplicationReassignModalComponent {
 
   protected updateReason(value: string): void {
     this.reasonText.set(String(value ?? '').slice(0, 1000));
+  }
+
+  protected updateRemainderAcknowledged(value: boolean): void {
+    this.remainderAcknowledged.set(value === true);
   }
 
   protected addRow(): void {
@@ -521,10 +574,12 @@ export class PaymentApplicationReassignModalComponent {
         amountText: this.formatEditableAmount(0),
       },
     ]);
+    this.resetRemainderAcknowledgement();
   }
 
   protected removeRow(rowId: number): void {
     this.rows.update((current) => current.filter((row) => row.rowId !== rowId));
+    this.resetRemainderAcknowledgement();
   }
 
   protected updateRowInvoice(rowId: number, invoiceId: number | null): void {
@@ -542,6 +597,7 @@ export class PaymentApplicationReassignModalComponent {
           : row,
       ),
     );
+    this.resetRemainderAcknowledgement();
   }
 
   protected updateRowAmount(rowId: number, value: string | number): void {
@@ -562,6 +618,7 @@ export class PaymentApplicationReassignModalComponent {
           : row,
       ),
     );
+    this.resetRemainderAcknowledgement();
   }
 
   protected normalizeRowAmount(rowId: number): void {
@@ -576,6 +633,7 @@ export class PaymentApplicationReassignModalComponent {
           : row,
       ),
     );
+    this.resetRemainderAcknowledgement();
   }
 
   protected invoiceOptionsForRow(rowId: number): PaymentApplicationReassignInvoiceOption[] {
@@ -672,6 +730,7 @@ export class PaymentApplicationReassignModalComponent {
   private resetFromPayment(): void {
     this.nextRowId = 0;
     this.reasonText.set('');
+    this.remainderAcknowledged.set(false);
     this.rows.set(
       this.currentApplications().map((application) => ({
         rowId: ++this.nextRowId,
@@ -794,8 +853,15 @@ export class PaymentApplicationReassignModalComponent {
         'El importe por factura no puede exceder el saldo disponible después de revertir la aplicación actual.',
       );
     }
+    if (this.hasUnappliedRemainder() && !this.remainderAcknowledged()) {
+      messages.push('Confirma que entiendes que el pago quedará con remanente sin aplicar.');
+    }
 
     return messages;
+  }
+
+  private resetRemainderAcknowledgement(): void {
+    this.remainderAcknowledged.set(false);
   }
 
   private sumCurrentApplicationsByInvoice(

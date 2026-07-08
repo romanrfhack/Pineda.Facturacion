@@ -18,7 +18,11 @@ describe('PaymentApplicationReassignModalComponent', () => {
     fixture.componentRef.setInput('fiscalReceiverId', 77);
     fixture.componentRef.setInput('candidateInvoices', [
       createInvoice({ accountsReceivableInvoiceId: 10, outstandingBalance: 0, status: 'Paid' }),
-      createInvoice({ accountsReceivableInvoiceId: 11, fiscalFolio: '11', outstandingBalance: 300 }),
+      createInvoice({
+        accountsReceivableInvoiceId: 11,
+        fiscalFolio: '11',
+        outstandingBalance: 300,
+      }),
     ]);
     fixture.detectChanges();
 
@@ -35,6 +39,195 @@ describe('PaymentApplicationReassignModalComponent', () => {
     expect(component.remainingAfterReassign()).toBe(300);
     expect(fixture.nativeElement.textContent).toContain('A-10');
     expect(fixture.nativeElement.textContent).toContain('Distribución actual');
+  });
+
+  it('does not require remainder acknowledgement when the draft distribution fully applies the payment', () => {
+    const fixture = TestBed.createComponent(PaymentApplicationReassignModalComponent);
+    fixture.componentRef.setInput(
+      'payment',
+      createPayment({ amount: 700, appliedTotal: 700, remainingAmount: 0 }),
+    );
+    fixture.componentRef.setInput('fiscalReceiverId', 77);
+    fixture.componentRef.setInput('candidateInvoices', [
+      createInvoice({ accountsReceivableInvoiceId: 10, outstandingBalance: 0, status: 'Paid' }),
+    ]);
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance as unknown as {
+      updateReason: (value: string) => void;
+      canSubmit: () => boolean;
+      remainingAfterReassign: () => number;
+    };
+
+    component.updateReason('Corrección validada por cobranza');
+    fixture.detectChanges();
+
+    expect(component.remainingAfterReassign()).toBe(0);
+    expect(fixture.nativeElement.textContent).not.toContain('remanente sin aplicar por');
+    expect(
+      fixture.nativeElement.querySelector('[data-testid="reassign-remainder-acknowledgement"]'),
+    ).toBeNull();
+    expect(component.canSubmit()).toBe(true);
+  });
+
+  it('shows the unapplied remainder warning and blocks submit until acknowledgement', () => {
+    const fixture = TestBed.createComponent(PaymentApplicationReassignModalComponent);
+    fixture.componentRef.setInput('payment', createPayment());
+    fixture.componentRef.setInput('fiscalReceiverId', 77);
+    fixture.componentRef.setInput('candidateInvoices', [
+      createInvoice({ accountsReceivableInvoiceId: 10, outstandingBalance: 0, status: 'Paid' }),
+    ]);
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance as unknown as {
+      updateReason: (value: string) => void;
+      validationMessages: () => string[];
+      canSubmit: () => boolean;
+      remainingAfterReassign: () => number;
+    };
+
+    component.updateReason('Corrección validada por cobranza');
+    fixture.detectChanges();
+
+    expect(component.remainingAfterReassign()).toBe(300);
+    expect(fixture.nativeElement.textContent).toContain(
+      'Esta reasignación dejará un remanente sin aplicar por',
+    );
+    expect(fixture.nativeElement.textContent).toContain('300.00');
+    expect(
+      fixture.nativeElement.querySelector(
+        '[data-testid="reassign-remainder-acknowledgement"] input',
+      ),
+    ).not.toBeNull();
+    expect(component.canSubmit()).toBe(false);
+    expect(component.validationMessages()).toContain(
+      'Confirma que entiendes que el pago quedará con remanente sin aplicar.',
+    );
+  });
+
+  it('allows submit after remainder acknowledgement without changing the emitted payload', () => {
+    const fixture = TestBed.createComponent(PaymentApplicationReassignModalComponent);
+    fixture.componentRef.setInput('payment', createPayment());
+    fixture.componentRef.setInput('fiscalReceiverId', 77);
+    fixture.componentRef.setInput('candidateInvoices', [
+      createInvoice({ accountsReceivableInvoiceId: 10, outstandingBalance: 0, status: 'Paid' }),
+    ]);
+    fixture.detectChanges();
+
+    const emitSpy = vi.spyOn(fixture.componentInstance.submitted, 'emit');
+    const component = fixture.componentInstance as unknown as {
+      updateReason: (value: string) => void;
+      updateRemainderAcknowledged: (value: boolean) => void;
+      confirmSubmit: () => void;
+      canSubmit: () => boolean;
+    };
+
+    component.updateReason('Corrección validada por cobranza');
+    component.updateRemainderAcknowledged(true);
+    fixture.detectChanges();
+
+    expect(component.canSubmit()).toBe(true);
+
+    component.confirmSubmit();
+
+    expect(emitSpy).toHaveBeenCalledWith({
+      reason: 'Corrección validada por cobranza',
+      applications: [{ accountsReceivableInvoiceId: 10, appliedAmount: 700 }],
+    });
+  });
+
+  it('stops requiring acknowledgement when the user corrects amounts to leave no remainder', () => {
+    const fixture = TestBed.createComponent(PaymentApplicationReassignModalComponent);
+    fixture.componentRef.setInput('payment', createPayment());
+    fixture.componentRef.setInput('fiscalReceiverId', 77);
+    fixture.componentRef.setInput('candidateInvoices', [
+      createInvoice({ accountsReceivableInvoiceId: 10, outstandingBalance: 0, status: 'Paid' }),
+      createInvoice({
+        accountsReceivableInvoiceId: 11,
+        fiscalFolio: '11',
+        outstandingBalance: 300,
+      }),
+    ]);
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance as unknown as {
+      updateReason: (value: string) => void;
+      updateRemainderAcknowledged: (value: boolean) => void;
+      addRow: () => void;
+      removeRow: (rowId: number) => void;
+      updateRowAmount: (rowId: number, value: string) => void;
+      validationMessages: () => string[];
+      canSubmit: () => boolean;
+      rows: () => Array<{ rowId: number; accountsReceivableInvoiceId: number | null }>;
+      remainingAfterReassign: () => number;
+    };
+
+    component.updateReason('Corrección validada por cobranza');
+    component.updateRemainderAcknowledged(true);
+    component.addRow();
+    const newRow = component.rows().find((row) => row.accountsReceivableInvoiceId === 11);
+    expect(newRow).toBeDefined();
+    if (!newRow) {
+      throw new Error('Expected invoice 11 row to be created');
+    }
+
+    component.updateRowAmount(newRow.rowId, '300');
+    fixture.detectChanges();
+
+    expect(component.remainingAfterReassign()).toBe(0);
+    expect(component.validationMessages()).not.toContain(
+      'Confirma que entiendes que el pago quedará con remanente sin aplicar.',
+    );
+    expect(
+      fixture.nativeElement.querySelector('[data-testid="reassign-remainder-acknowledgement"]'),
+    ).toBeNull();
+    expect(component.canSubmit()).toBe(true);
+
+    component.removeRow(newRow.rowId);
+    fixture.detectChanges();
+
+    expect(component.remainingAfterReassign()).toBe(300);
+    expect(component.canSubmit()).toBe(false);
+    expect(component.validationMessages()).toContain(
+      'Confirma que entiendes que el pago quedará con remanente sin aplicar.',
+    );
+  });
+
+  it('resets the remainder acknowledgement when the payment changes', () => {
+    const fixture = TestBed.createComponent(PaymentApplicationReassignModalComponent);
+    fixture.componentRef.setInput('payment', createPayment());
+    fixture.componentRef.setInput('fiscalReceiverId', 77);
+    fixture.componentRef.setInput('candidateInvoices', [
+      createInvoice({ accountsReceivableInvoiceId: 10, outstandingBalance: 0, status: 'Paid' }),
+    ]);
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance as unknown as {
+      updateReason: (value: string) => void;
+      updateRemainderAcknowledged: (value: boolean) => void;
+      remainderAcknowledged: () => boolean;
+      validationMessages: () => string[];
+      canSubmit: () => boolean;
+    };
+
+    component.updateReason('Corrección validada por cobranza');
+    component.updateRemainderAcknowledged(true);
+    fixture.detectChanges();
+
+    expect(component.canSubmit()).toBe(true);
+
+    fixture.componentRef.setInput('payment', createPayment({ id: 38, reference: 'DEP-38' }));
+    fixture.detectChanges();
+
+    expect(component.remainderAcknowledged()).toBe(false);
+
+    component.updateReason('Corrección validada por cobranza');
+    fixture.detectChanges();
+
+    expect(component.canSubmit()).toBe(false);
+    expect(component.validationMessages()).toContain(
+      'Confirma que entiendes que el pago quedará con remanente sin aplicar.',
+    );
   });
 
   it('validates reason length, positive amounts and max balance after reversing current applications', () => {
