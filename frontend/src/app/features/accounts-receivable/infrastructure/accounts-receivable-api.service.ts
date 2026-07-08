@@ -25,6 +25,8 @@ import {
   SearchAccountsReceivablePaymentsRequest,
   PreparePaymentComplementRequest,
   PreparePaymentComplementResponse,
+  ReassignAccountsReceivablePaymentApplicationsRequest,
+  ReassignAccountsReceivablePaymentApplicationsResponse,
   SetAccountsReceivablePaymentUnappliedDispositionRequest,
   SetAccountsReceivablePaymentUnappliedDispositionResponse,
   UpdateAccountsReceivablePaymentAmountRequest,
@@ -176,6 +178,16 @@ export class AccountsReceivableApiService {
 
   applyPayment(paymentId: number, request: ApplyAccountsReceivablePaymentRequest): Observable<ApplyAccountsReceivablePaymentResponse> {
     return this.http.post<ApplyAccountsReceivablePaymentResponse>(buildApiUrl(`/accounts-receivable/payments/${paymentId}/apply`), request);
+  }
+
+  reassignPaymentApplications(
+    paymentId: number,
+    request: ReassignAccountsReceivablePaymentApplicationsRequest
+  ): Observable<ReassignAccountsReceivablePaymentApplicationsResponse> {
+    return this.http.post<ReassignAccountsReceivablePaymentApplicationsResponse>(
+      buildApiUrl(`/accounts-receivable/payments/${paymentId}/reassign-applications`),
+      request
+    );
   }
 
   setPaymentUnappliedDisposition(

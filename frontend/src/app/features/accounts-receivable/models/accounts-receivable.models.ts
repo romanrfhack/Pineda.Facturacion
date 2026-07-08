@@ -340,6 +340,30 @@ export interface ApplyAccountsReceivablePaymentResponse {
   applications: AccountsReceivablePaymentApplicationResponse[];
 }
 
+export interface ReassignAccountsReceivablePaymentApplicationRowRequest {
+  accountsReceivableInvoiceId: number;
+  appliedAmount: number;
+}
+
+export interface ReassignAccountsReceivablePaymentApplicationsRequest {
+  reason: string;
+  applications: ReassignAccountsReceivablePaymentApplicationRowRequest[];
+}
+
+export interface ReassignAccountsReceivablePaymentApplicationsResponse {
+  outcome: string;
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  accountsReceivablePaymentId: number;
+  previousAppliedAmount: number;
+  newAppliedAmount: number;
+  remainingPaymentAmount: number;
+  payment?: AccountsReceivablePaymentResponse | null;
+  previousApplications: AccountsReceivablePaymentApplicationResponse[];
+  newApplications: AccountsReceivablePaymentApplicationResponse[];
+  affectedInvoiceIds: number[];
+}
+
 export interface SetAccountsReceivablePaymentUnappliedDispositionRequest {
   unappliedDisposition: string;
 }

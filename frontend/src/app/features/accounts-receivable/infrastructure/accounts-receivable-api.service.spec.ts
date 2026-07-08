@@ -87,6 +87,37 @@ describe('AccountsReceivableApiService', () => {
     httpTesting.verify();
   });
 
+  it('uses the payment reassign applications route with the requested distribution', () => {
+    const service = TestBed.inject(AccountsReceivableApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+    const request = {
+      reason: 'Corrección solicitada por cobranza',
+      applications: [
+        { accountsReceivableInvoiceId: 10, appliedAmount: 700 },
+        { accountsReceivableInvoiceId: 11, appliedAmount: 300 },
+      ],
+    };
+
+    service.reassignPaymentApplications(7, request).subscribe();
+
+    const req = httpTesting.expectOne('/api/accounts-receivable/payments/7/reassign-applications');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual(request);
+    req.flush({
+      outcome: 'Reassigned',
+      isSuccess: true,
+      accountsReceivablePaymentId: 7,
+      previousAppliedAmount: 1000,
+      newAppliedAmount: 1000,
+      remainingPaymentAmount: 0,
+      payment: null,
+      previousApplications: [],
+      newApplications: [],
+      affectedInvoiceIds: [10, 11],
+    });
+    httpTesting.verify();
+  });
+
   it('uses payment mutation routes to update and delete a payment', () => {
     const service = TestBed.inject(AccountsReceivableApiService);
     const httpTesting = TestBed.inject(HttpTestingController);

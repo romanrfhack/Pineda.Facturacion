@@ -1,13 +1,17 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
+import { By } from '@angular/platform-browser';
 import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
 import { of, ReplaySubject, throwError } from 'rxjs';
 import { AccountsReceivablePageComponent } from './accounts-receivable-page.component';
+import { PaymentApplicationReassignModalComponent } from '../components/payment-application-reassign-modal.component';
 import { AccountsReceivableApiService } from '../infrastructure/accounts-receivable-api.service';
 import { PermissionService } from '../../../core/auth/permission.service';
 import { FeedbackService } from '../../../core/ui/feedback.service';
 import { FiscalReceiversApiService } from '../../catalogs/infrastructure/fiscal-receivers-api.service';
 import {
+  AccountsReceivableInvoiceResponse,
+  AccountsReceivablePaymentResponse,
   AccountsReceivablePaymentSummaryItemResponse,
   AccountsReceivablePortfolioItemResponse,
   AccountsReceivableReceiverWorkspaceResponse,
@@ -29,6 +33,7 @@ describe('AccountsReceivablePageComponent', () => {
     searchPayments: vi.fn().mockReturnValue(of({ items: [] })),
     updatePaymentAmount: vi.fn(),
     deletePayment: vi.fn(),
+    reassignPaymentApplications: vi.fn(),
   };
 
   beforeEach(() => {
@@ -234,6 +239,20 @@ describe('AccountsReceivablePageComponent', () => {
         accountsReceivablePaymentId: 6,
         deletedAmount: 5000,
         receivedFromFiscalReceiverId: 77,
+      }),
+    );
+    api.reassignPaymentApplications.mockReturnValue(
+      of({
+        outcome: 'Reassigned',
+        isSuccess: true,
+        accountsReceivablePaymentId: 6,
+        previousAppliedAmount: 700,
+        newAppliedAmount: 700,
+        remainingPaymentAmount: 300,
+        payment: createPaymentDetail(),
+        previousApplications: [],
+        newApplications: [],
+        affectedInvoiceIds: [10],
       }),
     );
 
@@ -654,6 +673,78 @@ describe('AccountsReceivablePageComponent', () => {
     ).toBeNull();
   });
 
+  it('shows and disables the reassign action for applied workspace payments without REP references', async () => {
+    queryParams$.next(convertToParamMap({ fiscalReceiverId: '77' }));
+    api.getReceiverWorkspace.mockReturnValueOnce(
+      of(
+        createWorkspace({
+          payments: [
+            createWorkspacePayment({
+              applicationsCount: 1,
+              appliedAmount: 700,
+              unappliedAmount: 300,
+              amount: 1000,
+              operationalStatus: 'PartiallyApplied',
+              repStatus: 'PendingApplications',
+            }),
+          ],
+        }),
+      ),
+    );
+
+    const fixture = TestBed.createComponent(AccountsReceivablePageComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const reassignButton = fixture.nativeElement.querySelector(
+      '[data-testid="workspace-payment-reassign-button"]',
+    ) as HTMLButtonElement;
+
+    expect(reassignButton).not.toBeNull();
+    expect(reassignButton.disabled).toBe(false);
+
+    fixture.componentInstance['loading'].set(true);
+    fixture.detectChanges();
+
+    const disabledReassignButton = fixture.nativeElement.querySelector(
+      '[data-testid="workspace-payment-reassign-button"]',
+    ) as HTMLButtonElement;
+    expect(disabledReassignButton.disabled).toBe(true);
+  });
+
+  it('hides the reassign action for unapplied payments and payments with REP association', async () => {
+    queryParams$.next(convertToParamMap({ fiscalReceiverId: '77' }));
+    api.getReceiverWorkspace.mockReturnValueOnce(
+      of(
+        createWorkspace({
+          payments: [
+            createWorkspacePayment({ paymentId: 6, applicationsCount: 0 }),
+            createWorkspacePayment({
+              paymentId: 7,
+              applicationsCount: 1,
+              appliedAmount: 700,
+              unappliedAmount: 300,
+              amount: 1000,
+              repDocumentStatus: 'Prepared',
+              repReservedAmount: 700,
+              repStatus: 'Prepared',
+            }),
+          ],
+        }),
+      ),
+    );
+
+    const fixture = TestBed.createComponent(AccountsReceivablePageComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(
+      fixture.nativeElement.querySelector('[data-testid="workspace-payment-reassign-button"]'),
+    ).toBeNull();
+  });
+
   it('shows payment mutation actions in detail mode for unapplied payments', async () => {
     queryParams$.next(convertToParamMap({ paymentId: '6' }));
     api.getPaymentById.mockReset().mockReturnValue(
@@ -756,6 +847,101 @@ describe('AccountsReceivablePageComponent', () => {
     );
   });
 
+  it('reassigns payment applications from the receiver workspace and refreshes data', async () => {
+    queryParams$.next(convertToParamMap({ fiscalReceiverId: '77' }));
+    api.getReceiverWorkspace
+      .mockReturnValueOnce(
+        of(
+          createWorkspace({
+            invoices: [
+              createWorkspaceInvoice({
+                accountsReceivableInvoiceId: 11,
+                fiscalFolio: '11',
+                outstandingBalance: 300,
+              }),
+            ],
+            payments: [
+              createWorkspacePayment({
+                applicationsCount: 1,
+                appliedAmount: 700,
+                unappliedAmount: 300,
+                amount: 1000,
+                operationalStatus: 'PartiallyApplied',
+                repStatus: 'PendingApplications',
+              }),
+            ],
+          }),
+        ),
+      )
+      .mockReturnValueOnce(
+        of(
+          createWorkspace({
+            payments: [
+              createWorkspacePayment({
+                applicationsCount: 1,
+                appliedAmount: 700,
+                unappliedAmount: 300,
+                amount: 1000,
+                operationalStatus: 'PartiallyApplied',
+                repStatus: 'ReadyToPrepare',
+                readyToPrepareRep: true,
+              }),
+            ],
+          }),
+        ),
+      );
+    api.getPaymentById.mockReturnValueOnce(of(createPaymentDetail()));
+    api.getInvoiceById.mockReturnValueOnce(
+      of({
+        ...createInvoiceDetail(),
+        id: 10,
+        fiscalFolio: '10',
+        status: 'Paid',
+        paidTotal: 1000,
+        outstandingBalance: 0,
+      }),
+    );
+
+    const fixture = TestBed.createComponent(AccountsReceivablePageComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const reassignButton = fixture.nativeElement.querySelector(
+      '[data-testid="workspace-payment-reassign-button"]',
+    ) as HTMLButtonElement;
+    reassignButton.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const modalDebugElement = fixture.debugElement.query(
+      By.directive(PaymentApplicationReassignModalComponent),
+    );
+    expect(modalDebugElement).not.toBeNull();
+
+    const modal = modalDebugElement.componentInstance as unknown as {
+      updateReason: (value: string) => void;
+      confirmSubmit: () => void;
+    };
+    modal.updateReason('Corrección validada por cobranza');
+    modal.confirmSubmit();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(api.reassignPaymentApplications).toHaveBeenCalledWith(6, {
+      reason: 'Corrección validada por cobranza',
+      applications: [{ accountsReceivableInvoiceId: 10, appliedAmount: 700 }],
+    });
+    expect(api.getReceiverWorkspace).toHaveBeenCalledTimes(2);
+    expect(feedbackService.show).toHaveBeenCalledWith(
+      'success',
+      'La distribución del pago se actualizó correctamente.',
+    );
+    expect(
+      fixture.debugElement.query(By.directive(PaymentApplicationReassignModalComponent)),
+    ).toBeNull();
+  });
+
   it('deletes the payment after confirmation and refreshes the receiver workspace', async () => {
     queryParams$.next(convertToParamMap({ fiscalReceiverId: '77' }));
     api.getReceiverWorkspace
@@ -851,6 +1037,74 @@ describe('AccountsReceivablePageComponent', () => {
       'error',
       'No se pudo actualizar el importe del pago. El pago ya fue aplicado a una o más facturas y no puede editarse.',
     );
+  });
+
+  it('keeps the reassign modal open and shows the backend 409 business message', async () => {
+    queryParams$.next(convertToParamMap({ fiscalReceiverId: '77' }));
+    api.reassignPaymentApplications.mockReturnValueOnce(
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 409,
+            error: {
+              errorMessage: 'El pago ya tiene REP asociado.',
+            },
+          }),
+      ),
+    );
+
+    const fixture = TestBed.createComponent(AccountsReceivablePageComponent);
+    fixture.componentInstance['reassignPayment'].set(createPaymentDetail());
+    fixture.componentInstance['reassignFiscalReceiverId'].set(77);
+    fixture.componentInstance['reassignCandidateInvoices'].set([
+      createWorkspaceInvoice({ accountsReceivableInvoiceId: 10, outstandingBalance: 0, status: 'Paid' }),
+    ]);
+    fixture.detectChanges();
+
+    await fixture.componentInstance['submitPaymentApplicationReassign']({
+      reason: 'Corrección validada',
+      applications: [{ accountsReceivableInvoiceId: 10, appliedAmount: 700 }],
+    });
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['reassignPayment']()).not.toBeNull();
+    expect(fixture.componentInstance['reassignErrorMessage']()).toBe(
+      'El pago ya tiene REP asociado.',
+    );
+    expect(fixture.nativeElement.textContent).toContain('El pago ya tiene REP asociado.');
+  });
+
+  it('keeps the reassign modal open and shows the backend 400 business message', async () => {
+    queryParams$.next(convertToParamMap({ fiscalReceiverId: '77' }));
+    api.reassignPaymentApplications.mockReturnValueOnce(
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 400,
+            error: {
+              errorMessage: 'El motivo es obligatorio.',
+            },
+          }),
+      ),
+    );
+
+    const fixture = TestBed.createComponent(AccountsReceivablePageComponent);
+    fixture.componentInstance['reassignPayment'].set(createPaymentDetail());
+    fixture.componentInstance['reassignFiscalReceiverId'].set(77);
+    fixture.componentInstance['reassignCandidateInvoices'].set([
+      createWorkspaceInvoice({ accountsReceivableInvoiceId: 10, outstandingBalance: 0, status: 'Paid' }),
+    ]);
+    fixture.detectChanges();
+
+    await fixture.componentInstance['submitPaymentApplicationReassign']({
+      reason: 'Corrección',
+      applications: [{ accountsReceivableInvoiceId: 10, appliedAmount: 700 }],
+    });
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['reassignPayment']()).not.toBeNull();
+    expect(fixture.componentInstance['reassignErrorMessage']()).toBe('El motivo es obligatorio.');
+    expect(fixture.nativeElement.textContent).toContain('El motivo es obligatorio.');
   });
 
   it('sorts overdue invoices first in the receiver workspace and renders the collection label', async () => {
@@ -1261,6 +1515,48 @@ function createWorkspace(
   };
 }
 
+function createPaymentDetail(
+  overrides: Partial<AccountsReceivablePaymentResponse> = {},
+): AccountsReceivablePaymentResponse {
+  return {
+    id: overrides.id ?? 6,
+    paymentDateUtc: overrides.paymentDateUtc ?? '2026-04-03T00:00:00Z',
+    paymentFormSat: overrides.paymentFormSat ?? '03',
+    currencyCode: overrides.currencyCode ?? 'MXN',
+    amount: overrides.amount ?? 1000,
+    appliedTotal: overrides.appliedTotal ?? 700,
+    remainingAmount: overrides.remainingAmount ?? 300,
+    customerCreditBalanceAmount: overrides.customerCreditBalanceAmount ?? 0,
+    reference: overrides.reference ?? 'DEP-1',
+    notes: overrides.notes ?? null,
+    receivedFromFiscalReceiverId: overrides.receivedFromFiscalReceiverId ?? 77,
+    operationalStatus: overrides.operationalStatus ?? 'PartiallyApplied',
+    repStatus: overrides.repStatus ?? 'PendingApplications',
+    readyToPrepareRep: overrides.readyToPrepareRep ?? false,
+    repBlockReason: overrides.repBlockReason ?? null,
+    unappliedDisposition: overrides.unappliedDisposition ?? 'PendingAllocation',
+    repDocumentStatus: overrides.repDocumentStatus ?? null,
+    repReservedAmount: overrides.repReservedAmount ?? 0,
+    repFiscalizedAmount: overrides.repFiscalizedAmount ?? 0,
+    applicationsCount: overrides.applicationsCount ?? 1,
+    linkedFiscalDocumentId: overrides.linkedFiscalDocumentId ?? 31809,
+    createdAtUtc: overrides.createdAtUtc ?? '2026-04-03T00:00:00Z',
+    updatedAtUtc: overrides.updatedAtUtc ?? '2026-04-03T00:00:00Z',
+    applications: overrides.applications ?? [
+      {
+        id: 900,
+        accountsReceivablePaymentId: 6,
+        accountsReceivableInvoiceId: 10,
+        applicationSequence: 1,
+        appliedAmount: 700,
+        previousBalance: 700,
+        newBalance: 0,
+        createdAtUtc: '2026-04-03T00:00:00Z',
+      },
+    ],
+  };
+}
+
 function createWorkspacePayment(
   overrides: Partial<AccountsReceivablePaymentSummaryItemResponse> = {},
 ): AccountsReceivablePaymentSummaryItemResponse {
@@ -1312,6 +1608,48 @@ function createWorkspaceInvoice(
     nextCommitmentDateUtc: overrides.nextCommitmentDateUtc ?? null,
     nextFollowUpAtUtc: overrides.nextFollowUpAtUtc ?? null,
     followUpPending: overrides.followUpPending ?? false,
+  };
+}
+
+function createInvoiceDetail(
+  overrides: Partial<AccountsReceivableInvoiceResponse> = {},
+): AccountsReceivableInvoiceResponse {
+  return {
+    id: 10,
+    billingDocumentId: 1,
+    fiscalDocumentId: 31810,
+    fiscalStampId: 1,
+    fiscalReceiverId: 77,
+    receiverRfc: 'AAA010101AAA',
+    receiverLegalName: 'Receiver',
+    fiscalSeries: 'A',
+    fiscalFolio: '10',
+    fiscalUuid: 'UUID-10',
+    status: 'Paid',
+    paymentMethodSat: 'PPD',
+    paymentFormSatInitial: '99',
+    isCreditSale: true,
+    creditDays: 15,
+    issuedAtUtc: '2026-04-01T00:00:00Z',
+    dueAtUtc: '2026-04-15T00:00:00Z',
+    currencyCode: 'MXN',
+    total: 1000,
+    paidTotal: 1000,
+    outstandingBalance: 0,
+    createdAtUtc: '2026-04-01T00:00:00Z',
+    updatedAtUtc: '2026-04-01T00:00:00Z',
+    agingBucket: 'Current',
+    hasPendingCommitment: false,
+    nextCommitmentDateUtc: null,
+    nextFollowUpAtUtc: null,
+    followUpPending: false,
+    collectionCommitments: [],
+    collectionNotes: [],
+    relatedPayments: [],
+    relatedPaymentComplements: [],
+    timeline: [],
+    applications: [],
+    ...overrides,
   };
 }
 

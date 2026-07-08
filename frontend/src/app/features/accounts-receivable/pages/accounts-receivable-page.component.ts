@@ -18,12 +18,14 @@ import {
   ApplyAccountsReceivablePaymentRequest,
   CreateCollectionCommitmentRequest,
   CreateCollectionNoteRequest,
+  ReassignAccountsReceivablePaymentApplicationsRequest,
   SearchAccountsReceivablePortfolioRequest,
   SearchAccountsReceivablePaymentsRequest,
   SendReceivablesSummaryResponse,
 } from '../models/accounts-receivable.models';
 import { AccountsReceivableCardComponent } from '../components/accounts-receivable-card.component';
 import { PaymentApplicationFormComponent } from '../components/payment-application-form.component';
+import { PaymentApplicationReassignModalComponent } from '../components/payment-application-reassign-modal.component';
 import { PaymentRemainderApplicationFormComponent } from '../components/payment-remainder-application-form.component';
 import { SendReceivablesSummaryButtonComponent } from '../components/send-receivables-summary-button.component';
 import { extractApiErrorMessage } from '../../../core/http/api-error-message';
@@ -68,6 +70,9 @@ const LOAD_PAYMENT_DETAIL_AFTER_CREATE_ERROR_MESSAGE =
 const LOAD_PENDING_RECEIVER_INVOICES_ERROR_MESSAGE =
   'No se pudieron cargar las facturas pendientes del receptor.';
 const LOAD_RECEIVER_WORKSPACE_ERROR_MESSAGE = 'No se pudo cargar el workspace del receptor.';
+const REASSIGN_PAYMENT_APPLICATIONS_ERROR_MESSAGE = 'No se pudo reasignar el pago.';
+const REASSIGN_PAYMENT_APPLICATIONS_SUCCESS_MESSAGE =
+  'La distribución del pago se actualizó correctamente.';
 
 @Component({
   selector: 'app-accounts-receivable-page',
@@ -78,6 +83,7 @@ const LOAD_RECEIVER_WORKSPACE_ERROR_MESSAGE = 'No se pudo cargar el workspace de
     DatePipe,
     AccountsReceivableCardComponent,
     PaymentApplicationFormComponent,
+    PaymentApplicationReassignModalComponent,
     PaymentRemainderApplicationFormComponent,
     SendReceivablesSummaryButtonComponent,
     StatusBadgeComponent,
@@ -844,6 +850,22 @@ const LOAD_RECEIVER_WORKSPACE_ERROR_MESSAGE = 'No se pudo cargar el workspace de
                             </button>
                           </div>
                         }
+                        @if (
+                          permissionService.canManagePayments() &&
+                          canReassignPaymentApplications(item)
+                        ) {
+                          <div class="row-inline-actions">
+                            <button
+                              type="button"
+                              class="secondary inline-action-button"
+                              data-testid="workspace-payment-reassign-button"
+                              (click)="openPaymentReassignModal(item)"
+                              [disabled]="loading()"
+                            >
+                              Reasignar pago
+                            </button>
+                          </div>
+                        }
                         @if (isEditingPayment(item.paymentId)) {
                           <div class="payment-edit-panel">
                             <label>
@@ -1404,6 +1426,22 @@ const LOAD_RECEIVER_WORKSPACE_ERROR_MESSAGE = 'No se pudo cargar el workspace de
               </button>
             </div>
           }
+          @if (
+            permissionService.canManagePayments() &&
+            canReassignPaymentApplications(currentPayment)
+          ) {
+            <div class="detail-payment-actions">
+              <button
+                type="button"
+                class="secondary inline-action-button"
+                data-testid="detail-payment-reassign-button"
+                (click)="openPaymentReassignModal(currentPayment)"
+                [disabled]="loading()"
+              >
+                Reasignar pago
+              </button>
+            </div>
+          }
           @if (isEditingPayment(currentPayment.id)) {
             <section class="payment-edit-panel detail-payment-edit-panel">
               <label>
@@ -1550,6 +1588,18 @@ const LOAD_RECEIVER_WORKSPACE_ERROR_MESSAGE = 'No se pudo cargar el workspace de
             </div>
           }
         </section>
+      }
+
+      @if (reassignPayment(); as paymentToReassign) {
+        <app-payment-application-reassign-modal
+          [payment]="paymentToReassign"
+          [fiscalReceiverId]="reassignFiscalReceiverId()"
+          [candidateInvoices]="reassignCandidateInvoices()"
+          [submitting]="reassignSubmitting()"
+          [errorMessage]="reassignErrorMessage()"
+          (cancelled)="closePaymentReassignModal()"
+          (submitted)="submitPaymentApplicationReassign($event)"
+        />
       }
     </section>
   `,
@@ -1905,6 +1955,13 @@ export class AccountsReceivablePageComponent {
   );
   protected readonly editingPaymentId = signal<number | null>(null);
   protected readonly editingPaymentAmountText = signal<string | number>('');
+  protected readonly reassignPayment = signal<AccountsReceivablePaymentResponse | null>(null);
+  protected readonly reassignCandidateInvoices = signal<AccountsReceivablePortfolioItemResponse[]>(
+    [],
+  );
+  protected readonly reassignFiscalReceiverId = signal<number | null>(null);
+  protected readonly reassignErrorMessage = signal<string | null>(null);
+  protected readonly reassignSubmitting = signal(false);
   protected readonly receiverWorkspaceInvoiceSummary = computed<ReceivableInvoiceCollectionSummary>(
     () => {
       const workspace = this.receiverWorkspace();
@@ -2062,6 +2119,23 @@ export class AccountsReceivablePageComponent {
     }
 
     return payment.applicationsCount === 0 && !this.hasRepAssociation(payment);
+  }
+
+  protected canReassignPaymentApplications(
+    payment: AccountsReceivablePaymentSummaryItemResponse | AccountsReceivablePaymentResponse | null,
+  ): boolean {
+    if (!payment) {
+      return false;
+    }
+
+    const applicationsCount =
+      payment.applicationsCount || ('applications' in payment ? payment.applications.length : 0);
+
+    return (
+      applicationsCount > 0 &&
+      payment.currencyCode === 'MXN' &&
+      !this.hasRepAssociation(payment)
+    );
   }
 
   protected isEditingPayment(paymentId: number): boolean {
@@ -2466,6 +2540,83 @@ export class AccountsReceivablePageComponent {
     }, DELETE_PAYMENT_ERROR_MESSAGE);
   }
 
+  protected async openPaymentReassignModal(
+    payment: AccountsReceivablePaymentSummaryItemResponse | AccountsReceivablePaymentResponse,
+  ): Promise<void> {
+    if (!this.canReassignPaymentApplications(payment) || this.loading()) {
+      return;
+    }
+
+    const paymentId = 'paymentId' in payment ? payment.paymentId : payment.id;
+    const fallbackReceiverId =
+      this.resolvePaymentReceiverId(payment) ??
+      this.receiverWorkspaceId() ??
+      this.paymentReceiverFiscalReceiverId();
+
+    await this.run(async () => {
+      const paymentDetail =
+        'paymentId' in payment
+          ? await firstValueFrom(this.api.getPaymentById(paymentId))
+          : payment;
+      const fiscalReceiverId = paymentDetail.receivedFromFiscalReceiverId ?? fallbackReceiverId;
+      const candidateInvoices = await this.loadReassignCandidateInvoices(
+        paymentDetail,
+        fiscalReceiverId,
+      );
+
+      this.reassignPayment.set(paymentDetail);
+      this.reassignFiscalReceiverId.set(fiscalReceiverId);
+      this.reassignCandidateInvoices.set(candidateInvoices);
+      this.reassignErrorMessage.set(null);
+    }, LOAD_PAYMENT_DETAIL_ERROR_MESSAGE);
+  }
+
+  protected closePaymentReassignModal(): void {
+    this.reassignPayment.set(null);
+    this.reassignFiscalReceiverId.set(null);
+    this.reassignCandidateInvoices.set([]);
+    this.reassignErrorMessage.set(null);
+  }
+
+  protected async submitPaymentApplicationReassign(
+    request: ReassignAccountsReceivablePaymentApplicationsRequest,
+  ): Promise<void> {
+    const currentPayment = this.reassignPayment();
+    if (!currentPayment || this.reassignSubmitting()) {
+      return;
+    }
+
+    this.reassignSubmitting.set(true);
+    this.reassignErrorMessage.set(null);
+    const receiverId =
+      this.reassignFiscalReceiverId() ?? currentPayment.receivedFromFiscalReceiverId ?? null;
+
+    try {
+      const response = await firstValueFrom(
+        this.api.reassignPaymentApplications(currentPayment.id, request),
+      );
+
+      if (response.payment && this.payment()?.id === currentPayment.id) {
+        this.payment.set(response.payment);
+      }
+
+      await this.refreshPaymentMutationViews(
+        currentPayment.id,
+        response.payment?.receivedFromFiscalReceiverId ?? receiverId,
+      );
+      if (this.detailMode()) {
+        await this.reloadCurrentInvoice();
+      }
+
+      this.closePaymentReassignModal();
+      this.feedbackService.show('success', REASSIGN_PAYMENT_APPLICATIONS_SUCCESS_MESSAGE);
+    } catch (error) {
+      this.reassignErrorMessage.set(describeReassignPaymentError(error));
+    } finally {
+      this.reassignSubmitting.set(false);
+    }
+  }
+
   protected async createCollectionCommitment(): Promise<void> {
     const currentInvoice = this.invoice();
     if (!currentInvoice) {
@@ -2716,6 +2867,104 @@ export class AccountsReceivablePageComponent {
     }
   }
 
+  private async loadReassignCandidateInvoices(
+    payment: AccountsReceivablePaymentResponse,
+    fiscalReceiverId: number | null,
+  ): Promise<AccountsReceivablePortfolioItemResponse[]> {
+    const baseInvoices: AccountsReceivablePortfolioItemResponse[] = [];
+    const workspace = this.receiverWorkspace();
+
+    if (fiscalReceiverId !== null && workspace?.fiscalReceiverId === fiscalReceiverId) {
+      baseInvoices.push(...workspace.invoices);
+    } else if (fiscalReceiverId !== null) {
+      const response = await firstValueFrom(
+        this.api.searchPortfolio({
+          fiscalReceiverId,
+          hasPendingBalance: true,
+        }),
+      );
+      baseInvoices.push(
+        ...readCollectionItems(response.items, LOAD_PENDING_RECEIVER_INVOICES_ERROR_MESSAGE),
+      );
+    }
+
+    const currentInvoice = this.invoice();
+    if (
+      currentInvoice &&
+      (fiscalReceiverId === null || currentInvoice.fiscalReceiverId === fiscalReceiverId)
+    ) {
+      baseInvoices.push(mapInvoiceResponseToPortfolioItem(currentInvoice));
+    }
+
+    const knownInvoiceIds = new Set(
+      baseInvoices.map((invoice) => invoice.accountsReceivableInvoiceId),
+    );
+    const missingAppliedInvoiceIds = [
+      ...new Set(
+        payment.applications
+          .map((application) => application.accountsReceivableInvoiceId)
+          .filter((invoiceId) => !knownInvoiceIds.has(invoiceId)),
+      ),
+    ];
+
+    const appliedInvoices = await Promise.all(
+      missingAppliedInvoiceIds.map(async (invoiceId) => {
+        try {
+          return mapInvoiceResponseToPortfolioItem(
+            await firstValueFrom(this.api.getInvoiceById(invoiceId)),
+          );
+        } catch {
+          return null;
+        }
+      }),
+    );
+
+    baseInvoices.push(
+      ...appliedInvoices.filter(
+        (invoice): invoice is AccountsReceivablePortfolioItemResponse => invoice !== null,
+      ),
+    );
+
+    return this.buildReassignCandidateInvoices(baseInvoices, payment, fiscalReceiverId);
+  }
+
+  private buildReassignCandidateInvoices(
+    invoices: AccountsReceivablePortfolioItemResponse[],
+    payment: AccountsReceivablePaymentResponse,
+    fiscalReceiverId: number | null,
+  ): AccountsReceivablePortfolioItemResponse[] {
+    const currentAppliedInvoiceIds = new Set(
+      payment.applications.map((application) => application.accountsReceivableInvoiceId),
+    );
+    const candidates = new Map<number, AccountsReceivablePortfolioItemResponse>();
+
+    for (const invoice of invoices) {
+      const isCurrentlyApplied = currentAppliedInvoiceIds.has(
+        invoice.accountsReceivableInvoiceId,
+      );
+      if (!this.isReassignCandidateInvoice(invoice, fiscalReceiverId, isCurrentlyApplied)) {
+        continue;
+      }
+
+      candidates.set(invoice.accountsReceivableInvoiceId, invoice);
+    }
+
+    return [...candidates.values()];
+  }
+
+  private isReassignCandidateInvoice(
+    invoice: AccountsReceivablePortfolioItemResponse,
+    fiscalReceiverId: number | null,
+    isCurrentlyApplied: boolean,
+  ): boolean {
+    const sameReceiver = fiscalReceiverId === null || invoice.fiscalReceiverId === fiscalReceiverId;
+    const currencyIsMxn = !invoice.currencyCode || invoice.currencyCode === 'MXN';
+    const isCancelled = invoice.status === 'Cancelled';
+    const isOpen = invoice.outstandingBalance > 0 && invoice.status !== 'Paid';
+
+    return sameReceiver && currencyIsMxn && !isCancelled && (isOpen || isCurrentlyApplied);
+  }
+
   private consumeRecentlyCreatedPaymentContext(paymentId: number): boolean {
     if (this.recentlyCreatedPaymentId() !== paymentId) {
       return false;
@@ -2824,6 +3073,34 @@ function parseNullableBoolean(value: string): boolean | null {
   return null;
 }
 
+function mapInvoiceResponseToPortfolioItem(
+  invoice: AccountsReceivableInvoiceResponse,
+): AccountsReceivablePortfolioItemResponse {
+  return {
+    accountsReceivableInvoiceId: invoice.id,
+    fiscalDocumentId: invoice.fiscalDocumentId,
+    fiscalReceiverId: invoice.fiscalReceiverId ?? null,
+    receiverRfc: invoice.receiverRfc ?? null,
+    receiverLegalName: invoice.receiverLegalName ?? null,
+    fiscalSeries: invoice.fiscalSeries ?? null,
+    fiscalFolio: invoice.fiscalFolio ?? null,
+    fiscalUuid: invoice.fiscalUuid ?? null,
+    currencyCode: invoice.currencyCode,
+    total: invoice.total,
+    paidTotal: invoice.paidTotal,
+    outstandingBalance: invoice.outstandingBalance,
+    issuedAtUtc: invoice.issuedAtUtc,
+    dueAtUtc: invoice.dueAtUtc ?? null,
+    status: invoice.status,
+    daysPastDue: 0,
+    agingBucket: invoice.agingBucket,
+    hasPendingCommitment: invoice.hasPendingCommitment,
+    nextCommitmentDateUtc: invoice.nextCommitmentDateUtc ?? null,
+    nextFollowUpAtUtc: invoice.nextFollowUpAtUtc ?? null,
+    followUpPending: invoice.followUpPending,
+  };
+}
+
 function extractCreatedPaymentIdFromNavigationState(state: unknown): number | null {
   if (
     !state ||
@@ -2862,4 +3139,22 @@ function describeOperationError(error: unknown, fallback: string): string {
   }
 
   return `${fallback} ${message}`;
+}
+
+function describeReassignPaymentError(error: unknown): string {
+  if (readHttpStatus(error) === 404) {
+    return 'No se encontró el pago.';
+  }
+
+  const message = extractApiErrorMessage(error, REASSIGN_PAYMENT_APPLICATIONS_ERROR_MESSAGE).trim();
+  return message || REASSIGN_PAYMENT_APPLICATIONS_ERROR_MESSAGE;
+}
+
+function readHttpStatus(error: unknown): number | null {
+  if (!error || typeof error !== 'object' || !('status' in error)) {
+    return null;
+  }
+
+  const status = (error as { status?: unknown }).status;
+  return typeof status === 'number' ? status : null;
 }
