@@ -151,6 +151,15 @@ public class CreateFiscalReceiverService
         try
         {
             var normalized = NormalizeSpecialFields(fields);
+            var duplicateId = normalized
+                .Where(x => x.Id is not null)
+                .GroupBy(x => x.Id)
+                .FirstOrDefault(x => x.Count() > 1);
+            if (duplicateId is not null)
+            {
+                return $"Special field definition id '{duplicateId.Key}' is duplicated for the same receiver.";
+            }
+
             var duplicateCode = normalized
                 .GroupBy(x => x.Code, StringComparer.OrdinalIgnoreCase)
                 .FirstOrDefault(x => x.Count() > 1);
@@ -173,16 +182,48 @@ public class CreateFiscalReceiverService
         }
 
         return fields
+            .Where(field => !IsEmptySpecialFieldPlaceholder(field))
             .Select((field, index) => NormalizeSpecialField(field, index))
             .ToArray();
     }
 
+    internal static bool ContainsOnlyEmptySpecialFieldPlaceholders(IReadOnlyList<UpsertFiscalReceiverSpecialFieldDefinitionCommand>? fields)
+    {
+        return fields is { Count: > 0 } && fields.All(IsEmptySpecialFieldPlaceholder);
+    }
+
+    private static bool IsEmptySpecialFieldPlaceholder(UpsertFiscalReceiverSpecialFieldDefinitionCommand field)
+    {
+        return string.IsNullOrWhiteSpace(field.Code)
+            && string.IsNullOrWhiteSpace(field.Label)
+            && string.IsNullOrWhiteSpace(field.HelpText)
+            && field.MaxLength is null
+            && !field.IsRequired
+            && (string.IsNullOrWhiteSpace(field.DataType) || string.Equals(field.DataType.Trim(), "text", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static NormalizedSpecialFieldDefinition NormalizeSpecialField(UpsertFiscalReceiverSpecialFieldDefinitionCommand field, int index)
     {
+        if (field.Id is <= 0)
+        {
+            throw new ArgumentException("Special field definition id must be greater than zero.");
+        }
+
+        if (string.IsNullOrWhiteSpace(field.Code))
+        {
+            throw new ArgumentException("Special field code is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(field.Label))
+        {
+            throw new ArgumentException("Special field label is required.");
+        }
+
         var code = FiscalMasterDataNormalization.NormalizeRequiredText(field.Code).ToUpperInvariant();
         var label = FiscalMasterDataNormalization.NormalizeRequiredText(field.Label);
 
         return new NormalizedSpecialFieldDefinition(
+            field.Id,
             code,
             label,
             NormalizeDataType(field.DataType),
@@ -204,6 +245,7 @@ public class CreateFiscalReceiverService
     }
 
     internal sealed record NormalizedSpecialFieldDefinition(
+        long? Id,
         string Code,
         string Label,
         string DataType,

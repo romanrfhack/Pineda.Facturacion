@@ -88,7 +88,7 @@ export interface UpsertFiscalReceiverRequest {
   phone?: string | null;
   searchAlias?: string | null;
   isActive: boolean;
-  specialFields: FiscalReceiverSpecialFieldDefinition[];
+  specialFields?: FiscalReceiverSpecialFieldDefinition[];
 }
 
 export interface FiscalReceiverSatCatalogOption {

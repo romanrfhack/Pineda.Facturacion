@@ -61,6 +61,13 @@ public interface IFiscalReceiverRepository
 
     Task<IReadOnlyList<FiscalReceiverSpecialFieldDefinition>> GetActiveSpecialFieldDefinitionsAsync(CancellationToken cancellationToken = default);
 
+    Task<bool> IsSpecialFieldDefinitionReferencedAsync(
+        long fiscalReceiverSpecialFieldDefinitionId,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(false);
+    }
+
     Task AddAsync(FiscalReceiver fiscalReceiver, CancellationToken cancellationToken = default);
 
     Task UpdateAsync(FiscalReceiver fiscalReceiver, CancellationToken cancellationToken = default);

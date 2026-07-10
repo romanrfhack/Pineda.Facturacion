@@ -140,7 +140,7 @@ public static class FiscalReceiversEndpoints
             Phone = request.Phone,
             SearchAlias = request.SearchAlias,
             IsActive = request.IsActive,
-            SpecialFields = request.SpecialFields.Select(MapSpecialFieldCommand).ToArray()
+            SpecialFields = request.SpecialFields?.Select(MapSpecialFieldCommand).ToArray() ?? []
         }, cancellationToken);
 
         var response = new MutationResponse
@@ -201,7 +201,7 @@ public static class FiscalReceiversEndpoints
             Phone = request.Phone,
             SearchAlias = request.SearchAlias,
             IsActive = request.IsActive,
-            SpecialFields = request.SpecialFields.Select(MapSpecialFieldCommand).ToArray()
+            SpecialFields = request.SpecialFields?.Select(MapSpecialFieldCommand).ToArray()
         }, cancellationToken);
 
         var response = new MutationResponse
@@ -286,6 +286,7 @@ public static class FiscalReceiversEndpoints
     {
         return new UpsertFiscalReceiverSpecialFieldDefinitionCommand
         {
+            Id = request.Id,
             Code = request.Code,
             Label = request.Label,
             DataType = request.DataType,
@@ -336,11 +337,12 @@ public static class FiscalReceiversEndpoints
         public string? Phone { get; init; }
         public string? SearchAlias { get; init; }
         public bool IsActive { get; init; } = true;
-        public IReadOnlyList<UpsertFiscalReceiverSpecialFieldDefinitionRequest> SpecialFields { get; init; } = [];
+        public IReadOnlyList<UpsertFiscalReceiverSpecialFieldDefinitionRequest>? SpecialFields { get; init; }
     }
 
     public sealed class UpsertFiscalReceiverSpecialFieldDefinitionRequest
     {
+        public long? Id { get; init; }
         public string Code { get; init; } = string.Empty;
         public string Label { get; init; } = string.Empty;
         public string DataType { get; init; } = "text";

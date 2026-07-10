@@ -26,5 +26,5 @@ public class UpdateFiscalReceiverCommand
 
     public bool IsActive { get; set; }
 
-    public IReadOnlyList<UpsertFiscalReceiverSpecialFieldDefinitionCommand> SpecialFields { get; set; } = [];
+    public IReadOnlyList<UpsertFiscalReceiverSpecialFieldDefinitionCommand>? SpecialFields { get; set; }
 }

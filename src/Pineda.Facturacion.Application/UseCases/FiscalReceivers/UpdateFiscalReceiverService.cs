@@ -56,6 +56,17 @@ public class UpdateFiscalReceiverService
             };
         }
 
+        var specialFieldConflict = await ApplySpecialFieldsAsync(fiscalReceiver, command.SpecialFields, cancellationToken);
+        if (specialFieldConflict is not null)
+        {
+            return new UpdateFiscalReceiverResult
+            {
+                Outcome = UpdateFiscalReceiverOutcome.Conflict,
+                IsSuccess = false,
+                ErrorMessage = specialFieldConflict
+            };
+        }
+
         var normalizedLegalName = FiscalMasterDataNormalization.NormalizeRequiredText(command.LegalName);
         var normalizedSearchAlias = FiscalMasterDataNormalization.NormalizeOptionalText(command.SearchAlias);
 
@@ -75,10 +86,20 @@ public class UpdateFiscalReceiverService
             : FiscalMasterDataNormalization.NormalizeSearchableText(normalizedSearchAlias);
         fiscalReceiver.IsActive = command.IsActive;
         fiscalReceiver.UpdatedAtUtc = DateTime.UtcNow;
-        ReplaceSpecialFields(fiscalReceiver, command.SpecialFields, fiscalReceiver.UpdatedAtUtc);
-
-        await _fiscalReceiverRepository.UpdateAsync(fiscalReceiver, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _fiscalReceiverRepository.UpdateAsync(fiscalReceiver, cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (FiscalReceiverSpecialFieldDefinitionConflictException exception)
+        {
+            return new UpdateFiscalReceiverResult
+            {
+                Outcome = UpdateFiscalReceiverOutcome.Conflict,
+                IsSuccess = false,
+                ErrorMessage = exception.Message
+            };
+        }
 
         return new UpdateFiscalReceiverResult
         {
@@ -114,15 +135,68 @@ public class UpdateFiscalReceiverService
         return null;
     }
 
-    private static void ReplaceSpecialFields(
+    private async Task<string?> ApplySpecialFieldsAsync(
         Domain.Entities.FiscalReceiver fiscalReceiver,
         IReadOnlyList<UpsertFiscalReceiverSpecialFieldDefinitionCommand>? fields,
-        DateTime now)
+        CancellationToken cancellationToken)
     {
-        fiscalReceiver.SpecialFieldDefinitions.Clear();
-
-        foreach (var field in CreateFiscalReceiverService.NormalizeSpecialFields(fields))
+        if (fields is null || CreateFiscalReceiverService.ContainsOnlyEmptySpecialFieldPlaceholders(fields))
         {
+            return null;
+        }
+
+        var normalizedFields = CreateFiscalReceiverService.NormalizeSpecialFields(fields);
+        var existingById = fiscalReceiver.SpecialFieldDefinitions.ToDictionary(x => x.Id);
+
+        foreach (var field in normalizedFields.Where(x => x.Id is not null))
+        {
+            if (!existingById.ContainsKey(field.Id!.Value))
+            {
+                return $"Special field definition '{field.Id}' does not belong to fiscal receiver '{fiscalReceiver.Id}'.";
+            }
+        }
+
+        var existingCodes = fiscalReceiver.SpecialFieldDefinitions
+            .ToDictionary(x => x.Code, StringComparer.OrdinalIgnoreCase);
+        foreach (var field in normalizedFields.Where(x => x.Id is null))
+        {
+            if (existingCodes.ContainsKey(field.Code))
+            {
+                return $"Special field code '{field.Code}' already exists for this fiscal receiver. Send its id to update it.";
+            }
+        }
+
+        var incomingIds = normalizedFields.Where(x => x.Id is not null).Select(x => x.Id!.Value).ToHashSet();
+        var definitionsToRemove = fiscalReceiver.SpecialFieldDefinitions
+            .Where(x => !incomingIds.Contains(x.Id))
+            .ToArray();
+
+        foreach (var definition in definitionsToRemove)
+        {
+            if (await _fiscalReceiverRepository.IsSpecialFieldDefinitionReferencedAsync(definition.Id, cancellationToken))
+            {
+                return $"No se puede eliminar el campo especial '{definition.Code}' porque ya está referenciado por documentos fiscales.";
+            }
+        }
+
+        var now = DateTime.UtcNow;
+        foreach (var field in normalizedFields)
+        {
+            if (field.Id is not null)
+            {
+                var definition = existingById[field.Id.Value];
+                definition.Code = field.Code;
+                definition.Label = field.Label;
+                definition.DataType = field.DataType;
+                definition.MaxLength = field.MaxLength;
+                definition.HelpText = field.HelpText;
+                definition.IsRequired = field.IsRequired;
+                definition.IsActive = field.IsActive;
+                definition.DisplayOrder = field.DisplayOrder;
+                definition.UpdatedAtUtc = now;
+                continue;
+            }
+
             fiscalReceiver.SpecialFieldDefinitions.Add(new Domain.Entities.FiscalReceiverSpecialFieldDefinition
             {
                 FiscalReceiverId = fiscalReceiver.Id,
@@ -138,5 +212,12 @@ public class UpdateFiscalReceiverService
                 UpdatedAtUtc = now
             });
         }
+
+        foreach (var definition in definitionsToRemove)
+        {
+            fiscalReceiver.SpecialFieldDefinitions.Remove(definition);
+        }
+
+        return null;
     }
 }

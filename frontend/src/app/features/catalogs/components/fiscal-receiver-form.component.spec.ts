@@ -248,6 +248,66 @@ describe('FiscalReceiverFormComponent', () => {
       }),
     );
   });
+
+  it('omits special fields when editing only the email of a receiver with configured fields', async () => {
+    const fixture = await renderComponent({
+      receiver: buildReceiver({
+        specialFields: [buildSpecialField()]
+      })
+    });
+    const emitted = vi.spyOn(fixture.componentInstance.submitted, 'emit');
+
+    await setEmailInputValue(fixture, 'cliente@example.com');
+    await clickAddEmailButton(fixture);
+    await submitForm(fixture);
+
+    expect(emitted).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: 'cliente@example.com',
+        specialFields: undefined
+      }),
+    );
+  });
+
+  it('does not send a historical empty special field when saving an email change', async () => {
+    const fixture = await renderComponent({
+      receiver: buildReceiver({
+        specialFields: [buildSpecialField({ id: 14, code: '', label: '', helpText: null })]
+      })
+    });
+    const emitted = vi.spyOn(fixture.componentInstance.submitted, 'emit');
+
+    await setEmailInputValue(fixture, 'cliente@example.com');
+    await clickAddEmailButton(fixture);
+    await submitForm(fixture);
+
+    expect(emitted).toHaveBeenCalledWith(expect.objectContaining({ specialFields: undefined }));
+  });
+
+  it('blocks submission when a special field is incomplete', async () => {
+    const fixture = await renderComponent();
+    const emitted = vi.spyOn(fixture.componentInstance.submitted, 'emit');
+    const component = fixture.componentInstance as unknown as {
+      draft: { specialFields: Array<{ code: string; label: string; dataType: string; maxLength: null; helpText: null; isRequired: boolean; isActive: boolean; displayOrder: number }> };
+    };
+    component.draft.specialFields = [
+      {
+        code: 'AGENTE',
+        label: '',
+        dataType: 'text',
+        maxLength: null,
+        helpText: null,
+        isRequired: false,
+        isActive: true,
+        displayOrder: 1
+      }
+    ];
+
+    await submitForm(fixture);
+
+    expect(emitted).not.toHaveBeenCalled();
+    expect(fixture.nativeElement.textContent).toContain("El campo especial 'AGENTE' requiere un nombre visible.");
+  });
 });
 
 function buildRequest(overrides: Partial<UpsertFiscalReceiverRequest> = {}): UpsertFiscalReceiverRequest {
@@ -285,6 +345,22 @@ function buildReceiver(overrides: Partial<FiscalReceiver> = {}): FiscalReceiver 
     createdAtUtc: '2026-03-25T12:00:00Z',
     updatedAtUtc: '2026-03-25T12:00:00Z',
     specialFields: [],
+    ...overrides,
+  };
+}
+
+function buildSpecialField(overrides: Partial<NonNullable<FiscalReceiver['specialFields']>[number]> = {}) {
+  return {
+    id: 14,
+    fiscalReceiverId: 1,
+    code: 'AGENTE',
+    label: 'Agente',
+    dataType: 'text',
+    maxLength: null,
+    helpText: null,
+    isRequired: false,
+    isActive: true,
+    displayOrder: 1,
     ...overrides,
   };
 }

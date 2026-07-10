@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using MySqlConnector;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Common;
 using Pineda.Facturacion.Domain.Entities;
@@ -130,6 +131,16 @@ public class BillingDbContext : DbContext, IUnitOfWork
             throw new OperationalOrderConflictException(
                 "The selected sales order is already associated with another operational billing document.");
         }
+        catch (DbUpdateException exception) when (IsSpecialFieldDefinitionReferenceConflict(exception))
+        {
+            throw new FiscalReceiverSpecialFieldDefinitionConflictException(
+                "No se puede eliminar el campo especial porque ya está referenciado por documentos fiscales.");
+        }
+        catch (DbUpdateException exception) when (IsSpecialFieldDefinitionDuplicateCodeConflict(exception))
+        {
+            throw new FiscalReceiverSpecialFieldDefinitionConflictException(
+                "Ya existe un campo especial con la misma clave para este receptor fiscal.");
+        }
     }
 
     private static bool IsLegacyImportBillingDocumentConflict(DbUpdateConcurrencyException exception)
@@ -149,6 +160,37 @@ public class BillingDbContext : DbContext, IUnitOfWork
         {
             if (!string.IsNullOrWhiteSpace(current.Message)
                 && current.Message.Contains(BillingDocumentConfiguration.ActiveSalesOrderSingletonIndexName, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            current = current.InnerException;
+        }
+
+        return false;
+    }
+
+    private static bool IsSpecialFieldDefinitionReferenceConflict(DbUpdateException exception)
+    {
+        return HasSpecialFieldDefinitionEntry(exception) && HasMySqlErrorNumber(exception, 1451);
+    }
+
+    private static bool IsSpecialFieldDefinitionDuplicateCodeConflict(DbUpdateException exception)
+    {
+        return HasSpecialFieldDefinitionEntry(exception) && HasMySqlErrorNumber(exception, 1062);
+    }
+
+    private static bool HasSpecialFieldDefinitionEntry(DbUpdateException exception)
+    {
+        return exception.Entries.Any(entry => entry.Entity is FiscalReceiverSpecialFieldDefinition);
+    }
+
+    private static bool HasMySqlErrorNumber(DbUpdateException exception, int errorNumber)
+    {
+        Exception? current = exception;
+        while (current is not null)
+        {
+            if (current is MySqlException { Number: var number } && number == errorNumber)
             {
                 return true;
             }

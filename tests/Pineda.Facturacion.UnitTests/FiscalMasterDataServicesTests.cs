@@ -590,6 +590,209 @@ public class FiscalMasterDataServicesTests
     }
 
     [Fact]
+    public async Task UpdateFiscalReceiver_Normalizes_Three_Semicolon_Separated_Emails()
+    {
+        var existing = CreateReceiverWithSpecialFields();
+        var repository = new FakeFiscalReceiverRepository { ExistingById = existing, ExistingByRfc = existing };
+        var service = new UpdateFiscalReceiverService(repository, FakeFiscalReceiverSatCatalogProvider.Default(), new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(CreateUpdateCommand(existing, "refacciones10@grupoautomundo.com; refacciones7@grupoautomundo.com; refacciones16@grupoautomundo.com"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("refacciones10@grupoautomundo.com; refacciones7@grupoautomundo.com; refacciones16@grupoautomundo.com", existing.Email);
+        Assert.True(existing.Email!.Length <= CreateFiscalReceiverService.EmailMaxLength);
+    }
+
+    [Fact]
+    public async Task UpdateFiscalReceiver_EmailOnly_DoesNotTouch_ReferencedSpecialFieldDefinitions()
+    {
+        var existing = CreateReceiverWithSpecialFields();
+        var definition = existing.SpecialFieldDefinitions[0];
+        var repository = new FakeFiscalReceiverRepository
+        {
+            ExistingById = existing,
+            ExistingByRfc = existing,
+            ReferencedDefinitionIds = new HashSet<long> { definition.Id }
+        };
+        var service = new UpdateFiscalReceiverService(repository, FakeFiscalReceiverSatCatalogProvider.Default(), new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(CreateUpdateCommand(existing, "cliente@example.com"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("cliente@example.com", existing.Email);
+        Assert.Single(existing.SpecialFieldDefinitions);
+        Assert.Same(definition, existing.SpecialFieldDefinitions[0]);
+    }
+
+    [Fact]
+    public async Task UpdateFiscalReceiver_OnlyEmptyPlaceholder_DoesNotTouch_ReferencedSpecialFieldDefinitions()
+    {
+        var existing = CreateReceiverWithSpecialFields(code: string.Empty, label: string.Empty);
+        var definition = existing.SpecialFieldDefinitions[0];
+        var repository = new FakeFiscalReceiverRepository
+        {
+            ExistingById = existing,
+            ExistingByRfc = existing,
+            ReferencedDefinitionIds = new HashSet<long> { definition.Id }
+        };
+        var service = new UpdateFiscalReceiverService(repository, FakeFiscalReceiverSatCatalogProvider.Default(), new FakeUnitOfWork());
+        var command = CreateUpdateCommand(existing, "cliente@example.com");
+        command.SpecialFields =
+        [
+            new UpsertFiscalReceiverSpecialFieldDefinitionCommand
+            {
+                Id = definition.Id,
+                Code = string.Empty,
+                Label = string.Empty,
+                DataType = "text",
+                IsActive = true,
+                DisplayOrder = 1
+            }
+        ];
+
+        var result = await service.ExecuteAsync(command);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("cliente@example.com", existing.Email);
+        Assert.Single(existing.SpecialFieldDefinitions);
+        Assert.Same(definition, existing.SpecialFieldDefinitions[0]);
+    }
+
+    [Theory]
+    [InlineData("", "Etiqueta")]
+    [InlineData("CAMPO", "")]
+    public async Task UpdateFiscalReceiver_Rejects_IncompleteSpecialField(string code, string label)
+    {
+        var existing = CreateReceiverWithSpecialFields();
+        var repository = new FakeFiscalReceiverRepository { ExistingById = existing, ExistingByRfc = existing };
+        var service = new UpdateFiscalReceiverService(repository, FakeFiscalReceiverSatCatalogProvider.Default(), new FakeUnitOfWork());
+        var command = CreateUpdateCommand(existing, "cliente@example.com");
+        command.SpecialFields = [new UpsertFiscalReceiverSpecialFieldDefinitionCommand { Code = code, Label = label }];
+
+        var result = await service.ExecuteAsync(command);
+
+        Assert.Equal(UpdateFiscalReceiverOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("Special field", result.ErrorMessage, StringComparison.Ordinal);
+        Assert.Null(repository.Updated);
+        Assert.Null(existing.Email);
+    }
+
+    [Fact]
+    public async Task UpdateFiscalReceiver_ReturnsConflict_WhenRemovingReferencedSpecialFieldDefinition()
+    {
+        var existing = CreateReceiverWithSpecialFields();
+        var definition = existing.SpecialFieldDefinitions[0];
+        var repository = new FakeFiscalReceiverRepository
+        {
+            ExistingById = existing,
+            ExistingByRfc = existing,
+            ReferencedDefinitionIds = new HashSet<long> { definition.Id }
+        };
+        var service = new UpdateFiscalReceiverService(repository, FakeFiscalReceiverSatCatalogProvider.Default(), new FakeUnitOfWork());
+        var command = CreateUpdateCommand(existing, "cliente@example.com");
+        command.SpecialFields = [];
+
+        var result = await service.ExecuteAsync(command);
+
+        Assert.Equal(UpdateFiscalReceiverOutcome.Conflict, result.Outcome);
+        Assert.Equal("No se puede eliminar el campo especial 'AGENTE' porque ya está referenciado por documentos fiscales.", result.ErrorMessage);
+        Assert.Single(existing.SpecialFieldDefinitions);
+        Assert.Same(definition, existing.SpecialFieldDefinitions[0]);
+        Assert.Null(repository.Updated);
+    }
+
+    [Fact]
+    public async Task UpdateFiscalReceiver_ReturnsConflict_WhenPersistenceDetectsConcurrentSpecialFieldReference()
+    {
+        var existing = CreateReceiverWithSpecialFields();
+        var repository = new FakeFiscalReceiverRepository { ExistingById = existing, ExistingByRfc = existing };
+        var unitOfWork = new FakeUnitOfWork
+        {
+            ExceptionToThrow = new Pineda.Facturacion.Application.Common.FiscalReceiverSpecialFieldDefinitionConflictException(
+                "No se puede eliminar el campo especial porque ya está referenciado por documentos fiscales.")
+        };
+        var service = new UpdateFiscalReceiverService(repository, FakeFiscalReceiverSatCatalogProvider.Default(), unitOfWork);
+        var command = CreateUpdateCommand(existing, "cliente@example.com");
+        command.SpecialFields = [];
+
+        var result = await service.ExecuteAsync(command);
+
+        Assert.Equal(UpdateFiscalReceiverOutcome.Conflict, result.Outcome);
+        Assert.Contains("referenciado por documentos fiscales", result.ErrorMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task UpdateFiscalReceiver_UpdatesSpecialField_InPlace_WhenIdBelongsToReceiver()
+    {
+        var existing = CreateReceiverWithSpecialFields();
+        var definition = existing.SpecialFieldDefinitions[0];
+        var repository = new FakeFiscalReceiverRepository { ExistingById = existing, ExistingByRfc = existing };
+        var service = new UpdateFiscalReceiverService(repository, FakeFiscalReceiverSatCatalogProvider.Default(), new FakeUnitOfWork());
+        var command = CreateUpdateCommand(existing, null);
+        command.SpecialFields =
+        [
+            new UpsertFiscalReceiverSpecialFieldDefinitionCommand
+            {
+                Id = definition.Id,
+                Code = "agente",
+                Label = "Asesor comercial",
+                DataType = "text",
+                MaxLength = 80,
+                HelpText = "Nombre del asesor",
+                IsRequired = true,
+                IsActive = true,
+                DisplayOrder = 2
+            }
+        ];
+
+        var result = await service.ExecuteAsync(command);
+
+        Assert.True(result.IsSuccess);
+        Assert.Single(existing.SpecialFieldDefinitions);
+        Assert.Same(definition, existing.SpecialFieldDefinitions[0]);
+        Assert.Equal(14, definition.Id);
+        Assert.Equal("AGENTE", definition.Code);
+        Assert.Equal("Asesor comercial", definition.Label);
+        Assert.Equal(2, definition.DisplayOrder);
+    }
+
+    [Fact]
+    public async Task UpdateFiscalReceiver_ReturnsConflict_WhenSpecialFieldIdBelongsToAnotherReceiver()
+    {
+        var existing = CreateReceiverWithSpecialFields();
+        var repository = new FakeFiscalReceiverRepository { ExistingById = existing, ExistingByRfc = existing };
+        var service = new UpdateFiscalReceiverService(repository, FakeFiscalReceiverSatCatalogProvider.Default(), new FakeUnitOfWork());
+        var command = CreateUpdateCommand(existing, null);
+        command.SpecialFields = [new UpsertFiscalReceiverSpecialFieldDefinitionCommand { Id = 99, Code = "OTRO", Label = "Otro" }];
+
+        var result = await service.ExecuteAsync(command);
+
+        Assert.Equal(UpdateFiscalReceiverOutcome.Conflict, result.Outcome);
+        Assert.Contains("does not belong", result.ErrorMessage, StringComparison.Ordinal);
+        Assert.Single(existing.SpecialFieldDefinitions);
+    }
+
+    [Fact]
+    public async Task UpdateFiscalReceiver_Rejects_DuplicateSpecialFieldCodes()
+    {
+        var existing = CreateReceiverWithSpecialFields();
+        var repository = new FakeFiscalReceiverRepository { ExistingById = existing, ExistingByRfc = existing };
+        var service = new UpdateFiscalReceiverService(repository, FakeFiscalReceiverSatCatalogProvider.Default(), new FakeUnitOfWork());
+        var command = CreateUpdateCommand(existing, null);
+        command.SpecialFields =
+        [
+            new UpsertFiscalReceiverSpecialFieldDefinitionCommand { Code = "AGENTE", Label = "Agente" },
+            new UpsertFiscalReceiverSpecialFieldDefinitionCommand { Code = "agente", Label = "Agente alterno" }
+        ];
+
+        var result = await service.ExecuteAsync(command);
+
+        Assert.Equal(UpdateFiscalReceiverOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("duplicated", result.ErrorMessage, StringComparison.Ordinal);
+        Assert.Single(existing.SpecialFieldDefinitions);
+    }
+
+    [Fact]
     public async Task UpdateFiscalReceiver_Rejects_Invalid_Email_List()
     {
         var existing = new FiscalReceiver
@@ -667,6 +870,52 @@ public class FiscalMasterDataServicesTests
         Assert.Contains("LastUsedFiscalFolio", propertyNames);
     }
 
+    private static FiscalReceiver CreateReceiverWithSpecialFields(string code = "AGENTE", string label = "Agente")
+    {
+        return new FiscalReceiver
+        {
+            Id = 12,
+            Rfc = "XEXX010101000",
+            LegalName = "Receiver",
+            FiscalRegimeCode = "601",
+            CfdiUseCodeDefault = "G03",
+            PostalCode = "64000",
+            IsActive = true,
+            CreatedAtUtc = DateTime.UtcNow.AddDays(-1),
+            UpdatedAtUtc = DateTime.UtcNow.AddDays(-1),
+            SpecialFieldDefinitions =
+            [
+                new FiscalReceiverSpecialFieldDefinition
+                {
+                    Id = 14,
+                    FiscalReceiverId = 12,
+                    Code = code,
+                    Label = label,
+                    DataType = "text",
+                    IsActive = true,
+                    DisplayOrder = 1,
+                    CreatedAtUtc = DateTime.UtcNow.AddDays(-1),
+                    UpdatedAtUtc = DateTime.UtcNow.AddDays(-1)
+                }
+            ]
+        };
+    }
+
+    private static UpdateFiscalReceiverCommand CreateUpdateCommand(FiscalReceiver receiver, string? email)
+    {
+        return new UpdateFiscalReceiverCommand
+        {
+            Id = receiver.Id,
+            Rfc = receiver.Rfc,
+            LegalName = receiver.LegalName,
+            FiscalRegimeCode = receiver.FiscalRegimeCode,
+            CfdiUseCodeDefault = receiver.CfdiUseCodeDefault,
+            PostalCode = receiver.PostalCode,
+            Email = email,
+            IsActive = receiver.IsActive
+        };
+    }
+
     private sealed class FakeIssuerProfileRepository : IIssuerProfileRepository
     {
         public IssuerProfile? Active { get; init; }
@@ -708,6 +957,7 @@ public class FiscalMasterDataServicesTests
         public FiscalReceiver? Added { get; private set; }
         public FiscalReceiver? Updated { get; private set; }
         public IReadOnlyList<FiscalReceiver> SearchResults { get; init; } = [];
+        public HashSet<long> ReferencedDefinitionIds { get; init; } = [];
 
         public Task<IReadOnlyList<FiscalReceiver>> SearchAsync(string query, CancellationToken cancellationToken = default)
             => Task.FromResult(SearchResults);
@@ -720,6 +970,9 @@ public class FiscalMasterDataServicesTests
 
         public Task<IReadOnlyList<FiscalReceiverSpecialFieldDefinition>> GetActiveSpecialFieldDefinitionsAsync(CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<FiscalReceiverSpecialFieldDefinition>>([]);
+
+        public Task<bool> IsSpecialFieldDefinitionReferencedAsync(long fiscalReceiverSpecialFieldDefinitionId, CancellationToken cancellationToken = default)
+            => Task.FromResult(ReferencedDefinitionIds.Contains(fiscalReceiverSpecialFieldDefinitionId));
 
         public Task AddAsync(FiscalReceiver fiscalReceiver, CancellationToken cancellationToken = default)
         {
@@ -874,11 +1127,14 @@ public class FiscalMasterDataServicesTests
     private sealed class FakeUnitOfWork : IUnitOfWork
     {
         public int SaveChangesCallCount { get; private set; }
+        public Exception? ExceptionToThrow { get; init; }
 
         public Task SaveChangesAsync(CancellationToken cancellationToken = default)
         {
             SaveChangesCallCount++;
-            return Task.CompletedTask;
+            return ExceptionToThrow is null
+                ? Task.CompletedTask
+                : Task.FromException(ExceptionToThrow);
         }
     }
 }

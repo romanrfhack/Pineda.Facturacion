@@ -88,6 +88,16 @@ public class FiscalReceiverRepository : IFiscalReceiverRepository
             .ToListAsync(cancellationToken);
     }
 
+    public Task<bool> IsSpecialFieldDefinitionReferencedAsync(
+        long fiscalReceiverSpecialFieldDefinitionId,
+        CancellationToken cancellationToken = default)
+    {
+        return _dbContext.FiscalDocumentSpecialFieldValues
+            .AnyAsync(
+                x => x.FiscalReceiverSpecialFieldDefinitionId == fiscalReceiverSpecialFieldDefinitionId,
+                cancellationToken);
+    }
+
     public async Task AddAsync(FiscalReceiver fiscalReceiver, CancellationToken cancellationToken = default)
     {
         await _dbContext.FiscalReceivers.AddAsync(fiscalReceiver, cancellationToken);

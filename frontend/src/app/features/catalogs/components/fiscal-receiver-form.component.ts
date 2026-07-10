@@ -309,10 +309,11 @@ export class FiscalReceiverFormComponent implements OnChanges {
   protected readonly satCatalog = toSignal(this.fiscalReceiverSatCatalogService.getCatalog(), { initialValue: null });
   protected readonly localErrorMessage = signal<string | null>(null);
   protected readonly emailStateMessage = signal<string | null>(null);
-  protected draft: UpsertFiscalReceiverRequest = emptyReceiver();
+  protected draft: FiscalReceiverDraft = emptyReceiver();
   protected emailInput = '';
   protected emailRecipients: string[] = [];
   protected invalidEmailRecipients: string[] = [];
+  private originalSpecialFields: FiscalReceiverSpecialFieldDefinition[] = [];
   private hydratingDraft = false;
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -341,6 +342,7 @@ export class FiscalReceiverFormComponent implements OnChanges {
       }
       : cloneDraft(this.initialValue() ?? emptyReceiver());
     this.syncEmailRecipients(this.draft.email);
+    this.originalSpecialFields = this.draft.specialFields.map(cloneSpecialField);
     this.hydratingDraft = false;
   }
 
@@ -372,6 +374,14 @@ export class FiscalReceiverFormComponent implements OnChanges {
       return;
     }
 
+    const specialFieldError = validateSpecialFields(this.draft.specialFields);
+    if (specialFieldError) {
+      this.localErrorMessage.set(specialFieldError);
+      return;
+    }
+
+    const specialFields = normalizeSpecialFields(this.draft.specialFields);
+
     this.localErrorMessage.set(null);
     this.syncDraftEmail();
     this.submitted.emit({
@@ -386,15 +396,9 @@ export class FiscalReceiverFormComponent implements OnChanges {
       email: normalizedEmail || null,
       phone: this.draft.phone?.trim() || null,
       searchAlias: this.draft.searchAlias?.trim() || null,
-      specialFields: this.draft.specialFields.map((field, index) => ({
-        ...field,
-        code: field.code.trim(),
-        label: field.label.trim(),
-        dataType: field.dataType?.trim() || 'text',
-        helpText: field.helpText?.trim() || null,
-        maxLength: field.maxLength ? Number(field.maxLength) : null,
-        displayOrder: field.displayOrder || index + 1
-      }))
+      specialFields: this.receiver() && specialFieldsEqual(specialFields, normalizeSpecialFields(this.originalSpecialFields))
+        ? undefined
+        : specialFields
     });
   }
 
@@ -581,7 +585,11 @@ function includeLegacyOption(
   ];
 }
 
-function emptyReceiver(): UpsertFiscalReceiverRequest {
+type FiscalReceiverDraft = Omit<UpsertFiscalReceiverRequest, 'specialFields'> & {
+  specialFields: FiscalReceiverSpecialFieldDefinition[];
+};
+
+function emptyReceiver(): FiscalReceiverDraft {
   return {
     rfc: '',
     legalName: '',
@@ -598,7 +606,7 @@ function emptyReceiver(): UpsertFiscalReceiverRequest {
   };
 }
 
-function cloneDraft(draft: UpsertFiscalReceiverRequest): UpsertFiscalReceiverRequest {
+function cloneDraft(draft: UpsertFiscalReceiverRequest): FiscalReceiverDraft {
   return {
     rfc: draft.rfc,
     legalName: draft.legalName,
@@ -641,6 +649,77 @@ function cloneSpecialField(field: FiscalReceiverSpecialFieldDefinition): FiscalR
     isActive: field.isActive,
     displayOrder: field.displayOrder
   };
+}
+
+function validateSpecialFields(fields: readonly FiscalReceiverSpecialFieldDefinition[]): string | null {
+  const seenCodes = new Set<string>();
+
+  for (const field of fields) {
+    if (isEmptySpecialFieldPlaceholder(field)) {
+      continue;
+    }
+
+    const code = field.code.trim();
+    const label = field.label.trim();
+    if (!code) {
+      return 'Cada campo especial requiere una clave interna.';
+    }
+
+    if (!label) {
+      return `El campo especial '${code}' requiere un nombre visible.`;
+    }
+
+    const normalizedCode = code.toUpperCase();
+    if (seenCodes.has(normalizedCode)) {
+      return `La clave interna '${code}' está duplicada.`;
+    }
+
+    seenCodes.add(normalizedCode);
+  }
+
+  return null;
+}
+
+function normalizeSpecialFields(fields: readonly FiscalReceiverSpecialFieldDefinition[]): FiscalReceiverSpecialFieldDefinition[] {
+  return fields
+    .filter((field) => !isEmptySpecialFieldPlaceholder(field))
+    .map((field, index) => ({
+      ...field,
+      id: field.id ?? null,
+      fiscalReceiverId: field.fiscalReceiverId ?? null,
+      code: field.code.trim(),
+      label: field.label.trim(),
+      dataType: normalizeSpecialFieldDataType(field.dataType),
+      helpText: field.helpText?.trim() || null,
+      maxLength: normalizeSpecialFieldMaxLength(field.maxLength),
+      displayOrder: field.displayOrder || index + 1
+    }));
+}
+
+function isEmptySpecialFieldPlaceholder(field: FiscalReceiverSpecialFieldDefinition): boolean {
+  return !field.code.trim()
+    && !field.label.trim()
+    && !field.helpText?.trim()
+    && normalizeSpecialFieldMaxLength(field.maxLength) === null
+    && !field.isRequired
+    && (!field.dataType?.trim() || field.dataType.trim().toLowerCase() === 'text');
+}
+
+function normalizeSpecialFieldDataType(value: string | null | undefined): string {
+  const normalizedValue = value?.trim().toLowerCase();
+  return normalizedValue === 'number' || normalizedValue === 'date' ? normalizedValue : 'text';
+}
+
+function normalizeSpecialFieldMaxLength(value: number | string | null | undefined): number | null {
+  const normalizedValue = Number(value);
+  return Number.isFinite(normalizedValue) && normalizedValue > 0 ? normalizedValue : null;
+}
+
+function specialFieldsEqual(
+  left: readonly FiscalReceiverSpecialFieldDefinition[],
+  right: readonly FiscalReceiverSpecialFieldDefinition[]): boolean
+{
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function mergeEmailRecipients(currentRecipients: readonly string[], incomingRecipients: readonly string[]): string[] {
