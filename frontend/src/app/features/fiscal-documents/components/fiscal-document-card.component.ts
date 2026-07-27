@@ -85,6 +85,7 @@ import { FiscalDocumentSourceOrdersComponent } from './fiscal-document-source-or
     .special-fields { border-top:1px solid #ece3d3; margin-top:0.5rem; padding-top:0.75rem; }
     .special-fields-list { display:grid; gap:0.65rem; margin:0.75rem 0 0; }
     .field-row { display:grid; grid-template-columns:minmax(160px, 220px) minmax(0, 1fr); gap:0.35rem 0.9rem; align-items:start; }
+    app-fiscal-document-source-orders { display:block; margin-bottom:1rem; }
     dt { font-size:0.82rem; color:#666; }
     dd { margin:0.2rem 0 0; font-weight:600; min-width:0; overflow-wrap:anywhere; word-break:break-word; }
     table { width:100%; border-collapse:collapse; }
