@@ -1,11 +1,17 @@
-import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 import { DecimalPipe, DatePipe } from '@angular/common';
-import { FiscalDocumentResponse } from '../models/fiscal-documents.models';
+import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import { StatusBadgeComponent } from '../../../shared/components/status-badge.component';
+import { FiscalDocumentResponse } from '../models/fiscal-documents.models';
+import { FiscalDocumentSourceOrdersComponent } from './fiscal-document-source-orders.component';
 
 @Component({
   selector: 'app-fiscal-document-card',
-  imports: [DecimalPipe, DatePipe, StatusBadgeComponent],
+  imports: [
+    DecimalPipe,
+    DatePipe,
+    StatusBadgeComponent,
+    FiscalDocumentSourceOrdersComponent,
+  ],
   template: `
     <section class="panel">
       <div class="header">
@@ -37,6 +43,10 @@ import { StatusBadgeComponent } from '../../../shared/components/status-badge.co
             }
           </dl>
         </section>
+      }
+
+      @if (showSourceOrders()) {
+        <app-fiscal-document-source-orders [fiscalDocument]="document()" />
       }
 
       <table>
@@ -87,4 +97,10 @@ import { StatusBadgeComponent } from '../../../shared/components/status-badge.co
 })
 export class FiscalDocumentCardComponent {
   readonly document = input.required<FiscalDocumentResponse>();
+
+  protected readonly showSourceOrders = computed(() =>
+    ['Stamped', 'CancellationRequested', 'CancellationRejected', 'Cancelled'].includes(
+      this.document().status,
+    ),
+  );
 }
