@@ -4,6 +4,7 @@ using System.Text;
 using Pineda.Facturacion.Application.Common;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Models.Legacy;
+using Pineda.Facturacion.Application.UseCases.Reports;
 
 namespace Pineda.Facturacion.Application.UseCases.Orders;
 
@@ -109,8 +110,9 @@ public static class OrderDebtSummaryComposer
         builder.AppendLine("body{margin:0;background:#f4f0e7;color:#182533;font-family:Georgia,'Times New Roman',serif;}");
         builder.AppendLine(".wrap{max-width:900px;margin:0 auto;padding:28px;}.panel{background:#fff;border:1px solid #d8d1c2;border-radius:18px;overflow:hidden;box-shadow:0 18px 40px rgba(24,37,51,.12);border-collapse:separate;}");
         builder.AppendLine(".hero{background:#182533;color:#fff;padding:28px 32px;}.hero small{color:#d8c7a0;letter-spacing:.12em;text-transform:uppercase}.hero h1{margin:8px 0 0;font-size:28px;}");
-        builder.AppendLine(".metric{border:1px solid #e6dccb;border-radius:14px;padding:14px;background:#fffdf8;}.metric span{display:block;color:#6c5a38;font-size:12px;text-transform:uppercase;letter-spacing:.08em}.metric strong{display:block;margin-top:8px;font-size:20px;}");
+        builder.AppendLine(".hero-metric{border:1px solid #526172;border-radius:12px;padding:12px;background:#223447;}.hero-metric span{display:block;color:#d8c7a0;font-size:10px;text-transform:uppercase;letter-spacing:.08em}.hero-metric strong{display:block;margin-top:6px;color:#fff;font-size:18px;line-height:1.2;}");
         builder.AppendLine("table.data-table{width:100%;border-collapse:collapse;margin-top:14px;font-family:Arial,sans-serif;font-size:13px;}table.data-table th{background:#efe7d8;color:#3d3323;text-align:left;}table.data-table th,table.data-table td{padding:10px;border-bottom:1px solid #eadfcb;}a{color:#174f78}.footer{padding:18px 24px;background:#faf7ef;color:#6b7280;font-size:12px;}");
+        builder.AppendLine("@media screen and (max-width:640px){.wrap{padding:12px!important}.hero{padding:22px 20px!important}.hero-copy,.hero-summary{display:block!important;width:100%!important;padding-left:0!important;padding-right:0!important}.hero-summary{padding-top:18px!important}}");
         builder.AppendLine("</style></head><body><div class=\"wrap\" style=\"max-width:900px;margin:0 auto;padding:28px;\">");
         builder.AppendLine("<table role=\"presentation\" class=\"panel\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"background:#fff;border:1px solid #d8d1c2;border-radius:18px;overflow:hidden;box-shadow:0 18px 40px rgba(24,37,51,.12);border-collapse:separate;\">");
         builder.AppendLine("<tr><td class=\"hero\" style=\"background:#182533;color:#fff;padding:28px 32px;\">");
@@ -118,12 +120,6 @@ public static class OrderDebtSummaryComposer
         builder.AppendLine("</td></tr>");
         builder.AppendLine("<tr><td class=\"content\" style=\"" + ContentCellStyle + "\">");
         builder.Append("<p style=\"margin:0 0 14px;line-height:1.6;\">").Append(HtmlWithLineBreaks(document.Message)).AppendLine("</p>");
-
-        builder.AppendLine("<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"width:100%;border-collapse:separate;border-spacing:0;margin:22px 0 10px;\"><tr>");
-        AppendMetric(builder, "Órdenes incluidas", document.Selection.OrderCount.ToString(CultureInfo.InvariantCulture));
-        AppendMetric(builder, "Total seleccionado", FormatCurrencyTotals(document.Selection.TotalsByCurrency));
-        AppendMetric(builder, "Moneda", BuildCurrencyLabel(document.Selection.TotalsByCurrency));
-        builder.AppendLine("</tr></table>");
 
         if (document.Options.IncludeTotals && document.Selection.TotalsByCurrency.Count > 1)
         {
@@ -232,24 +228,51 @@ public static class OrderDebtSummaryComposer
 
     private static void AppendHeader(StringBuilder builder, OrderDebtSummaryDocument document)
     {
+        builder.AppendLine("<table role=\"presentation\" class=\"hero-layout\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"width:100%;border-collapse:collapse;\"><tr>");
+        builder.AppendLine("<td class=\"hero-copy\" style=\"vertical-align:top;width:57%;padding:0 24px 0 0;\">");
         builder.Append("<small style=\"color:#d8c7a0;letter-spacing:.12em;text-transform:uppercase;\">")
             .Append(Html(document.Issuer.LegalName))
             .AppendLine("</small>");
         builder.AppendLine("<h1 style=\"margin:8px 0 0;font-size:28px;line-height:1.15;color:#fff;\">Resumen de notas pendientes</h1>");
         builder.Append("<p style=\"margin:10px 0 0;line-height:1.45;color:#fff;\">Emitido para ")
             .Append(Html(document.Receiver.LegalName))
-            .Append(" el ")
+            .Append(" · ")
             .Append(Html(FormatDateTime(document.GeneratedAtUtc)))
             .AppendLine("</p>");
+        builder.AppendLine("</td>");
+        builder.AppendLine("<td class=\"hero-summary\" style=\"vertical-align:top;width:43%;padding:0;\">");
+        builder.AppendLine("<table role=\"presentation\" class=\"hero-metrics\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"width:100%;border-collapse:separate;border-spacing:0;\"><tr>");
+        AppendHeaderMetric(
+            builder,
+            "Órdenes incluidas",
+            document.Selection.OrderCount.ToString(CultureInfo.InvariantCulture),
+            "38%",
+            "0 8px 0 0");
+        AppendHeaderMetric(
+            builder,
+            "Total seleccionado",
+            FormatCurrencyTotals(document.Selection.TotalsByCurrency),
+            "62%",
+            "0");
+        builder.AppendLine("</tr></table>");
+        builder.Append("<p class=\"hero-currency\" style=\"margin:8px 2px 0;text-align:right;color:#cbd3dc;font-family:Arial,sans-serif;font-size:11px;line-height:1.35;\">Moneda: <strong style=\"color:#fff;font-weight:600;\">")
+            .Append(Html(BuildCurrencyLabel(document.Selection.TotalsByCurrency)))
+            .AppendLine("</strong></p>");
+        builder.AppendLine("</td></tr></table>");
     }
 
-    private static void AppendMetric(StringBuilder builder, string label, string value)
+    private static void AppendHeaderMetric(
+        StringBuilder builder,
+        string label,
+        string value,
+        string width,
+        string padding)
     {
-        builder.Append("<td style=\"width:33.33%;padding:0 8px 12px 0;vertical-align:top;\">")
-            .Append("<div class=\"metric\" style=\"border:1px solid #e6dccb;border-radius:14px;padding:14px;background:#fffdf8;\">")
-            .Append("<span style=\"display:block;color:#6c5a38;font-size:12px;text-transform:uppercase;letter-spacing:.08em;\">")
+        builder.Append("<td style=\"width:").Append(width).Append(";padding:").Append(padding).Append(";vertical-align:top;\">")
+            .Append("<div class=\"hero-metric\" style=\"border:1px solid #526172;border-radius:12px;padding:12px;background:#223447;\">")
+            .Append("<span style=\"display:block;color:#d8c7a0;font-size:10px;text-transform:uppercase;letter-spacing:.08em;\">")
             .Append(Html(label))
-            .Append("</span><strong style=\"display:block;margin-top:8px;font-size:20px;color:#182533;\">")
+            .Append("</span><strong style=\"display:block;margin-top:6px;color:#fff;font-size:18px;line-height:1.2;\">")
             .Append(Html(value))
             .AppendLine("</strong></div></td>");
     }
@@ -358,7 +381,9 @@ public static class OrderDebtSummaryComposer
 
     private static string FormatDateTime(DateTime value)
     {
-        return value.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture);
+        return MexicoLocalDateRangeConverter
+            .ToMexicoLocal(value)
+            .ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture);
     }
 
     private static string Html(string? value)

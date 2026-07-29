@@ -54,6 +54,55 @@ public class OrderDebtSummaryServicesTests
     }
 
     [Fact]
+    public void BuildHtml_RendersCompactHeaderSummary_AndMexicoCityLocalDateTime()
+    {
+        var document = new OrderDebtSummaryDocument
+        {
+            Receiver = new OrderDebtSummaryParty
+            {
+                LegalName = "Cliente Uno"
+            },
+            Issuer = new OrderDebtSummaryParty
+            {
+                LegalName = "Emisor Uno"
+            },
+            Selection = new OrderDebtSummarySelection
+            {
+                OrderCount = 10,
+                Total = 9280m,
+                TotalsByCurrency =
+                [
+                    new OrderDebtSummaryTotalByCurrency
+                    {
+                        CurrencyCode = "MXN",
+                        OrderCount = 10,
+                        Total = 9280m
+                    }
+                ]
+            },
+            Message = "Mensaje inicial",
+            GeneratedAtUtc = new DateTime(2026, 7, 29, 14, 35, 0, DateTimeKind.Utc)
+        };
+
+        var html = OrderDebtSummaryComposer.BuildHtml(document);
+        var contentStart = html.IndexOf("<td class=\"content\"", StringComparison.Ordinal);
+        var headerMetricsStart = html.IndexOf("class=\"hero-metrics\"", StringComparison.Ordinal);
+        var ordersSectionStart = html.IndexOf("Órdenes / notas incluidas", StringComparison.Ordinal);
+
+        Assert.True(contentStart > 0);
+        Assert.InRange(headerMetricsStart, 0, contentStart - 1);
+        Assert.True(ordersSectionStart > contentStart);
+        Assert.Contains("Órdenes incluidas", html, StringComparison.Ordinal);
+        Assert.Contains("Total seleccionado", html, StringComparison.Ordinal);
+        Assert.Contains("9,280.00 MXN", html, StringComparison.Ordinal);
+        Assert.Contains("class=\"hero-currency\"", html, StringComparison.Ordinal);
+        Assert.Contains("Moneda: <strong", html, StringComparison.Ordinal);
+        Assert.Contains("29/07/2026 08:35", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("UTC", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("class=\"metric\"", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task PreviewOrderDebtSummary_UsesReceiverEmailAsFallback_WhenToIsEmpty()
     {
         var service = new PreviewOrderDebtSummaryService(
