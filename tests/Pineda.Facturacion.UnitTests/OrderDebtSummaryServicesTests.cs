@@ -1,3 +1,6 @@
+From https://github.com/romanrfhack/Pineda.Facturacion
+ * branch            dev        -> FETCH_HEAD
+using System.Net;
 using Pineda.Facturacion.Application.Abstractions.Communication;
 using Pineda.Facturacion.Application.Abstractions.Legacy;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
@@ -92,7 +95,7 @@ public class OrderDebtSummaryServicesTests
         Assert.True(contentStart > 0);
         Assert.InRange(headerMetricsStart, 0, contentStart - 1);
         Assert.True(ordersSectionStart > contentStart);
-        Assert.Contains("Órdenes incluidas", html, StringComparison.Ordinal);
+        Assert.Contains("Órdenes incluidas", WebUtility.HtmlDecode(html), StringComparison.Ordinal);
         Assert.Contains("Total seleccionado", html, StringComparison.Ordinal);
         Assert.Contains("9,280.00 MXN", html, StringComparison.Ordinal);
         Assert.Contains("class=\"hero-currency\"", html, StringComparison.Ordinal);
