@@ -1,5 +1,3 @@
-From https://github.com/romanrfhack/Pineda.Facturacion
- * branch            dev        -> FETCH_HEAD
 using System.Net;
 using Pineda.Facturacion.Application.Abstractions.Communication;
 using Pineda.Facturacion.Application.Abstractions.Legacy;
