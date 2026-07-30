@@ -17,7 +17,7 @@ public static class OrderDebtSummaryEndpoints
 
         group.MapPost("/preview", PreviewOrderDebtSummaryAsync)
             .WithName("PreviewOrderDebtSummary")
-            .WithSummary("Generate an HTML preview for an orders debt summary")
+            .WithSummary("Generate an HTML/PDF preview for an orders debt summary")
             .Produces<OrderDebtSummaryPreviewResponse>(StatusCodes.Status200OK)
             .Produces<OrderDebtSummaryPreviewResponse>(StatusCodes.Status400BadRequest)
             .Produces<OrderDebtSummaryPreviewResponse>(StatusCodes.Status404NotFound);
@@ -100,6 +100,9 @@ public static class OrderDebtSummaryEndpoints
             Success = result.IsSuccess,
             ErrorMessage = result.ErrorMessage,
             Html = result.Html,
+            PdfBase64 = result.PdfContent is null ? null : Convert.ToBase64String(result.PdfContent),
+            PdfFileName = result.PdfFileName,
+            PdfErrorMessage = result.PdfErrorMessage,
             Summary = result.Document is null ? null : MapSelection(result.Document.Selection),
             FinalSummary = result.Document is null ? null : MapFinal(result.Document)
         };
@@ -199,6 +202,12 @@ public sealed class OrderDebtSummaryPreviewResponse
     public string? ErrorMessage { get; init; }
 
     public string? Html { get; init; }
+
+    public string? PdfBase64 { get; init; }
+
+    public string? PdfFileName { get; init; }
+
+    public string? PdfErrorMessage { get; init; }
 
     public OrderDebtSummarySelectionResponse? Summary { get; init; }
 

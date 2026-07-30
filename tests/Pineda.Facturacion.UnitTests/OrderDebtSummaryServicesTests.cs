@@ -1,5 +1,7 @@
 using System.Net;
+using System.Text;
 using Pineda.Facturacion.Application.Abstractions.Communication;
+using Pineda.Facturacion.Application.Abstractions.Documents;
 using Pineda.Facturacion.Application.Abstractions.Legacy;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Abstractions.Security;
@@ -8,6 +10,7 @@ using Pineda.Facturacion.Application.Security;
 using Pineda.Facturacion.Application.UseCases.Audit;
 using Pineda.Facturacion.Application.UseCases.Orders;
 using Pineda.Facturacion.Domain.Entities;
+using Pineda.Facturacion.Infrastructure.Documents;
 
 namespace Pineda.Facturacion.UnitTests;
 
@@ -16,6 +19,7 @@ public class OrderDebtSummaryServicesTests
     [Fact]
     public async Task PreviewOrderDebtSummary_UsesOrderTerminology_AndIncludesAvailableStatuses()
     {
+        var pdfRenderer = new FakeOrderDebtSummaryPdfRenderer();
         var service = new PreviewOrderDebtSummaryService(
             CreateFactory(
                 CreateLegacyOrder("LEG-1001", "PED-1001", total: 116m),
@@ -31,7 +35,8 @@ public class OrderDebtSummaryServicesTests
                     LegacyOrderId = "LEG-1002",
                     FiscalDocumentId = 80,
                     FiscalDocumentStatus = "Stamped"
-                }));
+                }),
+            pdfRenderer);
 
         var result = await service.ExecuteAsync(new OrderDebtSummaryCommand
         {
@@ -52,6 +57,10 @@ public class OrderDebtSummaryServicesTests
         Assert.Contains("Órdenes / notas incluidas", result.Html, StringComparison.Ordinal);
         Assert.Contains("Draft", result.Html, StringComparison.Ordinal);
         Assert.Contains("Fiscal: Stamped", result.Html, StringComparison.Ordinal);
+        Assert.Equal("%PDF-order-summary"u8.ToArray(), result.PdfContent);
+        Assert.StartsWith("Resumen-adeudos-Cliente-Uno-", result.PdfFileName, StringComparison.Ordinal);
+        Assert.EndsWith(".pdf", result.PdfFileName, StringComparison.Ordinal);
+        Assert.Same(result.Document, pdfRenderer.Document);
     }
 
     [Fact]
@@ -98,9 +107,98 @@ public class OrderDebtSummaryServicesTests
         Assert.Contains("9,280.00 MXN", html, StringComparison.Ordinal);
         Assert.Contains("class=\"hero-currency\"", html, StringComparison.Ordinal);
         Assert.Contains("Moneda: <strong", html, StringComparison.Ordinal);
+        Assert.Contains("class=\"hero-title\"", html, StringComparison.Ordinal);
+        Assert.Contains("white-space:nowrap", html, StringComparison.Ordinal);
+        Assert.Contains("<td colspan=\"2\" class=\"hero-recipient\"", html, StringComparison.Ordinal);
         Assert.Contains("29/07/2026 08:35", html, StringComparison.Ordinal);
         Assert.DoesNotContain("UTC", html, StringComparison.Ordinal);
         Assert.DoesNotContain("class=\"metric\"", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task OrderDebtSummaryPdfRenderer_RendersSelectedDocumentData()
+    {
+        var document = new OrderDebtSummaryDocument
+        {
+            Receiver = new OrderDebtSummaryParty
+            {
+                LegalName = "Proveedora Universal de Mangueras",
+                Rfc = "PUM010101AAA"
+            },
+            Issuer = new OrderDebtSummaryParty
+            {
+                LegalName = "Auto Refacciones Pineda",
+                Rfc = "ARP010101AAA"
+            },
+            Orders =
+            [
+                new OrderDebtSummaryOrder
+                {
+                    LegacyOrderNumber = "PED-1001",
+                    LegacyOrderType = "Nota",
+                    OrderDateUtc = new DateTime(2026, 7, 29, 0, 0, 0, DateTimeKind.Utc),
+                    CustomerName = "Proveedora Universal de Mangueras",
+                    CurrencyCode = "MXN",
+                    Total = 9280m,
+                    BillingStatusLabel = "Pendiente"
+                }
+            ],
+            Selection = new OrderDebtSummarySelection
+            {
+                OrderCount = 1,
+                Total = 9280m,
+                TotalsByCurrency =
+                [
+                    new OrderDebtSummaryTotalByCurrency
+                    {
+                        CurrencyCode = "MXN",
+                        OrderCount = 1,
+                        Total = 9280m
+                    }
+                ]
+            },
+            Message = "Mensaje inicial",
+            GeneratedAtUtc = new DateTime(2026, 7, 30, 3, 46, 0, DateTimeKind.Utc)
+        };
+
+        var content = await new OrderDebtSummaryPdfRenderer().RenderAsync(document);
+        var pdfText = Encoding.Latin1.GetString(content);
+
+        Assert.StartsWith("%PDF-1.4", pdfText, StringComparison.Ordinal);
+        Assert.Contains("RESUMEN DE NOTAS PENDIENTES", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Proveedora Universal de Mangueras", pdfText, StringComparison.Ordinal);
+        Assert.Contains("29/07/2026 21:46", pdfText, StringComparison.Ordinal);
+        Assert.Contains("PED-1001", pdfText, StringComparison.Ordinal);
+        Assert.Contains("9,280.00 MXN", pdfText, StringComparison.Ordinal);
+        Assert.DoesNotContain("UTC", pdfText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PreviewOrderDebtSummary_KeepsHtmlAvailable_WhenPdfGenerationFails()
+    {
+        var service = new PreviewOrderDebtSummaryService(
+            CreateFactory(CreateLegacyOrder("LEG-1001", "PED-1001", total: 116m)),
+            new FakeOrderDebtSummaryPdfRenderer
+            {
+                Exception = new InvalidOperationException("PDF no disponible")
+            });
+
+        var result = await service.ExecuteAsync(new OrderDebtSummaryCommand
+        {
+            ReceiverId = 77,
+            LegacyOrderIds = ["LEG-1001"],
+            To = ["cliente@example.com"],
+            Subject = "Resumen",
+            Message = "Mensaje",
+            Format = "html"
+        });
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(OrderDebtSummaryOutcome.Found, result.Outcome);
+        Assert.Contains("Resumen de notas pendientes", result.Html, StringComparison.Ordinal);
+        Assert.Null(result.PdfContent);
+        Assert.Null(result.PdfFileName);
+        Assert.Contains("PDF no disponible", result.PdfErrorMessage, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -609,5 +707,25 @@ public class OrderDebtSummaryServicesTests
     private sealed class FakeUnitOfWork : IUnitOfWork
     {
         public Task SaveChangesAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class FakeOrderDebtSummaryPdfRenderer : IOrderDebtSummaryPdfRenderer
+    {
+        public OrderDebtSummaryDocument? Document { get; private set; }
+
+        public Exception? Exception { get; init; }
+
+        public Task<byte[]> RenderAsync(
+            OrderDebtSummaryDocument document,
+            CancellationToken cancellationToken = default)
+        {
+            Document = document;
+            if (Exception is { } exception)
+            {
+                throw exception;
+            }
+
+            return Task.FromResult("%PDF-order-summary"u8.ToArray());
+        }
     }
 }
