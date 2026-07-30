@@ -170,7 +170,73 @@ public class OrderDebtSummaryServicesTests
         Assert.Contains("29/07/2026 21:46", pdfText, StringComparison.Ordinal);
         Assert.Contains("PED-1001", pdfText, StringComparison.Ordinal);
         Assert.Contains("9,280.00 MXN", pdfText, StringComparison.Ordinal);
+        Assert.Contains("MENSAJE", pdfText, StringComparison.Ordinal);
+        Assert.Contains("DATOS FISCALES", pdfText, StringComparison.Ordinal);
+        Assert.Contains("/BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding", pdfText, StringComparison.Ordinal);
+        Assert.Contains("0.094 0.145 0.2 RG", pdfText, StringComparison.Ordinal);
+        Assert.Contains("0.541 0.416 0.196 rg", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Página 1 de 1", pdfText, StringComparison.Ordinal);
+        Assert.DoesNotContain(" re f", pdfText, StringComparison.Ordinal);
         Assert.DoesNotContain("UTC", pdfText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task OrderDebtSummaryPdfRenderer_PaginatesLongOrderTables_AndRepeatsPrintContext()
+    {
+        var orders = Enumerable
+            .Range(1, 35)
+            .Select(index => new OrderDebtSummaryOrder
+            {
+                LegacyOrderNumber = $"PED-{index:0000}",
+                LegacyOrderType = "M",
+                OrderDateUtc = new DateTime(2026, 7, 29, 0, 0, 0, DateTimeKind.Utc),
+                CustomerName = "Cliente de prueba",
+                CurrencyCode = "MXN",
+                Total = 100m,
+                BillingStatusLabel = "Pendiente"
+            })
+            .ToArray();
+        var document = new OrderDebtSummaryDocument
+        {
+            Receiver = new OrderDebtSummaryParty
+            {
+                LegalName = "Cliente de prueba",
+                Rfc = "CLI010101AAA"
+            },
+            Issuer = new OrderDebtSummaryParty
+            {
+                LegalName = "Auto Refacciones Pineda",
+                Rfc = "ARP010101AAA"
+            },
+            Orders = orders,
+            Selection = new OrderDebtSummarySelection
+            {
+                OrderCount = orders.Length,
+                Total = 3500m,
+                TotalsByCurrency =
+                [
+                    new OrderDebtSummaryTotalByCurrency
+                    {
+                        CurrencyCode = "MXN",
+                        OrderCount = orders.Length,
+                        Total = 3500m
+                    }
+                ]
+            },
+            Message = "Mensaje inicial",
+            GeneratedAtUtc = new DateTime(2026, 7, 30, 3, 46, 0, DateTimeKind.Utc)
+        };
+
+        var content = await new OrderDebtSummaryPdfRenderer().RenderAsync(document);
+        var pdfText = Encoding.Latin1.GetString(content);
+
+        Assert.Contains("/Type /Pages /Count 2", pdfText, StringComparison.Ordinal);
+        Assert.Contains("RESUMEN DE NOTAS PENDIENTES · CONTINUACIÓN", pdfText, StringComparison.Ordinal);
+        Assert.Contains("ÓRDENES / NOTAS INCLUIDAS · CONTINUACIÓN", pdfText, StringComparison.Ordinal);
+        Assert.Contains("PED-0001", pdfText, StringComparison.Ordinal);
+        Assert.Contains("PED-0035", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Página 1 de 2", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Página 2 de 2", pdfText, StringComparison.Ordinal);
     }
 
     [Fact]
