@@ -75,6 +75,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IFiscalDocumentPdfRenderer, FiscalDocumentPdfRenderer>();
         services.AddScoped<IPaymentComplementPdfRenderer, PaymentComplementPdfRenderer>();
         services.AddScoped<IReceivablesSummaryPdfRenderer, ReceivablesSummaryPdfRenderer>();
+        services.AddScoped<IOrderDebtSummaryPdfRenderer, OrderDebtSummaryPdfRenderer>();
         services.AddSingleton<IIssuerProfileLogoStorage, IssuerProfileLogoStorage>();
         services.AddSingleton<EmailDeliverySafetyPolicy>();
         services.AddSingleton<IEmailSender, SmtpEmailSender>();

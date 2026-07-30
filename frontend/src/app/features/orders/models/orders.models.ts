@@ -188,6 +188,9 @@ export interface OrderDebtSummaryPreviewResponse {
   success: boolean;
   errorMessage?: string | null;
   html?: string | null;
+  pdfBase64?: string | null;
+  pdfFileName?: string | null;
+  pdfErrorMessage?: string | null;
   summary?: OrderDebtSummarySelectionResponse | null;
   finalSummary?: OrderDebtSummaryFinalResponse | null;
 }

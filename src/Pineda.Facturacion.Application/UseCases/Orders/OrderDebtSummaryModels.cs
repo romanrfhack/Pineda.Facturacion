@@ -161,6 +161,12 @@ public sealed class OrderDebtSummaryPreviewResult
     public OrderDebtSummaryDocument? Document { get; init; }
 
     public string? Html { get; init; }
+
+    public byte[]? PdfContent { get; init; }
+
+    public string? PdfFileName { get; init; }
+
+    public string? PdfErrorMessage { get; init; }
 }
 
 public sealed class SendOrderDebtSummaryResult

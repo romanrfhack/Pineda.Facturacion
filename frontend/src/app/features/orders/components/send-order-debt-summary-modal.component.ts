@@ -216,6 +216,39 @@ type SummaryStep = 1 | 2 | 3;
                   <article><strong>Formato</strong><span>{{ formatLabel(currentPreview.finalSummary?.format || format) }}</span></article>
                 </section>
 
+                @if (currentPreview.pdfBase64) {
+                  <section class="pdf-actions-panel">
+                    <div class="actions compact-actions">
+                      <button
+                        type="button"
+                        class="secondary"
+                        (click)="downloadPdf()"
+                        [disabled]="pdfAction() !== null"
+                      >
+                        {{ pdfAction() === 'download' ? 'Descargando...' : 'Descargar PDF' }}
+                      </button>
+                      <button
+                        type="button"
+                        class="whatsapp-action"
+                        (click)="sharePdf()"
+                        [disabled]="pdfAction() !== null"
+                      >
+                        {{ pdfAction() === 'share' ? 'Abriendo opciones...' : 'Compartir por WhatsApp' }}
+                      </button>
+                    </div>
+                    <p class="helper">
+                      En celular, selecciona WhatsApp y después el contacto. Si el navegador no permite compartir archivos,
+                      el PDF se descargará y WhatsApp se abrirá para que lo adjuntes manualmente.
+                    </p>
+                  </section>
+                } @else if (currentPreview.pdfErrorMessage) {
+                  <section class="status-panel status-panel-warning">{{ currentPreview.pdfErrorMessage }}</section>
+                }
+
+                @if (shareStatusMessage()) {
+                  <section class="status-panel status-panel-success">{{ shareStatusMessage() }}</section>
+                }
+
                 <section class="email-preview" [innerHTML]="previewHtml()"></section>
               } @else {
                 <p class="helper">Genera la vista previa para confirmar el envío.</p>
@@ -270,10 +303,14 @@ type SummaryStep = 1 | 2 | 3;
       input, select, textarea { border:1px solid #d8d1c2; border-radius:.75rem; padding:.7rem .85rem; background:#fffdf8; font:inherit; }
       .wide-field { grid-column:1 / -1; }
       .status-panel { border-radius:.9rem; padding:.9rem 1rem; border:1px solid #ecd9aa; background:#fff8ea; color:#4d3a16; }
+      .status-panel-success { border-color:#b9ddce; background:#edf9f4; color:#145a43; }
       .email-preview { border:1px solid #d8d1c2; border-radius:1rem; background:#f7f4ed; max-height:480px; overflow:auto; }
       .lookup-results { display:grid; gap:.5rem; }
       .lookup-item { background:#fffdf8; border:1px solid #ece3d3; justify-content:space-between; text-align:left; }
       .receiver-panel { display:grid; gap:1rem; }
+      .pdf-actions-panel { display:grid; gap:.35rem; }
+      .compact-actions { justify-content:flex-start; }
+      button.whatsapp-action { background:#1f7a55; }
       @media (max-width:720px) {
         .stepper { grid-template-columns:1fr; }
         .modal-header, .modal-footer { flex-direction:column; align-items:stretch; }
@@ -296,6 +333,8 @@ export class SendOrderDebtSummaryModalComponent {
   protected readonly searchingReceivers = signal(false);
   protected readonly previewing = signal(false);
   protected readonly sending = signal(false);
+  protected readonly pdfAction = signal<'download' | 'share' | null>(null);
+  protected readonly shareStatusMessage = signal<string | null>(null);
   protected readonly errorMessage = signal<string | null>(null);
   protected readonly receiverSearchResults = signal<FiscalReceiverSearchItem[]>([]);
   protected readonly selectedReceiver = signal<FiscalReceiver | null>(null);
@@ -509,6 +548,62 @@ export class SendOrderDebtSummaryModalComponent {
     }
   }
 
+  protected downloadPdf(): void {
+    const file = this.buildPreviewPdfFile();
+    if (!file) {
+      return;
+    }
+
+    this.pdfAction.set('download');
+    this.errorMessage.set(null);
+    this.shareStatusMessage.set(null);
+    try {
+      this.downloadFile(file);
+      this.shareStatusMessage.set('PDF descargado correctamente.');
+    } finally {
+      this.pdfAction.set(null);
+    }
+  }
+
+  protected async sharePdf(): Promise<void> {
+    const file = this.buildPreviewPdfFile();
+    if (!file || this.pdfAction() !== null) {
+      return;
+    }
+
+    this.pdfAction.set('share');
+    this.errorMessage.set(null);
+    this.shareStatusMessage.set(null);
+
+    const shareData: ShareData = {
+      files: [file],
+      title: 'Resumen de notas pendientes',
+      text: `Resumen de notas pendientes de ${this.selectedReceiver()?.legalName || 'cliente'}.`,
+    };
+
+    try {
+      if (
+        typeof navigator.share === 'function'
+        && typeof navigator.canShare === 'function'
+        && navigator.canShare(shareData)
+      ) {
+        await navigator.share(shareData);
+        this.shareStatusMessage.set('Archivo compartido correctamente.');
+        return;
+      }
+
+      this.openWhatsAppFallback(file);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return;
+      }
+
+      this.openWhatsAppFallback(file);
+    } finally {
+      this.pdfAction.set(null);
+    }
+  }
+
   protected formatPreviewTotals(totals: readonly OrderDebtSummaryTotalByCurrencyResponse[]): string {
     return this.formatTotals(totals);
   }
@@ -525,6 +620,8 @@ export class SendOrderDebtSummaryModalComponent {
     this.step.set(1);
     this.errorMessage.set(null);
     this.preview.set(null);
+    this.pdfAction.set(null);
+    this.shareStatusMessage.set(null);
     this.receiverSearchResults.set([]);
     this.searchingReceivers.set(false);
     this.selectedReceiver.set(null);
@@ -546,6 +643,7 @@ export class SendOrderDebtSummaryModalComponent {
   private async generatePreview(): Promise<void> {
     this.previewing.set(true);
     this.errorMessage.set(null);
+    this.shareStatusMessage.set(null);
     this.preview.set(null);
 
     try {
@@ -624,6 +722,55 @@ export class SendOrderDebtSummaryModalComponent {
       format: this.format,
       options: { ...this.includeOptions },
     };
+  }
+
+  private buildPreviewPdfFile(): File | null {
+    const currentPreview = this.preview();
+    if (!currentPreview?.pdfBase64) {
+      this.errorMessage.set(currentPreview?.pdfErrorMessage || 'El PDF no está disponible en esta vista previa.');
+      return null;
+    }
+
+    try {
+      const bytes = Uint8Array.from(
+        atob(currentPreview.pdfBase64),
+        (character) => character.charCodeAt(0),
+      );
+      return new File(
+        [bytes],
+        currentPreview.pdfFileName || 'Resumen-adeudos.pdf',
+        { type: 'application/pdf' },
+      );
+    } catch {
+      this.errorMessage.set('No fue posible preparar el archivo PDF.');
+      return null;
+    }
+  }
+
+  private downloadFile(file: File): void {
+    const objectUrl = window.URL.createObjectURL(file);
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = file.name;
+    link.click();
+    window.URL.revokeObjectURL(objectUrl);
+  }
+
+  private openWhatsAppFallback(file: File): void {
+    this.downloadFile(file);
+
+    const text = 'Te comparto el resumen de notas pendientes. Adjuntaré el PDF descargado en este mensaje.';
+    const whatsappWindow = window.open(
+      `https://wa.me/?text=${encodeURIComponent(text)}`,
+      '_blank',
+      'noopener,noreferrer',
+    );
+
+    this.shareStatusMessage.set(
+      whatsappWindow
+        ? 'El PDF se descargó y WhatsApp se abrió. Selecciona el contacto y adjunta manualmente el archivo.'
+        : 'El PDF se descargó. Abre WhatsApp, selecciona el contacto y adjunta manualmente el archivo.',
+    );
   }
 
   private getCustomerSelectionValidationError(): string | null {

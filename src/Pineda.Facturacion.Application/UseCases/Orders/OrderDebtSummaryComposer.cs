@@ -49,6 +49,17 @@ public static class OrderDebtSummaryComposer
         return $"Estimado {normalizedName}, compartimos el resumen de notas/órdenes pendientes para su revisión. Favor de indicarnos cuáles desea que facturemos y confirmar cualquier aclaración sobre pago o datos fiscales.";
     }
 
+    public static string BuildPdfFileName(OrderDebtSummaryDocument document)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+
+        var receiverToken = SanitizeFileToken(document.Receiver.LegalName);
+        var dateToken = MexicoLocalDateRangeConverter
+            .ToMexicoLocal(document.GeneratedAtUtc)
+            .ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        return $"Resumen-adeudos-{receiverToken}-{dateToken}.pdf";
+    }
+
     public static OrderDebtSummarySelection BuildSelectionSummary(IReadOnlyList<OrderDebtSummaryOrder> orders)
     {
         var totals = orders
@@ -109,13 +120,13 @@ public static class OrderDebtSummaryComposer
         builder.AppendLine("<html><head><meta charset=\"utf-8\"><style>");
         builder.AppendLine("body{margin:0;background:#f4f0e7;color:#182533;font-family:Georgia,'Times New Roman',serif;}");
         builder.AppendLine(".wrap{max-width:900px;margin:0 auto;padding:28px;}.panel{background:#fff;border:1px solid #d8d1c2;border-radius:18px;overflow:hidden;box-shadow:0 18px 40px rgba(24,37,51,.12);border-collapse:separate;}");
-        builder.AppendLine(".hero{background:#182533;color:#fff;padding:28px 32px;}.hero small{color:#d8c7a0;letter-spacing:.12em;text-transform:uppercase}.hero h1{margin:8px 0 0;font-size:28px;}");
-        builder.AppendLine(".hero-metric{border:1px solid #526172;border-radius:12px;padding:12px;background:#223447;}.hero-metric span{display:block;color:#d8c7a0;font-size:10px;text-transform:uppercase;letter-spacing:.08em}.hero-metric strong{display:block;margin-top:6px;color:#fff;font-size:18px;line-height:1.2;}");
+        builder.AppendLine(".hero{background:#182533;color:#fff;padding:22px 28px;}.hero small{color:#d8c7a0;letter-spacing:.12em;text-transform:uppercase}.hero h1{margin:0;font-size:24px;line-height:1.15;white-space:nowrap;}");
+        builder.AppendLine(".hero-metric{border:1px solid #526172;border-radius:10px;padding:9px 11px;background:#223447;}.hero-metric span{display:block;color:#d8c7a0;font-size:9px;text-transform:uppercase;letter-spacing:.08em}.hero-metric strong{display:block;margin-top:4px;color:#fff;font-size:16px;line-height:1.2;}");
         builder.AppendLine("table.data-table{width:100%;border-collapse:collapse;margin-top:14px;font-family:Arial,sans-serif;font-size:13px;}table.data-table th{background:#efe7d8;color:#3d3323;text-align:left;}table.data-table th,table.data-table td{padding:10px;border-bottom:1px solid #eadfcb;}a{color:#174f78}.footer{padding:18px 24px;background:#faf7ef;color:#6b7280;font-size:12px;}");
-        builder.AppendLine("@media screen and (max-width:640px){.wrap{padding:12px!important}.hero{padding:22px 20px!important}.hero-copy,.hero-summary{display:block!important;width:100%!important;padding-left:0!important;padding-right:0!important}.hero-summary{padding-top:18px!important}}");
+        builder.AppendLine("@media screen and (max-width:640px){.wrap{padding:12px!important}.hero{padding:18px!important}.hero-title-cell,.hero-summary{display:block!important;width:100%!important;padding-left:0!important;padding-right:0!important}.hero-title-cell{padding-top:12px!important}.hero-title{white-space:normal!important}.hero-summary{padding-top:12px!important}.hero-recipient{padding-top:12px!important}}");
         builder.AppendLine("</style></head><body><div class=\"wrap\" style=\"max-width:900px;margin:0 auto;padding:28px;\">");
         builder.AppendLine("<table role=\"presentation\" class=\"panel\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"background:#fff;border:1px solid #d8d1c2;border-radius:18px;overflow:hidden;box-shadow:0 18px 40px rgba(24,37,51,.12);border-collapse:separate;\">");
-        builder.AppendLine("<tr><td class=\"hero\" style=\"background:#182533;color:#fff;padding:28px 32px;\">");
+        builder.AppendLine("<tr><td class=\"hero\" style=\"background:#182533;color:#fff;padding:22px 28px;\">");
         AppendHeader(builder, document);
         builder.AppendLine("</td></tr>");
         builder.AppendLine("<tr><td class=\"content\" style=\"" + ContentCellStyle + "\">");
@@ -228,19 +239,21 @@ public static class OrderDebtSummaryComposer
 
     private static void AppendHeader(StringBuilder builder, OrderDebtSummaryDocument document)
     {
-        builder.AppendLine("<table role=\"presentation\" class=\"hero-layout\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"width:100%;border-collapse:collapse;\"><tr>");
-        builder.AppendLine("<td class=\"hero-copy\" style=\"vertical-align:top;width:57%;padding:0 24px 0 0;\">");
+        builder.AppendLine("<table role=\"presentation\" class=\"hero-layout\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"width:100%;border-collapse:collapse;\">");
+        builder.AppendLine("<tr>");
+        builder.AppendLine("<td class=\"hero-brand\" style=\"vertical-align:middle;width:72%;padding:0;\">");
         builder.Append("<small style=\"color:#d8c7a0;letter-spacing:.12em;text-transform:uppercase;\">")
             .Append(Html(document.Issuer.LegalName))
             .AppendLine("</small>");
-        builder.AppendLine("<h1 style=\"margin:8px 0 0;font-size:28px;line-height:1.15;color:#fff;\">Resumen de notas pendientes</h1>");
-        builder.Append("<p style=\"margin:10px 0 0;line-height:1.45;color:#fff;\">Emitido para ")
-            .Append(Html(document.Receiver.LegalName))
-            .Append(" · ")
-            .Append(Html(FormatDateTime(document.GeneratedAtUtc)))
-            .AppendLine("</p>");
         builder.AppendLine("</td>");
-        builder.AppendLine("<td class=\"hero-summary\" style=\"vertical-align:top;width:43%;padding:0;\">");
+        builder.Append("<td class=\"hero-currency\" style=\"vertical-align:middle;width:28%;padding:0;text-align:right;color:#cbd3dc;font-family:Arial,sans-serif;font-size:11px;line-height:1.35;\">Moneda: <strong style=\"color:#fff;font-weight:600;\">")
+            .Append(Html(BuildCurrencyLabel(document.Selection.TotalsByCurrency)))
+            .AppendLine("</strong></td>");
+        builder.AppendLine("</tr><tr>");
+        builder.AppendLine("<td class=\"hero-title-cell\" style=\"vertical-align:middle;width:46%;padding:12px 18px 0 0;\">");
+        builder.AppendLine("<h1 class=\"hero-title\" style=\"margin:0;font-size:24px;line-height:1.15;color:#fff;white-space:nowrap;\">Resumen de notas pendientes</h1>");
+        builder.AppendLine("</td>");
+        builder.AppendLine("<td class=\"hero-summary\" style=\"vertical-align:middle;width:54%;padding:12px 0 0;\">");
         builder.AppendLine("<table role=\"presentation\" class=\"hero-metrics\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"width:100%;border-collapse:separate;border-spacing:0;\"><tr>");
         AppendHeaderMetric(
             builder,
@@ -255,10 +268,14 @@ public static class OrderDebtSummaryComposer
             "62%",
             "0");
         builder.AppendLine("</tr></table>");
-        builder.Append("<p class=\"hero-currency\" style=\"margin:8px 2px 0;text-align:right;color:#cbd3dc;font-family:Arial,sans-serif;font-size:11px;line-height:1.35;\">Moneda: <strong style=\"color:#fff;font-weight:600;\">")
-            .Append(Html(BuildCurrencyLabel(document.Selection.TotalsByCurrency)))
-            .AppendLine("</strong></p>");
-        builder.AppendLine("</td></tr></table>");
+        builder.AppendLine("</td></tr>");
+        builder.AppendLine("<tr>");
+        builder.Append("<td colspan=\"2\" class=\"hero-recipient\" style=\"padding:10px 0 0;line-height:1.4;color:#fff;font-family:Georgia,'Times New Roman',serif;font-size:14px;\">Emitido para ")
+            .Append(Html(document.Receiver.LegalName))
+            .Append(" · ")
+            .Append(Html(FormatGeneratedAt(document.GeneratedAtUtc)))
+            .AppendLine("</td>");
+        builder.AppendLine("</tr></table>");
     }
 
     private static void AppendHeaderMetric(
@@ -269,10 +286,10 @@ public static class OrderDebtSummaryComposer
         string padding)
     {
         builder.Append("<td style=\"width:").Append(width).Append(";padding:").Append(padding).Append(";vertical-align:top;\">")
-            .Append("<div class=\"hero-metric\" style=\"border:1px solid #526172;border-radius:12px;padding:12px;background:#223447;\">")
-            .Append("<span style=\"display:block;color:#d8c7a0;font-size:10px;text-transform:uppercase;letter-spacing:.08em;\">")
+            .Append("<div class=\"hero-metric\" style=\"border:1px solid #526172;border-radius:10px;padding:9px 11px;background:#223447;\">")
+            .Append("<span style=\"display:block;color:#d8c7a0;font-size:9px;text-transform:uppercase;letter-spacing:.08em;\">")
             .Append(Html(label))
-            .Append("</span><strong style=\"display:block;margin-top:6px;color:#fff;font-size:18px;line-height:1.2;\">")
+            .Append("</span><strong style=\"display:block;margin-top:4px;color:#fff;font-size:16px;line-height:1.2;\">")
             .Append(Html(value))
             .AppendLine("</strong></div></td>");
     }
@@ -379,11 +396,51 @@ public static class OrderDebtSummaryComposer
         return string.Join(" · ", totals.Select(total => FormatMoney(total.Total, total.CurrencyCode)));
     }
 
-    private static string FormatDateTime(DateTime value)
+    public static string FormatGeneratedAt(DateTime value)
     {
         return MexicoLocalDateRangeConverter
             .ToMexicoLocal(value)
             .ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture);
+    }
+
+    private static string SanitizeFileToken(string? value)
+    {
+        var normalized = string.IsNullOrWhiteSpace(value)
+            ? "receptor"
+            : value.Trim().Normalize(NormalizationForm.FormD);
+        var builder = new StringBuilder(normalized.Length);
+        var pendingSeparator = false;
+
+        foreach (var character in normalized)
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(character) == UnicodeCategory.NonSpacingMark)
+            {
+                continue;
+            }
+
+            if (char.IsLetterOrDigit(character))
+            {
+                if (pendingSeparator && builder.Length > 0)
+                {
+                    builder.Append('-');
+                }
+
+                builder.Append(character);
+                pendingSeparator = false;
+            }
+            else
+            {
+                pendingSeparator = true;
+            }
+
+            if (builder.Length >= 60)
+            {
+                break;
+            }
+        }
+
+        var result = builder.ToString().Trim('-');
+        return string.IsNullOrWhiteSpace(result) ? "receptor" : result;
     }
 
     private static string Html(string? value)

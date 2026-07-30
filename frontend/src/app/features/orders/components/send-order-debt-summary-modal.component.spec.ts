@@ -7,12 +7,26 @@ import { LegacyOrderListItem } from '../models/orders.models';
 import { SendOrderDebtSummaryModalComponent } from './send-order-debt-summary-modal.component';
 
 describe('SendOrderDebtSummaryModalComponent', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    Object.defineProperty(window.navigator, 'share', {
+      configurable: true,
+      value: undefined,
+    });
+    Object.defineProperty(window.navigator, 'canShare', {
+      configurable: true,
+      value: undefined,
+    });
+  });
+
   async function configure(selectedOrders: LegacyOrderListItem[]) {
     const ordersApi = {
       previewOrderDebtSummary: vi.fn().mockReturnValue(of({
         outcome: 'Found',
         success: true,
         html: '',
+        pdfBase64: 'JVBERi10ZXN0',
+        pdfFileName: 'Resumen-adeudos-Cliente-Uno-2026-07-30.pdf',
         summary: {
           orderCount: selectedOrders.length,
           total: null,
@@ -170,6 +184,69 @@ describe('SendOrderDebtSummaryModalComponent', () => {
 
     expect(ordersApi.sendOrderDebtSummary).not.toHaveBeenCalled();
     expect(fixture.componentInstance['errorMessage']()).toBe('Correo inválido: invalido');
+  });
+
+  it('shares the generated PDF through the native file share dialog', async () => {
+    const nativeShare = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(window.navigator, 'share', {
+      configurable: true,
+      value: nativeShare,
+    });
+    Object.defineProperty(window.navigator, 'canShare', {
+      configurable: true,
+      value: vi.fn().mockReturnValue(true),
+    });
+
+    const { fixture, component } = await configure([
+      createOrder({ legacyOrderId: 'LEG-1001', customerRfc: 'AAA010101AAA', customerLegacyId: 'C-1' }),
+    ]);
+
+    component.step.set(2);
+    await component.next();
+    await fixture.componentInstance['sharePdf']();
+
+    expect(nativeShare).toHaveBeenCalledOnce();
+    const shareData = nativeShare.mock.calls[0][0] as ShareData;
+    expect(shareData.files).toHaveLength(1);
+    expect(shareData.files?.[0].name).toBe('Resumen-adeudos-Cliente-Uno-2026-07-30.pdf');
+    expect(shareData.files?.[0].type).toBe('application/pdf');
+  });
+
+  it('downloads the PDF and opens WhatsApp when file sharing is unavailable', async () => {
+    Object.defineProperty(window.navigator, 'share', {
+      configurable: true,
+      value: vi.fn(),
+    });
+    Object.defineProperty(window.navigator, 'canShare', {
+      configurable: true,
+      value: vi.fn().mockReturnValue(false),
+    });
+    Object.defineProperty(window.URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn().mockReturnValue('blob:order-summary'),
+    });
+    Object.defineProperty(window.URL, 'revokeObjectURL', {
+      configurable: true,
+      value: vi.fn(),
+    });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    const open = vi.spyOn(window, 'open').mockReturnValue({} as Window);
+
+    const { fixture, component } = await configure([
+      createOrder({ legacyOrderId: 'LEG-1001', customerRfc: 'AAA010101AAA', customerLegacyId: 'C-1' }),
+    ]);
+
+    component.step.set(2);
+    await component.next();
+    await fixture.componentInstance['sharePdf']();
+
+    expect(click).toHaveBeenCalledOnce();
+    expect(open).toHaveBeenCalledWith(
+      expect.stringContaining('https://wa.me/?text='),
+      '_blank',
+      'noopener,noreferrer',
+    );
+    expect(fixture.componentInstance['shareStatusMessage']()).toContain('adjunta manualmente');
   });
 });
 
