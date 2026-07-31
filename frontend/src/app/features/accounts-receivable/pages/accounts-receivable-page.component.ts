@@ -90,20 +90,36 @@ const REASSIGN_PAYMENT_APPLICATIONS_SUCCESS_MESSAGE =
   ],
   template: `
     <section class="page">
-      <header>
-        <p class="eyebrow">Cuentas por cobrar</p>
-        <h2>
-          {{
-            detailMode()
-              ? 'Cuenta por cobrar, pagos y aplicaciones'
-              : receiverWorkspaceMode()
-                ? 'Workspace del receptor'
-                : 'Cartera operativa mínima'
-          }}
-        </h2>
+      <header class="page-header" [class.workspace-page-header]="receiverWorkspaceMode()">
+        <div class="page-header-copy">
+          <p class="eyebrow">Cuentas por cobrar</p>
+          <h2>{{ pageTitle() }}</h2>
+          @if (receiverWorkspaceMode() && receiverWorkspace(); as workspace) {
+            <p class="helper workspace-receiver-meta">
+              RFC: {{ workspace.rfc || 'No disponible' }}
+            </p>
+          }
+        </div>
+        @if (receiverWorkspaceMode()) {
+          <div class="page-header-actions">
+            <a class="secondary workspace-back-link" [routerLink]="['/app/accounts-receivable']"
+              >Volver a cartera</a
+            >
+            @if (receiverWorkspace(); as workspace) {
+              @if (permissionService.canManagePayments()) {
+                <app-send-receivables-summary-button
+                  [receiverId]="workspace.fiscalReceiverId"
+                  [currentSelection]="selectedReceiverWorkspaceInvoiceIds()"
+                  [disabled]="loading()"
+                  (summarySent)="handleReceivablesSummarySent($event)"
+                />
+              }
+            }
+          </div>
+        }
       </header>
 
-      @if (!detailMode()) {
+      @if (!detailMode() && !receiverWorkspaceMode()) {
         <section class="card filters">
           <div class="section-head compact">
             <h3>Workspace del receptor</h3>
@@ -127,9 +143,6 @@ const REASSIGN_PAYMENT_APPLICATIONS_SUCCESS_MESSAGE =
             <button type="button" (click)="searchReceiverWorkspace()" [disabled]="loading()">
               Buscar receptor
             </button>
-            @if (receiverWorkspaceMode()) {
-              <a class="secondary" [routerLink]="['/app/accounts-receivable']">Volver a cartera</a>
-            }
           </div>
 
           @if (receiverLookupResults().length) {
@@ -494,22 +507,10 @@ const REASSIGN_PAYMENT_APPLICATIONS_SUCCESS_MESSAGE =
         <section class="card">
           <div class="section-head compact">
             <div>
-              <h3>{{ workspace.legalName || 'Receptor sin nombre' }}</h3>
-              <p class="helper">
-                {{ workspace.rfc || 'RFC no disponible' }} · FiscalReceiver #{{
-                  workspace.fiscalReceiverId
-                }}
-              </p>
+              <h3>Resumen de cuenta</h3>
+              <p class="helper">Indicadores operativos y de cobranza del receptor.</p>
             </div>
             <div class="detail-badges">
-              @if (permissionService.canManagePayments()) {
-                <app-send-receivables-summary-button
-                  [receiverId]="workspace.fiscalReceiverId"
-                  [currentSelection]="selectedReceiverWorkspaceInvoiceIds()"
-                  [disabled]="loading()"
-                  (summarySent)="handleReceivablesSummarySent($event)"
-                />
-              }
               @if (workspace.summary.hasPendingCommitment) {
                 <span class="badge" data-status="PendingCommitment">Compromiso pendiente</span>
               }
@@ -603,10 +604,10 @@ const REASSIGN_PAYMENT_APPLICATIONS_SUCCESS_MESSAGE =
               [attr.aria-pressed]="
                 isReceiverWorkspaceFilterActive(receiverWorkspaceFilters.openInvoices)
               "
-              aria-label="Mostrar facturas abiertas"
+              aria-label="Mostrar facturas pendientes"
               (click)="selectReceiverWorkspaceFilter(receiverWorkspaceFilters.openInvoices)"
             >
-              <strong>Facturas abiertas</strong>
+              <strong>Facturas pendientes</strong>
               <div class="summary-card-value">
                 {{ receiverWorkspaceInvoiceSummary().openInvoicesCount }}
               </div>
@@ -630,124 +631,150 @@ const REASSIGN_PAYMENT_APPLICATIONS_SUCCESS_MESSAGE =
           </div>
         </section>
 
-        <section class="card">
-          <div class="section-head compact">
-            <div>
-              <h3>Facturas del receptor</h3>
-              <p class="helper">{{ receiverWorkspaceInvoiceHelperText() }}</p>
-            </div>
-          </div>
-          @if (!receiverWorkspaceInvoiceRows().length) {
-            <p class="helper">{{ receiverWorkspaceInvoiceEmptyText() }}</p>
-          } @else {
-            <div class="table-wrap">
-              <table class="portfolio receiver-workspace-table">
-                <thead>
-                  <tr>
-                    <th>
-                      <input
-                        type="checkbox"
-                        [checked]="allVisibleReceiverWorkspaceInvoicesSelected()"
-                        (change)="toggleAllVisibleReceiverWorkspaceInvoices($any($event.target).checked)"
-                        aria-label="Seleccionar todas las facturas visibles"
-                      />
-                    </th>
-                    <th>Factura</th>
-                    <th>Emisión</th>
-                    <th>Vencimiento</th>
-                    <th>Total</th>
-                    <th>Pagado</th>
-                    <th>Saldo</th>
-                    <th>Estatus</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (
-                    item of receiverWorkspaceInvoiceRows();
-                    track item.invoice.accountsReceivableInvoiceId
-                  ) {
-                    <tr
-                      class="receiver-invoice-row"
-                      [class.is-overdue]="item.collection.status === 'overdue'"
-                      [attr.data-collection-status]="item.collection.status"
-                    >
-                      <td data-label="Seleccionar">
+        <section class="card collapsible-card">
+          <button
+            type="button"
+            class="collapsible-header"
+            [attr.aria-expanded]="receiverWorkspaceInvoicesExpanded()"
+            aria-controls="receiver-workspace-invoices-panel"
+            (click)="toggleReceiverWorkspaceInvoices()"
+          >
+            <span class="collapsible-header-copy">
+              <span class="collapsible-title">
+                Facturas pendientes ({{ receiverWorkspaceInvoiceSummary().openInvoicesCount }})
+              </span>
+              <span class="collapsible-helper">{{ receiverWorkspaceInvoiceHelperText() }}</span>
+            </span>
+            <span class="collapsible-indicator" aria-hidden="true">
+              {{ receiverWorkspaceInvoicesExpanded() ? '−' : '+' }}
+            </span>
+          </button>
+          <div
+            id="receiver-workspace-invoices-panel"
+            class="collapsible-content"
+            [hidden]="!receiverWorkspaceInvoicesExpanded()"
+          >
+            @if (!receiverWorkspaceInvoiceRows().length) {
+              <p class="helper">{{ receiverWorkspaceInvoiceEmptyText() }}</p>
+            } @else {
+              <div class="table-wrap">
+                <table class="portfolio receiver-workspace-table">
+                  <thead>
+                    <tr>
+                      <th>
                         <input
                           type="checkbox"
-                          [checked]="
-                            isReceiverWorkspaceInvoiceSelected(
-                              item.invoice.accountsReceivableInvoiceId
-                            )
-                          "
+                          [checked]="allVisibleReceiverWorkspaceInvoicesSelected()"
                           (change)="
-                            toggleReceiverWorkspaceInvoiceSelection(
-                              item.invoice.accountsReceivableInvoiceId,
-                              $any($event.target).checked
-                            )
+                            toggleAllVisibleReceiverWorkspaceInvoices($any($event.target).checked)
                           "
-                          [attr.aria-label]="
-                            'Seleccionar factura ' + formatFiscalLabel(item.invoice)
-                          "
+                          aria-label="Seleccionar todas las facturas visibles"
                         />
-                      </td>
-                      <td data-label="Factura">
-                        <div>{{ formatFiscalLabel(item.invoice) }}</div>
-                        <div class="subtle">{{ item.invoice.fiscalUuid || 'UUID pendiente' }}</div>
-                        <div class="subtle">
-                          CxC #{{ item.invoice.accountsReceivableInvoiceId }}
-                        </div>
-                      </td>
-                      <td data-label="Emisión">
-                        {{
-                          formatReceiverWorkspaceCalendarDate(item.invoice.issuedAtUtc, 'Sin fecha')
-                        }}
-                      </td>
-                      <td data-label="Vencimiento">
-                        {{
-                          formatReceiverWorkspaceCalendarDate(
-                            item.invoice.dueAtUtc,
-                            'Sin vencimiento'
-                          )
-                        }}
-                        @if (item.collection.dueDateHint) {
-                          <div class="subtle">{{ item.collection.dueDateHint }}</div>
-                        }
-                      </td>
-                      <td data-label="Total">
-                        {{ item.invoice.total | currency: 'MXN' : 'symbol' : '1.2-2' }}
-                      </td>
-                      <td data-label="Pagado">
-                        {{ item.invoice.paidTotal | currency: 'MXN' : 'symbol' : '1.2-2' }}
-                      </td>
-                      <td data-label="Saldo">
-                        {{ item.invoice.outstandingBalance | currency: 'MXN' : 'symbol' : '1.2-2' }}
-                      </td>
-                      <td data-label="Estatus">
-                        <div class="collection-status-stack">
-                          <app-status-badge
-                            [label]="item.collection.badgeLabel"
-                            [tone]="receiverWorkspaceCollectionTone(item.collection.status)"
-                          />
-                          <div class="subtle">
-                            Operativo:
-                            {{ receiverWorkspaceOperationalStatusLabel(item.invoice.status) }}
-                          </div>
-                        </div>
-                      </td>
-                      <td data-label="Acción">
-                        <a
-                          [routerLink]="['/app/accounts-receivable']"
-                          [queryParams]="{ invoiceId: item.invoice.accountsReceivableInvoiceId }"
-                          >Ver detalle</a
-                        >
-                      </td>
+                      </th>
+                      <th>Factura</th>
+                      <th>Emisión</th>
+                      <th>Vencimiento</th>
+                      <th>Total</th>
+                      <th>Pagado</th>
+                      <th>Saldo</th>
+                      <th>Estatus</th>
+                      <th></th>
                     </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-          }
+                  </thead>
+                  <tbody>
+                    @for (
+                      item of receiverWorkspaceInvoiceRows();
+                      track item.invoice.accountsReceivableInvoiceId
+                    ) {
+                      <tr
+                        class="receiver-invoice-row"
+                        [class.is-overdue]="item.collection.status === 'overdue'"
+                        [attr.data-collection-status]="item.collection.status"
+                      >
+                        <td data-label="Seleccionar">
+                          <input
+                            type="checkbox"
+                            [checked]="
+                              isReceiverWorkspaceInvoiceSelected(
+                                item.invoice.accountsReceivableInvoiceId
+                              )
+                            "
+                            (change)="
+                              toggleReceiverWorkspaceInvoiceSelection(
+                                item.invoice.accountsReceivableInvoiceId,
+                                $any($event.target).checked
+                              )
+                            "
+                            [attr.aria-label]="
+                              'Seleccionar factura ' + formatFiscalLabel(item.invoice)
+                            "
+                          />
+                        </td>
+                        <td data-label="Factura">
+                          <div>{{ formatFiscalLabel(item.invoice) }}</div>
+                          <div class="subtle">
+                            {{ item.invoice.fiscalUuid || 'UUID pendiente' }}
+                          </div>
+                          <div class="subtle">
+                            CxC #{{ item.invoice.accountsReceivableInvoiceId }}
+                          </div>
+                        </td>
+                        <td data-label="Emisión">
+                          {{
+                            formatReceiverWorkspaceCalendarDate(
+                              item.invoice.issuedAtUtc,
+                              'Sin fecha'
+                            )
+                          }}
+                        </td>
+                        <td data-label="Vencimiento">
+                          {{
+                            formatReceiverWorkspaceCalendarDate(
+                              item.invoice.dueAtUtc,
+                              'Sin vencimiento'
+                            )
+                          }}
+                          @if (item.collection.dueDateHint) {
+                            <div class="subtle">{{ item.collection.dueDateHint }}</div>
+                          }
+                        </td>
+                        <td data-label="Total">
+                          {{ item.invoice.total | currency: 'MXN' : 'symbol' : '1.2-2' }}
+                        </td>
+                        <td data-label="Pagado">
+                          {{ item.invoice.paidTotal | currency: 'MXN' : 'symbol' : '1.2-2' }}
+                        </td>
+                        <td data-label="Saldo">
+                          {{
+                            item.invoice.outstandingBalance | currency: 'MXN' : 'symbol' : '1.2-2'
+                          }}
+                        </td>
+                        <td data-label="Estatus">
+                          <div class="collection-status-stack">
+                            <app-status-badge
+                              [label]="item.collection.badgeLabel"
+                              [tone]="receiverWorkspaceCollectionTone(item.collection.status)"
+                            />
+                            <div class="subtle">
+                              Operativo:
+                              {{ receiverWorkspaceOperationalStatusLabel(item.invoice.status) }}
+                            </div>
+                          </div>
+                        </td>
+                        <td data-label="Acción">
+                          <a
+                            [routerLink]="['/app/accounts-receivable']"
+                            [queryParams]="{ invoiceId: item.invoice.accountsReceivableInvoiceId }"
+                            >Ver detalle</a
+                          >
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
+          </div>
         </section>
 
         <section class="card">
@@ -1941,6 +1968,19 @@ export class AccountsReceivablePageComponent {
   protected readonly receiverWorkspace = signal<AccountsReceivableReceiverWorkspaceResponse | null>(
     null,
   );
+  protected readonly pageTitle = computed(() => {
+    if (this.detailMode()) {
+      return 'Cuenta por cobrar, pagos y aplicaciones';
+    }
+
+    if (this.receiverWorkspaceMode()) {
+      const receiverName = this.receiverWorkspace()?.legalName?.trim();
+      return receiverName ? `Workspace de ${receiverName}` : 'Workspace del receptor';
+    }
+
+    return 'Cartera operativa mínima';
+  });
+  protected readonly receiverWorkspaceInvoicesExpanded = signal(false);
   protected readonly selectedReceiverWorkspaceInvoiceIds = signal<number[]>([]);
   protected readonly receiverWorkspaceFilters = RECEIVABLE_WORKSPACE_FILTERS;
   protected readonly receiverWorkspaceFilter = signal<ReceivableWorkspaceFilter>(
@@ -2010,7 +2050,7 @@ export class AccountsReceivablePageComponent {
       case RECEIVABLE_WORKSPACE_FILTERS.pending:
       case RECEIVABLE_WORKSPACE_FILTERS.openInvoices:
       default:
-        return `${openCount} cuenta(s) abierta(s)`;
+        return `${openCount} factura(s) pendiente(s)`;
     }
   });
   protected readonly receiverWorkspaceInvoiceEmptyText = computed(() => {
@@ -2022,7 +2062,7 @@ export class AccountsReceivablePageComponent {
       case RECEIVABLE_WORKSPACE_FILTERS.pending:
       case RECEIVABLE_WORKSPACE_FILTERS.openInvoices:
       default:
-        return 'No hay facturas abiertas para este receptor.';
+        return 'No hay facturas pendientes para este receptor.';
     }
   });
   protected readonly receiverWorkspaceOverdueCountLabel = computed(() => {
@@ -2188,6 +2228,11 @@ export class AccountsReceivablePageComponent {
 
   protected selectReceiverWorkspaceFilter(filter: ReceivableWorkspaceFilter): void {
     this.receiverWorkspaceFilter.set(filter);
+    this.receiverWorkspaceInvoicesExpanded.set(true);
+  }
+
+  protected toggleReceiverWorkspaceInvoices(): void {
+    this.receiverWorkspaceInvoicesExpanded.update((expanded) => !expanded);
   }
 
   protected isReceiverWorkspaceFilterActive(filter: ReceivableWorkspaceFilter): boolean {
@@ -2240,6 +2285,7 @@ export class AccountsReceivablePageComponent {
 
       if (accountsReceivableInvoiceId !== null || fiscalDocumentId !== null || paymentId !== null) {
         this.receiverWorkspace.set(null);
+        this.receiverWorkspaceInvoicesExpanded.set(false);
         this.selectedReceiverWorkspaceInvoiceIds.set([]);
         this.receiverLookupResults.set([]);
 
@@ -2267,6 +2313,7 @@ export class AccountsReceivablePageComponent {
         this.invoice.set(null);
         this.payment.set(null);
         this.eligibleReceiverInvoices.set([]);
+        this.receiverWorkspaceInvoicesExpanded.set(false);
         this.selectedReceiverWorkspaceInvoiceIds.set([]);
         this.receiverWorkspaceFilter.set(RECEIVABLE_WORKSPACE_FILTERS.openInvoices);
         this.receiverWorkspaceToday.set(new Date());
@@ -2277,6 +2324,7 @@ export class AccountsReceivablePageComponent {
       this.invoice.set(null);
       this.payment.set(null);
       this.receiverWorkspace.set(null);
+      this.receiverWorkspaceInvoicesExpanded.set(false);
       this.selectedReceiverWorkspaceInvoiceIds.set([]);
       this.receiverLookupResults.set([]);
       this.eligibleReceiverInvoices.set([]);

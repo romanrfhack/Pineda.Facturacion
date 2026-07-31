@@ -559,9 +559,17 @@ describe('AccountsReceivablePageComponent', () => {
     fixture.detectChanges();
 
     expect(api.getReceiverWorkspace).toHaveBeenCalledWith(77);
-    expect(fixture.nativeElement.textContent).toContain('Workspace del receptor');
-    expect(fixture.nativeElement.textContent).toContain('Receiver');
-    expect(fixture.nativeElement.textContent).toContain('AAA010101AAA');
+    expect(fixture.nativeElement.textContent).toContain('Workspace de Receiver');
+    expect(fixture.nativeElement.textContent).toContain('RFC: AAA010101AAA');
+    expect(
+      fixture.nativeElement.querySelector('input[placeholder="RFC o razón social"]'),
+    ).toBeNull();
+    expect(
+      fixture.nativeElement.querySelector('.workspace-page-header .workspace-back-link')
+        ?.textContent,
+    ).toContain('Volver a cartera');
+    expect(getReceiverWorkspaceInvoicesToggle(fixture).getAttribute('aria-expanded')).toBe('false');
+    expect(getReceiverWorkspaceInvoicesPanel(fixture).hidden).toBe(true);
   });
 
   it('shows Nuevo pago next to the empty workspace state when there are no payments', async () => {
@@ -1163,6 +1171,65 @@ describe('AccountsReceivablePageComponent', () => {
     expect(rows[0].classList.contains('is-overdue')).toBe(true);
   });
 
+  it('keeps invoice filters and selections when the workspace panel is collapsed and reopened', async () => {
+    queryParams$.next(convertToParamMap({ fiscalReceiverId: '77' }));
+    api.getReceiverWorkspace.mockReturnValueOnce(
+      of(
+        createWorkspace({
+          summary: {
+            pendingBalanceTotal: 1500,
+            overdueBalanceTotal: 1500,
+            currentBalanceTotal: 0,
+            openInvoicesCount: 1,
+            overdueInvoicesCount: 1,
+          },
+          invoices: [
+            createWorkspaceInvoice({
+              accountsReceivableInvoiceId: 10,
+              fiscalFolio: '1010',
+              dueAtUtc: '2026-04-12T00:00:00Z',
+              outstandingBalance: 1500,
+            }),
+          ],
+        }),
+      ),
+    );
+
+    const fixture = TestBed.createComponent(AccountsReceivablePageComponent);
+    fixture.componentInstance['receiverWorkspaceToday'].set(new Date('2026-04-15T12:00:00Z'));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    getSummaryCardButton(fixture, 'Total vencido').click();
+    fixture.detectChanges();
+
+    const panel = getReceiverWorkspaceInvoicesPanel(fixture);
+    const toggle = getReceiverWorkspaceInvoicesToggle(fixture);
+    const invoiceCheckbox = fixture.nativeElement.querySelector(
+      'input[aria-label="Seleccionar factura A-1010"]',
+    ) as HTMLInputElement;
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(panel.hidden).toBe(false);
+
+    invoiceCheckbox.click();
+    fixture.detectChanges();
+    expect(invoiceCheckbox.checked).toBe(true);
+
+    toggle.click();
+    fixture.detectChanges();
+    expect(panel.hidden).toBe(true);
+
+    toggle.click();
+    fixture.detectChanges();
+    expect(panel.hidden).toBe(false);
+    expect(invoiceCheckbox.checked).toBe(true);
+    expect(getSummaryCardButton(fixture, 'Total vencido').getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+  });
+
   it('filters the workspace grid when Total vencido is selected', async () => {
     queryParams$.next(convertToParamMap({ fiscalReceiverId: '77' }));
     api.getReceiverWorkspace.mockReturnValueOnce(
@@ -1206,6 +1273,8 @@ describe('AccountsReceivablePageComponent', () => {
     const rows = getReceiverWorkspaceInvoiceRows(fixture);
 
     expect(overdueButton.getAttribute('aria-pressed')).toBe('true');
+    expect(getReceiverWorkspaceInvoicesToggle(fixture).getAttribute('aria-expanded')).toBe('true');
+    expect(getReceiverWorkspaceInvoicesPanel(fixture).hidden).toBe(false);
     expect(fixture.nativeElement.textContent).toContain('Mostrando vencidas · 1 de 2');
     expect(rows).toHaveLength(1);
     expect(rows[0].textContent).toContain('A-1010');
@@ -1269,7 +1338,7 @@ describe('AccountsReceivablePageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Mostrando vencidas · 1 de 2');
   });
 
-  it('returns to the full open list when Facturas abiertas is selected after filtering overdue', async () => {
+  it('returns to the full pending list when Facturas pendientes is selected after filtering overdue', async () => {
     queryParams$.next(convertToParamMap({ fiscalReceiverId: '77' }));
     api.getReceiverWorkspace.mockReturnValueOnce(
       of(
@@ -1307,12 +1376,12 @@ describe('AccountsReceivablePageComponent', () => {
 
     getSummaryCardButton(fixture, 'Total vencido').click();
     fixture.detectChanges();
-    getSummaryCardButton(fixture, 'Facturas abiertas').click();
+    getSummaryCardButton(fixture, 'Facturas pendientes').click();
     fixture.detectChanges();
 
     const rows = getReceiverWorkspaceInvoiceRows(fixture);
 
-    expect(fixture.nativeElement.textContent).toContain('2 cuenta(s) abierta(s)');
+    expect(fixture.nativeElement.textContent).toContain('2 factura(s) pendiente(s)');
     expect(rows).toHaveLength(2);
     expect(rows[0].textContent).toContain('A-1010');
     expect(rows[1].textContent).toContain('A-1011');
@@ -1470,7 +1539,7 @@ describe('AccountsReceivablePageComponent', () => {
     );
 
     const fixture = TestBed.createComponent(AccountsReceivablePageComponent);
-    fixture.componentInstance['receiverWorkspaceToday'].set(new Date('2026-04-15T12:00:00-06:00'));
+    fixture.componentInstance['receiverWorkspaceToday'].set(new Date(2026, 3, 15, 12, 0, 0));
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -1661,6 +1730,30 @@ function getReceiverWorkspaceInvoiceRows(
   return Array.from(
     fixture.nativeElement.querySelectorAll('.receiver-workspace-table tbody tr'),
   ) as HTMLTableRowElement[];
+}
+
+function getReceiverWorkspaceInvoicesToggle(
+  fixture: ComponentFixture<AccountsReceivablePageComponent>,
+) {
+  const button = fixture.nativeElement.querySelector('.collapsible-header');
+
+  if (!button) {
+    throw new Error('Receiver workspace invoice panel toggle not found');
+  }
+
+  return button as HTMLButtonElement;
+}
+
+function getReceiverWorkspaceInvoicesPanel(
+  fixture: ComponentFixture<AccountsReceivablePageComponent>,
+) {
+  const panel = fixture.nativeElement.querySelector('#receiver-workspace-invoices-panel');
+
+  if (!panel) {
+    throw new Error('Receiver workspace invoice panel not found');
+  }
+
+  return panel as HTMLDivElement;
 }
 
 function getSummaryCardButton(
