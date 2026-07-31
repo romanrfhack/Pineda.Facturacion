@@ -275,6 +275,163 @@ public class AccountsReceivableServicesTests
     }
 
     [Fact]
+    public async Task UpdateAccountsReceivablePayment_UpdatesAllEditableFields_WhenPaymentHasNoApplicationsOrRep()
+    {
+        var payment = CreatePayment(amount: 100m);
+        payment.Reference = "REF-ANTERIOR";
+        payment.Notes = "Notas anteriores";
+        var repository = new ArFakeAccountsReceivablePaymentRepository
+        {
+            ExistingById = payment,
+            ExistingTracked = payment
+        };
+        var service = new UpdateAccountsReceivablePaymentService(
+            repository,
+            new ArFakeSatCatalogDescriptionProvider(),
+            new ArFakeUnitOfWork());
+        var paymentDate = new DateTime(2026, 4, 15, 10, 30, 0, DateTimeKind.Utc);
+
+        var result = await service.ExecuteAsync(new UpdateAccountsReceivablePaymentCommand
+        {
+            AccountsReceivablePaymentId = payment.Id,
+            PaymentDateUtc = paymentDate,
+            PaymentFormSat = "28",
+            Amount = 125.50m,
+            Reference = " REF-CORREGIDA ",
+            Notes = " Notas corregidas "
+        });
+
+        Assert.Equal(UpdateAccountsReceivablePaymentOutcome.Updated, result.Outcome);
+        Assert.True(result.IsSuccess);
+        Assert.Equal(
+            ["paymentDateUtc", "paymentFormSat", "amount", "reference", "notes"],
+            result.UpdatedFields);
+        Assert.Equal(paymentDate, payment.PaymentDateUtc);
+        Assert.Equal("28", payment.PaymentFormSat);
+        Assert.Equal(125.50m, payment.Amount);
+        Assert.Equal("REF-CORREGIDA", payment.Reference);
+        Assert.Equal("Notas corregidas", payment.Notes);
+    }
+
+    [Fact]
+    public async Task UpdateAccountsReceivablePayment_UpdatesMetadata_WhenApplicationsExistWithoutRep()
+    {
+        var payment = CreatePayment(amount: 100m);
+        payment.Applications.Add(CreatePaymentApplication(payment.Id, 201, 40m, 100m, 60m));
+        var repository = new ArFakeAccountsReceivablePaymentRepository
+        {
+            ExistingById = payment,
+            ExistingTracked = payment
+        };
+        var service = new UpdateAccountsReceivablePaymentService(
+            repository,
+            new ArFakeSatCatalogDescriptionProvider(),
+            new ArFakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new UpdateAccountsReceivablePaymentCommand
+        {
+            AccountsReceivablePaymentId = payment.Id,
+            PaymentDateUtc = new DateTime(2026, 4, 15, 10, 30, 0, DateTimeKind.Utc),
+            PaymentFormSat = "28",
+            Amount = 100m,
+            Reference = "REF-CORREGIDA",
+            Notes = "Notas corregidas"
+        });
+
+        Assert.Equal(UpdateAccountsReceivablePaymentOutcome.Updated, result.Outcome);
+        Assert.True(result.IsSuccess);
+        Assert.DoesNotContain("amount", result.UpdatedFields);
+        Assert.Equal(100m, payment.Amount);
+        Assert.Equal("28", payment.PaymentFormSat);
+        Assert.Equal("REF-CORREGIDA", payment.Reference);
+    }
+
+    [Fact]
+    public async Task UpdateAccountsReceivablePayment_ReturnsConflict_WhenAmountChangesWithApplications()
+    {
+        var payment = CreatePayment(amount: 100m);
+        payment.Applications.Add(CreatePaymentApplication(payment.Id, 201, 40m, 100m, 60m));
+        var repository = new ArFakeAccountsReceivablePaymentRepository
+        {
+            ExistingById = payment,
+            ExistingTracked = payment
+        };
+        var service = new UpdateAccountsReceivablePaymentService(
+            repository,
+            new ArFakeSatCatalogDescriptionProvider(),
+            new ArFakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new UpdateAccountsReceivablePaymentCommand
+        {
+            AccountsReceivablePaymentId = payment.Id,
+            PaymentDateUtc = payment.PaymentDateUtc,
+            PaymentFormSat = payment.PaymentFormSat,
+            Amount = 125m
+        });
+
+        Assert.Equal(UpdateAccountsReceivablePaymentOutcome.Conflict, result.Outcome);
+        Assert.False(result.IsSuccess);
+        Assert.Equal(100m, payment.Amount);
+        Assert.Contains("aplicado", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task UpdateAccountsReceivablePayment_ReturnsConflict_WhenRepAssociationExists()
+    {
+        var payment = CreatePayment(amount: 100m);
+        var repository = new ArFakeAccountsReceivablePaymentRepository
+        {
+            ExistingById = payment,
+            ExistingTracked = payment,
+            MutationHasRepAssociations = true
+        };
+        var service = new UpdateAccountsReceivablePaymentService(
+            repository,
+            new ArFakeSatCatalogDescriptionProvider(),
+            new ArFakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new UpdateAccountsReceivablePaymentCommand
+        {
+            AccountsReceivablePaymentId = payment.Id,
+            PaymentDateUtc = payment.PaymentDateUtc,
+            PaymentFormSat = "28",
+            Amount = payment.Amount
+        });
+
+        Assert.Equal(UpdateAccountsReceivablePaymentOutcome.Conflict, result.Outcome);
+        Assert.False(result.IsSuccess);
+        Assert.Equal("03", payment.PaymentFormSat);
+        Assert.Contains("complemento", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task UpdateAccountsReceivablePayment_RejectsPaymentForm99()
+    {
+        var payment = CreatePayment(amount: 100m);
+        var repository = new ArFakeAccountsReceivablePaymentRepository
+        {
+            ExistingById = payment,
+            ExistingTracked = payment
+        };
+        var service = new UpdateAccountsReceivablePaymentService(
+            repository,
+            new ArFakeSatCatalogDescriptionProvider(),
+            new ArFakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new UpdateAccountsReceivablePaymentCommand
+        {
+            AccountsReceivablePaymentId = payment.Id,
+            PaymentDateUtc = payment.PaymentDateUtc,
+            PaymentFormSat = "99",
+            Amount = payment.Amount
+        });
+
+        Assert.Equal(UpdateAccountsReceivablePaymentOutcome.ValidationFailed, result.Outcome);
+        Assert.False(result.IsSuccess);
+        Assert.Equal("03", payment.PaymentFormSat);
+    }
+
+    [Fact]
     public async Task DeleteAccountsReceivablePayment_Succeeds_WhenPaymentHasNoApplicationsOrRep()
     {
         var payment = CreatePayment(amount: 100m);
@@ -3198,8 +3355,13 @@ public class AccountsReceivableServicesTests
             return Task.FromResult<AccountsReceivablePaymentMutationSnapshot?>(new AccountsReceivablePaymentMutationSnapshot
             {
                 PaymentId = payment.Id,
+                PaymentDateUtc = payment.PaymentDateUtc,
+                PaymentFormSat = payment.PaymentFormSat,
                 Amount = payment.Amount,
+                Reference = payment.Reference,
+                Notes = payment.Notes,
                 ReceivedFromFiscalReceiverId = payment.ReceivedFromFiscalReceiverId,
+                UpdatedAtUtc = payment.UpdatedAtUtc,
                 HasApplications = payment.Applications.Count > 0,
                 HasRepAssociations = MutationHasRepAssociations
             });
@@ -3218,6 +3380,36 @@ public class AccountsReceivableServicesTests
             }
 
             payment.Amount = amount;
+            payment.UpdatedAtUtc = updatedAtUtc;
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> TryUpdateIfAllowedAsync(
+            long accountsReceivablePaymentId,
+            DateTime expectedUpdatedAtUtc,
+            DateTime paymentDateUtc,
+            string paymentFormSat,
+            decimal amount,
+            string? reference,
+            string? notes,
+            bool requireNoApplications,
+            DateTime updatedAtUtc,
+            CancellationToken cancellationToken = default)
+        {
+            var payment = new[] { ExistingTracked, ExistingById }.FirstOrDefault(x => x?.Id == accountsReceivablePaymentId);
+            if (payment is null
+                || payment.UpdatedAtUtc != expectedUpdatedAtUtc
+                || MutationHasRepAssociations
+                || (requireNoApplications && payment.Applications.Count > 0))
+            {
+                return Task.FromResult(false);
+            }
+
+            payment.PaymentDateUtc = paymentDateUtc;
+            payment.PaymentFormSat = paymentFormSat;
+            payment.Amount = amount;
+            payment.Reference = reference;
+            payment.Notes = notes;
             payment.UpdatedAtUtc = updatedAtUtc;
             return Task.FromResult(true);
         }

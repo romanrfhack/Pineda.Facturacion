@@ -3160,8 +3160,13 @@ public class PaymentComplementServicesTests
             return Task.FromResult<AccountsReceivablePaymentMutationSnapshot?>(new AccountsReceivablePaymentMutationSnapshot
             {
                 PaymentId = payment.Id,
+                PaymentDateUtc = payment.PaymentDateUtc,
+                PaymentFormSat = payment.PaymentFormSat,
                 Amount = payment.Amount,
+                Reference = payment.Reference,
+                Notes = payment.Notes,
                 ReceivedFromFiscalReceiverId = payment.ReceivedFromFiscalReceiverId,
+                UpdatedAtUtc = payment.UpdatedAtUtc,
                 HasApplications = payment.Applications.Count > 0,
                 HasRepAssociations = false
             });
@@ -3180,6 +3185,35 @@ public class PaymentComplementServicesTests
             }
 
             payment.Amount = amount;
+            payment.UpdatedAtUtc = updatedAtUtc;
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> TryUpdateIfAllowedAsync(
+            long accountsReceivablePaymentId,
+            DateTime expectedUpdatedAtUtc,
+            DateTime paymentDateUtc,
+            string paymentFormSat,
+            decimal amount,
+            string? reference,
+            string? notes,
+            bool requireNoApplications,
+            DateTime updatedAtUtc,
+            CancellationToken cancellationToken = default)
+        {
+            var payment = new[] { ExistingTracked, ExistingById }.FirstOrDefault(x => x?.Id == accountsReceivablePaymentId);
+            if (payment is null
+                || payment.UpdatedAtUtc != expectedUpdatedAtUtc
+                || (requireNoApplications && payment.Applications.Count > 0))
+            {
+                return Task.FromResult(false);
+            }
+
+            payment.PaymentDateUtc = paymentDateUtc;
+            payment.PaymentFormSat = paymentFormSat;
+            payment.Amount = amount;
+            payment.Reference = reference;
+            payment.Notes = notes;
             payment.UpdatedAtUtc = updatedAtUtc;
             return Task.FromResult(true);
         }

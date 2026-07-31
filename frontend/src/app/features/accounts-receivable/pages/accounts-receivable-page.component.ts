@@ -22,10 +22,12 @@ import {
   SearchAccountsReceivablePortfolioRequest,
   SearchAccountsReceivablePaymentsRequest,
   SendReceivablesSummaryResponse,
+  UpdateAccountsReceivablePaymentRequest,
 } from '../models/accounts-receivable.models';
 import { AccountsReceivableCardComponent } from '../components/accounts-receivable-card.component';
 import { PaymentApplicationFormComponent } from '../components/payment-application-form.component';
 import { PaymentApplicationReassignModalComponent } from '../components/payment-application-reassign-modal.component';
+import { PaymentEditFormComponent } from '../components/payment-edit-form.component';
 import { PaymentRemainderApplicationFormComponent } from '../components/payment-remainder-application-form.component';
 import { SendReceivablesSummaryButtonComponent } from '../components/send-receivables-summary-button.component';
 import { extractApiErrorMessage } from '../../../core/http/api-error-message';
@@ -59,6 +61,7 @@ const CREATE_INVOICE_ERROR_MESSAGE = 'No se pudo crear la cuenta por cobrar.';
 const APPLY_PAYMENT_ERROR_MESSAGE = 'No se pudo aplicar el pago a la factura.';
 const CONFIRM_CUSTOMER_CREDIT_BALANCE_ERROR_MESSAGE =
   'No se pudo confirmar el remanente como saldo a favor del cliente.';
+const UPDATE_PAYMENT_ERROR_MESSAGE = 'No se pudieron actualizar los datos del pago.';
 const UPDATE_PAYMENT_AMOUNT_ERROR_MESSAGE = 'No se pudo actualizar el importe del pago.';
 const DELETE_PAYMENT_ERROR_MESSAGE = 'No se pudo eliminar el pago.';
 const CREATE_COLLECTION_COMMITMENT_ERROR_MESSAGE =
@@ -84,26 +87,65 @@ const REASSIGN_PAYMENT_APPLICATIONS_SUCCESS_MESSAGE =
     AccountsReceivableCardComponent,
     PaymentApplicationFormComponent,
     PaymentApplicationReassignModalComponent,
+    PaymentEditFormComponent,
     PaymentRemainderApplicationFormComponent,
     SendReceivablesSummaryButtonComponent,
     StatusBadgeComponent,
   ],
   template: `
     <section class="page">
-      <header>
-        <p class="eyebrow">Cuentas por cobrar</p>
-        <h2>
-          {{
-            detailMode()
-              ? 'Cuenta por cobrar, pagos y aplicaciones'
-              : receiverWorkspaceMode()
-                ? 'Workspace del receptor'
-                : 'Cartera operativa mínima'
-          }}
-        </h2>
+      <header
+        class="page-header"
+        [class.workspace-page-header]="receiverWorkspaceMode() || paymentId() !== null"
+      >
+        <div class="page-header-copy">
+          <p class="eyebrow">Cuentas por cobrar</p>
+          <h2>{{ pageTitle() }}</h2>
+          @if (receiverWorkspaceMode() && receiverWorkspace(); as workspace) {
+            <p class="helper workspace-receiver-meta">
+              RFC: {{ workspace.rfc || 'No disponible' }}
+            </p>
+          }
+        </div>
+        @if (receiverWorkspaceMode()) {
+          <div class="page-header-actions">
+            <a class="secondary workspace-back-link" [routerLink]="['/app/accounts-receivable']"
+              >Volver a cartera</a
+            >
+            @if (receiverWorkspace(); as workspace) {
+              @if (permissionService.canManagePayments()) {
+                <app-send-receivables-summary-button
+                  [receiverId]="workspace.fiscalReceiverId"
+                  [currentSelection]="selectedReceiverWorkspaceInvoiceIds()"
+                  [disabled]="loading()"
+                  (summarySent)="handleReceivablesSummarySent($event)"
+                />
+              }
+            }
+          </div>
+        } @else if (paymentId() !== null) {
+          <div class="page-header-actions">
+            @if (paymentReceiverFiscalReceiverId(); as receiverId) {
+              <a
+                class="secondary workspace-back-link"
+                data-testid="payment-back-to-workspace"
+                [routerLink]="['/app/accounts-receivable']"
+                [queryParams]="{ fiscalReceiverId: receiverId }"
+                >Volver al workspace</a
+              >
+            } @else {
+              <a
+                class="secondary workspace-back-link"
+                data-testid="payment-back-to-portfolio"
+                [routerLink]="['/app/accounts-receivable']"
+                >Volver a cartera</a
+              >
+            }
+          </div>
+        }
       </header>
 
-      @if (!detailMode()) {
+      @if (!detailMode() && !receiverWorkspaceMode()) {
         <section class="card filters">
           <div class="section-head compact">
             <h3>Workspace del receptor</h3>
@@ -127,9 +169,6 @@ const REASSIGN_PAYMENT_APPLICATIONS_SUCCESS_MESSAGE =
             <button type="button" (click)="searchReceiverWorkspace()" [disabled]="loading()">
               Buscar receptor
             </button>
-            @if (receiverWorkspaceMode()) {
-              <a class="secondary" [routerLink]="['/app/accounts-receivable']">Volver a cartera</a>
-            }
           </div>
 
           @if (receiverLookupResults().length) {
@@ -494,22 +533,10 @@ const REASSIGN_PAYMENT_APPLICATIONS_SUCCESS_MESSAGE =
         <section class="card">
           <div class="section-head compact">
             <div>
-              <h3>{{ workspace.legalName || 'Receptor sin nombre' }}</h3>
-              <p class="helper">
-                {{ workspace.rfc || 'RFC no disponible' }} · FiscalReceiver #{{
-                  workspace.fiscalReceiverId
-                }}
-              </p>
+              <h3>Resumen de cuenta</h3>
+              <p class="helper">Indicadores operativos y de cobranza del receptor.</p>
             </div>
             <div class="detail-badges">
-              @if (permissionService.canManagePayments()) {
-                <app-send-receivables-summary-button
-                  [receiverId]="workspace.fiscalReceiverId"
-                  [currentSelection]="selectedReceiverWorkspaceInvoiceIds()"
-                  [disabled]="loading()"
-                  (summarySent)="handleReceivablesSummarySent($event)"
-                />
-              }
               @if (workspace.summary.hasPendingCommitment) {
                 <span class="badge" data-status="PendingCommitment">Compromiso pendiente</span>
               }
@@ -603,10 +630,10 @@ const REASSIGN_PAYMENT_APPLICATIONS_SUCCESS_MESSAGE =
               [attr.aria-pressed]="
                 isReceiverWorkspaceFilterActive(receiverWorkspaceFilters.openInvoices)
               "
-              aria-label="Mostrar facturas abiertas"
+              aria-label="Mostrar facturas pendientes"
               (click)="selectReceiverWorkspaceFilter(receiverWorkspaceFilters.openInvoices)"
             >
-              <strong>Facturas abiertas</strong>
+              <strong>Facturas pendientes</strong>
               <div class="summary-card-value">
                 {{ receiverWorkspaceInvoiceSummary().openInvoicesCount }}
               </div>
@@ -630,124 +657,150 @@ const REASSIGN_PAYMENT_APPLICATIONS_SUCCESS_MESSAGE =
           </div>
         </section>
 
-        <section class="card">
-          <div class="section-head compact">
-            <div>
-              <h3>Facturas del receptor</h3>
-              <p class="helper">{{ receiverWorkspaceInvoiceHelperText() }}</p>
-            </div>
-          </div>
-          @if (!receiverWorkspaceInvoiceRows().length) {
-            <p class="helper">{{ receiverWorkspaceInvoiceEmptyText() }}</p>
-          } @else {
-            <div class="table-wrap">
-              <table class="portfolio receiver-workspace-table">
-                <thead>
-                  <tr>
-                    <th>
-                      <input
-                        type="checkbox"
-                        [checked]="allVisibleReceiverWorkspaceInvoicesSelected()"
-                        (change)="toggleAllVisibleReceiverWorkspaceInvoices($any($event.target).checked)"
-                        aria-label="Seleccionar todas las facturas visibles"
-                      />
-                    </th>
-                    <th>Factura</th>
-                    <th>Emisión</th>
-                    <th>Vencimiento</th>
-                    <th>Total</th>
-                    <th>Pagado</th>
-                    <th>Saldo</th>
-                    <th>Estatus</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (
-                    item of receiverWorkspaceInvoiceRows();
-                    track item.invoice.accountsReceivableInvoiceId
-                  ) {
-                    <tr
-                      class="receiver-invoice-row"
-                      [class.is-overdue]="item.collection.status === 'overdue'"
-                      [attr.data-collection-status]="item.collection.status"
-                    >
-                      <td data-label="Seleccionar">
+        <section class="card collapsible-card">
+          <button
+            type="button"
+            class="collapsible-header"
+            [attr.aria-expanded]="receiverWorkspaceInvoicesExpanded()"
+            aria-controls="receiver-workspace-invoices-panel"
+            (click)="toggleReceiverWorkspaceInvoices()"
+          >
+            <span class="collapsible-header-copy">
+              <span class="collapsible-title">
+                Facturas pendientes ({{ receiverWorkspaceInvoiceSummary().openInvoicesCount }})
+              </span>
+              <span class="collapsible-helper">{{ receiverWorkspaceInvoiceHelperText() }}</span>
+            </span>
+            <span class="collapsible-indicator" aria-hidden="true">
+              {{ receiverWorkspaceInvoicesExpanded() ? '−' : '+' }}
+            </span>
+          </button>
+          <div
+            id="receiver-workspace-invoices-panel"
+            class="collapsible-content"
+            [hidden]="!receiverWorkspaceInvoicesExpanded()"
+          >
+            @if (!receiverWorkspaceInvoiceRows().length) {
+              <p class="helper">{{ receiverWorkspaceInvoiceEmptyText() }}</p>
+            } @else {
+              <div class="table-wrap">
+                <table class="portfolio receiver-workspace-table">
+                  <thead>
+                    <tr>
+                      <th>
                         <input
                           type="checkbox"
-                          [checked]="
-                            isReceiverWorkspaceInvoiceSelected(
-                              item.invoice.accountsReceivableInvoiceId
-                            )
-                          "
+                          [checked]="allVisibleReceiverWorkspaceInvoicesSelected()"
                           (change)="
-                            toggleReceiverWorkspaceInvoiceSelection(
-                              item.invoice.accountsReceivableInvoiceId,
-                              $any($event.target).checked
-                            )
+                            toggleAllVisibleReceiverWorkspaceInvoices($any($event.target).checked)
                           "
-                          [attr.aria-label]="
-                            'Seleccionar factura ' + formatFiscalLabel(item.invoice)
-                          "
+                          aria-label="Seleccionar todas las facturas visibles"
                         />
-                      </td>
-                      <td data-label="Factura">
-                        <div>{{ formatFiscalLabel(item.invoice) }}</div>
-                        <div class="subtle">{{ item.invoice.fiscalUuid || 'UUID pendiente' }}</div>
-                        <div class="subtle">
-                          CxC #{{ item.invoice.accountsReceivableInvoiceId }}
-                        </div>
-                      </td>
-                      <td data-label="Emisión">
-                        {{
-                          formatReceiverWorkspaceCalendarDate(item.invoice.issuedAtUtc, 'Sin fecha')
-                        }}
-                      </td>
-                      <td data-label="Vencimiento">
-                        {{
-                          formatReceiverWorkspaceCalendarDate(
-                            item.invoice.dueAtUtc,
-                            'Sin vencimiento'
-                          )
-                        }}
-                        @if (item.collection.dueDateHint) {
-                          <div class="subtle">{{ item.collection.dueDateHint }}</div>
-                        }
-                      </td>
-                      <td data-label="Total">
-                        {{ item.invoice.total | currency: 'MXN' : 'symbol' : '1.2-2' }}
-                      </td>
-                      <td data-label="Pagado">
-                        {{ item.invoice.paidTotal | currency: 'MXN' : 'symbol' : '1.2-2' }}
-                      </td>
-                      <td data-label="Saldo">
-                        {{ item.invoice.outstandingBalance | currency: 'MXN' : 'symbol' : '1.2-2' }}
-                      </td>
-                      <td data-label="Estatus">
-                        <div class="collection-status-stack">
-                          <app-status-badge
-                            [label]="item.collection.badgeLabel"
-                            [tone]="receiverWorkspaceCollectionTone(item.collection.status)"
-                          />
-                          <div class="subtle">
-                            Operativo:
-                            {{ receiverWorkspaceOperationalStatusLabel(item.invoice.status) }}
-                          </div>
-                        </div>
-                      </td>
-                      <td data-label="Acción">
-                        <a
-                          [routerLink]="['/app/accounts-receivable']"
-                          [queryParams]="{ invoiceId: item.invoice.accountsReceivableInvoiceId }"
-                          >Ver detalle</a
-                        >
-                      </td>
+                      </th>
+                      <th>Factura</th>
+                      <th>Emisión</th>
+                      <th>Vencimiento</th>
+                      <th>Total</th>
+                      <th>Pagado</th>
+                      <th>Saldo</th>
+                      <th>Estatus</th>
+                      <th></th>
                     </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-          }
+                  </thead>
+                  <tbody>
+                    @for (
+                      item of receiverWorkspaceInvoiceRows();
+                      track item.invoice.accountsReceivableInvoiceId
+                    ) {
+                      <tr
+                        class="receiver-invoice-row"
+                        [class.is-overdue]="item.collection.status === 'overdue'"
+                        [attr.data-collection-status]="item.collection.status"
+                      >
+                        <td data-label="Seleccionar">
+                          <input
+                            type="checkbox"
+                            [checked]="
+                              isReceiverWorkspaceInvoiceSelected(
+                                item.invoice.accountsReceivableInvoiceId
+                              )
+                            "
+                            (change)="
+                              toggleReceiverWorkspaceInvoiceSelection(
+                                item.invoice.accountsReceivableInvoiceId,
+                                $any($event.target).checked
+                              )
+                            "
+                            [attr.aria-label]="
+                              'Seleccionar factura ' + formatFiscalLabel(item.invoice)
+                            "
+                          />
+                        </td>
+                        <td data-label="Factura">
+                          <div>{{ formatFiscalLabel(item.invoice) }}</div>
+                          <div class="subtle">
+                            {{ item.invoice.fiscalUuid || 'UUID pendiente' }}
+                          </div>
+                          <div class="subtle">
+                            CxC #{{ item.invoice.accountsReceivableInvoiceId }}
+                          </div>
+                        </td>
+                        <td data-label="Emisión">
+                          {{
+                            formatReceiverWorkspaceCalendarDate(
+                              item.invoice.issuedAtUtc,
+                              'Sin fecha'
+                            )
+                          }}
+                        </td>
+                        <td data-label="Vencimiento">
+                          {{
+                            formatReceiverWorkspaceCalendarDate(
+                              item.invoice.dueAtUtc,
+                              'Sin vencimiento'
+                            )
+                          }}
+                          @if (item.collection.dueDateHint) {
+                            <div class="subtle">{{ item.collection.dueDateHint }}</div>
+                          }
+                        </td>
+                        <td data-label="Total">
+                          {{ item.invoice.total | currency: 'MXN' : 'symbol' : '1.2-2' }}
+                        </td>
+                        <td data-label="Pagado">
+                          {{ item.invoice.paidTotal | currency: 'MXN' : 'symbol' : '1.2-2' }}
+                        </td>
+                        <td data-label="Saldo">
+                          {{
+                            item.invoice.outstandingBalance | currency: 'MXN' : 'symbol' : '1.2-2'
+                          }}
+                        </td>
+                        <td data-label="Estatus">
+                          <div class="collection-status-stack">
+                            <app-status-badge
+                              [label]="item.collection.badgeLabel"
+                              [tone]="receiverWorkspaceCollectionTone(item.collection.status)"
+                            />
+                            <div class="subtle">
+                              Operativo:
+                              {{ receiverWorkspaceOperationalStatusLabel(item.invoice.status) }}
+                            </div>
+                          </div>
+                        </td>
+                        <td data-label="Acción">
+                          <a
+                            [routerLink]="['/app/accounts-receivable']"
+                            [queryParams]="{ invoiceId: item.invoice.accountsReceivableInvoiceId }"
+                            >Ver detalle</a
+                          >
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
+          </div>
         </section>
 
         <section class="card">
@@ -1391,39 +1444,82 @@ const REASSIGN_PAYMENT_APPLICATIONS_SUCCESS_MESSAGE =
 
       @if (detailMode() && payment(); as currentPayment) {
         <section class="card">
-          <h3>Pago #{{ currentPayment.id }}</h3>
-          <p class="helper">
-            Pago recibido {{ currentPayment.amount }} MXN · Remanente disponible
-            {{ currentPayment.remainingAmount }} MXN
-          </p>
-          <div class="detail-badges">
-            <span class="badge" [attr.data-status]="currentPayment.operationalStatus">{{
-              currentPayment.operationalStatus
-            }}</span>
-            <span class="badge" [attr.data-status]="currentPayment.repStatus">{{
-              currentPayment.repStatus
-            }}</span>
+          <div class="section-head payment-detail-heading">
+            <div>
+              <h3>Pago #{{ currentPayment.id }}</h3>
+              <p class="helper">
+                Información capturada, distribución y trazabilidad fiscal del pago.
+              </p>
+            </div>
+            <div class="detail-badges">
+              <span class="badge" [attr.data-status]="currentPayment.operationalStatus">{{
+                currentPayment.operationalStatus
+              }}</span>
+              <span class="badge" [attr.data-status]="currentPayment.repStatus">{{
+                currentPayment.repStatus
+              }}</span>
+            </div>
           </div>
-          @if (permissionService.canManagePayments() && canMutatePayment(currentPayment)) {
+
+          <div class="payment-detail-grid">
+            <article>
+              <span>Fecha de pago</span>
+              <strong>{{ currentPayment.paymentDateUtc | date: 'yyyy-MM-dd HH:mm' }}</strong>
+            </article>
+            <article>
+              <span>Forma de pago SAT</span>
+              <strong>{{ currentPayment.paymentFormSat }}</strong>
+            </article>
+            <article>
+              <span>Importe</span>
+              <strong>{{ currentPayment.amount | currency: 'MXN' : 'symbol' : '1.2-2' }}</strong>
+            </article>
+            <article>
+              <span>Aplicado</span>
+              <strong>
+                {{ currentPayment.appliedTotal | currency: 'MXN' : 'symbol' : '1.2-2' }}
+              </strong>
+            </article>
+            <article>
+              <span>Remanente disponible</span>
+              <strong>
+                {{ currentPayment.remainingAmount | currency: 'MXN' : 'symbol' : '1.2-2' }}
+              </strong>
+            </article>
+            <article>
+              <span>Referencia</span>
+              <strong>{{ currentPayment.reference || 'Sin referencia' }}</strong>
+            </article>
+            <article class="payment-detail-notes">
+              <span>Notas</span>
+              <strong>{{ currentPayment.notes || 'Sin notas' }}</strong>
+            </article>
+          </div>
+
+          @if (permissionService.canManagePayments()) {
             <div class="detail-payment-actions">
-              <button
-                type="button"
-                class="secondary inline-action-button"
-                data-testid="detail-payment-edit-button"
-                (click)="startPaymentAmountEdit(currentPayment)"
-                [disabled]="loading()"
-              >
-                Editar importe
-              </button>
-              <button
-                type="button"
-                class="secondary inline-action-button"
-                data-testid="detail-payment-delete-button"
-                (click)="deletePayment(currentPayment)"
-                [disabled]="loading()"
-              >
-                Eliminar pago
-              </button>
+              @if (canEditPaymentDetails(currentPayment)) {
+                <button
+                  type="button"
+                  class="secondary inline-action-button"
+                  data-testid="detail-payment-edit-button"
+                  (click)="startPaymentDetailsEdit()"
+                  [disabled]="loading() || editingPaymentDetails()"
+                >
+                  Editar pago
+                </button>
+              }
+              @if (canMutatePayment(currentPayment)) {
+                <button
+                  type="button"
+                  class="secondary danger-action-button inline-action-button"
+                  data-testid="detail-payment-delete-button"
+                  (click)="deletePayment(currentPayment)"
+                  [disabled]="loading()"
+                >
+                  Eliminar pago
+                </button>
+              }
             </div>
           }
           @if (
@@ -1442,38 +1538,20 @@ const REASSIGN_PAYMENT_APPLICATIONS_SUCCESS_MESSAGE =
               </button>
             </div>
           }
-          @if (isEditingPayment(currentPayment.id)) {
-            <section class="payment-edit-panel detail-payment-edit-panel">
-              <label>
-                <span>Nuevo importe</span>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  data-testid="detail-payment-amount-input"
-                  [ngModel]="editingPaymentAmountText()"
-                  (ngModelChange)="editingPaymentAmountText.set($event)"
-                />
-              </label>
-              <div class="row-inline-actions">
-                <button
-                  type="button"
-                  data-testid="detail-payment-save-button"
-                  (click)="savePaymentAmountEdit(currentPayment.id)"
-                  [disabled]="loading() || !hasValidEditingPaymentAmount()"
-                >
-                  Guardar
-                </button>
-                <button
-                  type="button"
-                  class="secondary inline-action-button"
-                  (click)="cancelPaymentAmountEdit()"
-                  [disabled]="loading()"
-                >
-                  Cancelar
-                </button>
-              </div>
-            </section>
+          @if (permissionService.canManagePayments() && hasRepAssociation(currentPayment)) {
+            <p class="helper payment-mutation-lock">
+              La edición y eliminación están bloqueadas porque este pago ya tiene un complemento
+              asociado.
+            </p>
+          }
+          @if (editingPaymentDetails()) {
+            <app-payment-edit-form
+              [payment]="currentPayment"
+              [amountEditable]="canMutatePayment(currentPayment)"
+              [loading]="loading()"
+              (saved)="savePaymentDetailsEdit(currentPayment.id, $event)"
+              (cancelled)="cancelPaymentDetailsEdit()"
+            />
           }
           @if (showPendingCustomerCreditBalanceAction()) {
             <section class="status-panel status-panel-warning">
@@ -1941,6 +2019,23 @@ export class AccountsReceivablePageComponent {
   protected readonly receiverWorkspace = signal<AccountsReceivableReceiverWorkspaceResponse | null>(
     null,
   );
+  protected readonly pageTitle = computed(() => {
+    if (this.paymentId() !== null) {
+      return `Detalle del pago #${this.payment()?.id ?? this.paymentId()}`;
+    }
+
+    if (this.detailMode()) {
+      return 'Cuenta por cobrar, pagos y aplicaciones';
+    }
+
+    if (this.receiverWorkspaceMode()) {
+      const receiverName = this.receiverWorkspace()?.legalName?.trim();
+      return receiverName ? `Workspace de ${receiverName}` : 'Workspace del receptor';
+    }
+
+    return 'Cartera operativa mínima';
+  });
+  protected readonly receiverWorkspaceInvoicesExpanded = signal(false);
   protected readonly selectedReceiverWorkspaceInvoiceIds = signal<number[]>([]);
   protected readonly receiverWorkspaceFilters = RECEIVABLE_WORKSPACE_FILTERS;
   protected readonly receiverWorkspaceFilter = signal<ReceivableWorkspaceFilter>(
@@ -1955,6 +2050,7 @@ export class AccountsReceivablePageComponent {
   );
   protected readonly editingPaymentId = signal<number | null>(null);
   protected readonly editingPaymentAmountText = signal<string | number>('');
+  protected readonly editingPaymentDetails = signal(false);
   protected readonly reassignPayment = signal<AccountsReceivablePaymentResponse | null>(null);
   protected readonly reassignCandidateInvoices = signal<AccountsReceivablePortfolioItemResponse[]>(
     [],
@@ -2010,7 +2106,7 @@ export class AccountsReceivablePageComponent {
       case RECEIVABLE_WORKSPACE_FILTERS.pending:
       case RECEIVABLE_WORKSPACE_FILTERS.openInvoices:
       default:
-        return `${openCount} cuenta(s) abierta(s)`;
+        return `${openCount} factura(s) pendiente(s)`;
     }
   });
   protected readonly receiverWorkspaceInvoiceEmptyText = computed(() => {
@@ -2022,7 +2118,7 @@ export class AccountsReceivablePageComponent {
       case RECEIVABLE_WORKSPACE_FILTERS.pending:
       case RECEIVABLE_WORKSPACE_FILTERS.openInvoices:
       default:
-        return 'No hay facturas abiertas para este receptor.';
+        return 'No hay facturas pendientes para este receptor.';
     }
   });
   protected readonly receiverWorkspaceOverdueCountLabel = computed(() => {
@@ -2121,6 +2217,12 @@ export class AccountsReceivablePageComponent {
     return payment.applicationsCount === 0 && !this.hasRepAssociation(payment);
   }
 
+  protected canEditPaymentDetails(
+    payment: AccountsReceivablePaymentResponse | null,
+  ): boolean {
+    return !!payment && !this.hasRepAssociation(payment);
+  }
+
   protected canReassignPaymentApplications(
     payment: AccountsReceivablePaymentSummaryItemResponse | AccountsReceivablePaymentResponse | null,
   ): boolean {
@@ -2152,6 +2254,15 @@ export class AccountsReceivablePageComponent {
   protected cancelPaymentAmountEdit(): void {
     this.editingPaymentId.set(null);
     this.editingPaymentAmountText.set('');
+  }
+
+  protected startPaymentDetailsEdit(): void {
+    this.cancelPaymentAmountEdit();
+    this.editingPaymentDetails.set(true);
+  }
+
+  protected cancelPaymentDetailsEdit(): void {
+    this.editingPaymentDetails.set(false);
   }
 
   protected hasValidEditingPaymentAmount(): boolean {
@@ -2188,6 +2299,11 @@ export class AccountsReceivablePageComponent {
 
   protected selectReceiverWorkspaceFilter(filter: ReceivableWorkspaceFilter): void {
     this.receiverWorkspaceFilter.set(filter);
+    this.receiverWorkspaceInvoicesExpanded.set(true);
+  }
+
+  protected toggleReceiverWorkspaceInvoices(): void {
+    this.receiverWorkspaceInvoicesExpanded.update((expanded) => !expanded);
   }
 
   protected isReceiverWorkspaceFilterActive(filter: ReceivableWorkspaceFilter): boolean {
@@ -2234,12 +2350,14 @@ export class AccountsReceivablePageComponent {
       this.fiscalDocumentId.set(fiscalDocumentId);
       this.paymentId.set(paymentId);
       this.receiverWorkspaceId.set(receiverWorkspaceId);
+      this.editingPaymentDetails.set(false);
       this.recentlyCreatedPaymentId.set(
         paymentId !== null && createdPaymentId === paymentId ? paymentId : null,
       );
 
       if (accountsReceivableInvoiceId !== null || fiscalDocumentId !== null || paymentId !== null) {
         this.receiverWorkspace.set(null);
+        this.receiverWorkspaceInvoicesExpanded.set(false);
         this.selectedReceiverWorkspaceInvoiceIds.set([]);
         this.receiverLookupResults.set([]);
 
@@ -2267,6 +2385,7 @@ export class AccountsReceivablePageComponent {
         this.invoice.set(null);
         this.payment.set(null);
         this.eligibleReceiverInvoices.set([]);
+        this.receiverWorkspaceInvoicesExpanded.set(false);
         this.selectedReceiverWorkspaceInvoiceIds.set([]);
         this.receiverWorkspaceFilter.set(RECEIVABLE_WORKSPACE_FILTERS.openInvoices);
         this.receiverWorkspaceToday.set(new Date());
@@ -2277,6 +2396,7 @@ export class AccountsReceivablePageComponent {
       this.invoice.set(null);
       this.payment.set(null);
       this.receiverWorkspace.set(null);
+      this.receiverWorkspaceInvoicesExpanded.set(false);
       this.selectedReceiverWorkspaceInvoiceIds.set([]);
       this.receiverLookupResults.set([]);
       this.eligibleReceiverInvoices.set([]);
@@ -2512,12 +2632,25 @@ export class AccountsReceivablePageComponent {
     }, UPDATE_PAYMENT_AMOUNT_ERROR_MESSAGE);
   }
 
+  protected async savePaymentDetailsEdit(
+    paymentId: number,
+    request: UpdateAccountsReceivablePaymentRequest,
+  ): Promise<void> {
+    await this.run(async () => {
+      await firstValueFrom(this.api.updatePayment(paymentId, request));
+
+      this.cancelPaymentDetailsEdit();
+      await this.refreshPaymentMutationViews(paymentId);
+      this.feedbackService.show('success', 'Datos del pago actualizados.');
+    }, UPDATE_PAYMENT_ERROR_MESSAGE);
+  }
+
   protected async deletePayment(
     payment: AccountsReceivablePaymentSummaryItemResponse | AccountsReceivablePaymentResponse,
   ): Promise<void> {
     if (
       !window.confirm(
-        '¿Deseas eliminar este pago? Esta acción solo es posible si el pago no ha sido aplicado a ninguna factura.',
+        '¿Deseas eliminar este pago? Esta acción solo es posible si no tiene aplicaciones ni un complemento asociado.',
       )
     ) {
       return;
@@ -2529,6 +2662,7 @@ export class AccountsReceivablePageComponent {
     await this.run(async () => {
       await firstValueFrom(this.api.deletePayment(paymentId));
       this.cancelPaymentAmountEdit();
+      this.cancelPaymentDetailsEdit();
 
       if (this.payment()?.id === paymentId) {
         await this.navigateAfterPaymentDeletion(receiverId);
@@ -3010,7 +3144,7 @@ export class AccountsReceivablePageComponent {
     await this.router.navigate(['/app/accounts-receivable'], { queryParams });
   }
 
-  private hasRepAssociation(
+  protected hasRepAssociation(
     payment: AccountsReceivablePaymentSummaryItemResponse | AccountsReceivablePaymentResponse,
   ): boolean {
     return (
