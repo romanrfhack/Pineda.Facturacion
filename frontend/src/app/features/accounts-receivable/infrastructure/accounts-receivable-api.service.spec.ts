@@ -122,9 +122,36 @@ describe('AccountsReceivableApiService', () => {
     const service = TestBed.inject(AccountsReceivableApiService);
     const httpTesting = TestBed.inject(HttpTestingController);
 
+    service
+      .updatePayment(7, {
+        paymentDateUtc: '2026-04-04T10:30',
+        paymentFormSat: '02',
+        amount: 125.5,
+        reference: 'REF-2',
+        notes: 'Corregido',
+      })
+      .subscribe();
+
+    let req = httpTesting.expectOne('/api/accounts-receivable/payments/7');
+    expect(req.request.method).toBe('PUT');
+    expect(req.request.body).toEqual({
+      paymentDateUtc: '2026-04-04T10:30',
+      paymentFormSat: '02',
+      amount: 125.5,
+      reference: 'REF-2',
+      notes: 'Corregido',
+    });
+    req.flush({
+      outcome: 'Updated',
+      isSuccess: true,
+      accountsReceivablePaymentId: 7,
+      updatedFields: ['paymentDateUtc', 'paymentFormSat', 'reference', 'notes'],
+      payment: null,
+    });
+
     service.updatePaymentAmount(7, { amount: 125.5 }).subscribe();
 
-    let req = httpTesting.expectOne('/api/accounts-receivable/payments/7/amount');
+    req = httpTesting.expectOne('/api/accounts-receivable/payments/7/amount');
     expect(req.request.method).toBe('PATCH');
     expect(req.request.body).toEqual({ amount: 125.5 });
     req.flush({

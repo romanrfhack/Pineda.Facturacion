@@ -31,6 +31,8 @@ import {
   SetAccountsReceivablePaymentUnappliedDispositionResponse,
   UpdateAccountsReceivablePaymentAmountRequest,
   UpdateAccountsReceivablePaymentAmountResponse,
+  UpdateAccountsReceivablePaymentRequest,
+  UpdateAccountsReceivablePaymentResponse,
   ReceivablesSummaryCandidatesResponse,
   ReceivablesSummaryPreviewResponse,
   ReceivablesSummaryRequest,
@@ -133,6 +135,16 @@ export class AccountsReceivableApiService {
 
   getPaymentById(paymentId: number): Observable<AccountsReceivablePaymentResponse> {
     return this.http.get<AccountsReceivablePaymentResponse>(buildApiUrl(`/accounts-receivable/payments/${paymentId}`));
+  }
+
+  updatePayment(
+    paymentId: number,
+    request: UpdateAccountsReceivablePaymentRequest
+  ): Observable<UpdateAccountsReceivablePaymentResponse> {
+    return this.http.put<UpdateAccountsReceivablePaymentResponse>(
+      buildApiUrl(`/accounts-receivable/payments/${paymentId}`),
+      request
+    );
   }
 
   updatePaymentAmount(

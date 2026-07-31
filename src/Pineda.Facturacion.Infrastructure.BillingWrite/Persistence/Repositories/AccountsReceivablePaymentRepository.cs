@@ -37,8 +37,13 @@ public class AccountsReceivablePaymentRepository : IAccountsReceivablePaymentRep
             .Select(x => new AccountsReceivablePaymentMutationSnapshot
             {
                 PaymentId = x.Id,
+                PaymentDateUtc = x.PaymentDateUtc,
+                PaymentFormSat = x.PaymentFormSat,
                 Amount = x.Amount,
+                Reference = x.Reference,
+                Notes = x.Notes,
                 ReceivedFromFiscalReceiverId = x.ReceivedFromFiscalReceiverId,
+                UpdatedAtUtc = x.UpdatedAtUtc,
                 HasApplications = _dbContext.AccountsReceivablePaymentApplications.Any(application => application.AccountsReceivablePaymentId == x.Id),
                 HasRepAssociations =
                     _dbContext.PaymentComplementDocuments.Any(document => document.AccountsReceivablePaymentId == x.Id)
@@ -150,6 +155,98 @@ public class AccountsReceivablePaymentRepository : IAccountsReceivablePaymentRep
         return rows == 1;
     }
 
+    public async Task<bool> TryUpdateIfAllowedAsync(
+        long accountsReceivablePaymentId,
+        DateTime expectedUpdatedAtUtc,
+        DateTime paymentDateUtc,
+        string paymentFormSat,
+        decimal amount,
+        string? reference,
+        string? notes,
+        bool requireNoApplications,
+        DateTime updatedAtUtc,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_dbContext.Database.IsRelational())
+        {
+            var payment = await _dbContext.AccountsReceivablePayments.FirstOrDefaultAsync(
+                x => x.Id == accountsReceivablePaymentId,
+                cancellationToken);
+            if (payment is null
+                || payment.UpdatedAtUtc != expectedUpdatedAtUtc
+                || await HasRepAssociationsAsync(accountsReceivablePaymentId, cancellationToken)
+                || (requireNoApplications
+                    && await HasApplicationsAsync(accountsReceivablePaymentId, cancellationToken)))
+            {
+                return false;
+            }
+
+            payment.PaymentDateUtc = paymentDateUtc;
+            payment.PaymentFormSat = paymentFormSat;
+            payment.Amount = amount;
+            payment.Reference = reference;
+            payment.Notes = notes;
+            payment.UpdatedAtUtc = updatedAtUtc;
+            return true;
+        }
+
+        int rows;
+        if (requireNoApplications)
+        {
+            rows = await _dbContext.Database.ExecuteSqlInterpolatedAsync(
+                $"""
+                UPDATE accounts_receivable_payment
+                SET payment_date_utc = {paymentDateUtc},
+                    payment_form_sat = {paymentFormSat},
+                    amount = {amount},
+                    reference = {reference},
+                    notes = {notes},
+                    updated_at_utc = {updatedAtUtc}
+                WHERE id = {accountsReceivablePaymentId}
+                  AND updated_at_utc = {expectedUpdatedAtUtc}
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM accounts_receivable_payment_application application
+                      WHERE application.accounts_receivable_payment_id = {accountsReceivablePaymentId})
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM payment_complement_document document
+                      WHERE document.accounts_receivable_payment_id = {accountsReceivablePaymentId})
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM payment_complement_payment payment_ref
+                      WHERE payment_ref.accounts_receivable_payment_id = {accountsReceivablePaymentId})
+                """,
+                cancellationToken);
+        }
+        else
+        {
+            rows = await _dbContext.Database.ExecuteSqlInterpolatedAsync(
+                $"""
+                UPDATE accounts_receivable_payment
+                SET payment_date_utc = {paymentDateUtc},
+                    payment_form_sat = {paymentFormSat},
+                    amount = {amount},
+                    reference = {reference},
+                    notes = {notes},
+                    updated_at_utc = {updatedAtUtc}
+                WHERE id = {accountsReceivablePaymentId}
+                  AND updated_at_utc = {expectedUpdatedAtUtc}
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM payment_complement_document document
+                      WHERE document.accounts_receivable_payment_id = {accountsReceivablePaymentId})
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM payment_complement_payment payment_ref
+                      WHERE payment_ref.accounts_receivable_payment_id = {accountsReceivablePaymentId})
+                """,
+                cancellationToken);
+        }
+
+        return rows == 1;
+    }
+
     public async Task<bool> TryDeleteIfMutableAsync(long accountsReceivablePaymentId, CancellationToken cancellationToken = default)
     {
         if (!_dbContext.Database.IsRelational())
@@ -193,10 +290,24 @@ public class AccountsReceivablePaymentRepository : IAccountsReceivablePaymentRep
 
     private async Task<bool> HasMutationBlockersAsync(long accountsReceivablePaymentId, CancellationToken cancellationToken)
     {
-        return await _dbContext.AccountsReceivablePaymentApplications.AnyAsync(
-                   x => x.AccountsReceivablePaymentId == accountsReceivablePaymentId,
-                   cancellationToken)
-               || await _dbContext.PaymentComplementDocuments.AnyAsync(
+        return await HasApplicationsAsync(accountsReceivablePaymentId, cancellationToken)
+               || await HasRepAssociationsAsync(accountsReceivablePaymentId, cancellationToken);
+    }
+
+    private Task<bool> HasApplicationsAsync(
+        long accountsReceivablePaymentId,
+        CancellationToken cancellationToken)
+    {
+        return _dbContext.AccountsReceivablePaymentApplications.AnyAsync(
+            x => x.AccountsReceivablePaymentId == accountsReceivablePaymentId,
+            cancellationToken);
+    }
+
+    private async Task<bool> HasRepAssociationsAsync(
+        long accountsReceivablePaymentId,
+        CancellationToken cancellationToken)
+    {
+        return await _dbContext.PaymentComplementDocuments.AnyAsync(
                    x => x.AccountsReceivablePaymentId == accountsReceivablePaymentId,
                    cancellationToken)
                || await _dbContext.PaymentComplementPayments.AnyAsync(

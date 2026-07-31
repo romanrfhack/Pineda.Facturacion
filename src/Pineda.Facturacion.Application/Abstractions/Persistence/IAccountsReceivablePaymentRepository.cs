@@ -21,6 +21,18 @@ public interface IAccountsReceivablePaymentRepository
         DateTime updatedAtUtc,
         CancellationToken cancellationToken = default);
 
+    Task<bool> TryUpdateIfAllowedAsync(
+        long accountsReceivablePaymentId,
+        DateTime expectedUpdatedAtUtc,
+        DateTime paymentDateUtc,
+        string paymentFormSat,
+        decimal amount,
+        string? reference,
+        string? notes,
+        bool requireNoApplications,
+        DateTime updatedAtUtc,
+        CancellationToken cancellationToken = default);
+
     Task<bool> TryDeleteIfMutableAsync(long accountsReceivablePaymentId, CancellationToken cancellationToken = default);
 
     Task AddAsync(AccountsReceivablePayment accountsReceivablePayment, CancellationToken cancellationToken = default);

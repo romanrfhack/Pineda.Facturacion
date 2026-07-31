@@ -22,10 +22,12 @@ import {
   SearchAccountsReceivablePortfolioRequest,
   SearchAccountsReceivablePaymentsRequest,
   SendReceivablesSummaryResponse,
+  UpdateAccountsReceivablePaymentRequest,
 } from '../models/accounts-receivable.models';
 import { AccountsReceivableCardComponent } from '../components/accounts-receivable-card.component';
 import { PaymentApplicationFormComponent } from '../components/payment-application-form.component';
 import { PaymentApplicationReassignModalComponent } from '../components/payment-application-reassign-modal.component';
+import { PaymentEditFormComponent } from '../components/payment-edit-form.component';
 import { PaymentRemainderApplicationFormComponent } from '../components/payment-remainder-application-form.component';
 import { SendReceivablesSummaryButtonComponent } from '../components/send-receivables-summary-button.component';
 import { extractApiErrorMessage } from '../../../core/http/api-error-message';
@@ -59,6 +61,7 @@ const CREATE_INVOICE_ERROR_MESSAGE = 'No se pudo crear la cuenta por cobrar.';
 const APPLY_PAYMENT_ERROR_MESSAGE = 'No se pudo aplicar el pago a la factura.';
 const CONFIRM_CUSTOMER_CREDIT_BALANCE_ERROR_MESSAGE =
   'No se pudo confirmar el remanente como saldo a favor del cliente.';
+const UPDATE_PAYMENT_ERROR_MESSAGE = 'No se pudieron actualizar los datos del pago.';
 const UPDATE_PAYMENT_AMOUNT_ERROR_MESSAGE = 'No se pudo actualizar el importe del pago.';
 const DELETE_PAYMENT_ERROR_MESSAGE = 'No se pudo eliminar el pago.';
 const CREATE_COLLECTION_COMMITMENT_ERROR_MESSAGE =
@@ -84,13 +87,17 @@ const REASSIGN_PAYMENT_APPLICATIONS_SUCCESS_MESSAGE =
     AccountsReceivableCardComponent,
     PaymentApplicationFormComponent,
     PaymentApplicationReassignModalComponent,
+    PaymentEditFormComponent,
     PaymentRemainderApplicationFormComponent,
     SendReceivablesSummaryButtonComponent,
     StatusBadgeComponent,
   ],
   template: `
     <section class="page">
-      <header class="page-header" [class.workspace-page-header]="receiverWorkspaceMode()">
+      <header
+        class="page-header"
+        [class.workspace-page-header]="receiverWorkspaceMode() || paymentId() !== null"
+      >
         <div class="page-header-copy">
           <p class="eyebrow">Cuentas por cobrar</p>
           <h2>{{ pageTitle() }}</h2>
@@ -114,6 +121,25 @@ const REASSIGN_PAYMENT_APPLICATIONS_SUCCESS_MESSAGE =
                   (summarySent)="handleReceivablesSummarySent($event)"
                 />
               }
+            }
+          </div>
+        } @else if (paymentId() !== null) {
+          <div class="page-header-actions">
+            @if (paymentReceiverFiscalReceiverId(); as receiverId) {
+              <a
+                class="secondary workspace-back-link"
+                data-testid="payment-back-to-workspace"
+                [routerLink]="['/app/accounts-receivable']"
+                [queryParams]="{ fiscalReceiverId: receiverId }"
+                >Volver al workspace</a
+              >
+            } @else {
+              <a
+                class="secondary workspace-back-link"
+                data-testid="payment-back-to-portfolio"
+                [routerLink]="['/app/accounts-receivable']"
+                >Volver a cartera</a
+              >
             }
           </div>
         }
@@ -1418,39 +1444,82 @@ const REASSIGN_PAYMENT_APPLICATIONS_SUCCESS_MESSAGE =
 
       @if (detailMode() && payment(); as currentPayment) {
         <section class="card">
-          <h3>Pago #{{ currentPayment.id }}</h3>
-          <p class="helper">
-            Pago recibido {{ currentPayment.amount }} MXN · Remanente disponible
-            {{ currentPayment.remainingAmount }} MXN
-          </p>
-          <div class="detail-badges">
-            <span class="badge" [attr.data-status]="currentPayment.operationalStatus">{{
-              currentPayment.operationalStatus
-            }}</span>
-            <span class="badge" [attr.data-status]="currentPayment.repStatus">{{
-              currentPayment.repStatus
-            }}</span>
+          <div class="section-head payment-detail-heading">
+            <div>
+              <h3>Pago #{{ currentPayment.id }}</h3>
+              <p class="helper">
+                Información capturada, distribución y trazabilidad fiscal del pago.
+              </p>
+            </div>
+            <div class="detail-badges">
+              <span class="badge" [attr.data-status]="currentPayment.operationalStatus">{{
+                currentPayment.operationalStatus
+              }}</span>
+              <span class="badge" [attr.data-status]="currentPayment.repStatus">{{
+                currentPayment.repStatus
+              }}</span>
+            </div>
           </div>
-          @if (permissionService.canManagePayments() && canMutatePayment(currentPayment)) {
+
+          <div class="payment-detail-grid">
+            <article>
+              <span>Fecha de pago</span>
+              <strong>{{ currentPayment.paymentDateUtc | date: 'yyyy-MM-dd HH:mm' }}</strong>
+            </article>
+            <article>
+              <span>Forma de pago SAT</span>
+              <strong>{{ currentPayment.paymentFormSat }}</strong>
+            </article>
+            <article>
+              <span>Importe</span>
+              <strong>{{ currentPayment.amount | currency: 'MXN' : 'symbol' : '1.2-2' }}</strong>
+            </article>
+            <article>
+              <span>Aplicado</span>
+              <strong>
+                {{ currentPayment.appliedTotal | currency: 'MXN' : 'symbol' : '1.2-2' }}
+              </strong>
+            </article>
+            <article>
+              <span>Remanente disponible</span>
+              <strong>
+                {{ currentPayment.remainingAmount | currency: 'MXN' : 'symbol' : '1.2-2' }}
+              </strong>
+            </article>
+            <article>
+              <span>Referencia</span>
+              <strong>{{ currentPayment.reference || 'Sin referencia' }}</strong>
+            </article>
+            <article class="payment-detail-notes">
+              <span>Notas</span>
+              <strong>{{ currentPayment.notes || 'Sin notas' }}</strong>
+            </article>
+          </div>
+
+          @if (permissionService.canManagePayments()) {
             <div class="detail-payment-actions">
-              <button
-                type="button"
-                class="secondary inline-action-button"
-                data-testid="detail-payment-edit-button"
-                (click)="startPaymentAmountEdit(currentPayment)"
-                [disabled]="loading()"
-              >
-                Editar importe
-              </button>
-              <button
-                type="button"
-                class="secondary inline-action-button"
-                data-testid="detail-payment-delete-button"
-                (click)="deletePayment(currentPayment)"
-                [disabled]="loading()"
-              >
-                Eliminar pago
-              </button>
+              @if (canEditPaymentDetails(currentPayment)) {
+                <button
+                  type="button"
+                  class="secondary inline-action-button"
+                  data-testid="detail-payment-edit-button"
+                  (click)="startPaymentDetailsEdit()"
+                  [disabled]="loading() || editingPaymentDetails()"
+                >
+                  Editar pago
+                </button>
+              }
+              @if (canMutatePayment(currentPayment)) {
+                <button
+                  type="button"
+                  class="secondary danger-action-button inline-action-button"
+                  data-testid="detail-payment-delete-button"
+                  (click)="deletePayment(currentPayment)"
+                  [disabled]="loading()"
+                >
+                  Eliminar pago
+                </button>
+              }
             </div>
           }
           @if (
@@ -1469,38 +1538,20 @@ const REASSIGN_PAYMENT_APPLICATIONS_SUCCESS_MESSAGE =
               </button>
             </div>
           }
-          @if (isEditingPayment(currentPayment.id)) {
-            <section class="payment-edit-panel detail-payment-edit-panel">
-              <label>
-                <span>Nuevo importe</span>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  data-testid="detail-payment-amount-input"
-                  [ngModel]="editingPaymentAmountText()"
-                  (ngModelChange)="editingPaymentAmountText.set($event)"
-                />
-              </label>
-              <div class="row-inline-actions">
-                <button
-                  type="button"
-                  data-testid="detail-payment-save-button"
-                  (click)="savePaymentAmountEdit(currentPayment.id)"
-                  [disabled]="loading() || !hasValidEditingPaymentAmount()"
-                >
-                  Guardar
-                </button>
-                <button
-                  type="button"
-                  class="secondary inline-action-button"
-                  (click)="cancelPaymentAmountEdit()"
-                  [disabled]="loading()"
-                >
-                  Cancelar
-                </button>
-              </div>
-            </section>
+          @if (permissionService.canManagePayments() && hasRepAssociation(currentPayment)) {
+            <p class="helper payment-mutation-lock">
+              La edición y eliminación están bloqueadas porque este pago ya tiene un complemento
+              asociado.
+            </p>
+          }
+          @if (editingPaymentDetails()) {
+            <app-payment-edit-form
+              [payment]="currentPayment"
+              [amountEditable]="canMutatePayment(currentPayment)"
+              [loading]="loading()"
+              (saved)="savePaymentDetailsEdit(currentPayment.id, $event)"
+              (cancelled)="cancelPaymentDetailsEdit()"
+            />
           }
           @if (showPendingCustomerCreditBalanceAction()) {
             <section class="status-panel status-panel-warning">
@@ -1969,6 +2020,10 @@ export class AccountsReceivablePageComponent {
     null,
   );
   protected readonly pageTitle = computed(() => {
+    if (this.paymentId() !== null) {
+      return `Detalle del pago #${this.payment()?.id ?? this.paymentId()}`;
+    }
+
     if (this.detailMode()) {
       return 'Cuenta por cobrar, pagos y aplicaciones';
     }
@@ -1995,6 +2050,7 @@ export class AccountsReceivablePageComponent {
   );
   protected readonly editingPaymentId = signal<number | null>(null);
   protected readonly editingPaymentAmountText = signal<string | number>('');
+  protected readonly editingPaymentDetails = signal(false);
   protected readonly reassignPayment = signal<AccountsReceivablePaymentResponse | null>(null);
   protected readonly reassignCandidateInvoices = signal<AccountsReceivablePortfolioItemResponse[]>(
     [],
@@ -2161,6 +2217,12 @@ export class AccountsReceivablePageComponent {
     return payment.applicationsCount === 0 && !this.hasRepAssociation(payment);
   }
 
+  protected canEditPaymentDetails(
+    payment: AccountsReceivablePaymentResponse | null,
+  ): boolean {
+    return !!payment && !this.hasRepAssociation(payment);
+  }
+
   protected canReassignPaymentApplications(
     payment: AccountsReceivablePaymentSummaryItemResponse | AccountsReceivablePaymentResponse | null,
   ): boolean {
@@ -2192,6 +2254,15 @@ export class AccountsReceivablePageComponent {
   protected cancelPaymentAmountEdit(): void {
     this.editingPaymentId.set(null);
     this.editingPaymentAmountText.set('');
+  }
+
+  protected startPaymentDetailsEdit(): void {
+    this.cancelPaymentAmountEdit();
+    this.editingPaymentDetails.set(true);
+  }
+
+  protected cancelPaymentDetailsEdit(): void {
+    this.editingPaymentDetails.set(false);
   }
 
   protected hasValidEditingPaymentAmount(): boolean {
@@ -2279,6 +2350,7 @@ export class AccountsReceivablePageComponent {
       this.fiscalDocumentId.set(fiscalDocumentId);
       this.paymentId.set(paymentId);
       this.receiverWorkspaceId.set(receiverWorkspaceId);
+      this.editingPaymentDetails.set(false);
       this.recentlyCreatedPaymentId.set(
         paymentId !== null && createdPaymentId === paymentId ? paymentId : null,
       );
@@ -2560,12 +2632,25 @@ export class AccountsReceivablePageComponent {
     }, UPDATE_PAYMENT_AMOUNT_ERROR_MESSAGE);
   }
 
+  protected async savePaymentDetailsEdit(
+    paymentId: number,
+    request: UpdateAccountsReceivablePaymentRequest,
+  ): Promise<void> {
+    await this.run(async () => {
+      await firstValueFrom(this.api.updatePayment(paymentId, request));
+
+      this.cancelPaymentDetailsEdit();
+      await this.refreshPaymentMutationViews(paymentId);
+      this.feedbackService.show('success', 'Datos del pago actualizados.');
+    }, UPDATE_PAYMENT_ERROR_MESSAGE);
+  }
+
   protected async deletePayment(
     payment: AccountsReceivablePaymentSummaryItemResponse | AccountsReceivablePaymentResponse,
   ): Promise<void> {
     if (
       !window.confirm(
-        '¿Deseas eliminar este pago? Esta acción solo es posible si el pago no ha sido aplicado a ninguna factura.',
+        '¿Deseas eliminar este pago? Esta acción solo es posible si no tiene aplicaciones ni un complemento asociado.',
       )
     ) {
       return;
@@ -2577,6 +2662,7 @@ export class AccountsReceivablePageComponent {
     await this.run(async () => {
       await firstValueFrom(this.api.deletePayment(paymentId));
       this.cancelPaymentAmountEdit();
+      this.cancelPaymentDetailsEdit();
 
       if (this.payment()?.id === paymentId) {
         await this.navigateAfterPaymentDeletion(receiverId);
@@ -3058,7 +3144,7 @@ export class AccountsReceivablePageComponent {
     await this.router.navigate(['/app/accounts-receivable'], { queryParams });
   }
 
-  private hasRepAssociation(
+  protected hasRepAssociation(
     payment: AccountsReceivablePaymentSummaryItemResponse | AccountsReceivablePaymentResponse,
   ): boolean {
     return (

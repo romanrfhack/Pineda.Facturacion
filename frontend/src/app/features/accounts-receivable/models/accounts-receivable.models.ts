@@ -240,6 +240,14 @@ export interface UpdateAccountsReceivablePaymentAmountRequest {
   amount: number;
 }
 
+export interface UpdateAccountsReceivablePaymentRequest {
+  paymentDateUtc: string;
+  paymentFormSat: string;
+  amount: number;
+  reference?: string | null;
+  notes?: string | null;
+}
+
 export interface AccountsReceivablePaymentResponse {
   id: number;
   paymentDateUtc: string;
@@ -317,6 +325,15 @@ export interface UpdateAccountsReceivablePaymentAmountResponse {
   accountsReceivablePaymentId: number;
   previousAmount: number;
   updatedAmount: number;
+  payment?: AccountsReceivablePaymentResponse | null;
+}
+
+export interface UpdateAccountsReceivablePaymentResponse {
+  outcome: string;
+  isSuccess: boolean;
+  errorMessage?: string | null;
+  accountsReceivablePaymentId: number;
+  updatedFields: string[];
   payment?: AccountsReceivablePaymentResponse | null;
 }
 

@@ -31,6 +31,7 @@ describe('AccountsReceivablePageComponent', () => {
     applyPayment: vi.fn(),
     getInvoiceByFiscalDocumentId: vi.fn(),
     searchPayments: vi.fn().mockReturnValue(of({ items: [] })),
+    updatePayment: vi.fn(),
     updatePaymentAmount: vi.fn(),
     deletePayment: vi.fn(),
     reassignPaymentApplications: vi.fn(),
@@ -223,6 +224,15 @@ describe('AccountsReceivablePageComponent', () => {
       }),
     );
     api.searchPayments.mockReturnValue(of({ items: [] }));
+    api.updatePayment.mockReturnValue(
+      of({
+        outcome: 'Updated',
+        isSuccess: true,
+        accountsReceivablePaymentId: 6,
+        updatedFields: ['reference'],
+        payment: null,
+      }),
+    );
     api.updatePaymentAmount.mockReturnValue(
       of({
         outcome: 'Updated',
@@ -271,7 +281,9 @@ describe('AccountsReceivablePageComponent', () => {
                 usoCfdi: [],
                 byRegimenFiscal: [],
                 paymentMethods: [],
-                paymentForms: [],
+                paymentForms: [
+                  { code: '03', description: 'Transferencia electrónica de fondos' },
+                ],
               }),
             ),
           },
@@ -791,6 +803,95 @@ describe('AccountsReceivablePageComponent', () => {
 
     expect(fixture.nativeElement.querySelector('[data-testid="detail-payment-edit-button"]')).not.toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="detail-payment-delete-button"]')).not.toBeNull();
+    expect(fixture.nativeElement.textContent).toContain('Detalle del pago #6');
+    expect(
+      fixture.nativeElement.querySelector('[data-testid="payment-back-to-workspace"]')?.textContent,
+    ).toContain('Volver al workspace');
+  });
+
+  it('edits payment metadata but keeps amount locked when applications exist without REP', async () => {
+    queryParams$.next(convertToParamMap({ paymentId: '6' }));
+
+    const fixture = TestBed.createComponent(AccountsReceivablePageComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const editButton = fixture.nativeElement.querySelector(
+      '[data-testid="detail-payment-edit-button"]',
+    ) as HTMLButtonElement;
+    const deleteButton = fixture.nativeElement.querySelector(
+      '[data-testid="detail-payment-delete-button"]',
+    ) as HTMLButtonElement | null;
+
+    expect(editButton).not.toBeNull();
+    expect(deleteButton).toBeNull();
+
+    editButton.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const amountInput = fixture.nativeElement.querySelector(
+      '[data-testid="detail-payment-amount-input"]',
+    ) as HTMLInputElement;
+    const dateInput = fixture.nativeElement.querySelector(
+      '[data-testid="detail-payment-date-input"]',
+    ) as HTMLInputElement;
+    const referenceInput = fixture.nativeElement.querySelector(
+      '[data-testid="detail-payment-reference-input"]',
+    ) as HTMLInputElement;
+    const saveButton = fixture.nativeElement.querySelector(
+      '[data-testid="detail-payment-save-button"]',
+    ) as HTMLButtonElement;
+
+    expect(amountInput.disabled).toBe(true);
+    expect(amountInput.valueAsNumber).toBe(5000);
+
+    referenceInput.value = 'DEP-CORREGIDO';
+    referenceInput.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+
+    saveButton.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(api.updatePayment).toHaveBeenCalledWith(6, {
+      paymentDateUtc: dateInput.value,
+      paymentFormSat: '03',
+      amount: 5000,
+      reference: 'DEP-CORREGIDO',
+      notes: '',
+    });
+    expect(feedbackService.show).toHaveBeenCalledWith('success', 'Datos del pago actualizados.');
+  });
+
+  it('blocks editing and deletion in detail mode when the payment has REP association', async () => {
+    queryParams$.next(convertToParamMap({ paymentId: '6' }));
+    api.getPaymentById.mockReset().mockReturnValue(
+      of(
+        createPaymentDetail({
+          repDocumentStatus: 'ReadyForStamping',
+          repReservedAmount: 1722,
+          applicationsCount: 1,
+        }),
+      ),
+    );
+
+    const fixture = TestBed.createComponent(AccountsReceivablePageComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(
+      fixture.nativeElement.querySelector('[data-testid="detail-payment-edit-button"]'),
+    ).toBeNull();
+    expect(
+      fixture.nativeElement.querySelector('[data-testid="detail-payment-delete-button"]'),
+    ).toBeNull();
+    expect(fixture.nativeElement.textContent).toContain(
+      'La edición y eliminación están bloqueadas',
+    );
   });
 
   it('updates the payment amount and refreshes the receiver workspace', async () => {

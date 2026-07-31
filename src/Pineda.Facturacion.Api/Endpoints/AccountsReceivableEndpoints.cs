@@ -134,6 +134,15 @@ public static class AccountsReceivableEndpoints
             .Produces<AccountsReceivablePaymentResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status404NotFound);
 
+        group.MapPut("/payments/{paymentId:long}", UpdateAccountsReceivablePaymentAsync)
+            .RequireAuthorization(AuthorizationPolicyNames.OperatorOrAbove)
+            .WithName("UpdateAccountsReceivablePayment")
+            .WithSummary("Update payment data before REP, preserving amount guards for applied payments")
+            .Produces<UpdateAccountsReceivablePaymentResponse>(StatusCodes.Status200OK)
+            .Produces<UpdateAccountsReceivablePaymentResponse>(StatusCodes.Status400BadRequest)
+            .Produces<UpdateAccountsReceivablePaymentResponse>(StatusCodes.Status404NotFound)
+            .Produces<UpdateAccountsReceivablePaymentResponse>(StatusCodes.Status409Conflict);
+
         group.MapPatch("/payments/{paymentId:long}/amount", UpdateAccountsReceivablePaymentAmountAsync)
             .RequireAuthorization(AuthorizationPolicyNames.OperatorOrAbove)
             .WithName("UpdateAccountsReceivablePaymentAmount")
@@ -588,6 +597,88 @@ public static class AccountsReceivableEndpoints
         }
 
         return TypedResults.Ok(MapPayment(result.AccountsReceivablePayment, result.OperationalProjection));
+    }
+
+    private static async Task<Results<Ok<UpdateAccountsReceivablePaymentResponse>, BadRequest<UpdateAccountsReceivablePaymentResponse>, NotFound<UpdateAccountsReceivablePaymentResponse>, Conflict<UpdateAccountsReceivablePaymentResponse>>> UpdateAccountsReceivablePaymentAsync(
+        long paymentId,
+        UpdateAccountsReceivablePaymentRequest request,
+        UpdateAccountsReceivablePaymentService service,
+        IAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ExecuteAsync(
+            new UpdateAccountsReceivablePaymentCommand
+            {
+                AccountsReceivablePaymentId = paymentId,
+                PaymentDateUtc = request.PaymentDateUtc,
+                PaymentFormSat = request.PaymentFormSat,
+                Amount = request.Amount,
+                Reference = request.Reference,
+                Notes = request.Notes
+            },
+            cancellationToken);
+
+        var response = new UpdateAccountsReceivablePaymentResponse
+        {
+            Outcome = result.Outcome.ToString(),
+            IsSuccess = result.IsSuccess,
+            ErrorMessage = result.ErrorMessage,
+            AccountsReceivablePaymentId = result.AccountsReceivablePaymentId,
+            UpdatedFields = result.UpdatedFields.ToList(),
+            Payment = result.AccountsReceivablePayment is null
+                ? null
+                : MapPayment(result.AccountsReceivablePayment)
+        };
+
+        await AuditApiHelper.RecordAsync(
+            auditService,
+            "AccountsReceivablePayment.Update",
+            "AccountsReceivablePayment",
+            paymentId.ToString(),
+            result.Outcome.ToString(),
+            new
+            {
+                paymentId,
+                request.PaymentDateUtc,
+                request.PaymentFormSat,
+                request.Amount,
+                request.Reference,
+                request.Notes
+            },
+            new
+            {
+                Previous = result.PreviousPayment is null
+                    ? null
+                    : new
+                    {
+                        result.PreviousPayment.PaymentDateUtc,
+                        result.PreviousPayment.PaymentFormSat,
+                        result.PreviousPayment.Amount,
+                        result.PreviousPayment.Reference,
+                        result.PreviousPayment.Notes
+                    },
+                result.UpdatedFields,
+                Updated = result.AccountsReceivablePayment is null
+                    ? null
+                    : new
+                    {
+                        result.AccountsReceivablePayment.PaymentDateUtc,
+                        result.AccountsReceivablePayment.PaymentFormSat,
+                        result.AccountsReceivablePayment.Amount,
+                        result.AccountsReceivablePayment.Reference,
+                        result.AccountsReceivablePayment.Notes
+                    }
+            },
+            result.ErrorMessage,
+            cancellationToken);
+
+        return result.Outcome switch
+        {
+            UpdateAccountsReceivablePaymentOutcome.Updated => TypedResults.Ok(response),
+            UpdateAccountsReceivablePaymentOutcome.NotFound => TypedResults.NotFound(response),
+            UpdateAccountsReceivablePaymentOutcome.Conflict => TypedResults.Conflict(response),
+            _ => TypedResults.BadRequest(response)
+        };
     }
 
     private static async Task<Results<Ok<UpdateAccountsReceivablePaymentAmountResponse>, BadRequest<UpdateAccountsReceivablePaymentAmountResponse>, NotFound<UpdateAccountsReceivablePaymentAmountResponse>, Conflict<UpdateAccountsReceivablePaymentAmountResponse>>> UpdateAccountsReceivablePaymentAmountAsync(
@@ -1809,6 +1900,19 @@ public class UpdateAccountsReceivablePaymentAmountRequest
     public decimal Amount { get; set; }
 }
 
+public class UpdateAccountsReceivablePaymentRequest
+{
+    public DateTime PaymentDateUtc { get; set; }
+
+    public string PaymentFormSat { get; set; } = string.Empty;
+
+    public decimal Amount { get; set; }
+
+    public string? Reference { get; set; }
+
+    public string? Notes { get; set; }
+}
+
 public class CreateAccountsReceivablePaymentResponse
 {
     public string Outcome { get; set; } = string.Empty;
@@ -1833,6 +1937,21 @@ public class UpdateAccountsReceivablePaymentAmountResponse
     public decimal PreviousAmount { get; set; }
 
     public decimal UpdatedAmount { get; set; }
+
+    public AccountsReceivablePaymentResponse? Payment { get; set; }
+}
+
+public class UpdateAccountsReceivablePaymentResponse
+{
+    public string Outcome { get; set; } = string.Empty;
+
+    public bool IsSuccess { get; set; }
+
+    public string? ErrorMessage { get; set; }
+
+    public long AccountsReceivablePaymentId { get; set; }
+
+    public List<string> UpdatedFields { get; set; } = [];
 
     public AccountsReceivablePaymentResponse? Payment { get; set; }
 }

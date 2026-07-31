@@ -517,6 +517,57 @@ public sealed class MySqlBackedIntegrationTests
     }
 
     [MySqlFact]
+    public async Task AccountsReceivablePaymentRepository_UpdateMetadata_Succeeds_WhenApplicationsExistWithoutRep_OnRealMySql()
+    {
+        await _fixture.ResetDatabaseAsync();
+        const long paymentId = 7007;
+        const long invoiceId = 8007;
+        const long applicationId = 9007;
+
+        await using (var seedDb = _fixture.CreateDbContext())
+        {
+            await SeedAppliedAccountsReceivablePaymentFixtureAsync(
+                seedDb,
+                paymentId,
+                invoiceId,
+                applicationId,
+                3007);
+        }
+
+        await using (var db = _fixture.CreateDbContext())
+        {
+            var repository = new AccountsReceivablePaymentRepository(db);
+            var snapshot = await repository.GetMutationSnapshotAsync(paymentId);
+            Assert.NotNull(snapshot);
+
+            var updated = await repository.TryUpdateIfAllowedAsync(
+                paymentId,
+                snapshot!.UpdatedAtUtc,
+                new DateTime(2026, 5, 21, 15, 30, 0, DateTimeKind.Utc),
+                "03",
+                snapshot.Amount,
+                "REF-CORREGIDA",
+                "Notas corregidas",
+                requireNoApplications: false,
+                updatedAtUtc: new DateTime(2026, 5, 21, 16, 0, 0, DateTimeKind.Utc));
+
+            Assert.True(updated);
+        }
+
+        await using var verifyDb = _fixture.CreateDbContext();
+        var payment = await verifyDb.AccountsReceivablePayments.SingleAsync(x => x.Id == paymentId);
+        var invoice = await verifyDb.AccountsReceivableInvoices.SingleAsync(x => x.Id == invoiceId);
+        var application = await verifyDb.AccountsReceivablePaymentApplications.SingleAsync(
+            x => x.Id == applicationId);
+        Assert.Equal(100m, payment.Amount);
+        Assert.Equal("REF-CORREGIDA", payment.Reference);
+        Assert.Equal("Notas corregidas", payment.Notes);
+        Assert.Equal(40m, invoice.PaidTotal);
+        Assert.Equal(60m, invoice.OutstandingBalance);
+        Assert.Equal(40m, application.AppliedAmount);
+    }
+
+    [MySqlFact]
     public async Task AccountsReceivablePaymentRepository_Delete_IsBlocked_WhenApplicationsExist_OnRealMySql()
     {
         await _fixture.ResetDatabaseAsync();
@@ -559,12 +610,25 @@ public sealed class MySqlBackedIntegrationTests
         await using (var db = _fixture.CreateDbContext())
         {
             var repository = new AccountsReceivablePaymentRepository(db);
+            var snapshot = await repository.GetMutationSnapshotAsync(paymentId);
+            Assert.NotNull(snapshot);
             var updated = await repository.TryUpdateAmountIfMutableAsync(
                 paymentId,
                 125.5m,
                 new DateTime(2026, 5, 20, 12, 0, 0, DateTimeKind.Utc));
+            var detailsUpdated = await repository.TryUpdateIfAllowedAsync(
+                paymentId,
+                snapshot!.UpdatedAtUtc,
+                snapshot.PaymentDateUtc,
+                snapshot.PaymentFormSat,
+                snapshot.Amount,
+                "REF-BLOQUEADA",
+                null,
+                requireNoApplications: false,
+                updatedAtUtc: new DateTime(2026, 5, 20, 12, 0, 0, DateTimeKind.Utc));
 
             Assert.False(updated);
+            Assert.False(detailsUpdated);
         }
     }
 
