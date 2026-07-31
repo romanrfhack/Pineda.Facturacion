@@ -26,6 +26,7 @@ import {
   FiscalStampResponse,
   QueryRemoteFiscalStampResponse,
   IssuerProfileResponse,
+  LegacyOrderStampingBlockingOrderResponse,
   PendingBillingItemResponse,
   PendingCancellationAuthorizationItemResponse,
   PrepareFiscalDocumentRequest,
@@ -227,6 +228,41 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
                 >
               </div>
             </div>
+
+            @if (blockingCanceledOrders().length) {
+              <section class="context-warning canceled-orders-warning" aria-live="assertive">
+                <strong>Timbrado bloqueado por órdenes canceladas</strong>
+                <p>
+                  El sistema de origen reportó estas órdenes como canceladas. Retira cada una y
+                  vuelve a timbrar; las órdenes vigentes permanecerán en el documento.
+                </p>
+                <div class="canceled-orders-actions">
+                  @for (order of blockingCanceledOrders(); track order.salesOrderId) {
+                    <div>
+                      <span>Orden {{ order.legacyOrderId }}</span>
+                      <button
+                        type="button"
+                        class="danger"
+                        (click)="removeAssociatedOrder(order.salesOrderId)"
+                        [disabled]="
+                          !canEditCurrentBillingComposition() ||
+                          loadingBillingDocumentComposition() ||
+                          associatedOrders().length <= 1
+                        "
+                      >
+                        Retirar orden cancelada
+                      </button>
+                    </div>
+                  }
+                </div>
+                @if (associatedOrders().length <= 1) {
+                  <small>
+                    Esta es la única orden del documento. Un CFDI no puede quedar vacío; cancela el
+                    documento de facturación para liberarla y conservar la trazabilidad.
+                  </small>
+                }
+              </section>
+            }
 
             <div class="associated-orders-list">
               @for (order of associatedOrders(); track order.salesOrderId) {
@@ -1705,6 +1741,21 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
       .associated-order-card small {
         color: #5f6b76;
       }
+      .canceled-orders-warning {
+        gap: 0.75rem;
+      }
+      .canceled-orders-actions {
+        display: grid;
+        gap: 0.5rem;
+      }
+      .canceled-orders-actions div {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        align-items: center;
+        border-top: 1px solid #e9cf9a;
+        padding-top: 0.5rem;
+      }
       .included-items-list {
         display: grid;
         gap: 0.5rem;
@@ -1980,6 +2031,10 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
           flex-direction: column;
           align-items: stretch;
         }
+        .canceled-orders-actions div {
+          flex-direction: column;
+          align-items: stretch;
+        }
         .included-item-card {
           flex-direction: column;
           align-items: stretch;
@@ -2039,6 +2094,9 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected readonly fiscalDocument = signal<FiscalDocumentResponse | null>(null);
   protected readonly stampEvidence = signal<FiscalStampResponse | null>(null);
   protected readonly cancellation = signal<FiscalCancellationResponse | null>(null);
+  protected readonly blockingCanceledOrders = signal<LegacyOrderStampingBlockingOrderResponse[]>(
+    [],
+  );
   protected readonly lastOperationMessage = signal<string | null>(null);
   protected readonly showCancelDialog = signal(false);
   protected readonly showCancelConfirmationDialog = signal(false);
@@ -2551,6 +2609,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     this.fiscalDocument.set(null);
     this.stampEvidence.set(null);
     this.cancellation.set(null);
+    this.blockingCanceledOrders.set([]);
     this.pendingAutomaticEmailStatus.set(null);
     this.fiscalDocumentId.set(null);
     this.resetFiscalItemProfileDialogState();
@@ -2748,6 +2807,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       const response = await firstValueFrom(
         this.api.addSalesOrderToBillingDocument(billingDocumentId, importResult.salesOrderId),
       );
+      this.blockingCanceledOrders.set([]);
       this.additionalLegacyOrderId = '';
       this.lastOperationMessage.set(
         response.errorMessage || 'Orden legacy agregada al documento fiscal.',
@@ -2789,6 +2849,9 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     try {
       const response = await firstValueFrom(
         this.api.removeSalesOrderFromBillingDocument(billingDocumentId, salesOrderId),
+      );
+      this.blockingCanceledOrders.update((orders) =>
+        orders.filter((order) => order.salesOrderId !== salesOrderId),
       );
       this.lastOperationMessage.set(
         response.errorMessage || 'Orden legacy quitada del documento fiscal.',
@@ -3349,9 +3412,28 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
         return;
       }
 
-      const response = await firstValueFrom(
-        this.api.stampAndEmailFiscalDocument(fiscalDocumentId, { retryRejected }),
-      );
+      let response: StampAndEmailFiscalDocumentResponse;
+      try {
+        response = await firstValueFrom(
+          this.api.stampAndEmailFiscalDocument(fiscalDocumentId, { retryRejected }),
+        );
+      } catch (error) {
+        const blockingOrders = extractBlockingCanceledOrders(error);
+        if (!blockingOrders.length) {
+          throw error;
+        }
+
+        this.blockingCanceledOrders.set(blockingOrders);
+        const message = extractApiErrorMessage(
+          error,
+          'Hay órdenes canceladas que deben retirarse antes de timbrar.',
+        );
+        this.lastOperationMessage.set(message);
+        this.feedbackService.show('warning', message);
+        return;
+      }
+
+      this.blockingCanceledOrders.set([]);
       const feedbackMessage = this.buildStampAndEmailMessage(response, retryRejected);
       this.pendingAutomaticEmailStatus.set(null);
       this.lastOperationMessage.set(null);
@@ -3738,6 +3820,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       if (!preserveCurrentFiscalDocument && isDifferentBillingDocument) {
         this.resetReceiverSelectionState();
         this.clearOpenFiscalDocumentState();
+        this.blockingCanceledOrders.set([]);
       }
 
       this.billingDocumentContext.set(billingDocument);
@@ -3803,6 +3886,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     this.fiscalDocument.set(null);
     this.stampEvidence.set(null);
     this.cancellation.set(null);
+    this.blockingCanceledOrders.set([]);
     this.pendingAutomaticEmailStatus.set(null);
     this.fiscalDocumentId.set(null);
     this.lastOperationMessage.set(null);
@@ -4125,6 +4209,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     this.fiscalDocument.set(null);
     this.stampEvidence.set(null);
     this.cancellation.set(null);
+    this.blockingCanceledOrders.set([]);
     this.pendingAutomaticEmailStatus.set(null);
     this.fiscalDocumentId.set(null);
     this.resetFiscalItemProfileDialogState();
@@ -4286,6 +4371,39 @@ function parseNumber(value: string | null): number | null {
 
 function extractErrorMessage(error: unknown): string {
   return extractApiErrorMessage(error);
+}
+
+function extractBlockingCanceledOrders(
+  error: unknown,
+): LegacyOrderStampingBlockingOrderResponse[] {
+  if (typeof error !== 'object' || !error || !('error' in error)) {
+    return [];
+  }
+
+  const payload = (error as {
+    error?: { blockingCanceledOrders?: unknown };
+  }).error;
+  if (!Array.isArray(payload?.blockingCanceledOrders)) {
+    return [];
+  }
+
+  return payload.blockingCanceledOrders
+    .filter(
+      (item): item is LegacyOrderStampingBlockingOrderResponse =>
+        typeof item === 'object' &&
+        item !== null &&
+        'salesOrderId' in item &&
+        typeof item.salesOrderId === 'number' &&
+        Number.isFinite(item.salesOrderId) &&
+        item.salesOrderId > 0 &&
+        'legacyOrderId' in item &&
+        typeof item.legacyOrderId === 'string' &&
+        item.legacyOrderId.trim().length > 0,
+    )
+    .map((item) => ({
+      salesOrderId: item.salesOrderId,
+      legacyOrderId: item.legacyOrderId.trim(),
+    }));
 }
 
 function shouldOpenEmailComposerAfterStamp(

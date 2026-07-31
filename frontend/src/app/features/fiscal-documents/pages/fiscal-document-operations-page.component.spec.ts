@@ -1185,6 +1185,63 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     );
   });
 
+  it('shows each canceled legacy order returned by the stamping guard', async () => {
+    const stampAndEmailFiscalDocument = vi.fn().mockReturnValue(
+      throwError(() => ({
+        status: 409,
+        error: {
+          fiscalDocumentId: 40,
+          stamped: false,
+          fiscalDocumentStatus: 'ReadyForStamping',
+          errorMessage:
+            'La orden 1183656 está cancelada en el sistema de origen. Retírala del documento antes de timbrar.',
+          blockingCanceledOrders: [{ salesOrderId: 21, legacyOrderId: '1183656' }],
+          email: {
+            attempted: false,
+            sent: false,
+            status: 'not_attempted',
+            recipients: [],
+            invalidRecipients: [],
+          },
+        },
+      })),
+    );
+    const fixture = await configure({ stampAndEmailFiscalDocument });
+    fixture.componentInstance['fiscalDocument'].update((document) =>
+      document ? { ...document, status: 'ReadyForStamping' } : document,
+    );
+    fixture.componentInstance['billingDocumentContext'].update((document) =>
+      document
+        ? {
+            ...document,
+            associatedOrders: [
+              ...(document.associatedOrders ?? []),
+              {
+                salesOrderId: 21,
+                legacyOrderId: '1183656',
+                customerName: 'Receiver One',
+                total: 50,
+                isPrimary: false,
+              },
+            ],
+          }
+        : document,
+    );
+
+    await fixture.componentInstance['stamp']();
+    fixture.detectChanges();
+
+    expect(stampAndEmailFiscalDocument).toHaveBeenCalledWith(40, { retryRejected: false });
+    expect(fixture.componentInstance['blockingCanceledOrders']()).toEqual([
+      { salesOrderId: 21, legacyOrderId: '1183656' },
+    ]);
+    expect(fixture.nativeElement.textContent).toContain(
+      'Timbrado bloqueado por órdenes canceladas',
+    );
+    expect(fixture.nativeElement.textContent).toContain('Orden 1183656');
+    expect(fixture.nativeElement.textContent).toContain('Retirar orden cancelada');
+  });
+
   it('opens the fallback composer automatically when the receiver email is missing', async () => {
     const stampAndEmailFiscalDocument = vi.fn().mockReturnValue(
       of({

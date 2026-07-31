@@ -410,6 +410,12 @@ export interface StampFiscalDocumentResponse {
   rawResponseSummaryJson?: string | null;
   isRetryable?: boolean | null;
   retryAdvice?: string | null;
+  blockingCanceledOrders?: LegacyOrderStampingBlockingOrderResponse[];
+}
+
+export interface LegacyOrderStampingBlockingOrderResponse {
+  salesOrderId: number;
+  legacyOrderId: string;
 }
 
 export interface ReprepareFiscalDocumentResponse {
@@ -464,6 +470,7 @@ export interface StampAndEmailFiscalDocumentResponse {
   providerMessage?: string | null;
   supportMessage?: string | null;
   errorMessage?: string | null;
+  blockingCanceledOrders?: LegacyOrderStampingBlockingOrderResponse[];
   email: StampAndEmailFiscalDocumentEmailResponse;
 }
 

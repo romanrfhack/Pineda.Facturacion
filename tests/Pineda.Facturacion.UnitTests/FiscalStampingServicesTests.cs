@@ -1,6 +1,8 @@
+using Pineda.Facturacion.Application.Abstractions.Legacy;
 using Pineda.Facturacion.Application.Abstractions.Pac;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Contracts.Pac;
+using Pineda.Facturacion.Application.Models.Legacy;
 using Pineda.Facturacion.Application.UseCases.FiscalDocuments;
 using Pineda.Facturacion.Api.Endpoints;
 using Pineda.Facturacion.Domain.Entities;
@@ -53,6 +55,51 @@ public class FiscalStampingServicesTests
         Assert.Equal("UUID-1", fiscalStampRepository.Added.Uuid);
         Assert.Equal("FacturaloPlus", fiscalStampRepository.Added.ProviderName);
         Assert.Equal("TRACK-1", fiscalStampRepository.Added.ProviderTrackingId);
+    }
+
+    [Fact]
+    public async Task StampFiscalDocument_BlocksCanceledLegacyOrders_BeforeCallingPac()
+    {
+        var fiscalDocument = CreateFiscalDocument();
+        var gateway = new FakeFiscalStampingGateway();
+        var unitOfWork = new FakeUnitOfWork();
+        var service = new StampFiscalDocumentService(
+            new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
+            new FakeFiscalStampRepository(),
+            gateway,
+            unitOfWork,
+            new FakeSatProductServiceCatalogRepository { ActiveCodes = ["10101504"] },
+            new FakeSatClaveUnidadRepository { ActiveCodes = ["H87"] },
+            new FakeLegacyOrderStampingGuard
+            {
+                Result = new LegacyOrderStampingValidationResult
+                {
+                    Outcome = LegacyOrderStampingValidationOutcome.BlockedByCanceledOrders,
+                    ErrorMessage = "La orden 1183656 está cancelada en el sistema de origen.",
+                    BlockingCanceledOrders =
+                    [
+                        new LegacyOrderStampingBlockingOrder
+                        {
+                            SalesOrderId = 21,
+                            LegacyOrderId = "1183656"
+                        }
+                    ]
+                }
+            });
+
+        var result = await service.ExecuteAsync(new StampFiscalDocumentCommand
+        {
+            FiscalDocumentId = fiscalDocument.Id
+        });
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(StampFiscalDocumentOutcome.BlockedByCanceledLegacyOrders, result.Outcome);
+        Assert.Equal(FiscalDocumentStatus.ReadyForStamping, fiscalDocument.Status);
+        Assert.Equal(0, gateway.CallCount);
+        Assert.Equal(0, unitOfWork.SaveChangesCallCount);
+        var blockingOrder = Assert.Single(result.BlockingCanceledOrders);
+        Assert.Equal(21, blockingOrder.SalesOrderId);
+        Assert.Equal("1183656", blockingOrder.LegacyOrderId);
     }
 
     [Fact]
@@ -1178,6 +1225,19 @@ public class FiscalStampingServicesTests
             RemoteQueryCallCount++;
             return Task.FromResult(RemoteQueryResult);
         }
+    }
+
+    private sealed class FakeLegacyOrderStampingGuard : ILegacyOrderStampingGuard
+    {
+        public LegacyOrderStampingValidationResult Result { get; init; } = new()
+        {
+            Outcome = LegacyOrderStampingValidationOutcome.Valid
+        };
+
+        public Task<LegacyOrderStampingValidationResult> ValidateAsync(
+            long billingDocumentId,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(Result);
     }
 
     private sealed class FakeSatProductServiceCatalogRepository : ISatProductServiceCatalogRepository

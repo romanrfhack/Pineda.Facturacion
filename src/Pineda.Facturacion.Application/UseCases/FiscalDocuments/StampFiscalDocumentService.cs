@@ -1,9 +1,11 @@
 using System.Globalization;
 using System.Text;
+using Pineda.Facturacion.Application.Abstractions.Legacy;
 using Pineda.Facturacion.Application.Abstractions.Pac;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Common;
 using Pineda.Facturacion.Application.Contracts.Pac;
+using Pineda.Facturacion.Application.Models.Legacy;
 using Pineda.Facturacion.Application.UseCases.ProductFiscalProfiles;
 using Pineda.Facturacion.Domain.Entities;
 using Pineda.Facturacion.Domain.Enums;
@@ -39,6 +41,7 @@ public class StampFiscalDocumentService
     private readonly IFiscalStampingGateway _fiscalStampingGateway;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ProductFiscalProfileSatCatalogValidation _satCatalogValidation;
+    private readonly ILegacyOrderStampingGuard? _legacyOrderStampingGuard;
 
     public StampFiscalDocumentService(
         IFiscalDocumentRepository fiscalDocumentRepository,
@@ -50,7 +53,8 @@ public class StampFiscalDocumentService
             fiscalStampRepository,
             fiscalStampingGateway,
             unitOfWork,
-            new ProductFiscalProfileSatCatalogValidation())
+            new ProductFiscalProfileSatCatalogValidation(),
+            null)
     {
     }
 
@@ -68,7 +72,28 @@ public class StampFiscalDocumentService
             unitOfWork,
             new ProductFiscalProfileSatCatalogValidation(
                 satProductServiceCatalogRepository,
-                satClaveUnidadRepository))
+                satClaveUnidadRepository),
+            null)
+    {
+    }
+
+    public StampFiscalDocumentService(
+        IFiscalDocumentRepository fiscalDocumentRepository,
+        IFiscalStampRepository fiscalStampRepository,
+        IFiscalStampingGateway fiscalStampingGateway,
+        IUnitOfWork unitOfWork,
+        ISatProductServiceCatalogRepository satProductServiceCatalogRepository,
+        ISatClaveUnidadRepository satClaveUnidadRepository,
+        ILegacyOrderStampingGuard legacyOrderStampingGuard)
+        : this(
+            fiscalDocumentRepository,
+            fiscalStampRepository,
+            fiscalStampingGateway,
+            unitOfWork,
+            new ProductFiscalProfileSatCatalogValidation(
+                satProductServiceCatalogRepository,
+                satClaveUnidadRepository),
+            legacyOrderStampingGuard)
     {
     }
 
@@ -77,13 +102,15 @@ public class StampFiscalDocumentService
         IFiscalStampRepository fiscalStampRepository,
         IFiscalStampingGateway fiscalStampingGateway,
         IUnitOfWork unitOfWork,
-        ProductFiscalProfileSatCatalogValidation satCatalogValidation)
+        ProductFiscalProfileSatCatalogValidation satCatalogValidation,
+        ILegacyOrderStampingGuard? legacyOrderStampingGuard)
     {
         _fiscalDocumentRepository = fiscalDocumentRepository;
         _fiscalStampRepository = fiscalStampRepository;
         _fiscalStampingGateway = fiscalStampingGateway;
         _unitOfWork = unitOfWork;
         _satCatalogValidation = satCatalogValidation;
+        _legacyOrderStampingGuard = legacyOrderStampingGuard;
     }
 
     public async Task<StampFiscalDocumentResult> ExecuteAsync(
@@ -191,6 +218,22 @@ public class StampFiscalDocumentService
         if (satCatalogSnapshotValidationError is not null)
         {
             return ValidationFailure(fiscalDocument.Id, satCatalogSnapshotValidationError);
+        }
+
+        if (_legacyOrderStampingGuard is not null)
+        {
+            var legacyValidation = await _legacyOrderStampingGuard.ValidateAsync(
+                fiscalDocument.BillingDocumentId,
+                cancellationToken);
+            if (legacyValidation.Outcome == LegacyOrderStampingValidationOutcome.BlockedByCanceledOrders)
+            {
+                return BlockedByCanceledLegacyOrders(fiscalDocument, legacyValidation);
+            }
+
+            if (legacyValidation.Outcome == LegacyOrderStampingValidationOutcome.ValidationUnavailable)
+            {
+                return LegacyOrderValidationUnavailable(fiscalDocument, legacyValidation.ErrorMessage);
+            }
         }
 
         var requestStartedAtUtc = DateTime.UtcNow;
@@ -760,6 +803,39 @@ public class StampFiscalDocumentService
             ErrorMessage = errorMessage,
             IsRetryable = false,
             RetryAdvice = FiscalOperationRobustnessPolicy.BuildRetryAdvice(StampFiscalDocumentOutcome.ValidationFailed)
+        };
+    }
+
+    private static StampFiscalDocumentResult BlockedByCanceledLegacyOrders(
+        FiscalDocument fiscalDocument,
+        LegacyOrderStampingValidationResult validation)
+    {
+        return new StampFiscalDocumentResult
+        {
+            Outcome = StampFiscalDocumentOutcome.BlockedByCanceledLegacyOrders,
+            IsSuccess = false,
+            FiscalDocumentId = fiscalDocument.Id,
+            FiscalDocumentStatus = fiscalDocument.Status,
+            ErrorMessage = validation.ErrorMessage,
+            IsRetryable = false,
+            RetryAdvice = "Retira las órdenes canceladas indicadas y vuelve a intentar el timbrado.",
+            BlockingCanceledOrders = validation.BlockingCanceledOrders
+        };
+    }
+
+    private static StampFiscalDocumentResult LegacyOrderValidationUnavailable(
+        FiscalDocument fiscalDocument,
+        string? errorMessage)
+    {
+        return new StampFiscalDocumentResult
+        {
+            Outcome = StampFiscalDocumentOutcome.LegacyOrderValidationUnavailable,
+            IsSuccess = false,
+            FiscalDocumentId = fiscalDocument.Id,
+            FiscalDocumentStatus = fiscalDocument.Status,
+            ErrorMessage = errorMessage ?? "No fue posible validar las órdenes en el sistema de origen.",
+            IsRetryable = true,
+            RetryAdvice = "No se envió el CFDI al PAC. Verifica la conexión con el sistema de origen e intenta nuevamente."
         };
     }
 }

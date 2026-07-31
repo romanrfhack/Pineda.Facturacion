@@ -185,6 +185,43 @@ public class LegacyOrderReaderTests
     }
 
     [Fact]
+    public void BuildSearchSql_Excludes_Note_Orders_With_Canceled_Legacy_SalesNote()
+    {
+        var schema = CreateResolvedSchema(
+            ordersTableName: "Pedidos",
+            customersTableName: "Clientes",
+            orderItemsTableName: "PedidosDet",
+            articlesTableName: "Articulos",
+            articleNamesTableName: "NombresArticulos",
+            orderDateColumnName: "FechaPedido");
+
+        AssertCanceledSalesNoteExclusionFilter(LegacyOrderReader.BuildHeaderSql(schema));
+        AssertCanceledSalesNoteExclusionFilter(LegacyOrderReader.BuildCountSql(schema));
+        AssertCanceledSalesNoteExclusionFilter(LegacyOrderReader.BuildListSql(schema));
+    }
+
+    [Fact]
+    public void BuildCanceledOrderIdsSql_Detects_Canceled_Invoices_And_Note_Orders()
+    {
+        var schema = CreateResolvedSchema(
+            ordersTableName: "Pedidos",
+            customersTableName: "Clientes",
+            orderItemsTableName: "PedidosDet",
+            articlesTableName: "Articulos",
+            articleNamesTableName: "NombresArticulos",
+            orderDateColumnName: "FechaPedido");
+
+        var sql = LegacyOrderReader.BuildCanceledOrderIdsSql(schema, 2);
+
+        Assert.Contains("p.`noPedido` IN (@legacyOrderId0, @legacyOrderId1)", sql, StringComparison.Ordinal);
+        Assert.Contains("FROM `Facturas` f", sql, StringComparison.Ordinal);
+        Assert.Contains("UPPER(TRIM(f.`EstatusFactura`)) = 'C'", sql, StringComparison.Ordinal);
+        Assert.Contains("COALESCE(UPPER(TRIM(p.`TipoDocPedido`)), '') = 'N'", sql, StringComparison.Ordinal);
+        Assert.Contains("FROM `NotasVenta` nv", sql, StringComparison.Ordinal);
+        Assert.Contains("UPPER(TRIM(nv.`EstatusNotaVenta`)) = 'C'", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildListSql_Applies_Customer_Filter_Before_Pagination()
     {
         var schema = CreateResolvedSchema(
@@ -330,7 +367,8 @@ public class LegacyOrderReaderTests
         string articlesTableName,
         string articleNamesTableName,
         string orderDateColumnName,
-        string invoicesTableName = "Facturas")
+        string invoicesTableName = "Facturas",
+        string salesNotesTableName = "NotasVenta")
     {
         return new LegacyOrderReadSchema(
             CreateTable(
@@ -339,6 +377,7 @@ public class LegacyOrderReaderTests
                 ("noPedido", "noPedido"),
                 ("refPedido", "refPedido"),
                 ("TipoPedido", "TipoPedido"),
+                ("TipoDocPedido", "TipoDocPedido"),
                 ("noCliente", "noCliente"),
                 ("condPagoPedido", "condPagoPedido"),
                 ("TipoEntrega", "TipoEntrega"),
@@ -386,6 +425,11 @@ public class LegacyOrderReaderTests
                 invoicesTableName,
                 ("noPedido", "noPedido"),
                 ("EstatusFactura", "EstatusFactura")),
+            CreateTable(
+                "notasventa",
+                salesNotesTableName,
+                ("noPedido", "noPedido"),
+                ("EstatusNotaVenta", "EstatusNotaVenta")),
             orderDateColumnName);
     }
 
@@ -398,6 +442,16 @@ public class LegacyOrderReaderTests
         Assert.DoesNotContain("AND UPPER(TRIM(f.`EstatusFactura`)) = 'V'", sql, StringComparison.Ordinal);
         Assert.DoesNotContain("AND EXISTS (", sql, StringComparison.Ordinal);
         Assert.DoesNotContain("JOIN `Facturas`", sql, StringComparison.Ordinal);
+    }
+
+    private static void AssertCanceledSalesNoteExclusionFilter(string sql)
+    {
+        Assert.Contains("COALESCE(UPPER(TRIM(p.`TipoDocPedido`)), '') <> 'N'", sql, StringComparison.Ordinal);
+        Assert.Contains("OR NOT EXISTS (", sql, StringComparison.Ordinal);
+        Assert.Contains("FROM `NotasVenta` nv", sql, StringComparison.Ordinal);
+        Assert.Contains("WHERE nv.`noPedido` = p.`noPedido`", sql, StringComparison.Ordinal);
+        Assert.Contains("AND UPPER(TRIM(nv.`EstatusNotaVenta`)) = 'C'", sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("JOIN `NotasVenta`", sql, StringComparison.Ordinal);
     }
 
     private static ResolvedLegacyTable CreateTable(string logicalName, string actualName, params (string Logical, string Actual)[] columns)

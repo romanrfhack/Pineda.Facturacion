@@ -113,6 +113,7 @@ public class StampAndEmailFiscalDocumentService
             FiscalStampId = stampResult.FiscalStampId,
             Uuid = stampResult.Uuid,
             StampedAtUtc = stampResult.StampedAtUtc,
+            BlockingCanceledOrders = stampResult.BlockingCanceledOrders,
             EmailAttempted = false,
             EmailSent = false,
             EmailStatus = StampAndEmailFiscalDocumentEmailStatus.NotAttempted
