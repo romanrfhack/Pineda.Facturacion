@@ -7,5 +7,7 @@ public enum StampFiscalDocumentOutcome
     Conflict = 2,
     ValidationFailed = 3,
     ProviderRejected = 4,
-    ProviderUnavailable = 5
+    ProviderUnavailable = 5,
+    BlockedByCanceledLegacyOrders = 6,
+    LegacyOrderValidationUnavailable = 7
 }

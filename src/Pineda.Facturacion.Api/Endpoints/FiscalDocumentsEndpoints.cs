@@ -306,7 +306,14 @@ public static class FiscalDocumentsEndpoints
             SupportMessage = result.SupportMessage,
             RawResponseSummaryJson = result.RawResponseSummaryJson,
             IsRetryable = result.IsRetryable,
-            RetryAdvice = result.RetryAdvice
+            RetryAdvice = result.RetryAdvice,
+            BlockingCanceledOrders = result.BlockingCanceledOrders
+                .Select(x => new LegacyOrderStampingBlockingOrderResponse
+                {
+                    SalesOrderId = x.SalesOrderId,
+                    LegacyOrderId = x.LegacyOrderId
+                })
+                .ToArray()
         };
 
         await RecordStampAuditAsync(fiscalDocumentId, request?.RetryRejected ?? false, result, auditService, cancellationToken);
@@ -317,8 +324,10 @@ public static class FiscalDocumentsEndpoints
             StampFiscalDocumentOutcome.Stamped => TypedResults.Ok(response),
             StampFiscalDocumentOutcome.NotFound => TypedResults.NotFound(response),
             StampFiscalDocumentOutcome.Conflict => TypedResults.Conflict(response),
+            StampFiscalDocumentOutcome.BlockedByCanceledLegacyOrders => TypedResults.Conflict(response),
             StampFiscalDocumentOutcome.ProviderRejected => TypedResults.Conflict(response),
             StampFiscalDocumentOutcome.ProviderUnavailable => TypedResults.Json(response, statusCode: StatusCodes.Status503ServiceUnavailable),
+            StampFiscalDocumentOutcome.LegacyOrderValidationUnavailable => TypedResults.Json(response, statusCode: StatusCodes.Status503ServiceUnavailable),
             StampFiscalDocumentOutcome.ValidationFailed => TypedResults.BadRequest(response),
             _ => TypedResults.BadRequest(response)
         };
@@ -470,6 +479,13 @@ public static class FiscalDocumentsEndpoints
             ProviderMessage = result.ProviderMessage,
             SupportMessage = result.SupportMessage,
             ErrorMessage = result.ErrorMessage,
+            BlockingCanceledOrders = result.BlockingCanceledOrders
+                .Select(x => new LegacyOrderStampingBlockingOrderResponse
+                {
+                    SalesOrderId = x.SalesOrderId,
+                    LegacyOrderId = x.LegacyOrderId
+                })
+                .ToArray(),
             Email = new StampAndEmailFiscalDocumentEmailResponse
             {
                 Attempted = result.EmailAttempted,
@@ -496,7 +512,8 @@ public static class FiscalDocumentsEndpoints
                 Uuid = result.Uuid,
                 StampedAtUtc = result.StampedAtUtc,
                 ProviderMessage = result.ProviderMessage,
-                SupportMessage = result.SupportMessage
+                SupportMessage = result.SupportMessage,
+                BlockingCanceledOrders = result.BlockingCanceledOrders
             },
             auditService,
             cancellationToken);
@@ -512,8 +529,10 @@ public static class FiscalDocumentsEndpoints
         {
             StampFiscalDocumentOutcome.NotFound => TypedResults.NotFound(response),
             StampFiscalDocumentOutcome.Conflict => TypedResults.Conflict(response),
+            StampFiscalDocumentOutcome.BlockedByCanceledLegacyOrders => TypedResults.Conflict(response),
             StampFiscalDocumentOutcome.ProviderRejected => TypedResults.Conflict(response),
             StampFiscalDocumentOutcome.ProviderUnavailable => TypedResults.Json(response, statusCode: StatusCodes.Status503ServiceUnavailable),
+            StampFiscalDocumentOutcome.LegacyOrderValidationUnavailable => TypedResults.Json(response, statusCode: StatusCodes.Status503ServiceUnavailable),
             StampFiscalDocumentOutcome.ValidationFailed => TypedResults.BadRequest(response),
             _ => TypedResults.BadRequest(response)
         };
@@ -1597,6 +1616,13 @@ public static class FiscalDocumentsEndpoints
         public string? RawResponseSummaryJson { get; init; }
         public bool IsRetryable { get; init; }
         public string? RetryAdvice { get; init; }
+        public IReadOnlyList<LegacyOrderStampingBlockingOrderResponse> BlockingCanceledOrders { get; init; } = [];
+    }
+
+    public sealed class LegacyOrderStampingBlockingOrderResponse
+    {
+        public long SalesOrderId { get; init; }
+        public string LegacyOrderId { get; init; } = string.Empty;
     }
 
     public sealed class SyncFiscalDocumentSpecialFieldsResponse
@@ -1668,6 +1694,7 @@ public static class FiscalDocumentsEndpoints
         public string? ProviderMessage { get; init; }
         public string? SupportMessage { get; init; }
         public string? ErrorMessage { get; init; }
+        public IReadOnlyList<LegacyOrderStampingBlockingOrderResponse> BlockingCanceledOrders { get; init; } = [];
         public StampAndEmailFiscalDocumentEmailResponse Email { get; init; } = new();
     }
 

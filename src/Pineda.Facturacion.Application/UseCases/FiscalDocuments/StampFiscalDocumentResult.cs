@@ -1,4 +1,5 @@
 using Pineda.Facturacion.Domain.Enums;
+using Pineda.Facturacion.Application.Models.Legacy;
 
 namespace Pineda.Facturacion.Application.UseCases.FiscalDocuments;
 
@@ -37,4 +38,6 @@ public class StampFiscalDocumentResult
     public bool IsRetryable { get; set; }
 
     public string? RetryAdvice { get; set; }
+
+    public IReadOnlyList<LegacyOrderStampingBlockingOrder> BlockingCanceledOrders { get; set; } = [];
 }

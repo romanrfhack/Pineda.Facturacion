@@ -65,6 +65,39 @@ public class LegacyOrderReader : ILegacyOrderReader
         };
     }
 
+    public async Task<IReadOnlyList<string>> FindCanceledOrderIdsAsync(
+        IReadOnlyCollection<string> legacyOrderIds,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedIds = legacyOrderIds
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (normalizedIds.Length == 0)
+        {
+            return [];
+        }
+
+        await using var connection = new MySqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        var schema = await ResolveSchemaAsync(connection, cancellationToken);
+        await using var command = new MySqlCommand(BuildCanceledOrderIdsSql(schema, normalizedIds.Length), connection);
+        for (var index = 0; index < normalizedIds.Length; index++)
+        {
+            command.Parameters.AddWithValue($"@legacyOrderId{index}", normalizedIds[index]);
+        }
+
+        var result = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            result.Add(GetRequiredString(reader, "LegacyOrderId"));
+        }
+
+        return result;
+    }
+
     private static async Task<LegacyOrderReadModel?> ReadHeaderAsync(
         MySqlConnection connection,
         LegacyOrderReadSchema schema,
@@ -157,7 +190,7 @@ public class LegacyOrderReader : ILegacyOrderReader
         var orders = await ResolveTableAsync(
             connection,
             "pedidos",
-            ["noPedido", "refPedido", "TipoPedido", "noCliente", "condPagoPedido", "TipoEntrega", "MontoPedido"],
+            ["noPedido", "refPedido", "TipoPedido", "TipoDocPedido", "noCliente", "condPagoPedido", "TipoEntrega", "MontoPedido"],
             cancellationToken);
         var customers = await ResolveTableAsync(
             connection,
@@ -184,6 +217,11 @@ public class LegacyOrderReader : ILegacyOrderReader
             "facturas",
             ["noPedido", "EstatusFactura"],
             cancellationToken);
+        var salesNotes = await ResolveTableAsync(
+            connection,
+            "notasventa",
+            ["noPedido", "EstatusNotaVenta"],
+            cancellationToken);
         var orderDateColumn = await _schemaResolver.ResolveColumnAsync(
             connection,
             orders.ActualName,
@@ -191,7 +229,7 @@ public class LegacyOrderReader : ILegacyOrderReader
             OrderDateColumnCandidates,
             cancellationToken);
 
-        _schema = new LegacyOrderReadSchema(orders, customers, orderItems, articles, articleNames, invoices, orderDateColumn);
+        _schema = new LegacyOrderReadSchema(orders, customers, orderItems, articles, articleNames, invoices, salesNotes, orderDateColumn);
         return _schema;
     }
 
@@ -235,7 +273,7 @@ public class LegacyOrderReader : ILegacyOrderReader
               AND p.{Q(schema.Orders["noCliente"])} <> 0
               AND p.{Q(schema.Orders["MontoPedido"])} <> 0.00
               AND p.{Q(schema.Orders["refPedido"])} IS NOT NULL
-              AND {BuildCanceledInvoiceNotExistsPredicate(schema)}
+              AND {BuildCanceledOrderNotExistsPredicate(schema)}
             LIMIT 1;
             """;
     }
@@ -284,7 +322,7 @@ public class LegacyOrderReader : ILegacyOrderReader
               AND p.{Q(schema.Orders["noCliente"])} <> 0
               AND p.{Q(schema.Orders["MontoPedido"])} <> 0.00
               AND p.{Q(schema.Orders["refPedido"])} IS NOT NULL
-              AND {BuildCanceledInvoiceNotExistsPredicate(schema)};
+              AND {BuildCanceledOrderNotExistsPredicate(schema)};
             """;
     }
 
@@ -311,13 +349,13 @@ public class LegacyOrderReader : ILegacyOrderReader
               AND p.{Q(schema.Orders["noCliente"])} <> 0
               AND p.{Q(schema.Orders["MontoPedido"])} <> 0.00
               AND p.{Q(schema.Orders["refPedido"])} IS NOT NULL
-              AND {BuildCanceledInvoiceNotExistsPredicate(schema)}
+              AND {BuildCanceledOrderNotExistsPredicate(schema)}
             ORDER BY p.{Q(schema.OrderDateColumn)} DESC, p.{Q(schema.Orders["noPedido"])} DESC
             LIMIT @skip, @take;
             """;
     }
 
-    private static string BuildCanceledInvoiceNotExistsPredicate(LegacyOrderReadSchema schema)
+    private static string BuildCanceledOrderNotExistsPredicate(LegacyOrderReadSchema schema)
     {
         return $"""
             NOT EXISTS (
@@ -326,6 +364,47 @@ public class LegacyOrderReader : ILegacyOrderReader
                 WHERE f.{Q(schema.Invoices["noPedido"])} = p.{Q(schema.Orders["noPedido"])}
                   AND UPPER(TRIM(f.{Q(schema.Invoices["EstatusFactura"])})) = 'C'
             )
+            AND (
+                COALESCE(UPPER(TRIM(p.{Q(schema.Orders["TipoDocPedido"])})), '') <> 'N'
+                OR NOT EXISTS (
+                    SELECT 1
+                    FROM {Q(schema.SalesNotes.ActualName)} nv
+                    WHERE nv.{Q(schema.SalesNotes["noPedido"])} = p.{Q(schema.Orders["noPedido"])}
+                      AND UPPER(TRIM(nv.{Q(schema.SalesNotes["EstatusNotaVenta"])})) = 'C'
+                )
+            )
+            """;
+    }
+
+    internal static string BuildCanceledOrderIdsSql(LegacyOrderReadSchema schema, int legacyOrderIdCount)
+    {
+        if (legacyOrderIdCount <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(legacyOrderIdCount));
+        }
+
+        var parameterNames = string.Join(", ", Enumerable.Range(0, legacyOrderIdCount).Select(index => $"@legacyOrderId{index}"));
+        return $"""
+            SELECT DISTINCT CAST(p.{Q(schema.Orders["noPedido"])} AS CHAR) AS LegacyOrderId
+            FROM {Q(schema.Orders.ActualName)} p
+            WHERE p.{Q(schema.Orders["noPedido"])} IN ({parameterNames})
+              AND (
+                  EXISTS (
+                      SELECT 1
+                      FROM {Q(schema.Invoices.ActualName)} f
+                      WHERE f.{Q(schema.Invoices["noPedido"])} = p.{Q(schema.Orders["noPedido"])}
+                        AND UPPER(TRIM(f.{Q(schema.Invoices["EstatusFactura"])})) = 'C'
+                  )
+                  OR (
+                      COALESCE(UPPER(TRIM(p.{Q(schema.Orders["TipoDocPedido"])})), '') = 'N'
+                      AND EXISTS (
+                          SELECT 1
+                          FROM {Q(schema.SalesNotes.ActualName)} nv
+                          WHERE nv.{Q(schema.SalesNotes["noPedido"])} = p.{Q(schema.Orders["noPedido"])}
+                            AND UPPER(TRIM(nv.{Q(schema.SalesNotes["EstatusNotaVenta"])})) = 'C'
+                      )
+                  )
+              );
             """;
     }
 

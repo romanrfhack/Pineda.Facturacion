@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Pineda.Facturacion.Application.Abstractions.Legacy;
 using Pineda.Facturacion.Application.UseCases.AccountsReceivable;
 using Pineda.Facturacion.Application.UseCases.Audit;
 using Pineda.Facturacion.Application.UseCases.Auth;
@@ -114,6 +115,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<QueryRemoteFiscalStampService>();
         services.AddScoped<GetFiscalDocumentPdfService>();
         services.AddScoped<GetFiscalDocumentEmailDraftService>();
+        services.AddScoped<ILegacyOrderStampingGuard, LegacyOrderStampingGuard>();
         services.AddScoped<StampFiscalDocumentService>();
         services.AddScoped<StampAndEmailFiscalDocumentService>();
         services.AddScoped<SendFiscalDocumentEmailService>();

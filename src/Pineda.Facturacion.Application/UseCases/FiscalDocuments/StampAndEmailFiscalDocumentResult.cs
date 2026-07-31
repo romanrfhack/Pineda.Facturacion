@@ -1,4 +1,5 @@
 using Pineda.Facturacion.Domain.Enums;
+using Pineda.Facturacion.Application.Models.Legacy;
 
 namespace Pineda.Facturacion.Application.UseCases.FiscalDocuments;
 
@@ -48,4 +49,6 @@ public class StampAndEmailFiscalDocumentResult
     public string? EmailMessage { get; set; }
 
     public DateTime? EmailSentAtUtc { get; set; }
+
+    public IReadOnlyList<LegacyOrderStampingBlockingOrder> BlockingCanceledOrders { get; set; } = [];
 }
