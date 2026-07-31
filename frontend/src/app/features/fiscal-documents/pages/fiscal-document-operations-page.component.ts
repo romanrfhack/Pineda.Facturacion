@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 40291)
-Total output lines: 4449
-
 import {
   ChangeDetectionStrategy,
   Component,
@@ -1402,7 +1399,1258 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
         eyebrow="Cancelación interna"
         title="Cancelar documento de facturación"
         [message]="billingCancellationConfirmationMessage()"
-        confirmLabel="Sí, cancelar documento…10291 tokens truncated…Document.fiscalDocumentId) {
+        confirmLabel="Sí, cancelar documento"
+        cancelLabel="No, volver"
+        busyConfirmLabel="Cancelando..."
+        tone="danger"
+        [busy]="loadingOperation()"
+        (confirmed)="confirmBillingCancellation()"
+        (cancelled)="closeCancelBillingDocumentDialog()"
+      />
+
+      @if (showRemoveBillingItemDialog()) {
+        <section class="modal-backdrop" (click)="closeRemoveBillingItemDialog()">
+          <section class="modal-card" (click)="$event.stopPropagation()">
+            <header class="modal-header">
+              <div>
+                <p class="selected-title">Composición del documento fiscal</p>
+                <h3>Quitar producto completo</h3>
+              </div>
+              <button
+                type="button"
+                class="secondary"
+                (click)="closeRemoveBillingItemDialog()"
+                [disabled]="loadingBillingDocumentComposition()"
+              >
+                Cerrar
+              </button>
+            </header>
+
+            @if (selectedBillingItemForRemoval(); as selectedItem) {
+              <p class="helper">
+                Vas a quitar el producto de la línea {{ selectedItem.lineNumber }} de la orden
+                {{ selectedItem.sourceLegacyOrderId }}. El producto dejará de formar parte del
+                documento actual y la operación quedará trazada.
+              </p>
+
+              <form class="form-grid" (ngSubmit)="confirmRemoveBillingItem()">
+                <label class="receiver-selector">
+                  <span>Motivo base</span>
+                  <select
+                    [ngModel]="billingItemRemovalReason()"
+                    (ngModelChange)="onBillingItemRemovalReasonChange($event)"
+                    name="billingItemRemovalReason"
+                    required
+                  >
+                    <option value="">Selecciona un motivo</option>
+                    @for (option of billingItemRemovalReasonOptions; track option.code) {
+                      <option [value]="option.code">{{ option.description }}</option>
+                    }
+                  </select>
+                </label>
+
+                <label class="receiver-selector">
+                  <span>Destino del producto removido</span>
+                  <select
+                    [ngModel]="billingItemRemovalDisposition()"
+                    (ngModelChange)="onBillingItemRemovalDispositionChange($event)"
+                    name="billingItemRemovalDisposition"
+                    required
+                  >
+                    <option value="">Selecciona un destino</option>
+                    @for (option of billingItemRemovalDispositionOptions; track option.code) {
+                      <option [value]="option.code">{{ option.description }}</option>
+                    }
+                  </select>
+                </label>
+
+                <label class="receiver-selector">
+                  <span>Observaciones</span>
+                  <textarea
+                    [ngModel]="billingItemRemovalObservations()"
+                    (ngModelChange)="onBillingItemRemovalObservationsChange($event)"
+                    name="billingItemRemovalObservations"
+                    rows="4"
+                    maxlength="1000"
+                    placeholder="Opcional"
+                  >
+                  </textarea>
+                </label>
+
+                @if (billingItemRemovalValidationError(); as billingItemRemovalError) {
+                  <p class="error receiver-selector">{{ billingItemRemovalError }}</p>
+                }
+
+                <div class="context-actions receiver-selector">
+                  <button
+                    type="submit"
+                    class="danger"
+                    [disabled]="
+                      loadingBillingDocumentComposition() || !!billingItemRemovalValidationError()
+                    "
+                  >
+                    {{ loadingBillingDocumentComposition() ? 'Quitando...' : 'Confirmar remoción' }}
+                  </button>
+                  <button
+                    type="button"
+                    class="secondary"
+                    (click)="closeRemoveBillingItemDialog()"
+                    [disabled]="loadingBillingDocumentComposition()"
+                  >
+                    Volver
+                  </button>
+                </div>
+              </form>
+            }
+          </section>
+        </section>
+      }
+
+      @if (showReceiverCreateModal()) {
+        <section class="modal-backdrop" (click)="closeReceiverCreateModal()">
+          <section class="modal-card" (click)="$event.stopPropagation()">
+            <header class="modal-header">
+              <div>
+                <p class="selected-title">Documento fiscal</p>
+                <h3>Nuevo receptor</h3>
+              </div>
+              <button
+                type="button"
+                class="secondary"
+                (click)="closeReceiverCreateModal()"
+                [disabled]="savingReceiver()"
+              >
+                Cerrar
+              </button>
+            </header>
+
+            <p class="helper">
+              Completa los datos fiscales del receptor para continuar sin salir de este flujo.
+            </p>
+
+            <app-fiscal-receiver-form
+              [initialValue]="receiverCreateDraft()"
+              [submitLabel]="'Crear receptor'"
+              [submitting]="savingReceiver()"
+              [errorMessage]="receiverCreateError()"
+              (submitted)="saveReceiver($event)"
+            />
+          </section>
+        </section>
+      }
+
+      @if (showFiscalItemProfileDialog()) {
+        <section class="modal-backdrop" (click)="closeFiscalItemProfileDialog()">
+          <section class="modal-card" (click)="$event.stopPropagation()">
+            <header class="modal-header">
+              <div>
+                <p class="selected-title">Documento fiscal</p>
+                <h3>Editar perfil fiscal de la línea</h3>
+              </div>
+              <button
+                type="button"
+                class="secondary"
+                (click)="closeFiscalItemProfileDialog()"
+                [disabled]="savingFiscalItemProfile()"
+              >
+                Cerrar
+              </button>
+            </header>
+
+            @if (selectedFiscalDocumentItemForProfileEdit(); as selectedItem) {
+              <p class="helper">
+                Estás editando solo el snapshot fiscal de la línea {{ selectedItem.lineNumber }} del
+                documento #{{ fiscalDocument()?.id }}. Este cambio no actualizará el perfil maestro
+                del producto {{ selectedItem.internalCode }}.
+              </p>
+
+              <section class="card nested-card">
+                <strong>{{ selectedItem.internalCode }} · {{ selectedItem.description }}</strong>
+                <span class="helper">
+                  Actual: SAT {{ selectedItem.satProductServiceCode }} · Unidad
+                  {{ selectedItem.satUnitCode }} · ObjImp {{ selectedItem.taxObjectCode }} · IVA
+                  {{ selectedItem.vatRate }}
+                </span>
+              </section>
+
+              <app-product-fiscal-profile-form
+                [initialValue]="selectedFiscalItemProfileDraft()"
+                [submitLabel]="'Guardar override de esta línea'"
+                [submitting]="savingFiscalItemProfile()"
+                [errorMessage]="fiscalItemProfileError()"
+                [showIdentityFields]="false"
+                [showActiveField]="false"
+                [unitTextLabel]="'Texto de unidad en esta línea'"
+                (submitted)="saveFiscalItemProfile($event)"
+              />
+            }
+          </section>
+        </section>
+      }
+
+      @if (cancellation(); as currentCancellation) {
+        <app-fiscal-cancellation-card [cancellation]="currentCancellation" />
+      }
+    </section>
+  `,
+  styles: [
+    `
+      .page {
+        display: grid;
+        gap: 1rem;
+      }
+      .card {
+        border: 1px solid #d8d1c2;
+        border-radius: 1rem;
+        padding: 1rem;
+        background: #fff;
+      }
+      .eyebrow {
+        margin: 0;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        font-size: 0.72rem;
+        color: #8a6a32;
+      }
+      h2 {
+        margin: 0.3rem 0 0;
+      }
+      .helper {
+        color: #5f6b76;
+      }
+      .context-search,
+      .search-label {
+        display: grid;
+        gap: 0.75rem;
+      }
+      .search-row {
+        display: flex;
+        gap: 0.75rem;
+        align-items: end;
+      }
+      .form-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 1rem;
+        align-items: start;
+      }
+      label {
+        display: grid;
+        gap: 0.35rem;
+      }
+      input,
+      select,
+      textarea {
+        width: 100%;
+        box-sizing: border-box;
+        font: inherit;
+      }
+      input,
+      select,
+      textarea {
+        border: 1px solid #c9d1da;
+        border-radius: 0.8rem;
+        padding: 0.75rem 0.9rem;
+      }
+      .context-results {
+        display: grid;
+        gap: 0.85rem;
+        margin-top: 1rem;
+      }
+      .context-result-group {
+        display: grid;
+        gap: 0.5rem;
+      }
+      .context-result-group h4 {
+        margin: 0;
+        font-size: 0.95rem;
+        color: #8a6a32;
+      }
+      .context-result-group-items {
+        display: grid;
+        gap: 0.5rem;
+      }
+      .context-result {
+        width: 100%;
+        display: grid;
+        gap: 0.2rem;
+        text-align: left;
+        border: 1px solid #ece5d7;
+        border-radius: 0.8rem;
+        background: #fff;
+        color: #182533;
+        padding: 0.75rem 0.9rem;
+        cursor: pointer;
+      }
+      .context-result:hover {
+        background: #f7f2e7;
+      }
+      .context-result span {
+        color: #314254;
+      }
+      .context-result small {
+        color: #5f6b76;
+      }
+      .billing-context {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        align-items: center;
+        margin-top: 1rem;
+        border: 1px solid #d8d1c2;
+        border-radius: 0.9rem;
+        background: #fffaf0;
+        padding: 0.85rem 1rem;
+      }
+      .billing-context div {
+        display: grid;
+        gap: 0.2rem;
+      }
+      .billing-context span {
+        color: #5f6b76;
+      }
+      .associated-orders {
+        display: grid;
+        gap: 0.75rem;
+        margin-top: 1rem;
+      }
+      .associated-orders-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        align-items: flex-start;
+      }
+      .associated-orders-list {
+        display: grid;
+        gap: 0.5rem;
+      }
+      .associated-order-card {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        align-items: center;
+        border: 1px solid #ece5d7;
+        border-radius: 0.8rem;
+        background: #fff;
+        padding: 0.75rem 0.9rem;
+      }
+      .associated-order-card div {
+        display: grid;
+        gap: 0.15rem;
+      }
+      .associated-order-card small {
+        color: #5f6b76;
+      }
+      .canceled-orders-warning {
+        gap: 0.75rem;
+      }
+      .canceled-orders-actions {
+        display: grid;
+        gap: 0.5rem;
+      }
+      .canceled-orders-actions div {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        align-items: center;
+        border-top: 1px solid #e9cf9a;
+        padding-top: 0.5rem;
+      }
+      .included-items-list {
+        display: grid;
+        gap: 0.5rem;
+      }
+      .included-item-card {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        align-items: center;
+        border: 1px solid #ece5d7;
+        border-radius: 0.8rem;
+        background: #fff;
+        padding: 0.75rem 0.9rem;
+      }
+      .included-item-card div {
+        display: grid;
+        gap: 0.15rem;
+      }
+      .included-item-card small {
+        color: #5f6b76;
+      }
+      .pending-item-card {
+        align-items: flex-start;
+      }
+      .removed-trace-card {
+        align-items: flex-start;
+      }
+      .trace-history {
+        display: grid;
+        gap: 0.15rem;
+        margin-top: 0.35rem;
+        padding-top: 0.35rem;
+        border-top: 1px dashed #d8d1c2;
+      }
+      .pending-item-selection {
+        display: flex;
+        align-items: flex-start;
+        padding-top: 0.3rem;
+      }
+      .associated-order-form {
+        align-items: end;
+      }
+      .context-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        justify-content: flex-end;
+      }
+      .receiver-selector {
+        grid-column: 1 / -1;
+        display: grid;
+        gap: 0.75rem;
+      }
+      .suggestions {
+        border: 1px solid #d8d1c2;
+        border-radius: 0.9rem;
+        background: #fcfbf8;
+        padding: 0.5rem;
+      }
+      .empty-receiver-state {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        padding: 0.35rem 0.15rem 0.1rem;
+      }
+      .suggestions ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 0.35rem;
+      }
+      .suggestion-button {
+        width: 100%;
+        display: grid;
+        gap: 0.15rem;
+        text-align: left;
+        border: 1px solid #ece5d7;
+        border-radius: 0.8rem;
+        background: #fff;
+        color: #182533;
+        padding: 0.75rem 0.9rem;
+        cursor: pointer;
+      }
+      .suggestion-button:hover {
+        background: #f7f2e7;
+      }
+      .suggestion-button small {
+        color: #5f6b76;
+      }
+      .link-button {
+        border: none;
+        background: transparent;
+        color: #182533;
+        padding: 0;
+        text-decoration: underline;
+        text-underline-offset: 0.18em;
+      }
+      .selected-receiver {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        align-items: center;
+        border: 1px solid #d8d1c2;
+        border-radius: 0.9rem;
+        background: #fffaf0;
+        padding: 0.85rem 1rem;
+      }
+      .selected-receiver div {
+        display: grid;
+        gap: 0.2rem;
+      }
+      .selected-receiver span {
+        color: #5f6b76;
+      }
+      .warning {
+        margin: 0;
+        color: #8a5b16;
+      }
+      .recovery-panel {
+        display: grid;
+        gap: 0.75rem;
+        margin-top: 1rem;
+        border: 1px solid #e6d7b4;
+        border-radius: 0.9rem;
+        background: #fff8ea;
+        padding: 1rem;
+      }
+      .recovery-summary {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        align-items: flex-start;
+      }
+      .recovery-summary div {
+        display: grid;
+        gap: 0.2rem;
+      }
+      .recovery-summary span {
+        color: #5f6b76;
+      }
+      .review-messages {
+        margin: 0.35rem 0 0;
+        padding-left: 1.1rem;
+        color: #7a4a00;
+      }
+      .nested-card {
+        padding: 0;
+        border: none;
+        background: transparent;
+      }
+      .selected-title {
+        margin: 0;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-size: 0.72rem;
+        color: #8a6a32;
+      }
+      .checkbox {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      .checkbox input {
+        width: auto;
+      }
+      .button-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        align-items: center;
+      }
+      .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(24, 37, 51, 0.42);
+        display: grid;
+        place-items: center;
+        padding: 1rem;
+        z-index: 50;
+      }
+      .modal-card {
+        width: min(880px, 100%);
+        max-height: calc(100vh - 2rem);
+        overflow: auto;
+        border: 1px solid #d8d1c2;
+        border-radius: 1rem;
+        background: #fff;
+        padding: 1rem;
+        display: grid;
+        gap: 1rem;
+        box-shadow: 0 24px 60px rgba(24, 37, 51, 0.24);
+      }
+      .modal-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        align-items: flex-start;
+      }
+      .modal-header h3 {
+        margin: 0.2rem 0 0;
+      }
+      button,
+      a {
+        border: none;
+        border-radius: 0.8rem;
+        padding: 0.75rem 1rem;
+        background: #182533;
+        color: #fff;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-flex;
+      }
+      button.secondary {
+        background: #d8c49b;
+        color: #182533;
+      }
+      button.danger {
+        background: #8f1d1d;
+        color: #ffffff;
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+      }
+      button.danger:hover:not(:disabled) {
+        background: #751616;
+      }
+      button.danger:disabled {
+        background: #c98686;
+        color: #ffffff;
+        opacity: 1;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: wait;
+      }
+      textarea {
+        border: 1px solid #c9d1da;
+        border-radius: 0.8rem;
+        padding: 0.75rem 0.9rem;
+        font: inherit;
+        resize: vertical;
+      }
+      .error {
+        margin: 0;
+        color: #7a2020;
+      }
+      .context-warning {
+        display: grid;
+        gap: 0.35rem;
+        margin: 0;
+        border: 1px solid #e1bd70;
+        border-radius: 0.8rem;
+        padding: 0.8rem 0.95rem;
+        background: #fff8e8;
+        color: #704913;
+      }
+      .context-warning p {
+        margin: 0;
+      }
+      .context-warning small {
+        color: #806139;
+      }
+      @media (max-width: 720px) {
+        .search-row {
+          flex-direction: column;
+          align-items: stretch;
+        }
+        .billing-context {
+          flex-direction: column;
+          align-items: stretch;
+        }
+        .associated-order-card {
+          flex-direction: column;
+          align-items: stretch;
+        }
+        .canceled-orders-actions div {
+          flex-direction: column;
+          align-items: stretch;
+        }
+        .included-item-card {
+          flex-direction: column;
+          align-items: stretch;
+        }
+        .selected-receiver {
+          flex-direction: column;
+          align-items: stretch;
+        }
+        .recovery-summary {
+          flex-direction: column;
+          align-items: stretch;
+        }
+        .empty-receiver-state {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+        .modal-header {
+          flex-direction: column;
+          align-items: stretch;
+        }
+      }
+    `,
+  ],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+})
+export class FiscalDocumentOperationsPageComponent implements OnDestroy {
+  private readonly api = inject(FiscalDocumentsApiService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly feedbackService = inject(FeedbackService);
+  private readonly productFiscalProfilesApi = inject(ProductFiscalProfilesApiService);
+  private readonly fiscalReceiversApi = inject(FiscalReceiversApiService);
+  private readonly ordersApi = inject(OrdersApiService);
+  protected readonly permissionService = inject(PermissionService);
+  protected readonly getDisplayLabel = getDisplayLabel;
+  protected readonly cancellationReasonOptions = cancellationReasonOptions;
+  protected readonly billingItemRemovalReasonOptions = billingItemRemovalReasonOptions;
+  protected readonly billingItemRemovalDispositionOptions = billingItemRemovalDispositionOptions;
+
+  protected readonly billingDocumentId = signal<number | null>(
+    parseNumber(this.route.snapshot.queryParamMap.get('billingDocumentId')),
+  );
+  protected readonly fiscalDocumentId = signal<number | null>(
+    parseNumber(this.route.snapshot.paramMap.get('id')),
+  );
+  protected readonly loadingPrepare = signal(false);
+  protected readonly savingMissingProductProfile = signal(false);
+  protected readonly loadingOperation = signal(false);
+  protected readonly activeIssuer = signal<IssuerProfileResponse | null>(null);
+  protected readonly billingDocumentContext = signal<BillingDocumentLookupResponse | null>(null);
+  protected readonly loadingBillingDocumentSearch = signal(false);
+  protected readonly billingDocumentSearchGroups = signal<BillingDocumentSearchGroupResponse[]>([]);
+  protected readonly billingDocumentSearchError = signal<string | null>(null);
+  protected readonly billingDocumentSearchTouched = signal(false);
+  protected readonly receiverResults = signal<FiscalReceiverSearchResponse[]>([]);
+  protected readonly selectedReceiver = signal<FiscalReceiver | null>(null);
+  protected readonly fiscalDocument = signal<FiscalDocumentResponse | null>(null);
+  protected readonly stampEvidence = signal<FiscalStampResponse | null>(null);
+  protected readonly cancellation = signal<FiscalCancellationResponse | null>(null);
+  protected readonly blockingCanceledOrders = signal<LegacyOrderStampingBlockingOrderResponse[]>(
+    [],
+  );
+  protected readonly lastOperationMessage = signal<string | null>(null);
+  protected readonly showCancelDialog = signal(false);
+  protected readonly showCancelConfirmationDialog = signal(false);
+  protected readonly showBillingCancelConfirmationDialog = signal(false);
+  protected readonly showRemoveBillingItemDialog = signal(false);
+  protected readonly showFiscalItemProfileDialog = signal(false);
+  protected readonly selectedBillingItemForRemoval =
+    signal<BillingDocumentLookupItemResponse | null>(null);
+  protected readonly selectedFiscalDocumentItemForProfileEdit =
+    signal<FiscalDocumentItemResponse | null>(null);
+  protected readonly showStampDetail = signal(false);
+  protected readonly showStampXmlPanel = signal(false);
+  protected readonly loadingStampXml = signal(false);
+  protected readonly stampXmlContent = signal<string | null>(null);
+  protected readonly stampXmlError = signal<string | null>(null);
+  protected readonly loadingPdf = signal(false);
+  protected readonly showEmailComposer = signal(false);
+  protected readonly loadingEmailDraft = signal(false);
+  protected readonly sendingEmail = signal(false);
+  protected readonly emailDraft = signal<FiscalDocumentEmailDraftResponse | null>(null);
+  protected readonly emailDraftError = signal<string | null>(null);
+  protected readonly emailRecipientsError = signal<string | null>(null);
+  protected readonly pendingAutomaticEmailStatus = signal<'missing' | 'invalid' | 'failed' | null>(
+    null,
+  );
+  protected readonly savingFiscalItemProfile = signal(false);
+  protected readonly fiscalItemProfileError = signal<string | null>(null);
+  protected readonly selectedFiscalItemProfileDraft =
+    computed<UpsertProductFiscalProfileRequest | null>(() => {
+      const item = this.selectedFiscalDocumentItemForProfileEdit();
+      if (!item) {
+        return null;
+      }
+
+      return {
+        internalCode: item.internalCode,
+        description: item.description,
+        satProductServiceCode: item.satProductServiceCode,
+        satUnitCode: item.satUnitCode,
+        taxObjectCode: item.taxObjectCode,
+        vatRate: item.vatRate,
+        defaultUnitText: item.unitText ?? '',
+        isActive: true,
+      };
+    });
+  protected readonly cancellationConfirmationMessage = computed(() => {
+    if (this.canLocalDiscardCurrentFiscalDocument()) {
+      const fiscalDocument = this.fiscalDocument();
+      return fiscalDocument
+        ? `¿Confirmas descartar localmente el snapshot fiscal #${fiscalDocument.id}? No se enviará ninguna cancelación al SAT/PAC y el documento quedará listo para regenerarse.`
+        : '';
+    }
+
+    const request = this.buildCancellationRequest();
+    return request ? buildCancellationConfirmationMessage(request) : '';
+  });
+  protected readonly billingCancellationConfirmationMessage = computed(() => {
+    const billingDocument = this.billingDocumentContext();
+    if (!billingDocument) {
+      return '';
+    }
+
+    return this.fiscalDocument()
+      ? `¿Confirmas cancelar el documento #${billingDocument.billingDocumentId}? Se liberarán las asociaciones operativas, el snapshot fiscal no timbrado se descartará automáticamente y el documento quedará sólo como histórico no editable.`
+      : `¿Confirmas cancelar el documento #${billingDocument.billingDocumentId}? Se liberarán las asociaciones operativas y el documento quedará sólo como histórico no editable.`;
+  });
+  protected readonly searchingReceivers = signal(false);
+  protected readonly receiverSearchError = signal<string | null>(null);
+  protected readonly receiverSearchTouched = signal(false);
+  protected readonly missingProductFiscalProfile =
+    signal<MissingProductFiscalProfileContext | null>(null);
+  protected readonly showMissingProductProfileForm = signal(false);
+  protected readonly missingProductProfileError = signal<string | null>(null);
+  protected readonly showReceiverCreateModal = signal(false);
+  protected readonly savingReceiver = signal(false);
+  protected readonly receiverCreateError = signal<string | null>(null);
+  protected readonly receiverCreateDraft = signal<UpsertFiscalReceiverRequest | null>(null);
+  protected readonly loadingBillingDocumentComposition = signal(false);
+  protected readonly loadingPendingBillingItems = signal(false);
+  protected readonly pendingBillingItems = signal<PendingBillingItemResponse[]>([]);
+  protected readonly pendingBillingItemsError = signal<string | null>(null);
+  protected readonly loadingPendingCancellationAuthorizations = signal(false);
+  protected readonly pendingCancellationAuthorizations = signal<
+    PendingCancellationAuthorizationItemResponse[]
+  >([]);
+  protected readonly pendingCancellationAuthorizationsLoaded = signal(false);
+  protected readonly pendingCancellationAuthorizationsError = signal<string | null>(null);
+  protected readonly pendingCancellationAuthorizationsErrorDetail = signal<string | null>(null);
+  protected readonly selectedPendingBillingRemovalIds = signal<number[]>([]);
+  protected readonly specialFieldDrafts = signal<ReceiverSpecialFieldDraft[]>([]);
+  protected readonly paymentMethodCatalog = signal<FiscalReceiverSatCatalogOption[]>([]);
+  protected readonly paymentFormCatalog = signal<FiscalReceiverSatCatalogOption[]>([]);
+  private readonly pendingPrepareRequest = signal<PrepareFiscalDocumentRequest | null>(null);
+
+  protected readonly receiverQuery = signal('');
+  protected billingDocumentQuery = '';
+  protected selectedReceiverId: number | null = null;
+  protected paymentMethodSat = '';
+  protected paymentFormSat = '';
+  protected paymentCondition = '';
+  protected cancellationReasonCode = '';
+  protected cancellationReplacementUuid = '';
+  protected readonly billingItemRemovalReason = signal('');
+  protected readonly billingItemRemovalDisposition = signal('');
+  protected readonly billingItemRemovalObservations = signal('');
+  protected isCreditSale = true;
+  protected creditDays: number | null = 7;
+  protected emailRecipientsInput = '';
+  protected emailSubject = '';
+  protected emailBody = '';
+  protected additionalLegacyOrderId = '';
+  private paymentConditionEditedByUser = false;
+
+  protected readonly activeIssuerLabel = computed(() => {
+    const issuer = this.activeIssuer();
+    return issuer ? `${issuer.rfc} · ${issuer.legalName}` : 'Cargando emisor activo...';
+  });
+  protected readonly showReceiverSuggestions = computed(
+    () =>
+      !this.selectedReceiver() &&
+      this.receiverQuery().trim().length >= 2 &&
+      (this.searchingReceivers() ||
+        this.receiverResults().length > 0 ||
+        !!this.receiverSearchError() ||
+        this.receiverSearchTouched()),
+  );
+  protected readonly selectedReceiverOperationalWarning = computed(() => {
+    const receiver = this.selectedReceiver();
+    if (!receiver || receiver.isActive) {
+      return null;
+    }
+
+    return this.fiscalDocument()
+      ? 'El receptor asociado al snapshot está inactivo; puedes verlo como histórico, pero no usarlo para preparar nuevos CFDI hasta reactivarlo.'
+      : 'El receptor fiscal seleccionado está inactivo. Reactívalo desde el catálogo de Receptores fiscales o selecciona otro receptor.';
+  });
+  protected readonly associatedOrders = computed(() => {
+    const context = this.billingDocumentContext();
+    if (!context) {
+      return [];
+    }
+
+    if (context.associatedOrders?.length) {
+      return context.associatedOrders;
+    }
+
+    return [
+      {
+        salesOrderId: context.salesOrderId,
+        legacyOrderId: context.legacyOrderId,
+        customerName: '',
+        total: context.total,
+        isPrimary: true,
+      },
+    ];
+  });
+  protected readonly billingDocumentSearchGroupsWithItems = computed(() =>
+    this.billingDocumentSearchGroups().filter((group) => group.items.length > 0),
+  );
+  protected readonly includedBillingItems = computed(() => {
+    return this.billingDocumentContext()?.items ?? [];
+  });
+  protected readonly removedBillingItems = computed(() => {
+    return this.billingDocumentContext()?.removedItems ?? [];
+  });
+  protected readonly pendingBillingSelectionCount = computed(
+    () => this.selectedPendingBillingRemovalIds().length,
+  );
+  protected readonly activeReceiverSpecialFields = computed(() =>
+    this.specialFieldDrafts().filter((field) => field.isActive),
+  );
+  private receiverSearchTimer: number | null = null;
+
+  constructor() {
+    void this.loadIssuer();
+    void this.loadSatCatalogs();
+    if (this.fiscalDocumentId()) {
+      void this.loadFiscalDocument(this.fiscalDocumentId()!);
+    } else if (this.billingDocumentId()) {
+      void this.loadBillingDocumentContext(this.billingDocumentId()!);
+    }
+  }
+
+  ngOnDestroy(): void {
+    if (this.receiverSearchTimer) {
+      window.clearTimeout(this.receiverSearchTimer);
+    }
+  }
+
+  protected onReceiverQueryChange(value: string): void {
+    this.receiverQuery.set(value);
+    this.selectedReceiverId = null;
+    this.selectedReceiver.set(null);
+    this.specialFieldDrafts.set([]);
+    this.receiverSearchError.set(null);
+    this.receiverSearchTouched.set(false);
+
+    if (this.receiverSearchTimer) {
+      window.clearTimeout(this.receiverSearchTimer);
+      this.receiverSearchTimer = null;
+    }
+
+    const trimmed = value.trim();
+    if (trimmed.length < 2) {
+      this.receiverResults.set([]);
+      return;
+    }
+
+    this.receiverSearchTimer = window.setTimeout(() => {
+      void this.searchReceivers(trimmed);
+    }, 250);
+  }
+
+  protected paymentMethodOptions(): FiscalReceiverSatCatalogOption[] {
+    return this.paymentMethodCatalog();
+  }
+
+  protected availablePaymentFormOptions(): FiscalReceiverSatCatalogOption[] {
+    const paymentMethod = this.normalizedPaymentMethodSat();
+    const options = this.paymentFormCatalog();
+    if (paymentMethod === 'PPD') {
+      return options.filter((option) => option.code === '99');
+    }
+
+    if (paymentMethod === 'PUE') {
+      return options.filter((option) => option.code !== '99');
+    }
+
+    return options;
+  }
+
+  protected normalizedPaymentMethodSat(): string {
+    return normalizeSatCode(this.paymentMethodSat);
+  }
+
+  protected canPrepareFiscalDocument(): boolean {
+    return (
+      this.currentBillingDocumentIsDraft() &&
+      !this.loadingPrepare() &&
+      !this.savingMissingProductProfile() &&
+      this.hasActiveSelectedReceiver() &&
+      !this.validateSpecialFields() &&
+      !this.getPaymentPreparationValidationError()
+    );
+  }
+
+  protected onPaymentMethodChange(value: string): void {
+    this.paymentMethodSat = normalizeSatCode(value);
+    this.syncPaymentMethodDependencies(true);
+    this.syncCreditSaleWithPaymentMethod();
+  }
+
+  protected onPaymentFormChange(value: string): void {
+    this.paymentFormSat = normalizeSatCode(value);
+  }
+
+  protected onPaymentConditionChange(value: string): void {
+    this.paymentConditionEditedByUser = true;
+    this.paymentCondition = value;
+  }
+
+  protected onCreditSaleChange(value: boolean): void {
+    this.isCreditSale = value;
+    this.syncPaymentMethodDependencies(true);
+    this.paymentConditionEditedByUser = false;
+    this.applySuggestedPaymentCondition();
+  }
+
+  protected onCreditDaysChange(value: number | string | null): void {
+    this.creditDays = normalizeCreditDays(value);
+    if (this.isCreditSale) {
+      this.applySuggestedPaymentCondition();
+    }
+  }
+
+  protected isCreditSaleCheckboxDisabled(): boolean {
+    return this.normalizedPaymentMethodSat() !== 'PPD';
+  }
+
+  protected openCancelDialog(): void {
+    if (
+      !this.fiscalDocumentId() ||
+      this.loadingOperation() ||
+      !this.canCancelCurrentFiscalDocument()
+    ) {
+      return;
+    }
+
+    if (this.canLocalDiscardCurrentFiscalDocument()) {
+      this.showCancelDialog.set(false);
+      this.showCancelConfirmationDialog.set(true);
+      return;
+    }
+
+    this.showCancelDialog.set(true);
+    this.showCancelConfirmationDialog.set(false);
+    this.cancellationReasonCode = this.cancellation()?.cancellationReasonCode ?? '';
+    this.cancellationReplacementUuid = this.cancellation()?.replacementUuid ?? '';
+  }
+
+  protected closeCancelDialog(): void {
+    if (this.loadingOperation()) {
+      return;
+    }
+
+    this.showCancelDialog.set(false);
+    this.showCancelConfirmationDialog.set(false);
+  }
+
+  protected closeCancelConfirmationDialog(): void {
+    if (this.loadingOperation()) {
+      return;
+    }
+
+    this.showCancelConfirmationDialog.set(false);
+  }
+
+  protected openRemoveBillingItemDialog(item: BillingDocumentLookupItemResponse): void {
+    if (this.loadingBillingDocumentComposition() || !this.canEditCurrentBillingComposition()) {
+      return;
+    }
+
+    this.selectedBillingItemForRemoval.set(item);
+    this.billingItemRemovalReason.set('');
+    this.billingItemRemovalDisposition.set('');
+    this.billingItemRemovalObservations.set('');
+    this.showRemoveBillingItemDialog.set(true);
+  }
+
+  protected openFiscalItemProfileDialog(item: FiscalDocumentItemResponse): void {
+    if (!this.canEditCurrentFiscalItemProfile() || this.savingFiscalItemProfile()) {
+      return;
+    }
+
+    this.selectedFiscalDocumentItemForProfileEdit.set(item);
+    this.fiscalItemProfileError.set(null);
+    this.showFiscalItemProfileDialog.set(true);
+  }
+
+  protected closeRemoveBillingItemDialog(): void {
+    if (this.loadingBillingDocumentComposition()) {
+      return;
+    }
+
+    this.showRemoveBillingItemDialog.set(false);
+    this.selectedBillingItemForRemoval.set(null);
+  }
+
+  protected closeFiscalItemProfileDialog(): void {
+    if (this.savingFiscalItemProfile()) {
+      return;
+    }
+
+    this.resetFiscalItemProfileDialogState();
+  }
+
+  protected onCancellationReasonChange(value: string): void {
+    this.cancellationReasonCode = normalizeSatCode(value);
+    if (!this.requiresCancellationReplacementUuid()) {
+      this.cancellationReplacementUuid = '';
+    }
+  }
+
+  protected onCancellationReplacementUuidChange(value: string): void {
+    this.cancellationReplacementUuid = value;
+  }
+
+  protected onBillingItemRemovalReasonChange(value: string): void {
+    this.billingItemRemovalReason.set(value.trim());
+  }
+
+  protected onBillingItemRemovalDispositionChange(value: string): void {
+    this.billingItemRemovalDisposition.set(value.trim());
+  }
+
+  protected onBillingItemRemovalObservationsChange(value: string): void {
+    this.billingItemRemovalObservations.set(value);
+  }
+
+  protected requiresCancellationReplacementUuid(): boolean {
+    return normalizeSatCode(this.cancellationReasonCode) === '01';
+  }
+
+  protected selectedCancellationReasonHelp(): string | null {
+    const reasonCode = normalizeSatCode(this.cancellationReasonCode);
+    return cancellationReasonOptions.find((option) => option.code === reasonCode)?.helpText ?? null;
+  }
+
+  protected async selectReceiver(receiver: FiscalReceiverSearchResponse): Promise<void> {
+    if (!receiver.isActive) {
+      this.feedbackService.show(
+        'warning',
+        'El receptor fiscal seleccionado está inactivo. Reactívalo desde el catálogo de Receptores fiscales o selecciona otro receptor.',
+      );
+      return;
+    }
+
+    try {
+      const fullReceiver = await firstValueFrom(this.fiscalReceiversApi.getByRfc(receiver.rfc));
+      if (!fullReceiver.isActive) {
+        this.feedbackService.show(
+          'warning',
+          'El receptor fiscal seleccionado está inactivo. Reactívalo desde el catálogo de Receptores fiscales o selecciona otro receptor.',
+        );
+        return;
+      }
+
+      this.applySelectedReceiver(fullReceiver);
+    } catch (error) {
+      this.receiverSearchError.set(
+        extractApiErrorMessage(error, 'No fue posible cargar el detalle del receptor.'),
+      );
+    }
+  }
+
+  protected clearSelectedReceiver(): void {
+    this.resetReceiverSelectionState();
+  }
+
+  protected openReceiverCreateModal(): void {
+    this.receiverCreateError.set(null);
+    this.receiverCreateDraft.set({
+      rfc: this.receiverQuery().trim(),
+      legalName: '',
+      fiscalRegimeCode: '',
+      cfdiUseCodeDefault: '',
+      postalCode: '',
+      countryCode: 'MX',
+      foreignTaxRegistration: '',
+      email: '',
+      phone: '',
+      searchAlias: '',
+      isActive: true,
+      specialFields: [],
+    });
+    this.showReceiverCreateModal.set(true);
+  }
+
+  protected closeReceiverCreateModal(): void {
+    if (this.savingReceiver()) {
+      return;
+    }
+
+    this.showReceiverCreateModal.set(false);
+    this.receiverCreateError.set(null);
+  }
+
+  protected receiverTrackBy(index: number, receiver: FiscalReceiverSearchResponse): number {
+    return receiver.id;
+  }
+
+  protected resolveSpecialFieldInputType(dataType: string): string {
+    return dataType === 'number' || dataType === 'date' ? dataType : 'text';
+  }
+
+  protected async searchBillingDocuments(): Promise<void> {
+    const query = this.billingDocumentQuery.trim();
+    this.billingDocumentSearchTouched.set(true);
+    this.billingDocumentSearchError.set(null);
+
+    if (!query) {
+      this.billingDocumentSearchGroups.set([]);
+      return;
+    }
+
+    this.loadingBillingDocumentSearch.set(true);
+    try {
+      this.billingDocumentSearchGroups.set(
+        (await firstValueFrom(this.api.searchBillingDocumentsGrouped(query))).groups,
+      );
+    } catch (error) {
+      this.billingDocumentSearchGroups.set([]);
+      this.billingDocumentSearchError.set(
+        extractApiErrorMessage(error, 'No fue posible buscar documentos de facturación.'),
+      );
+    } finally {
+      this.loadingBillingDocumentSearch.set(false);
+    }
+  }
+
+  protected async selectBillingDocument(
+    billingDocument: BillingDocumentLookupResponse,
+  ): Promise<void> {
+    this.billingDocumentSearchGroups.set([]);
+    this.billingDocumentSearchTouched.set(false);
+    await this.loadBillingDocumentContext(billingDocument.billingDocumentId, true);
+  }
+
+  protected async openExistingFiscalDocument(
+    billingDocument: BillingDocumentLookupResponse,
+  ): Promise<void> {
+    if (!billingDocument.fiscalDocumentId) {
+      return;
+    }
+
+    await this.loadFiscalDocument(billingDocument.fiscalDocumentId, true);
+  }
+
+  protected async clearBillingDocumentSelection(): Promise<void> {
+    this.clearMissingProductFiscalProfileState();
+    this.billingDocumentContext.set(null);
+    this.pendingBillingItems.set([]);
+    this.pendingBillingItemsError.set(null);
+    this.selectedPendingBillingRemovalIds.set([]);
+    this.resetReceiverSelectionState();
+    this.billingDocumentId.set(null);
+    this.billingDocumentQuery = '';
+    this.billingDocumentSearchGroups.set([]);
+    this.billingDocumentSearchTouched.set(false);
+    this.fiscalDocument.set(null);
+    this.stampEvidence.set(null);
+    this.cancellation.set(null);
+    this.blockingCanceledOrders.set([]);
+    this.pendingAutomaticEmailStatus.set(null);
+    this.fiscalDocumentId.set(null);
+    this.resetFiscalItemProfileDialogState();
+    this.showBillingCancelConfirmationDialog.set(false);
+    await this.router.navigate(['/app/fiscal-documents'], { queryParams: {} });
+  }
+
+  protected buildBillingDocumentSearchMatchText(
+    billingDocument: BillingDocumentLookupResponse,
+  ): string {
+    const label = billingDocument.searchMatchLabel?.trim();
+    const field = billingDocument.searchMatchField?.trim();
+    const value = billingDocument.searchMatchValue?.trim();
+    const matchKind = billingDocument.searchMatchKind?.trim();
+
+    if (label && field === 'LegacyOrderId') {
+      const legacyValue = value || billingDocument.legacyOrderId;
+      if (matchKind === 'StartsWith') {
+        return `Coincidencia: ${label} inicia con ${legacyValue}`;
+      }
+
+      if (matchKind === 'Contains') {
+        return `Coincidencia: ${label} contiene ${legacyValue}`;
+      }
+
+      return `Coincidencia: ${label} ${legacyValue}`;
+    }
+
+    if (label) {
+      const displayValue = value || `${billingDocument.billingDocumentId}`;
+      return `Coincidencia: ${label} #${displayValue}`;
+    }
+
+    return `Coincidencia: Documento de facturación #${billingDocument.billingDocumentId}`;
+  }
+
+  protected buildBillingDocumentSearchIdentifiersText(
+    billingDocument: BillingDocumentLookupResponse,
+  ): string {
+    const parts: string[] = [];
+    if (billingDocument.fiscalDocumentId) {
       parts.push(`Documento fiscal #${billingDocument.fiscalDocumentId}`);
     }
 
