@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using Pineda.Facturacion.Application.Abstractions.Legacy;
 using Pineda.Facturacion.Application.Abstractions.Pac;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
@@ -670,8 +671,15 @@ public class FiscalStampingServicesTests
     [Fact]
     public async Task StampFiscalDocument_RetryRejected_AllowsRetry()
     {
+        var previousIssuedAtUtc = new DateTime(2026, 7, 19, 22, 36, 9, DateTimeKind.Utc);
+        var effectiveIssuedAtUtc = new DateTime(2026, 7, 31, 21, 50, 0, DateTimeKind.Utc);
         var fiscalDocument = CreateFiscalDocument();
         fiscalDocument.Status = FiscalDocumentStatus.StampingRejected;
+        fiscalDocument.IssuedAtUtc = previousIssuedAtUtc;
+        var existingStamp = CreateRejectedStamp(
+            fiscalDocument.Id,
+            providerCode: "401",
+            providerMessage: "El rango de la fecha de generación no debe de ser mayor a 72 horas.");
 
         var gateway = new FakeFiscalStampingGateway
         {
@@ -687,9 +695,14 @@ public class FiscalStampingServicesTests
 
         var service = new StampFiscalDocumentService(
             new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
-            new FakeFiscalStampRepository(),
+            new FakeFiscalStampRepository { ExistingTracked = existingStamp },
             gateway,
-            new FakeUnitOfWork());
+            new FakeUnitOfWork(),
+            new FakeSatProductServiceCatalogRepository { ActiveCodes = ["10101504"] },
+            new FakeSatClaveUnidadRepository { ActiveCodes = ["H87"] },
+            new FakeLegacyOrderStampingGuard(),
+            new FakeTimeProvider(effectiveIssuedAtUtc),
+            NullLogger<StampFiscalDocumentService>.Instance);
 
         var result = await service.ExecuteAsync(new StampFiscalDocumentCommand
         {
@@ -698,6 +711,60 @@ public class FiscalStampingServicesTests
         });
 
         Assert.Equal(StampFiscalDocumentOutcome.Stamped, result.Outcome);
+        Assert.NotNull(gateway.LastRequest);
+        Assert.Equal(effectiveIssuedAtUtc, gateway.LastRequest!.IssuedAtUtc);
+        Assert.Equal(effectiveIssuedAtUtc, fiscalDocument.IssuedAtUtc);
+        Assert.Equal("UUID-RETRY", existingStamp.Uuid);
+        Assert.Equal(FiscalStampStatus.Succeeded, existingStamp.Status);
+    }
+
+    [Fact]
+    public async Task StampFiscalDocument_RetryRejected_WhenProviderRejectsAgain_PreservesPersistedIssuedAt()
+    {
+        var previousIssuedAtUtc = new DateTime(2026, 7, 19, 22, 36, 9, DateTimeKind.Utc);
+        var effectiveIssuedAtUtc = new DateTime(2026, 7, 31, 21, 50, 0, DateTimeKind.Utc);
+        var fiscalDocument = CreateFiscalDocument();
+        fiscalDocument.Status = FiscalDocumentStatus.StampingRejected;
+        fiscalDocument.IssuedAtUtc = previousIssuedAtUtc;
+        var existingStamp = CreateRejectedStamp(
+            fiscalDocument.Id,
+            providerCode: "401",
+            providerMessage: "El rango de la fecha de generación no debe de ser mayor a 72 horas.");
+        var gateway = new FakeFiscalStampingGateway
+        {
+            NextResult = new FiscalStampingGatewayResult
+            {
+                Outcome = FiscalStampingGatewayOutcome.Rejected,
+                ProviderName = "FacturaloPlus",
+                ProviderOperation = "stamp",
+                ProviderCode = "CFDI_400",
+                ProviderMessage = "Receiver data invalid.",
+                ErrorMessage = "Receiver data invalid."
+            }
+        };
+
+        var service = new StampFiscalDocumentService(
+            new FakeFiscalDocumentRepository { ExistingTracked = fiscalDocument },
+            new FakeFiscalStampRepository { ExistingTracked = existingStamp },
+            gateway,
+            new FakeUnitOfWork(),
+            new FakeSatProductServiceCatalogRepository { ActiveCodes = ["10101504"] },
+            new FakeSatClaveUnidadRepository { ActiveCodes = ["H87"] },
+            new FakeLegacyOrderStampingGuard(),
+            new FakeTimeProvider(effectiveIssuedAtUtc),
+            NullLogger<StampFiscalDocumentService>.Instance);
+
+        var result = await service.ExecuteAsync(new StampFiscalDocumentCommand
+        {
+            FiscalDocumentId = fiscalDocument.Id,
+            RetryRejected = true
+        });
+
+        Assert.Equal(StampFiscalDocumentOutcome.ProviderRejected, result.Outcome);
+        Assert.NotNull(gateway.LastRequest);
+        Assert.Equal(effectiveIssuedAtUtc, gateway.LastRequest!.IssuedAtUtc);
+        Assert.Equal(previousIssuedAtUtc, fiscalDocument.IssuedAtUtc);
+        Assert.Equal(FiscalDocumentStatus.StampingRejected, fiscalDocument.Status);
     }
 
     [Fact]
@@ -1303,5 +1370,17 @@ public class FiscalStampingServicesTests
             SaveChangesCallCount++;
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class FakeTimeProvider : TimeProvider
+    {
+        private readonly DateTimeOffset _utcNow;
+
+        public FakeTimeProvider(DateTime utcNow)
+        {
+            _utcNow = new DateTimeOffset(utcNow);
+        }
+
+        public override DateTimeOffset GetUtcNow() => _utcNow;
     }
 }

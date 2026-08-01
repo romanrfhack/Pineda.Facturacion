@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using Microsoft.Extensions.Logging;
 using Pineda.Facturacion.Application.Abstractions.Legacy;
 using Pineda.Facturacion.Application.Abstractions.Pac;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
@@ -42,6 +43,8 @@ public class StampFiscalDocumentService
     private readonly IUnitOfWork _unitOfWork;
     private readonly ProductFiscalProfileSatCatalogValidation _satCatalogValidation;
     private readonly ILegacyOrderStampingGuard? _legacyOrderStampingGuard;
+    private readonly TimeProvider _timeProvider;
+    private readonly ILogger<StampFiscalDocumentService>? _logger;
 
     public StampFiscalDocumentService(
         IFiscalDocumentRepository fiscalDocumentRepository,
@@ -54,6 +57,8 @@ public class StampFiscalDocumentService
             fiscalStampingGateway,
             unitOfWork,
             new ProductFiscalProfileSatCatalogValidation(),
+            null,
+            TimeProvider.System,
             null)
     {
     }
@@ -73,6 +78,8 @@ public class StampFiscalDocumentService
             new ProductFiscalProfileSatCatalogValidation(
                 satProductServiceCatalogRepository,
                 satClaveUnidadRepository),
+            null,
+            TimeProvider.System,
             null)
     {
     }
@@ -93,7 +100,33 @@ public class StampFiscalDocumentService
             new ProductFiscalProfileSatCatalogValidation(
                 satProductServiceCatalogRepository,
                 satClaveUnidadRepository),
-            legacyOrderStampingGuard)
+            legacyOrderStampingGuard,
+            TimeProvider.System,
+            null)
+    {
+    }
+
+    public StampFiscalDocumentService(
+        IFiscalDocumentRepository fiscalDocumentRepository,
+        IFiscalStampRepository fiscalStampRepository,
+        IFiscalStampingGateway fiscalStampingGateway,
+        IUnitOfWork unitOfWork,
+        ISatProductServiceCatalogRepository satProductServiceCatalogRepository,
+        ISatClaveUnidadRepository satClaveUnidadRepository,
+        ILegacyOrderStampingGuard legacyOrderStampingGuard,
+        TimeProvider timeProvider,
+        ILogger<StampFiscalDocumentService> logger)
+        : this(
+            fiscalDocumentRepository,
+            fiscalStampRepository,
+            fiscalStampingGateway,
+            unitOfWork,
+            new ProductFiscalProfileSatCatalogValidation(
+                satProductServiceCatalogRepository,
+                satClaveUnidadRepository),
+            legacyOrderStampingGuard,
+            timeProvider,
+            logger)
     {
     }
 
@@ -103,7 +136,9 @@ public class StampFiscalDocumentService
         IFiscalStampingGateway fiscalStampingGateway,
         IUnitOfWork unitOfWork,
         ProductFiscalProfileSatCatalogValidation satCatalogValidation,
-        ILegacyOrderStampingGuard? legacyOrderStampingGuard)
+        ILegacyOrderStampingGuard? legacyOrderStampingGuard,
+        TimeProvider timeProvider,
+        ILogger<StampFiscalDocumentService>? logger)
     {
         _fiscalDocumentRepository = fiscalDocumentRepository;
         _fiscalStampRepository = fiscalStampRepository;
@@ -111,6 +146,8 @@ public class StampFiscalDocumentService
         _unitOfWork = unitOfWork;
         _satCatalogValidation = satCatalogValidation;
         _legacyOrderStampingGuard = legacyOrderStampingGuard;
+        _timeProvider = timeProvider;
+        _logger = logger;
     }
 
     public async Task<StampFiscalDocumentResult> ExecuteAsync(
@@ -207,7 +244,18 @@ public class StampFiscalDocumentService
                 "El PAC indica que este CFDI ya fue timbrado previamente. Se requiere conciliación antes de continuar.");
         }
 
-        if (!TryBuildStampingRequest(fiscalDocument, out var stampingRequest, out var validationError))
+        var recoveryCorrelationId = Guid.NewGuid().ToString("N");
+        var effectiveIssuedAt = ResolveEffectiveIssuedAtUtc(
+            fiscalDocument,
+            existingStamp,
+            command.RetryRejected,
+            recoveryCorrelationId);
+
+        if (!TryBuildStampingRequest(
+                fiscalDocument,
+                effectiveIssuedAt.IssuedAtUtc,
+                out var stampingRequest,
+                out var validationError))
         {
             return ValidationFailure(fiscalDocument.Id, validationError!);
         }
@@ -236,7 +284,7 @@ public class StampFiscalDocumentService
             }
         }
 
-        var requestStartedAtUtc = DateTime.UtcNow;
+        var requestStartedAtUtc = GetUtcNow();
         fiscalDocument.Status = FiscalDocumentStatus.StampingRequested;
         fiscalDocument.UpdatedAtUtc = requestStartedAtUtc;
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -259,13 +307,18 @@ public class StampFiscalDocumentService
             };
         }
 
-        var now = DateTime.UtcNow;
+        var now = GetUtcNow();
         var fiscalStamp = existingStamp ?? new FiscalStamp
         {
             FiscalDocumentId = fiscalDocument.Id,
             CreatedAtUtc = now
         };
 
+        LogPreviousRejectedStampBeforeOverwrite(
+            fiscalDocument,
+            fiscalStamp,
+            effectiveIssuedAt,
+            recoveryCorrelationId);
         ApplyGatewayResult(fiscalStamp, gatewayResult, now);
 
         StampFiscalDocumentResult result;
@@ -273,6 +326,10 @@ public class StampFiscalDocumentService
         {
             case FiscalStampingGatewayOutcome.Stamped:
                 fiscalDocument.Status = FiscalDocumentStatus.Stamped;
+                if (effectiveIssuedAt.RefreshedForRejectedRetry)
+                {
+                    fiscalDocument.IssuedAtUtc = effectiveIssuedAt.IssuedAtUtc;
+                }
                 result = Success(fiscalDocument, fiscalStamp);
                 break;
             case FiscalStampingGatewayOutcome.Rejected:
@@ -317,6 +374,64 @@ public class StampFiscalDocumentService
         result.RetryAdvice = FiscalOperationRobustnessPolicy.BuildRetryAdvice(result.Outcome);
         return result;
     }
+
+    private EffectiveIssuedAt ResolveEffectiveIssuedAtUtc(
+        FiscalDocument fiscalDocument,
+        FiscalStamp? existingStamp,
+        bool retryRejected,
+        string correlationId)
+    {
+        if (!ShouldRefreshIssuedAtForRejectedRetry(fiscalDocument, existingStamp, retryRejected))
+        {
+            return new EffectiveIssuedAt(fiscalDocument.IssuedAtUtc, RefreshedForRejectedRetry: false);
+        }
+
+        var effectiveIssuedAtUtc = GetUtcNow();
+        _logger?.LogInformation(
+            "Refreshing Comprobante.Fecha for rejected CFDI retry. FiscalDocumentId={FiscalDocumentId} PreviousIssuedAtUtc={PreviousIssuedAtUtc} EffectiveIssuedAtUtc={EffectiveIssuedAtUtc} CorrelationId={CorrelationId}",
+            fiscalDocument.Id,
+            fiscalDocument.IssuedAtUtc,
+            effectiveIssuedAtUtc,
+            correlationId);
+
+        return new EffectiveIssuedAt(effectiveIssuedAtUtc, RefreshedForRejectedRetry: true);
+    }
+
+    private static bool ShouldRefreshIssuedAtForRejectedRetry(
+        FiscalDocument fiscalDocument,
+        FiscalStamp? existingStamp,
+        bool retryRejected)
+    {
+        return retryRejected
+            && fiscalDocument.Status == FiscalDocumentStatus.StampingRejected
+            && (existingStamp is null || !HasLocalStampEvidence(existingStamp));
+    }
+
+    private void LogPreviousRejectedStampBeforeOverwrite(
+        FiscalDocument fiscalDocument,
+        FiscalStamp fiscalStamp,
+        EffectiveIssuedAt effectiveIssuedAt,
+        string correlationId)
+    {
+        if (!effectiveIssuedAt.RefreshedForRejectedRetry)
+        {
+            return;
+        }
+
+        _logger?.LogInformation(
+            "Overwriting previous rejected CFDI stamp metadata after refreshed Comprobante.Fecha retry. FiscalDocumentId={FiscalDocumentId} FiscalStampId={FiscalStampId} PreviousIssuedAtUtc={PreviousIssuedAtUtc} EffectiveIssuedAtUtc={EffectiveIssuedAtUtc} PreviousStampStatus={PreviousStampStatus} PreviousProviderCode={PreviousProviderCode} PreviousProviderMessage={PreviousProviderMessage} PreviousProviderTrackingId={PreviousProviderTrackingId} CorrelationId={CorrelationId}",
+            fiscalDocument.Id,
+            fiscalStamp.Id,
+            fiscalDocument.IssuedAtUtc,
+            effectiveIssuedAt.IssuedAtUtc,
+            fiscalStamp.Status,
+            fiscalStamp.ProviderCode,
+            fiscalStamp.ProviderMessage,
+            fiscalStamp.ProviderTrackingId,
+            correlationId);
+    }
+
+    private DateTime GetUtcNow() => _timeProvider.GetUtcNow().UtcDateTime;
 
     private static void ApplyGatewayResult(FiscalStamp fiscalStamp, FiscalStampingGatewayResult gatewayResult, DateTime now)
     {
@@ -432,6 +547,7 @@ public class StampFiscalDocumentService
 
     private static bool TryBuildStampingRequest(
         FiscalDocument fiscalDocument,
+        DateTime effectiveIssuedAtUtc,
         out FiscalStampingRequest? request,
         out string? validationError)
     {
@@ -557,7 +673,7 @@ public class StampFiscalDocumentService
             DocumentType = FiscalMasterDataNormalization.NormalizeRequiredCode(fiscalDocument.DocumentType),
             Series = FiscalMasterDataNormalization.NormalizeOptionalText(fiscalDocument.Series),
             Folio = FiscalMasterDataNormalization.NormalizeOptionalText(fiscalDocument.Folio),
-            IssuedAtUtc = fiscalDocument.IssuedAtUtc,
+            IssuedAtUtc = effectiveIssuedAtUtc,
             CurrencyCode = currencyCode,
             ExchangeRate = 1m,
             PaymentMethodSat = FiscalMasterDataNormalization.NormalizeRequiredCode(fiscalDocument.PaymentMethodSat),
@@ -586,6 +702,8 @@ public class StampFiscalDocumentService
 
         return true;
     }
+
+    private readonly record struct EffectiveIssuedAt(DateTime IssuedAtUtc, bool RefreshedForRejectedRetry);
 
     private async Task<string?> ValidateSnapshotSatCatalogsAsync(
         FiscalDocument fiscalDocument,
