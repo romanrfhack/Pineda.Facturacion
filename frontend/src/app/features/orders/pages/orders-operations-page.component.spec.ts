@@ -305,10 +305,13 @@ describe('OrdersOperationsPageComponent', () => {
     };
   }
 
-  it('loads orders without a default period filter on init', async () => {
+  it('loads yesterday orders by default on init', async () => {
     const { fixture, api } = await configure();
-    expect(fixture.componentInstance['quickRange']()).toBe('');
+    expect(fixture.componentInstance['quickRange']()).toBe('yesterday');
+    expect(fixture.nativeElement.querySelector('select[name="quickRange"]').value).toBe('yesterday');
     expect(api.searchLegacyOrders).toHaveBeenCalledWith({
+      fromDate: '2026-03-22',
+      toDate: '2026-03-22',
       legacyOrderId: '',
       customerQuery: '',
       page: 1,
@@ -541,6 +544,8 @@ describe('OrdersOperationsPageComponent', () => {
       documentType: 'I',
       selectionMode: 'Filtered',
       filters: {
+        fromDate: '2026-03-22',
+        toDate: '2026-03-22',
         customerQuery: 'Cliente Uno'
       }
     });
@@ -596,6 +601,8 @@ describe('OrdersOperationsPageComponent', () => {
     await fixture.componentInstance['confirmBulkCreateBillingDocument']();
 
     expect(searchLegacyOrders).toHaveBeenCalledWith({
+      fromDate: '2026-03-22',
+      toDate: '2026-03-22',
       customerRfc: 'STA890331BZ6',
       page: 1,
       pageSize: 10
@@ -604,6 +611,8 @@ describe('OrdersOperationsPageComponent', () => {
       documentType: 'I',
       selectionMode: 'Filtered',
       filters: {
+        fromDate: '2026-03-22',
+        toDate: '2026-03-22',
         customerRfc: 'STA890331BZ6'
       }
     });
@@ -797,6 +806,7 @@ describe('OrdersOperationsPageComponent', () => {
         pageSize: 10
       }))
     });
+    fixture.componentInstance['setQuickRange']('');
     const order = fixture.componentInstance['ordersPage']()!.items[0];
 
     fixture.componentInstance['toggleOrderSelection'](order, true);
@@ -926,6 +936,8 @@ describe('OrdersOperationsPageComponent', () => {
 
     expect(fixture.componentInstance['customerRfc']()).toBe('STA890331BZ6');
     expect(api.searchLegacyOrders).toHaveBeenCalledWith({
+      fromDate: '2026-03-22',
+      toDate: '2026-03-22',
       legacyOrderId: '',
       customerQuery: '',
       customerRfc: 'STA890331BZ6',
@@ -988,6 +1000,8 @@ describe('OrdersOperationsPageComponent', () => {
     await fixture.componentInstance['searchCurrentRange']();
 
     expect(api.searchLegacyOrders).toHaveBeenLastCalledWith({
+      fromDate: '2026-03-22',
+      toDate: '2026-03-22',
       legacyOrderId: '',
       customerQuery: 'Cliente Uno',
       page: 1,
@@ -1003,6 +1017,8 @@ describe('OrdersOperationsPageComponent', () => {
     await fixture.componentInstance['searchCurrentRange']();
 
     expect(api.searchLegacyOrders).toHaveBeenLastCalledWith({
+      fromDate: '2026-03-22',
+      toDate: '2026-03-22',
       legacyOrderId: '',
       customerQuery: '',
       customerRfc: 'STA890331BZ6',
@@ -1019,6 +1035,8 @@ describe('OrdersOperationsPageComponent', () => {
     await fixture.componentInstance['searchCurrentRange']();
 
     expect(api.searchLegacyOrders).toHaveBeenLastCalledWith({
+      fromDate: '2026-03-22',
+      toDate: '2026-03-22',
       legacyOrderId: '1175479',
       customerQuery: '',
       page: 1,
