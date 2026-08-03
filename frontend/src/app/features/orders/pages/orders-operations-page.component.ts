@@ -1619,8 +1619,8 @@ export class OrdersOperationsPageComponent implements OnInit {
         return;
       }
 
-      this.quickRange.set('');
-      this.clearDateRange();
+      this.quickRange.set('yesterday');
+      this.applyQuickRange('yesterday');
     } finally {
       this.hydratingFilters = false;
     }
