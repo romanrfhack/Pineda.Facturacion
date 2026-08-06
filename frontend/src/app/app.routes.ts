@@ -26,6 +26,12 @@ export const routes: Routes = [
         redirectTo: () => inject(SessionService).getDefaultAppRoute()
       },
       {
+        path: 'loader-preview',
+        canMatch: [roleGuard([AppRole.Admin])],
+        loadComponent: () =>
+          import('./features/ui-preview/pages/loader-preview-page.component').then((m) => m.LoaderPreviewPageComponent)
+      },
+      {
         path: 'orders',
         canMatch: [roleGuard([AppRole.Admin, AppRole.FiscalSupervisor, AppRole.FiscalOperator])],
         loadChildren: () => import('./features/orders/orders.routes').then((m) => m.ORDER_ROUTES)
