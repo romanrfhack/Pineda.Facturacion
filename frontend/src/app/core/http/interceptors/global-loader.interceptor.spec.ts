@@ -33,33 +33,56 @@ describe('globalLoaderInterceptor', () => {
     vi.useRealTimers();
   });
 
-  it('does not flash the loader for backend requests that finish before the delay', async () => {
-    httpClient.get('/api/orders').subscribe();
-    httpTesting.expectOne('/api/orders').flush([]);
+  it('does not flash the loader for eligible requests that finish before the delay', async () => {
+    httpClient.post('/api/orders/process', {}).subscribe();
+    httpTesting.expectOne('/api/orders/process').flush({});
 
     await vi.advanceTimersByTimeAsync(1_000);
 
     expect(loader.active()).toBe(false);
   });
 
-  it('shows a contextual loader for a slow request and respects the minimum visible time', async () => {
-    httpClient.get('/api/orders').subscribe();
-    const request = httpTesting.expectOne('/api/orders');
+  it('shows a loader for a slow mutation and respects the minimum visible time', async () => {
+    httpClient.post('/api/orders/process', {}).subscribe();
+    const request = httpTesting.expectOne('/api/orders/process');
 
     await vi.advanceTimersByTimeAsync(249);
     expect(loader.active()).toBe(false);
 
     await vi.advanceTimersByTimeAsync(1);
     expect(loader.active()).toBe(true);
-    expect(loader.current().message).toBe('Consultando información');
+    expect(loader.current().message).toBe('Procesando operación');
 
-    request.flush([]);
+    request.flush({});
 
     await vi.advanceTimersByTimeAsync(319);
     expect(loader.active()).toBe(true);
 
     await vi.advanceTimersByTimeAsync(1);
     expect(loader.active()).toBe(false);
+  });
+
+  it('does not block ordinary GET queries unless they explicitly opt in', async () => {
+    httpClient.get('/api/orders').subscribe();
+    const request = httpTesting.expectOne('/api/orders');
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(loader.active()).toBe(false);
+
+    request.flush([]);
+  });
+
+  it('automatically tracks document downloads and uses document-specific text', async () => {
+    httpClient.get('/api/fiscal-documents/42/stamp/pdf', { responseType: 'blob' }).subscribe();
+    const request = httpTesting.expectOne('/api/fiscal-documents/42/stamp/pdf');
+
+    await vi.advanceTimersByTimeAsync(250);
+
+    expect(loader.active()).toBe(true);
+    expect(loader.current().message).toBe('Generando PDF');
+
+    request.flush(new Blob());
+    await vi.advanceTimersByTimeAsync(320);
   });
 
   it('uses operation-specific text for stamping endpoints', async () => {
@@ -78,10 +101,10 @@ describe('globalLoaderInterceptor', () => {
     await vi.advanceTimersByTimeAsync(320);
   });
 
-  it('allows a request to opt out of the global loader', async () => {
+  it('allows an eligible request to opt out of the global loader', async () => {
     const context = new HttpContext().set(SKIP_GLOBAL_LOADER, true);
 
-    httpClient.get('/api/background-refresh', { context }).subscribe();
+    httpClient.post('/api/background-refresh', {}, { context }).subscribe();
     const request = httpTesting.expectOne('/api/background-refresh');
 
     await vi.advanceTimersByTimeAsync(1_000);
@@ -90,24 +113,40 @@ describe('globalLoaderInterceptor', () => {
     request.flush({});
   });
 
-  it('supports custom text and timing through HttpContext', async () => {
+  it('allows a GET query to opt in with custom text and timing', async () => {
     const context = new HttpContext().set(GLOBAL_LOADER_OPTIONS, {
-      message: 'Procesando venta',
-      detail: 'Estamos registrando el movimiento y actualizando el inventario.',
+      message: 'Consultando órdenes',
+      detail: 'Estamos recuperando las órdenes solicitadas.',
       delayMs: 0,
       minimumVisibleMs: 0
     });
 
-    httpClient.post('/api/sales', {}, { context }).subscribe();
-    const request = httpTesting.expectOne('/api/sales');
+    httpClient.get('/api/orders', { context }).subscribe();
+    const request = httpTesting.expectOne('/api/orders');
 
     await vi.advanceTimersByTimeAsync(0);
 
     expect(loader.active()).toBe(true);
-    expect(loader.current().message).toBe('Procesando venta');
+    expect(loader.current().message).toBe('Consultando órdenes');
 
-    request.flush({});
+    request.flush([]);
 
+    expect(loader.active()).toBe(false);
+  });
+
+  it('closes the loader after an HTTP error', async () => {
+    httpClient.post('/api/orders/process', {}).subscribe({ error: () => undefined });
+    const request = httpTesting.expectOne('/api/orders/process');
+
+    await vi.advanceTimersByTimeAsync(250);
+    expect(loader.active()).toBe(true);
+
+    request.flush(
+      { message: 'Fallo controlado' },
+      { status: 500, statusText: 'Server Error' }
+    );
+
+    await vi.advanceTimersByTimeAsync(320);
     expect(loader.active()).toBe(false);
   });
 
