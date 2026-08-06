@@ -39,7 +39,7 @@ const PREVIEW_SCENARIOS: readonly LoaderPreviewScenario[] = [
         <p class="eyebrow">Laboratorio visual</p>
         <h1>Loader global Pineda</h1>
         <p class="intro">
-          Esta pantalla permite revisar el diseño antes de conectarlo con las operaciones reales del sistema.
+          Esta pantalla permite revisar el diseño y los mensajes utilizados por las operaciones del sistema.
         </p>
       </header>
 
@@ -73,8 +73,9 @@ const PREVIEW_SCENARIOS: readonly LoaderPreviewScenario[] = [
       </div>
 
       <aside>
-        <strong>Alcance de esta fase:</strong>
-        el componente y su servicio global quedan listos, pero todavía no se enlazan automáticamente con las peticiones HTTP.
+        <strong>Integración actual:</strong>
+        las operaciones de escritura y los documentos de procesamiento prolongado activan automáticamente el loader.
+        Las consultas ordinarias se incorporarán de forma selectiva para evitar bloquear búsquedas rápidas o campos con autocompletado.
       </aside>
     </section>
   `,
