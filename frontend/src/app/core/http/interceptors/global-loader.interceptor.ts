@@ -15,14 +15,19 @@ import {
 
 const DEFAULT_DELAY_MS = 250;
 const DEFAULT_MINIMUM_VISIBLE_MS = 320;
+const AUTOMATIC_LONG_READ_FRAGMENTS = ['/pdf', '/xml', '/report', '/summary', '/download', '/export'];
 
 export const globalLoaderInterceptor: HttpInterceptorFn = (request, next) => {
   if (!isBackendRequest(request.url) || request.context.get(SKIP_GLOBAL_LOADER)) {
     return next(request);
   }
 
-  const loader = inject(GlobalLoaderService);
   const configuredOptions = request.context.get(GLOBAL_LOADER_OPTIONS);
+  if (!shouldTrackRequest(request, configuredOptions)) {
+    return next(request);
+  }
+
+  const loader = inject(GlobalLoaderService);
   const loaderOptions = configuredOptions ?? resolveDefaultLoaderOptions(request);
   const delayMs = normalizeDuration(configuredOptions?.delayMs, DEFAULT_DELAY_MS);
   const minimumVisibleMs = normalizeDuration(
@@ -77,22 +82,25 @@ function isBackendRequest(url: string): boolean {
   return url === baseUrl || url.startsWith(`${baseUrl}/`);
 }
 
+function shouldTrackRequest(
+  request: HttpRequest<unknown>,
+  configuredOptions: GlobalHttpLoaderOptions | null
+): boolean {
+  if (configuredOptions) {
+    return true;
+  }
+
+  const method = request.method.toUpperCase();
+  if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+    return true;
+  }
+
+  return containsAny(request.url.toLowerCase(), AUTOMATIC_LONG_READ_FRAGMENTS);
+}
+
 function resolveDefaultLoaderOptions(request: HttpRequest<unknown>): GlobalLoaderOptions {
   const url = request.url.toLowerCase();
-
-  if (containsAny(url, ['/stamp', '/stamping', '/timbr'])) {
-    return {
-      message: 'Timbrando CFDI',
-      detail: 'Validamos la información y esperamos la respuesta del proveedor de certificación.'
-    };
-  }
-
-  if (containsAny(url, ['/cancel', '/cancellation', '/cancelacion'])) {
-    return {
-      message: 'Procesando cancelación',
-      detail: 'Enviamos la solicitud y actualizamos el estado fiscal del comprobante.'
-    };
-  }
+  const method = request.method.toUpperCase();
 
   if (url.includes('/pdf')) {
     return {
@@ -108,10 +116,31 @@ function resolveDefaultLoaderOptions(request: HttpRequest<unknown>): GlobalLoade
     };
   }
 
-  if (containsAny(url, ['/report', '/summary'])) {
+  if (containsAny(url, ['/report', '/summary', '/export'])) {
     return {
       message: 'Generando reporte',
       detail: 'Procesamos la información y preparamos el resultado solicitado.'
+    };
+  }
+
+  if (url.includes('/stamp/remote-query')) {
+    return {
+      message: 'Consultando timbre fiscal',
+      detail: 'Estamos verificando el estado del comprobante con el proveedor de certificación.'
+    };
+  }
+
+  if (method === 'POST' && containsAny(url, ['/stamp', '/stamping', '/timbr'])) {
+    return {
+      message: 'Timbrando CFDI',
+      detail: 'Validamos la información y esperamos la respuesta del proveedor de certificación.'
+    };
+  }
+
+  if (method === 'POST' && containsAny(url, ['/cancel', '/cancellation', '/cancelacion'])) {
+    return {
+      message: 'Procesando cancelación',
+      detail: 'Enviamos la solicitud y actualizamos el estado fiscal del comprobante.'
     };
   }
 
@@ -122,7 +151,7 @@ function resolveDefaultLoaderOptions(request: HttpRequest<unknown>): GlobalLoade
     };
   }
 
-  switch (request.method.toUpperCase()) {
+  switch (method) {
     case 'GET':
       return {
         message: 'Consultando información',
