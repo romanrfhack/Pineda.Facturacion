@@ -35,7 +35,12 @@ export class GlobalLoaderService {
   readonly active = computed(() => this.requestStore().length > 0);
   readonly current = computed<GlobalLoaderSnapshot>(() => {
     const requests = this.requestStore();
-    return requests.length ? requests[requests.length - 1] : DEFAULT_LOADER_CONTENT;
+    if (!requests.length) {
+      return DEFAULT_LOADER_CONTENT;
+    }
+
+    const { eyebrow, message, detail } = requests[requests.length - 1];
+    return { eyebrow, message, detail };
   });
 
   begin(options: GlobalLoaderOptions = {}): GlobalLoaderHandle {
