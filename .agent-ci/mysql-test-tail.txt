@@ -1,4 +1,0 @@
-Test run for /home/runner/work/Pineda.Facturacion/Pineda.Facturacion/tests/Pineda.Facturacion.IntegrationTests/bin/Release/net10.0/Pineda.Facturacion.IntegrationTests.dll (.NETCoreApp,Version=v10.0)
-A total of 1 test files matched the specified pattern.
-
-Passed!  - Failed:     0, Passed:    22, Skipped:     0, Total:    22, Duration: 1 m 34 s - Pineda.Facturacion.IntegrationTests.dll (net10.0)
