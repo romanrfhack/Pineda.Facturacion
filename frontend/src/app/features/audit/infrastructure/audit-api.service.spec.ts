@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { GLOBAL_LOADER_OPTIONS } from '../../../core/http/global-loader-context.tokens';
 import { AuditApiService } from './audit-api.service';
 
 describe('AuditApiService', () => {
@@ -10,7 +11,7 @@ describe('AuditApiService', () => {
     });
   });
 
-  it('queries the audit endpoint with filters', () => {
+  it('queries the audit endpoint with filters and a contextual global loader', () => {
     const service = TestBed.inject(AuditApiService);
     const httpTesting = TestBed.inject(HttpTestingController);
 
@@ -28,6 +29,9 @@ describe('AuditApiService', () => {
       && request.params.get('actorUsername') === 'admin'
       && request.params.get('actionType') === 'FiscalDocument.Stamp');
     expect(req.request.method).toBe('GET');
+    expect(req.request.context.get(GLOBAL_LOADER_OPTIONS)).toMatchObject({
+      message: 'Consultando auditoría'
+    });
     httpTesting.verify();
   });
 });
