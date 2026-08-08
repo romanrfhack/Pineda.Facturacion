@@ -10,6 +10,7 @@ namespace Pineda.Facturacion.Application.UseCases.Orders;
 public sealed class SendOrderDebtSummaryService
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly TimeSpan ValidationAuditTimeout = TimeSpan.FromSeconds(5);
 
     private readonly OrderDebtSummaryDocumentFactory _documentFactory;
     private readonly IEmailSender _emailSender;
@@ -40,7 +41,7 @@ public sealed class SendOrderDebtSummaryService
         {
             if (buildResult.ValidationIssues.Count > 0)
             {
-                await TryRecordValidationFailureAsync(command, buildResult, cancellationToken);
+                await TryRecordValidationFailureAsync(command, buildResult);
             }
 
             return new SendOrderDebtSummaryResult
@@ -129,9 +130,11 @@ public sealed class SendOrderDebtSummaryService
 
     private async Task TryRecordValidationFailureAsync(
         OrderDebtSummaryCommand command,
-        OrderDebtSummaryDocumentBuildResult buildResult,
-        CancellationToken cancellationToken)
+        OrderDebtSummaryDocumentBuildResult buildResult)
     {
+        using var auditTimeout = new CancellationTokenSource(ValidationAuditTimeout);
+        var auditCancellationToken = auditTimeout.Token;
+
         try
         {
             var currentUser = _currentUserAccessor.GetCurrentUser();
@@ -177,8 +180,8 @@ public sealed class SendOrderDebtSummaryService
                 CreatedAtUtc = occurredAtUtc
             };
 
-            await _auditEventRepository.AddAsync(auditEvent, cancellationToken);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _auditEventRepository.AddAsync(auditEvent, auditCancellationToken);
+            await _unitOfWork.SaveChangesAsync(auditCancellationToken);
         }
         catch
         {
