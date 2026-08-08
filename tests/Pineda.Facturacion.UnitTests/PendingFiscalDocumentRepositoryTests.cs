@@ -23,6 +23,16 @@ public sealed class PendingFiscalDocumentRepositoryTests
         AddDocument(context, 5, 105, "LEG-105", BillingDocumentStatus.Draft, FiscalDocumentStatus.Stamped, baseDate.AddHours(4));
         AddDocument(context, 6, 106, "LEG-106", BillingDocumentStatus.Cancelled, null, baseDate.AddHours(5));
         AddDocument(context, 7, 107, "LEG-107", BillingDocumentStatus.Draft, FiscalDocumentStatus.StampingRequested, baseDate.AddHours(6));
+        AddDocument(context, 8, 108, "LEG-108", BillingDocumentStatus.Draft, FiscalDocumentStatus.ReadyForStamping, baseDate.AddHours(7));
+        context.FiscalStamps.Add(new FiscalStamp
+        {
+            Id = 8008,
+            FiscalDocumentId = 5008,
+            Status = FiscalStampStatus.Succeeded,
+            Uuid = "UUID-ALREADY-STAMPED",
+            CreatedAtUtc = baseDate.AddHours(7),
+            UpdatedAtUtc = baseDate.AddHours(7)
+        });
         await context.SaveChangesAsync();
 
         var repository = new PendingFiscalDocumentRepository(context);
@@ -35,7 +45,7 @@ public sealed class PendingFiscalDocumentRepositoryTests
             item => Assert.Equal(PendingFiscalDocumentWorkStatus.StampingRejected, item.WorkStatus),
             item => Assert.Equal(PendingFiscalDocumentWorkStatus.ReadyForStamping, item.WorkStatus),
             item => Assert.Equal(PendingFiscalDocumentWorkStatus.PendingPreparation, item.WorkStatus));
-        Assert.DoesNotContain(result.Items, item => item.BillingDocumentId is 5 or 6 or 7);
+        Assert.DoesNotContain(result.Items, item => item.BillingDocumentId is 5 or 6 or 7 or 8);
     }
 
     [Fact]
