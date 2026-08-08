@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { GLOBAL_LOADER_OPTIONS } from '../../../core/http/global-loader-context.tokens';
 import { FiscalImportsApiService } from './fiscal-imports-api.service';
 
 describe('FiscalImportsApiService', () => {
@@ -45,6 +46,40 @@ describe('FiscalImportsApiService', () => {
       selectedRowNumbers: [1, 7, 8],
       stopOnFirstError: true
     });
+    httpTesting.verify();
+  });
+
+  it('marks receiver batch detail reads as user-perceptible loader operations', () => {
+    const service = TestBed.inject(FiscalImportsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.getReceiverBatch(12).subscribe();
+    let req = httpTesting.expectOne('/api/fiscal/imports/receivers/batches/12');
+    expect(req.request.context.get(GLOBAL_LOADER_OPTIONS)?.message).toBe('Cargando lote de receptores');
+    req.flush({});
+
+    service.listReceiverRows(12).subscribe();
+    req = httpTesting.expectOne('/api/fiscal/imports/receivers/batches/12/rows');
+    expect(req.request.context.get(GLOBAL_LOADER_OPTIONS)?.message).toBe('Cargando lote de receptores');
+    req.flush([]);
+
+    httpTesting.verify();
+  });
+
+  it('marks product batch detail reads as user-perceptible loader operations', () => {
+    const service = TestBed.inject(FiscalImportsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.getProductBatch(18).subscribe();
+    let req = httpTesting.expectOne('/api/fiscal/imports/products/batches/18');
+    expect(req.request.context.get(GLOBAL_LOADER_OPTIONS)?.message).toBe('Cargando lote de productos');
+    req.flush({});
+
+    service.listProductRows(18).subscribe();
+    req = httpTesting.expectOne('/api/fiscal/imports/products/batches/18/rows');
+    expect(req.request.context.get(GLOBAL_LOADER_OPTIONS)?.message).toBe('Cargando lote de productos');
+    req.flush([]);
+
     httpTesting.verify();
   });
 
