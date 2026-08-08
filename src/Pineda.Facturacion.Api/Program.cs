@@ -314,6 +314,7 @@ app.MapFiscalSatCatalogEndpoints();
 app.MapProductFiscalProfilesEndpoints();
 app.MapFiscalImportEndpoints();
 app.MapFiscalDocumentsEndpoints();
+app.MapPendingFiscalDocumentsEndpoints();
 app.MapAccountsReceivableEndpoints();
 app.MapPosEndpoints();
 app.MapPaymentComplementsEndpoints();

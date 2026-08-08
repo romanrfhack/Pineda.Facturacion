@@ -10,6 +10,7 @@ namespace Pineda.Facturacion.Application.UseCases.Orders;
 public sealed class SendOrderDebtSummaryService
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly TimeSpan ValidationAuditTimeout = TimeSpan.FromSeconds(5);
 
     private readonly OrderDebtSummaryDocumentFactory _documentFactory;
     private readonly IEmailSender _emailSender;
@@ -38,10 +39,16 @@ public sealed class SendOrderDebtSummaryService
         var buildResult = await _documentFactory.BuildDocumentAsync(command, cancellationToken);
         if (!buildResult.IsSuccess || buildResult.Document is null)
         {
+            if (buildResult.ValidationIssues.Count > 0)
+            {
+                await TryRecordValidationFailureAsync(command, buildResult);
+            }
+
             return new SendOrderDebtSummaryResult
             {
                 Outcome = buildResult.Outcome,
-                ErrorMessage = buildResult.ErrorMessage
+                ErrorMessage = buildResult.ErrorMessage,
+                ValidationIssues = buildResult.ValidationIssues
             };
         }
 
@@ -121,6 +128,66 @@ public sealed class SendOrderDebtSummaryService
         }
     }
 
+    private async Task TryRecordValidationFailureAsync(
+        OrderDebtSummaryCommand command,
+        OrderDebtSummaryDocumentBuildResult buildResult)
+    {
+        using var auditTimeout = new CancellationTokenSource(ValidationAuditTimeout);
+        var auditCancellationToken = auditTimeout.Token;
+
+        try
+        {
+            var currentUser = _currentUserAccessor.GetCurrentUser();
+            var occurredAtUtc = DateTime.UtcNow;
+            var auditEvent = new AuditEvent
+            {
+                OccurredAtUtc = occurredAtUtc,
+                ActorUserId = currentUser.UserId,
+                ActorUsername = currentUser.Username,
+                ActionType = "Orders.SendDebtSummary",
+                EntityType = "FiscalReceiver",
+                EntityId = command.ReceiverId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                Outcome = OrderDebtSummaryOutcome.ValidationFailed.ToString(),
+                CorrelationId = $"orders-debt-summary-{Guid.NewGuid():N}",
+                RequestSummaryJson = JsonSerializer.Serialize(new
+                {
+                    command.ReceiverId,
+                    command.LegacyOrderIds,
+                    ValidationIssues = buildResult.ValidationIssues.Select(issue => new
+                    {
+                        issue.LegacyOrderId,
+                        issue.Classification,
+                        issue.ReasonCode,
+                        issue.RequiresReview,
+                        issue.BillingDocumentId,
+                        issue.FiscalDocumentId,
+                        issue.FiscalUuid,
+                        issue.AccountsReceivableInvoiceId,
+                        issue.AccountsReceivableStatus,
+                        issue.InvoiceTotal,
+                        issue.PaidTotal,
+                        issue.OutstandingBalance,
+                        issue.CurrencyCode,
+                        issue.RelatedLegacyOrderIds
+                    })
+                }, JsonOptions),
+                ResponseSummaryJson = JsonSerializer.Serialize(new
+                {
+                    Status = OrderDebtSummaryOutcome.ValidationFailed.ToString(),
+                    ValidationIssueCount = buildResult.ValidationIssues.Count
+                }, JsonOptions),
+                ErrorMessage = buildResult.ErrorMessage,
+                CreatedAtUtc = occurredAtUtc
+            };
+
+            await _auditEventRepository.AddAsync(auditEvent, auditCancellationToken);
+            await _unitOfWork.SaveChangesAsync(auditCancellationToken);
+        }
+        catch
+        {
+        }
+    }
+
     private async Task TryRecordHistoryAsync(
         OrderDebtSummaryDocument document,
         OrderDebtSummaryOutcome outcome,
@@ -163,7 +230,19 @@ public sealed class SendOrderDebtSummaryService
                 document.Cc,
                 document.Bcc,
                 document.Subject,
-                LegacyOrderIds = document.Orders.Select(order => order.LegacyOrderId).ToArray(),
+                LegacyOrderIds = document.SelectedLegacyOrderIds.Count > 0
+                    ? document.SelectedLegacyOrderIds
+                    : document.Orders.Select(order => order.LegacyOrderId).ToArray(),
+                ReportRows = document.Orders.Select(order => new
+                {
+                    order.LegacyOrderId,
+                    order.BillingDocumentId,
+                    order.FiscalDocumentId,
+                    order.FiscalUuid,
+                    order.CurrencyCode,
+                    AmountDue = order.Total,
+                    order.BillingStatusLabel
+                }),
                 TotalsByCurrency = document.Selection.TotalsByCurrency
             }, JsonOptions),
             ResponseSummaryJson = JsonSerializer.Serialize(new
