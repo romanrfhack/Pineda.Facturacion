@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { LoginPage } from './support/login-page';
 import { mockHappyPathBackend } from './support/mock-backend';
 
-test('fiscal documents module opens the pending stamping inbox and links to existing detail flows', async ({ page }) => {
+test('fiscal documents navigation opens the pending stamping inbox and links to existing detail flows', async ({ page }) => {
   await mockHappyPathBackend(page);
   await page.route('**/api/fiscal-documents/pending-stamping**', async (route) => {
     await route.fulfill({
@@ -69,7 +69,8 @@ test('fiscal documents module opens the pending stamping inbox and links to exis
   await loginPage.open();
   await loginPage.signIn('supervisor', 'Secret123!');
 
-  await page.goto('/app/fiscal-documents/open', { waitUntil: 'commit' });
+  await page.getByRole('link', { name: 'Documentos fiscales' }).click();
+  await expect(page).toHaveURL(/\/app\/fiscal-documents\/open$/);
 
   await expect(page.getByRole('heading', { name: 'Documentos abiertos pendientes de timbrar' })).toBeVisible();
   await expect(page.getByText('Cliente Uno', { exact: true })).toBeVisible();
