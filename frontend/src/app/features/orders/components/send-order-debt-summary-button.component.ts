@@ -249,7 +249,7 @@ export class SendOrderDebtSummaryButtonComponent {
         response.items.map(item => [item.legacyOrderId.toUpperCase(), item] as const),
       );
       const eligibleOrders = selectedOrders
-        .map(order => {
+        .map<LegacyOrderListItem | null>(order => {
           const eligibility = itemsByOrderId.get(order.legacyOrderId.toUpperCase());
           if (!eligibility?.canInclude) {
             return null;
@@ -259,16 +259,16 @@ export class SendOrderDebtSummaryButtonComponent {
           return {
             ...order,
             total: eligibility.amountDueContribution,
-            currencyCode: eligibility.currencyCode || order.currencyCode,
-            billingDocumentId: eligibility.billingDocumentId ?? order.billingDocumentId,
-            fiscalDocumentId: eligibility.fiscalDocumentId ?? order.fiscalDocumentId,
+            currencyCode: eligibility.currencyCode || order.currencyCode || 'MXN',
+            billingDocumentId: eligibility.billingDocumentId ?? order.billingDocumentId ?? null,
+            fiscalDocumentId: eligibility.fiscalDocumentId ?? order.fiscalDocumentId ?? null,
             billingDocumentStatus: !eligibility.fiscalDocumentId && eligibility.billingDocumentId && displayStatus
               ? displayStatus
-              : order.billingDocumentStatus,
+              : order.billingDocumentStatus ?? null,
             fiscalDocumentStatus: eligibility.fiscalDocumentId && displayStatus
               ? displayStatus
-              : order.fiscalDocumentStatus,
-          } satisfies LegacyOrderListItem;
+              : order.fiscalDocumentStatus ?? null,
+          };
         })
         .filter((order): order is LegacyOrderListItem => order !== null);
       const blockedItems = response.items.filter(item => !item.canInclude);
