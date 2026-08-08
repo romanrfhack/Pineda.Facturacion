@@ -15,9 +15,25 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: yes
+          MYSQL_DATABASE: facturas_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     env:
       DOTNET_ENVIRONMENT: Development
       ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: Server=localhost;Database=facturas_test;User=root;Password=;
+      PINEDA_FACTURACION_RUN_MYSQL_TESTS: "true"
+      PINEDA_FACTURACION_MYSQL_TEST_CONNECTION: Server=127.0.0.1;Port=3306;User ID=root;Password=;AllowPublicKeyRetrieval=True;SslMode=None;
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -50,6 +66,7 @@ jobs:
           run_logged "dotnet restore" dotnet restore Pineda.Facturacion.slnx
           run_logged "dotnet build" dotnet build -c Release Pineda.Facturacion.slnx --no-restore
           run_logged "dotnet test" dotnet test -c Release Pineda.Facturacion.slnx --no-build
+          run_logged "mysql integration subset" dotnet test -c Release tests/Pineda.Facturacion.IntegrationTests/Pineda.Facturacion.IntegrationTests.csproj --filter "Category=MySqlIntegration" --no-build
           run_logged "npm ci" bash -lc 'cd frontend && npm ci'
           run_logged "frontend build" bash -lc 'cd frontend && npm run build'
           run_logged "frontend unit tests" bash -lc 'cd frontend && npm run test'
@@ -80,7 +97,7 @@ jobs:
 
           - Commit validated: $VALIDATED_SHA
           - Result: $result
-          - Backend: restore, build and test executed
+          - Backend: restore, build, unit/integration tests and MySQL subset executed
           - Frontend: install, build, unit tests and Playwright E2E executed
           EOF
 
