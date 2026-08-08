@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
+import { GLOBAL_LOADER_OPTIONS } from '../../../core/http/global-loader-context.tokens';
 import { OrdersApiService } from './orders-api.service';
 
 describe('OrdersApiService', () => {
@@ -21,7 +22,7 @@ describe('OrdersApiService', () => {
     httpTesting.verify();
   });
 
-  it('queries the paged legacy orders endpoint', () => {
+  it('queries the paged legacy orders endpoint with a contextual global loader', () => {
     const service = TestBed.inject(OrdersApiService);
     const httpTesting = TestBed.inject(HttpTestingController);
 
@@ -46,6 +47,9 @@ describe('OrdersApiService', () => {
       && request.params.get('pageSize') === '10');
 
     expect(req.request.method).toBe('GET');
+    expect(req.request.context.get(GLOBAL_LOADER_OPTIONS)).toMatchObject({
+      message: 'Consultando órdenes'
+    });
     httpTesting.verify();
   });
 

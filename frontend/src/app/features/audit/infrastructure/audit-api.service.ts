@@ -2,6 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { buildApiUrl } from '../../../core/config/api-url';
+import { createGlobalLoaderContext } from '../../../core/http/global-loader-context.tokens';
 import { AuditEventFilters, AuditEventListResponse } from '../models/audit.models';
 
 @Injectable({ providedIn: 'root' })
@@ -22,7 +23,13 @@ export class AuditApiService {
     params = append(params, 'toUtc', filters.toUtc);
     params = append(params, 'correlationId', filters.correlationId);
 
-    return this.http.get<AuditEventListResponse>(buildApiUrl('/audit-events'), { params });
+    return this.http.get<AuditEventListResponse>(buildApiUrl('/audit-events'), {
+      params,
+      context: createGlobalLoaderContext({
+        message: 'Consultando auditoría',
+        detail: 'Estamos recuperando los eventos que coinciden con los filtros seleccionados.'
+      })
+    });
   }
 }
 

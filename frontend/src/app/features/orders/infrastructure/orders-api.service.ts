@@ -2,6 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { buildApiUrl } from '../../../core/config/api-url';
+import { createGlobalLoaderContext } from '../../../core/http/global-loader-context.tokens';
 import {
   CreateBillingDocumentRequest,
   CreateBillingDocumentResponse,
@@ -54,7 +55,11 @@ export class OrdersApiService {
     }
 
     return this.http.get<SearchLegacyOrdersResponse>(buildApiUrl('/orders/legacy'), {
-      params
+      params,
+      context: createGlobalLoaderContext({
+        message: 'Consultando órdenes',
+        detail: 'Estamos recuperando y organizando las órdenes del periodo seleccionado.'
+      })
     });
   }
 

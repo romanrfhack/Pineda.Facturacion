@@ -1,36 +1,42 @@
 # Pineda.Facturacion
 
-## Descripci髇
-Backend de facturaci髇 en .NET 10 para leer pedidos desde un sistema legacy en MySQL en modo solo lectura, importar snapshots controlados a una nueva base de datos MySQL y emitir CFDI mediante un proveedor externo de timbrado.
+## Descripci贸n
+Backend de facturaci贸n en .NET 10 para leer pedidos desde un sistema legacy en MySQL en modo solo lectura, importar snapshots controlados a una nueva base de datos MySQL y emitir CFDI mediante un proveedor externo de timbrado.
 
 ## Objetivo
-Habilitar la facturaci髇 electr髇ica sin afectar la operaci髇 del sistema actual.
+Habilitar la facturaci贸n electr贸nica sin afectar la operaci贸n del sistema actual.
 
 ## Principios clave
 - La base de datos legacy es solo lectura para este sistema.
 - La nueva base de datos es independiente.
 - El timbrado se realiza desde el nuevo sistema.
-- Las decisiones de facturaci髇 se basan en snapshots importados.
-- La l骻ica de negocio no debe vivir en los endpoints HTTP.
+- Las decisiones de facturaci贸n se basan en snapshots importados.
+- La l贸gica de negocio no debe vivir en los endpoints HTTP.
 
 ## Arquitectura
-La soluci髇 usa una arquitectura limpia pragm醫ica con Minimal APIs como capa HTTP.
+La soluci贸n usa una arquitectura limpia pragm谩tica con Minimal APIs como capa HTTP.
 
-## Estructura de la soluci髇
-- src/Pineda.Facturacion.Api: endpoints HTTP y configuraci髇
+## Estructura de la soluci贸n
+- src/Pineda.Facturacion.Api: endpoints HTTP y configuraci贸n
 - src/Pineda.Facturacion.Application: casos de uso y contratos
 - src/Pineda.Facturacion.Domain: entidades y reglas puras
-- src/Pineda.Facturacion.Infrastructure: piezas t閏nicas compartidas
+- src/Pineda.Facturacion.Infrastructure: piezas t茅cnicas compartidas
 - src/Pineda.Facturacion.Infrastructure.LegacyRead: lectura del legacy
 - src/Pineda.Facturacion.Infrastructure.BillingWrite: persistencia de la nueva BD
-- src/Pineda.Facturacion.Infrastructure.FacturaloPlus: integraci髇 con PAC
-- 	ests/*: pruebas
+- src/Pineda.Facturacion.Infrastructure.FacturaloPlus: integraci贸n con PAC
+- frontend: aplicaci贸n Angular y experiencia operativa
+- tests/*: pruebas
 
-## Documentaci髇
-La carpeta docs/ contiene la visi髇, arquitectura, reglas de integraci髇, dise駉 de BD y acuerdos de trabajo con Codex.
+## Documentaci贸n
+La carpeta `docs/` contiene la visi贸n, arquitectura, reglas de integraci贸n, dise帽o de BD y acuerdos de trabajo.
+
+Para desarrollo frontend es obligatorio revisar la convenci贸n de feedback de procesamiento antes de agregar nuevos flujos as铆ncronos:
+
+- [`docs/FRONTEND_GLOBAL_LOADER.md`](docs/FRONTEND_GLOBAL_LOADER.md): arquitectura, cobertura, matriz de decisi贸n, ejemplos y checklist del loader global.
+- [`frontend/README.md`](frontend/README.md): reglas operativas y comandos de validaci贸n del frontend.
 
 ## Estado actual
-Bootstrap inicial de la soluci髇 y documentaci髇 base.
+La soluci贸n incluye backend fiscal, frontend operativo y flujos de facturaci贸n, cobranza, REP, cat谩logos, auditor铆a y reportes.
 
-## Regla cr韙ica
+## Regla cr铆tica
 Este sistema nunca debe escribir en la base de datos legacy.

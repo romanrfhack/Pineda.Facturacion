@@ -2,6 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpResponse } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { buildApiUrl } from '../../../core/config/api-url';
+import { createGlobalLoaderContext } from '../../../core/http/global-loader-context.tokens';
 import {
   CancelExternalRepBaseDocumentPaymentComplementRequest,
   CancelExternalRepBaseDocumentPaymentComplementResponse,
@@ -73,7 +74,15 @@ export class PaymentComplementsApiService {
     setOptionalQuery(query, 'nextRecommendedAction', filters.nextRecommendedAction);
     setOptionalQuery(query, 'quickView', filters.quickView);
 
-    return this.http.get<InternalRepBaseDocumentListResponse>(buildApiUrl(`/payment-complements/base-documents/internal?${query.toString()}`));
+    return this.http.get<InternalRepBaseDocumentListResponse>(
+      buildApiUrl(`/payment-complements/base-documents/internal?${query.toString()}`),
+      {
+        context: createGlobalLoaderContext({
+          message: 'Consultando documentos REP internos',
+          detail: 'Estamos evaluando saldos, alertas y elegibilidad de los documentos internos.'
+        })
+      }
+    );
   }
 
   getInternalBaseDocumentByFiscalDocumentId(fiscalDocumentId: number): Observable<InternalRepBaseDocumentDetailResponse> {
@@ -104,7 +113,15 @@ export class PaymentComplementsApiService {
     setOptionalQuery(query, 'nextRecommendedAction', filters.nextRecommendedAction);
     setOptionalQuery(query, 'quickView', filters.quickView);
 
-    return this.http.get<ExternalRepBaseDocumentListResponse>(buildApiUrl(`/payment-complements/base-documents/external?${query.toString()}`));
+    return this.http.get<ExternalRepBaseDocumentListResponse>(
+      buildApiUrl(`/payment-complements/base-documents/external?${query.toString()}`),
+      {
+        context: createGlobalLoaderContext({
+          message: 'Consultando documentos REP externos',
+          detail: 'Estamos recuperando las facturas externas y su estado operativo.'
+        })
+      }
+    );
   }
 
   bulkRefreshExternalBaseDocuments(request: RepBaseDocumentBulkRefreshRequest): Observable<RepBaseDocumentBulkRefreshResponse> {
@@ -132,7 +149,15 @@ export class PaymentComplementsApiService {
     setOptionalQuery(query, 'nextRecommendedAction', filters.nextRecommendedAction);
     setOptionalQuery(query, 'quickView', filters.quickView);
 
-    return this.http.get<RepBaseDocumentListResponse>(buildApiUrl(`/payment-complements/base-documents?${query.toString()}`));
+    return this.http.get<RepBaseDocumentListResponse>(
+      buildApiUrl(`/payment-complements/base-documents?${query.toString()}`),
+      {
+        context: createGlobalLoaderContext({
+          message: 'Consultando bandeja REP',
+          detail: 'Estamos consolidando documentos internos y externos para mostrar su estado actual.'
+        })
+      }
+    );
   }
 
   searchAttentionItems(filters: RepAttentionItemsFilters): Observable<RepAttentionItemsResponse> {
@@ -150,7 +175,15 @@ export class PaymentComplementsApiService {
     setOptionalQuery(query, 'nextRecommendedAction', filters.nextRecommendedAction);
     setOptionalBooleanQuery(query, 'includeCancelledBaseDocuments', filters.includeCancelledBaseDocuments);
 
-    return this.http.get<RepAttentionItemsResponse>(buildApiUrl(`/payment-complements/attention-items?${query.toString()}`));
+    return this.http.get<RepAttentionItemsResponse>(
+      buildApiUrl(`/payment-complements/attention-items?${query.toString()}`),
+      {
+        context: createGlobalLoaderContext({
+          message: 'Consultando pendientes REP',
+          detail: 'Estamos identificando alertas y documentos que requieren atención.'
+        })
+      }
+    );
   }
 
   bulkRefreshBaseDocuments(request: RepBaseDocumentBulkRefreshRequest): Observable<RepBaseDocumentBulkRefreshResponse> {

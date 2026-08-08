@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { GLOBAL_LOADER_OPTIONS } from '../../../core/http/global-loader-context.tokens';
 import { AccountsReceivableApiService } from './accounts-receivable-api.service';
 
 describe('AccountsReceivableApiService', () => {
@@ -198,7 +199,7 @@ describe('AccountsReceivableApiService', () => {
     httpTesting.verify();
   });
 
-  it('preserves the paged invoice response shape when querying pending invoices for a receiver', () => {
+  it('preserves the paged invoice response shape and enables the loader when querying the portfolio', () => {
     const service = TestBed.inject(AccountsReceivableApiService);
     const httpTesting = TestBed.inject(HttpTestingController);
     let response: { items: Array<{ accountsReceivableInvoiceId: number }> } | undefined;
@@ -216,6 +217,9 @@ describe('AccountsReceivableApiService', () => {
       '/api/accounts-receivable/invoices?fiscalReceiverId=868&hasPendingBalance=true',
     );
     expect(req.request.method).toBe('GET');
+    expect(req.request.context.get(GLOBAL_LOADER_OPTIONS)).toMatchObject({
+      message: 'Consultando cartera'
+    });
     req.flush({
       items: [{ accountsReceivableInvoiceId: 11 }],
     });
@@ -223,6 +227,27 @@ describe('AccountsReceivableApiService', () => {
     expect(response).toEqual({
       items: [{ accountsReceivableInvoiceId: 11 }],
     });
+    httpTesting.verify();
+  });
+
+  it('enables contextual loaders for the receiver workspace and payment list', () => {
+    const service = TestBed.inject(AccountsReceivableApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.getReceiverWorkspace(77).subscribe();
+    let req = httpTesting.expectOne('/api/accounts-receivable/receivers/77/workspace');
+    expect(req.request.context.get(GLOBAL_LOADER_OPTIONS)).toMatchObject({
+      message: 'Cargando workspace del receptor'
+    });
+    req.flush({});
+
+    service.searchPayments({ fiscalReceiverId: 77 }).subscribe();
+    req = httpTesting.expectOne('/api/accounts-receivable/payments?fiscalReceiverId=77');
+    expect(req.request.context.get(GLOBAL_LOADER_OPTIONS)).toMatchObject({
+      message: 'Consultando pagos'
+    });
+    req.flush({});
+
     httpTesting.verify();
   });
 
@@ -253,6 +278,9 @@ describe('AccountsReceivableApiService', () => {
     service.getReceivablesSummaryCandidates(77).subscribe();
     let req = httpTesting.expectOne('/api/accounts-receivable/receivers/77/summary-candidates');
     expect(req.request.method).toBe('GET');
+    expect(req.request.context.get(GLOBAL_LOADER_OPTIONS)).toMatchObject({
+      message: 'Preparando resumen de adeudos'
+    });
     req.flush({
       receiver: { id: 77, legalName: 'Cliente', rfc: 'AAA010101AAA' },
       issuer: { id: 1, legalName: 'Emisor', rfc: 'III010101III' },

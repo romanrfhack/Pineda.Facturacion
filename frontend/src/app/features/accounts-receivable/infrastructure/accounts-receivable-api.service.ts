@@ -2,6 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { buildApiUrl } from '../../../core/config/api-url';
+import { createGlobalLoaderContext } from '../../../core/http/global-loader-context.tokens';
 import {
   AccountsReceivableInvoiceResponse,
   AccountsReceivablePortfolioResponse,
@@ -94,15 +95,37 @@ export class AccountsReceivableApiService {
       params = params.set('followUpPending', request.followUpPending);
     }
 
-    return this.http.get<AccountsReceivablePortfolioResponse>(buildApiUrl('/accounts-receivable/invoices'), { params });
+    return this.http.get<AccountsReceivablePortfolioResponse>(buildApiUrl('/accounts-receivable/invoices'), {
+      params,
+      context: createGlobalLoaderContext({
+        message: 'Consultando cartera',
+        detail: 'Estamos actualizando saldos, vencimientos y seguimiento de cobranza.'
+      })
+    });
   }
 
   getReceiverWorkspace(fiscalReceiverId: number): Observable<AccountsReceivableReceiverWorkspaceResponse> {
-    return this.http.get<AccountsReceivableReceiverWorkspaceResponse>(buildApiUrl(`/accounts-receivable/receivers/${fiscalReceiverId}/workspace`));
+    return this.http.get<AccountsReceivableReceiverWorkspaceResponse>(
+      buildApiUrl(`/accounts-receivable/receivers/${fiscalReceiverId}/workspace`),
+      {
+        context: createGlobalLoaderContext({
+          message: 'Cargando workspace del receptor',
+          detail: 'Estamos reuniendo facturas, pagos y seguimiento del cliente.'
+        })
+      }
+    );
   }
 
   getReceivablesSummaryCandidates(fiscalReceiverId: number): Observable<ReceivablesSummaryCandidatesResponse> {
-    return this.http.get<ReceivablesSummaryCandidatesResponse>(buildApiUrl(`/accounts-receivable/receivers/${fiscalReceiverId}/summary-candidates`));
+    return this.http.get<ReceivablesSummaryCandidatesResponse>(
+      buildApiUrl(`/accounts-receivable/receivers/${fiscalReceiverId}/summary-candidates`),
+      {
+        context: createGlobalLoaderContext({
+          message: 'Preparando resumen de adeudos',
+          detail: 'Estamos identificando los documentos pendientes que pueden incluirse en el resumen.'
+        })
+      }
+    );
   }
 
   previewReceivablesSummary(fiscalReceiverId: number, request: ReceivablesSummaryRequest): Observable<ReceivablesSummaryPreviewResponse> {
@@ -185,7 +208,13 @@ export class AccountsReceivableApiService {
       params = params.set('linkedFiscalDocumentId', request.linkedFiscalDocumentId);
     }
 
-    return this.http.get<AccountsReceivablePaymentsResponse>(buildApiUrl('/accounts-receivable/payments'), { params });
+    return this.http.get<AccountsReceivablePaymentsResponse>(buildApiUrl('/accounts-receivable/payments'), {
+      params,
+      context: createGlobalLoaderContext({
+        message: 'Consultando pagos',
+        detail: 'Estamos recuperando los pagos y su estado de aplicación.'
+      })
+    });
   }
 
   applyPayment(paymentId: number, request: ApplyAccountsReceivablePaymentRequest): Observable<ApplyAccountsReceivablePaymentResponse> {
