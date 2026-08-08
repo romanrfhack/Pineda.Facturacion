@@ -3,6 +3,7 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
+import { PermissionService } from '../../../core/auth/permission.service';
 import { extractApiErrorMessage } from '../../../core/http/api-error-message';
 import {
   StatusBadgeComponent,
@@ -70,7 +71,7 @@ import {
           <label>
             <span>Ordenar por</span>
             <select [(ngModel)]="sort" name="sort">
-              <option value="LastActivityDesc">Último movimiento</option>
+              <option value="LastActivityDesc">Prioridad y último movimiento</option>
               <option value="OldestFirst">Más antiguos primero</option>
               <option value="TotalDesc">Mayor importe</option>
             </select>
@@ -200,7 +201,9 @@ import {
                       }
                     </td>
                     <td>
-                      @if (item.fiscalDocumentId) {
+                      @if (permissionService.isReadOnlyAuditor()) {
+                        <span class="read-only-label">Solo consulta</span>
+                      } @else if (item.fiscalDocumentId) {
                         <a
                           class="button-link small"
                           [routerLink]="['/app/fiscal-documents', item.fiscalDocumentId]"
@@ -398,6 +401,17 @@ import {
         cursor: wait;
       }
 
+      .read-only-label {
+        display: inline-flex;
+        width: fit-content;
+        border-radius: 999px;
+        padding: 0.36rem 0.62rem;
+        background: #eef1f4;
+        color: #536170;
+        font-size: 0.78rem;
+        font-weight: 600;
+      }
+
       .inbox-card {
         min-width: 0;
       }
@@ -548,6 +562,7 @@ import {
 })
 export class PendingFiscalDocumentsPageComponent {
   private readonly api = inject(PendingFiscalDocumentsApiService);
+  protected readonly permissionService = inject(PermissionService);
 
   protected query = '';
   protected workStatus: PendingFiscalDocumentWorkFilter = 'All';
