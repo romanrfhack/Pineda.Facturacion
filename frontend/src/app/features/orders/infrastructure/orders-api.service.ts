@@ -18,6 +18,10 @@ import {
   SearchLegacyOrdersResponse,
   SendOrderDebtSummaryResponse,
 } from '../models/orders.models';
+import {
+  OrderDebtSummaryEligibilityRequest,
+  OrderDebtSummaryEligibilityResponse,
+} from '../models/order-debt-summary-eligibility.models';
 
 @Injectable({ providedIn: 'root' })
 export class OrdersApiService {
@@ -76,6 +80,15 @@ export class OrdersApiService {
 
   createBulkBillingDocument(request: CreateBulkBillingDocumentRequest): Observable<CreateBulkBillingDocumentResponse> {
     return this.http.post<CreateBulkBillingDocumentResponse>(buildApiUrl('/orders/billing-documents'), request);
+  }
+
+  evaluateOrderDebtSummaryEligibility(
+    request: OrderDebtSummaryEligibilityRequest,
+  ): Observable<OrderDebtSummaryEligibilityResponse> {
+    return this.http.post<OrderDebtSummaryEligibilityResponse>(
+      buildApiUrl('/orders/debt-summary/eligibility'),
+      request,
+    );
   }
 
   previewOrderDebtSummary(request: OrderDebtSummaryRequest): Observable<OrderDebtSummaryPreviewResponse> {
