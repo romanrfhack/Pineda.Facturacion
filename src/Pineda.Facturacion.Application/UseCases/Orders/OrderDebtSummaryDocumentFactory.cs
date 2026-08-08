@@ -17,19 +17,22 @@ public sealed class OrderDebtSummaryDocumentFactory
     private readonly IIssuerProfileRepository _issuerProfileRepository;
     private readonly IImportedLegacyOrderLookupRepository _importedLegacyOrderLookupRepository;
     private readonly TimeProvider _timeProvider;
+    private readonly OrderDebtSummaryEligibilityService? _eligibilityService;
 
     public OrderDebtSummaryDocumentFactory(
         ILegacyOrderReader legacyOrderReader,
         IFiscalReceiverRepository receiverRepository,
         IIssuerProfileRepository issuerProfileRepository,
         IImportedLegacyOrderLookupRepository importedLegacyOrderLookupRepository,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        OrderDebtSummaryEligibilityService? eligibilityService = null)
     {
         _legacyOrderReader = legacyOrderReader;
         _receiverRepository = receiverRepository;
         _issuerProfileRepository = issuerProfileRepository;
         _importedLegacyOrderLookupRepository = importedLegacyOrderLookupRepository;
         _timeProvider = timeProvider;
+        _eligibilityService = eligibilityService;
     }
 
     public async Task<OrderDebtSummaryDocumentBuildResult> BuildDocumentAsync(
@@ -68,23 +71,67 @@ public sealed class OrderDebtSummaryDocumentFactory
             return ValidationFailure("Selecciona al menos una orden para continuar.");
         }
 
-        var legacyOrders = new List<LegacyOrderReadModel>(requestedOrderIds.Length);
-        var missingOrderIds = new List<string>();
-        foreach (var legacyOrderId in requestedOrderIds)
+        IReadOnlyList<LegacyOrderReadModel> legacyOrders;
+        IReadOnlyList<OrderDebtSummaryOrder> orders;
+        OrderDebtSummarySelection selection;
+
+        if (_eligibilityService is not null)
         {
-            var legacyOrder = await _legacyOrderReader.GetByIdAsync(legacyOrderId, cancellationToken);
-            if (legacyOrder is null)
+            var resolution = await _eligibilityService.EvaluateAsync(requestedOrderIds, cancellationToken);
+            if (!resolution.IsSuccess)
             {
-                missingOrderIds.Add(legacyOrderId);
-                continue;
+                return ValidationFailure(resolution.ErrorMessage ?? "No fue posible validar el estado financiero de las órdenes seleccionadas.");
             }
 
-            legacyOrders.Add(legacyOrder);
-        }
+            legacyOrders = resolution.LegacyOrders;
+            var validationIssues = resolution.BlockingItems
+                .Select(MapValidationIssue)
+                .ToArray();
+            if (validationIssues.Length > 0)
+            {
+                return ValidationFailure(BuildBlockedSelectionMessage(validationIssues), validationIssues);
+            }
 
-        if (missingOrderIds.Count > 0)
+            orders = resolution.ReportOrders;
+            if (orders.Count == 0)
+            {
+                return ValidationFailure("No existen órdenes elegibles para incluir en el resumen.");
+            }
+
+            selection = BuildFinancialSelection(resolution.Items, orders);
+        }
+        else
         {
-            return ValidationFailure($"Algunas órdenes seleccionadas ya no están disponibles: {string.Join(", ", missingOrderIds)}.");
+            var legacyOrderList = new List<LegacyOrderReadModel>(requestedOrderIds.Length);
+            var missingOrderIds = new List<string>();
+            foreach (var legacyOrderId in requestedOrderIds)
+            {
+                var legacyOrder = await _legacyOrderReader.GetByIdAsync(legacyOrderId, cancellationToken);
+                if (legacyOrder is null)
+                {
+                    missingOrderIds.Add(legacyOrderId);
+                    continue;
+                }
+
+                legacyOrderList.Add(legacyOrder);
+            }
+
+            if (missingOrderIds.Count > 0)
+            {
+                return ValidationFailure($"Algunas órdenes seleccionadas ya no están disponibles: {string.Join(", ", missingOrderIds)}.");
+            }
+
+            legacyOrders = legacyOrderList;
+            var lookup = await _importedLegacyOrderLookupRepository.GetByLegacyOrderIdsAsync(requestedOrderIds, cancellationToken);
+            orders = legacyOrders
+                .OrderBy(order => Array.IndexOf(requestedOrderIds, order.LegacyOrderId))
+                .Select(order =>
+                {
+                    lookup.TryGetValue(order.LegacyOrderId, out var importedLookup);
+                    return OrderDebtSummaryComposer.MapOrder(order, importedLookup);
+                })
+                .ToArray();
+            selection = OrderDebtSummaryComposer.BuildSelectionSummary(orders);
         }
 
         var customerValidationError = ValidateCustomerSelection(legacyOrders, receiver);
@@ -92,16 +139,6 @@ public sealed class OrderDebtSummaryDocumentFactory
         {
             return ValidationFailure(customerValidationError);
         }
-
-        var lookup = await _importedLegacyOrderLookupRepository.GetByLegacyOrderIdsAsync(requestedOrderIds, cancellationToken);
-        var orders = legacyOrders
-            .OrderBy(order => Array.IndexOf(requestedOrderIds, order.LegacyOrderId))
-            .Select(order =>
-            {
-                lookup.TryGetValue(order.LegacyOrderId, out var importedLookup);
-                return OrderDebtSummaryComposer.MapOrder(order, importedLookup);
-            })
-            .ToArray();
 
         var invalidRecipients = EmailRecipientParser.FindInvalidRecipients(command.To)
             .Concat(EmailRecipientParser.FindInvalidRecipients(command.Cc))
@@ -164,8 +201,9 @@ public sealed class OrderDebtSummaryDocumentFactory
                 FiscalRegimeCode = issuer?.FiscalRegimeCode,
                 PostalCode = issuer?.PostalCode
             },
+            SelectedLegacyOrderIds = requestedOrderIds,
             Orders = orders,
-            Selection = OrderDebtSummaryComposer.BuildSelectionSummary(orders),
+            Selection = selection,
             To = to,
             Cc = OrderDebtSummaryComposer.NormalizeRecipients(command.Cc),
             Bcc = OrderDebtSummaryComposer.NormalizeRecipients(command.Bcc),
@@ -183,12 +221,75 @@ public sealed class OrderDebtSummaryDocumentFactory
         };
     }
 
-    private static OrderDebtSummaryDocumentBuildResult ValidationFailure(string errorMessage)
+    private static OrderDebtSummarySelection BuildFinancialSelection(
+        IReadOnlyList<OrderDebtSummaryEligibilityItem> eligibilityItems,
+        IReadOnlyList<OrderDebtSummaryOrder> reportOrders)
+    {
+        var eligibleItems = eligibilityItems
+            .Where(item => item.Decision.CanInclude)
+            .ToArray();
+        var totals = reportOrders
+            .GroupBy(order => NormalizeCurrency(order.CurrencyCode))
+            .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(group => new OrderDebtSummaryTotalByCurrency
+            {
+                CurrencyCode = group.Key,
+                OrderCount = eligibleItems.Count(item => string.Equals(
+                    NormalizeCurrency(item.Decision.CurrencyCode),
+                    group.Key,
+                    StringComparison.OrdinalIgnoreCase)),
+                Total = group.Sum(order => order.Total)
+            })
+            .ToArray();
+
+        return new OrderDebtSummarySelection
+        {
+            OrderCount = eligibleItems.Length,
+            Total = totals.Length == 1 ? totals[0].Total : null,
+            TotalsByCurrency = totals
+        };
+    }
+
+    private static OrderDebtSummaryValidationIssue MapValidationIssue(
+        OrderDebtSummaryEligibilityItem item)
+    {
+        var trace = item.Trace;
+        return new OrderDebtSummaryValidationIssue
+        {
+            LegacyOrderId = item.LegacyOrder.LegacyOrderId,
+            Classification = item.Decision.Classification.ToString(),
+            ReasonCode = item.Decision.ReasonCode,
+            Message = item.Decision.Message,
+            RequiresReview = item.Decision.RequiresReview,
+            BillingDocumentId = trace?.BillingDocumentId,
+            FiscalDocumentId = trace?.FiscalDocumentId,
+            FiscalUuid = trace?.FiscalUuid,
+            AccountsReceivableInvoiceId = trace?.AccountsReceivableInvoiceId,
+            AccountsReceivableStatus = trace?.AccountsReceivableStatus?.ToString(),
+            CurrencyCode = item.Decision.CurrencyCode,
+            InvoiceTotal = trace?.InvoiceTotal,
+            PaidTotal = trace?.PaidTotal,
+            OutstandingBalance = trace?.OutstandingBalance,
+            RelatedLegacyOrderIds = trace?.RelatedLegacyOrderIds ?? [item.LegacyOrder.LegacyOrderId]
+        };
+    }
+
+    private static string BuildBlockedSelectionMessage(
+        IReadOnlyList<OrderDebtSummaryValidationIssue> issues)
+    {
+        var details = issues.Select(issue => $"Orden {issue.LegacyOrderId}: {issue.Message}");
+        return $"No se puede generar el resumen con toda la selección. {string.Join(" ", details)}";
+    }
+
+    private static OrderDebtSummaryDocumentBuildResult ValidationFailure(
+        string errorMessage,
+        IReadOnlyList<OrderDebtSummaryValidationIssue>? validationIssues = null)
     {
         return new OrderDebtSummaryDocumentBuildResult
         {
             Outcome = OrderDebtSummaryOutcome.ValidationFailed,
-            ErrorMessage = errorMessage
+            ErrorMessage = errorMessage,
+            ValidationIssues = validationIssues ?? []
         };
     }
 
@@ -252,6 +353,9 @@ public sealed class OrderDebtSummaryDocumentFactory
         return null;
     }
 
+    private static string NormalizeCurrency(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "MXN" : value.Trim().ToUpperInvariant();
+
     private static string? NormalizeRfc(string? value)
     {
         var candidate = RemoveWhitespace(value);
@@ -302,4 +406,6 @@ public sealed class OrderDebtSummaryDocumentBuildResult
     public string? ErrorMessage { get; init; }
 
     public OrderDebtSummaryDocument? Document { get; init; }
+
+    public IReadOnlyList<OrderDebtSummaryValidationIssue> ValidationIssues { get; init; } = [];
 }

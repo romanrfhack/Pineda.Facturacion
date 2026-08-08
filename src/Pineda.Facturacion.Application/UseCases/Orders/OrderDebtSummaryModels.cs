@@ -131,6 +131,8 @@ public sealed class OrderDebtSummaryDocument
 
     public OrderDebtSummaryParty Issuer { get; init; } = new();
 
+    public IReadOnlyList<string> SelectedLegacyOrderIds { get; init; } = [];
+
     public IReadOnlyList<OrderDebtSummaryOrder> Orders { get; init; } = [];
 
     public OrderDebtSummarySelection Selection { get; init; } = new();
@@ -150,6 +152,39 @@ public sealed class OrderDebtSummaryDocument
     public DateTime GeneratedAtUtc { get; init; }
 }
 
+public sealed class OrderDebtSummaryValidationIssue
+{
+    public string LegacyOrderId { get; init; } = string.Empty;
+
+    public string Classification { get; init; } = string.Empty;
+
+    public string ReasonCode { get; init; } = string.Empty;
+
+    public string Message { get; init; } = string.Empty;
+
+    public bool RequiresReview { get; init; }
+
+    public long? BillingDocumentId { get; init; }
+
+    public long? FiscalDocumentId { get; init; }
+
+    public string? FiscalUuid { get; init; }
+
+    public long? AccountsReceivableInvoiceId { get; init; }
+
+    public string? AccountsReceivableStatus { get; init; }
+
+    public string CurrencyCode { get; init; } = "MXN";
+
+    public decimal? InvoiceTotal { get; init; }
+
+    public decimal? PaidTotal { get; init; }
+
+    public decimal? OutstandingBalance { get; init; }
+
+    public IReadOnlyList<string> RelatedLegacyOrderIds { get; init; } = [];
+}
+
 public sealed class OrderDebtSummaryPreviewResult
 {
     public OrderDebtSummaryOutcome Outcome { get; init; }
@@ -167,6 +202,8 @@ public sealed class OrderDebtSummaryPreviewResult
     public string? PdfFileName { get; init; }
 
     public string? PdfErrorMessage { get; init; }
+
+    public IReadOnlyList<OrderDebtSummaryValidationIssue> ValidationIssues { get; init; } = [];
 }
 
 public sealed class SendOrderDebtSummaryResult
@@ -184,4 +221,6 @@ public sealed class SendOrderDebtSummaryResult
     public string? EmailProviderMessageId { get; init; }
 
     public OrderDebtSummaryDocument? Document { get; init; }
+
+    public IReadOnlyList<OrderDebtSummaryValidationIssue> ValidationIssues { get; init; } = [];
 }
