@@ -12,6 +12,7 @@ import {
   ReceiverImportRow
 } from '../models/catalogs.models';
 import { buildApiUrl } from '../../../core/config/api-url';
+import { createGlobalLoaderContext } from '../../../core/http/global-loader-context.tokens';
 
 @Injectable({ providedIn: 'root' })
 export class FiscalImportsApiService {
@@ -24,11 +25,21 @@ export class FiscalImportsApiService {
   }
 
   getReceiverBatch(batchId: number): Observable<ImportBatchSummary> {
-    return this.http.get<ImportBatchSummary>(buildApiUrl(`/fiscal/imports/receivers/batches/${batchId}`));
+    return this.http.get<ImportBatchSummary>(buildApiUrl(`/fiscal/imports/receivers/batches/${batchId}`), {
+      context: createGlobalLoaderContext({
+        message: 'Cargando lote de receptores',
+        detail: 'Estamos recuperando el resumen y las filas del lote seleccionado.'
+      })
+    });
   }
 
   listReceiverRows(batchId: number): Observable<ReceiverImportRow[]> {
-    return this.http.get<ReceiverImportRow[]>(buildApiUrl(`/fiscal/imports/receivers/batches/${batchId}/rows`));
+    return this.http.get<ReceiverImportRow[]>(buildApiUrl(`/fiscal/imports/receivers/batches/${batchId}/rows`), {
+      context: createGlobalLoaderContext({
+        message: 'Cargando lote de receptores',
+        detail: 'Estamos recuperando el resumen y las filas del lote seleccionado.'
+      })
+    });
   }
 
   applyReceiverBatch(batchId: number, request: ApplyImportBatchRequest): Observable<ApplyImportBatchResponse> {
@@ -51,11 +62,21 @@ export class FiscalImportsApiService {
   }
 
   getProductBatch(batchId: number): Observable<ImportBatchSummary> {
-    return this.http.get<ImportBatchSummary>(buildApiUrl(`/fiscal/imports/products/batches/${batchId}`));
+    return this.http.get<ImportBatchSummary>(buildApiUrl(`/fiscal/imports/products/batches/${batchId}`), {
+      context: createGlobalLoaderContext({
+        message: 'Cargando lote de productos',
+        detail: 'Estamos recuperando el resumen y las filas del lote seleccionado.'
+      })
+    });
   }
 
   listProductRows(batchId: number): Observable<ProductImportRow[]> {
-    return this.http.get<ProductImportRow[]>(buildApiUrl(`/fiscal/imports/products/batches/${batchId}/rows`));
+    return this.http.get<ProductImportRow[]>(buildApiUrl(`/fiscal/imports/products/batches/${batchId}/rows`), {
+      context: createGlobalLoaderContext({
+        message: 'Cargando lote de productos',
+        detail: 'Estamos recuperando el resumen y las filas del lote seleccionado.'
+      })
+    });
   }
 
   applyProductBatch(batchId: number, request: ApplyImportBatchRequest): Observable<ApplyImportBatchResponse> {
