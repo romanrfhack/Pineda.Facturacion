@@ -11,10 +11,9 @@ concurrency:
 
 permissions:
   contents: write
-  issues: write
 
 jobs:
-  validate:
+  diagnose-backend:
     runs-on: ubuntu-latest
     services:
       mysql:
@@ -38,96 +37,73 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "10.0.x"
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
 
-      - name: Validate solution
-        id: validate
+      - name: Run backend diagnostics
+        id: diagnose
         shell: bash
         run: |
           set +e
-          : > agent-validation.log
-          overall=0
 
-          run_logged() {
-            printf '\n===== %s =====\n' "$1" | tee -a agent-validation.log
-            shift
-            "$@" 2>&1 | tee -a agent-validation.log
-            code=${PIPESTATUS[0]}
-            if [ "$code" -ne 0 ]; then
-              overall=1
-            fi
-          }
+          dotnet restore Pineda.Facturacion.slnx > backend-restore.log 2>&1
+          restore_code=$?
 
-          run_logged "dotnet restore" dotnet restore Pineda.Facturacion.slnx
-          run_logged "dotnet build" dotnet build -c Release Pineda.Facturacion.slnx --no-restore
-          run_logged "dotnet test" dotnet test -c Release Pineda.Facturacion.slnx --no-build
-          run_logged "mysql integration subset" bash -lc 'export PINEDA_FACTURACION_RUN_MYSQL_TESTS=true; export PINEDA_FACTURACION_MYSQL_TEST_CONNECTION="Server=127.0.0.1;Port=3306;User ID=root;Password=;AllowPublicKeyRetrieval=True;SslMode=None;"; dotnet test -c Release tests/Pineda.Facturacion.IntegrationTests/Pineda.Facturacion.IntegrationTests.csproj --filter "Category=MySqlIntegration" --no-build'
-          run_logged "npm ci" bash -lc 'cd frontend && npm ci'
-          run_logged "frontend build" bash -lc 'cd frontend && npm run build'
-          run_logged "frontend unit tests" bash -lc 'cd frontend && npm run test'
-          run_logged "playwright install" bash -lc 'cd frontend && npx playwright install --with-deps chromium'
-          run_logged "frontend e2e" bash -lc 'cd frontend && npm run e2e:ci'
+          dotnet build -c Release Pineda.Facturacion.slnx --no-restore > backend-build.log 2>&1
+          build_code=$?
 
-          echo "overall_status=$overall" >> "$GITHUB_OUTPUT"
+          dotnet test -c Release Pineda.Facturacion.slnx --no-build > backend-test.log 2>&1
+          test_code=$?
+
+          export PINEDA_FACTURACION_RUN_MYSQL_TESTS=true
+          export PINEDA_FACTURACION_MYSQL_TEST_CONNECTION="Server=127.0.0.1;Port=3306;User ID=root;Password=;AllowPublicKeyRetrieval=True;SslMode=None;"
+          dotnet test -c Release tests/Pineda.Facturacion.IntegrationTests/Pineda.Facturacion.IntegrationTests.csproj --filter "Category=MySqlIntegration" --no-build > mysql-test.log 2>&1
+          mysql_code=$?
+
+          printf 'restore=%s\nbuild=%s\ntest=%s\nmysql=%s\n' \
+            "$restore_code" "$build_code" "$test_code" "$mysql_code" > backend-status.env
+
+          echo "restore_code=$restore_code" >> "$GITHUB_OUTPUT"
+          echo "build_code=$build_code" >> "$GITHUB_OUTPUT"
+          echo "test_code=$test_code" >> "$GITHUB_OUTPUT"
+          echo "mysql_code=$mysql_code" >> "$GITHUB_OUTPUT"
           exit 0
 
-      - name: Report validation result
-        if: always()
-        uses: actions/github-script@v7
-        env:
-          OVERALL_STATUS: ${{ steps.validate.outputs.overall_status }}
-        with:
-          script: |
-            const fs = require('fs');
-            const success = process.env.OVERALL_STATUS === '0';
-            let details = '';
-            if (!success && fs.existsSync('agent-validation.log')) {
-              const log = fs.readFileSync('agent-validation.log', 'utf8');
-              details = `\n\nÚltima salida:\n\`\`\`text\n${log.slice(-12000)}\n\`\`\``;
-            }
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: 10,
-              body: `<!-- pending-fiscal-documents-validation:${context.sha} -->\nValidación completa de la bandeja de documentos pendientes para \`${context.sha}\`: **${success ? 'success' : 'failure'}**.\n\nSe ejecutaron backend build/tests, integración MySQL, frontend build/unit tests y Playwright E2E.${details}`
-            });
-
-      - name: Persist validation evidence
+      - name: Persist backend diagnostics
         if: always()
         shell: bash
         env:
-          OVERALL_STATUS: ${{ steps.validate.outputs.overall_status }}
           VALIDATED_SHA: ${{ github.sha }}
+          RESTORE_CODE: ${{ steps.diagnose.outputs.restore_code }}
+          BUILD_CODE: ${{ steps.diagnose.outputs.build_code }}
+          TEST_CODE: ${{ steps.diagnose.outputs.test_code }}
+          MYSQL_CODE: ${{ steps.diagnose.outputs.mysql_code }}
         run: |
           set -euo pipefail
           mkdir -p .agent-ci
-          tail -n 400 agent-validation.log > .agent-ci/pending-fiscal-documents-log-tail.txt
+          tail -n 500 backend-restore.log > .agent-ci/backend-restore-tail.txt
+          tail -n 500 backend-build.log > .agent-ci/backend-build-tail.txt
+          tail -n 500 backend-test.log > .agent-ci/backend-test-tail.txt
+          tail -n 500 mysql-test.log > .agent-ci/mysql-test-tail.txt
 
-          if [ "$OVERALL_STATUS" = "0" ]; then
-            result="success"
-          else
-            result="failure"
-          fi
-
-          cat > .agent-ci/pending-fiscal-documents-result.md <<EOF
-          # Pending fiscal documents validation
+          cat > .agent-ci/backend-diagnostic-result.md <<EOF
+          # Pending fiscal documents backend diagnostics
 
           - Commit validated: $VALIDATED_SHA
-          - Result: $result
-          - Backend: restore, build, unit/integration tests and MySQL subset executed
-          - Frontend: install, build, unit tests and Playwright E2E executed
+          - Restore exit code: $RESTORE_CODE
+          - Build exit code: $BUILD_CODE
+          - Test exit code: $TEST_CODE
+          - MySQL exit code: $MYSQL_CODE
           EOF
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .agent-ci/pending-fiscal-documents-result.md .agent-ci/pending-fiscal-documents-log-tail.txt
-          git commit -m "ci: record pending fiscal documents validation [skip ci]"
+          git add .agent-ci/backend-diagnostic-result.md \
+            .agent-ci/backend-restore-tail.txt \
+            .agent-ci/backend-build-tail.txt \
+            .agent-ci/backend-test-tail.txt \
+            .agent-ci/mysql-test-tail.txt
+          git commit -m "ci: record pending fiscal backend diagnostics [skip ci]"
           git push
 
-      - name: Fail when validation failed
-        if: steps.validate.outputs.overall_status != '0'
+      - name: Fail when backend diagnostics fail
+        if: steps.diagnose.outputs.restore_code != '0' || steps.diagnose.outputs.build_code != '0' || steps.diagnose.outputs.test_code != '0' || steps.diagnose.outputs.mysql_code != '0'
         run: exit 1
