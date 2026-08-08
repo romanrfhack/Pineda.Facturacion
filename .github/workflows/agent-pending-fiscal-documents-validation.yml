@@ -10,7 +10,8 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
+  issues: write
 
 jobs:
   validate:
@@ -76,36 +77,26 @@ jobs:
           echo "overall_status=$overall" >> "$GITHUB_OUTPUT"
           exit 0
 
-      - name: Persist validation result
-        shell: bash
+      - name: Report validation result
+        if: always()
+        uses: actions/github-script@v7
         env:
           OVERALL_STATUS: ${{ steps.validate.outputs.overall_status }}
-          VALIDATED_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          mkdir -p .agent-ci
-          tail -n 400 agent-validation.log > .agent-ci/pending-fiscal-documents-log-tail.txt
-
-          if [ "$OVERALL_STATUS" = "0" ]; then
-            result="success"
-          else
-            result="failure"
-          fi
-
-          cat > .agent-ci/pending-fiscal-documents-result.md <<EOF
-          # Pending fiscal documents validation
-
-          - Commit validated: $VALIDATED_SHA
-          - Result: $result
-          - Backend: restore, build, unit/integration tests and MySQL subset executed
-          - Frontend: install, build, unit tests and Playwright E2E executed
-          EOF
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .agent-ci/pending-fiscal-documents-result.md .agent-ci/pending-fiscal-documents-log-tail.txt
-          git commit -m "ci: record pending fiscal documents validation [skip ci]"
-          git push
+        with:
+          script: |
+            const fs = require('fs');
+            const success = process.env.OVERALL_STATUS === '0';
+            let details = '';
+            if (!success && fs.existsSync('agent-validation.log')) {
+              const log = fs.readFileSync('agent-validation.log', 'utf8');
+              details = `\n\nÚltima salida:\n\`\`\`text\n${log.slice(-12000)}\n\`\`\``;
+            }
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: 10,
+              body: `<!-- pending-fiscal-documents-validation:${context.sha} -->\nValidación completa de la bandeja de documentos pendientes para \`${context.sha}\`: **${success ? 'success' : 'failure'}**.\n\nSe ejecutaron backend build/tests, integración MySQL, frontend build/unit tests y Playwright E2E.${details}`
+            });
 
       - name: Fail when validation failed
         if: steps.validate.outputs.overall_status != '0'
