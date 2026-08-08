@@ -1,0 +1,59 @@
+Test run for /home/runner/work/Pineda.Facturacion/Pineda.Facturacion/tests/Pineda.Facturacion.IntegrationTests/bin/Release/net10.0/Pineda.Facturacion.IntegrationTests.dll (.NETCoreApp,Version=v10.0)
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:08.76]     Pineda.Facturacion.IntegrationTests.PendingFiscalDocumentsMySqlIntegrationTests.PendingInbox_QueryExecutesOnMySql_ExcludesStampEvidence_AndAllowsAuditorRead [FAIL]
+  Failed Pineda.Facturacion.IntegrationTests.PendingFiscalDocumentsMySqlIntegrationTests.PendingInbox_QueryExecutesOnMySql_ExcludesStampEvidence_AndAllowsAuditorRead [8 s]
+  Error Message:
+   System.InvalidOperationException : An exception was thrown while attempting to evaluate a LINQ query parameter expression. See the inner exception for more information. To show additional information call 'DbContextOptionsBuilder.EnableSensitiveDataLogging'.
+---- System.ArgumentException : GenericArguments[1], 'System.ReadOnlySpan`1[System.Int64]', on 'System.Linq.Expressions.Interpreter.FuncCallInstruction`2[T0,TRet]' violates the constraint of type 'TRet'.
+-------- System.TypeLoadException : GenericArguments[1], 'System.ReadOnlySpan`1[System.Int64]', on 'System.Linq.Expressions.Interpreter.FuncCallInstruction`2[T0,TRet]' violates the constraint of type parameter 'TRet'.
+  Stack Trace:
+     at Microsoft.EntityFrameworkCore.Query.Internal.ParameterExtractingExpressionVisitor.GetValue(Expression expression, String& parameterName)
+   at Microsoft.EntityFrameworkCore.Query.Internal.ParameterExtractingExpressionVisitor.Evaluate(Expression expression, Boolean generateParameter)
+   at Microsoft.EntityFrameworkCore.Query.Internal.ParameterExtractingExpressionVisitor.Visit(Expression expression)
+   at System.Dynamic.Utils.ExpressionVisitorUtils.VisitArguments(ExpressionVisitor visitor, IArgumentProvider nodes)
+   at System.Linq.Expressions.ExpressionVisitor.VisitMethodCall(MethodCallExpression node)
+   at Microsoft.EntityFrameworkCore.Query.Internal.ParameterExtractingExpressionVisitor.VisitMethodCall(MethodCallExpression methodCallExpression)
+   at Microsoft.EntityFrameworkCore.Query.Internal.ParameterExtractingExpressionVisitor.Visit(Expression expression)
+   at System.Linq.Expressions.ExpressionVisitor.VisitLambda[T](Expression`1 node)
+   at Microsoft.EntityFrameworkCore.Query.Internal.ParameterExtractingExpressionVisitor.Visit(Expression expression)
+   at System.Linq.Expressions.ExpressionVisitor.VisitUnary(UnaryExpression node)
+   at Microsoft.EntityFrameworkCore.Query.Internal.ParameterExtractingExpressionVisitor.Visit(Expression expression)
+   at System.Dynamic.Utils.ExpressionVisitorUtils.VisitArguments(ExpressionVisitor visitor, IArgumentProvider nodes)
+   at System.Linq.Expressions.ExpressionVisitor.VisitMethodCall(MethodCallExpression node)
+   at Microsoft.EntityFrameworkCore.Query.Internal.ParameterExtractingExpressionVisitor.VisitMethodCall(MethodCallExpression methodCallExpression)
+   at Microsoft.EntityFrameworkCore.Query.Internal.ParameterExtractingExpressionVisitor.Visit(Expression expression)
+   at System.Dynamic.Utils.ExpressionVisitorUtils.VisitArguments(ExpressionVisitor visitor, IArgumentProvider nodes)
+   at System.Linq.Expressions.ExpressionVisitor.VisitMethodCall(MethodCallExpression node)
+   at Microsoft.EntityFrameworkCore.Query.Internal.ParameterExtractingExpressionVisitor.VisitMethodCall(MethodCallExpression methodCallExpression)
+   at Microsoft.EntityFrameworkCore.Query.Internal.ParameterExtractingExpressionVisitor.Visit(Expression expression)
+   at Microsoft.EntityFrameworkCore.Query.Internal.ParameterExtractingExpressionVisitor.ExtractParameters(Expression expression, Boolean clearEvaluatedValues)
+   at Microsoft.EntityFrameworkCore.Query.Internal.ParameterExtractingExpressionVisitor.ExtractParameters(Expression expression)
+   at Microsoft.EntityFrameworkCore.Query.Internal.QueryCompiler.ExtractParameters(Expression query, IParameterValues parameterValues, IDiagnosticsLogger`1 logger, Boolean parameterize, Boolean generateContextAccessors)
+   at Microsoft.EntityFrameworkCore.Query.Internal.QueryCompiler.ExecuteAsync[TResult](Expression query, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Query.Internal.EntityQueryProvider.ExecuteAsync[TResult](Expression expression, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Query.Internal.EntityQueryable`1.GetAsyncEnumerator(CancellationToken cancellationToken)
+   at System.Runtime.CompilerServices.ConfiguredCancelableAsyncEnumerable`1.GetAsyncEnumerator()
+   at Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ToListAsync[TSource](IQueryable`1 source, CancellationToken cancellationToken)
+   at Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Repositories.PendingFiscalDocumentRepository.SearchAsync(SearchPendingFiscalDocumentsFilter filter, CancellationToken cancellationToken) in /home/runner/work/Pineda.Facturacion/Pineda.Facturacion/src/Pineda.Facturacion.Infrastructure.BillingWrite/Persistence/Repositories/PendingFiscalDocumentRepository.cs:line 110
+   at Pineda.Facturacion.IntegrationTests.PendingFiscalDocumentsMySqlIntegrationTests.PendingInbox_QueryExecutesOnMySql_ExcludesStampEvidence_AndAllowsAuditorRead() in /home/runner/work/Pineda.Facturacion/Pineda.Facturacion/tests/Pineda.Facturacion.IntegrationTests/PendingFiscalDocumentsMySqlIntegrationTests.cs:line 71
+   at Pineda.Facturacion.IntegrationTests.PendingFiscalDocumentsMySqlIntegrationTests.PendingInbox_QueryExecutesOnMySql_ExcludesStampEvidence_AndAllowsAuditorRead() in /home/runner/work/Pineda.Facturacion/Pineda.Facturacion/tests/Pineda.Facturacion.IntegrationTests/PendingFiscalDocumentsMySqlIntegrationTests.cs:line 91
+   at Pineda.Facturacion.IntegrationTests.PendingFiscalDocumentsMySqlIntegrationTests.PendingInbox_QueryExecutesOnMySql_ExcludesStampEvidence_AndAllowsAuditorRead() in /home/runner/work/Pineda.Facturacion/Pineda.Facturacion/tests/Pineda.Facturacion.IntegrationTests/PendingFiscalDocumentsMySqlIntegrationTests.cs:line 112
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at System.RuntimeType.ValidateGenericArguments(MemberInfo definition, RuntimeType[] genericArguments, Exception e)
+   at System.RuntimeType.MakeGenericType(Type[] typeArguments)
+   at System.Linq.Expressions.Interpreter.CallInstruction.GetHelperType(MethodInfo info, Type[] arrTypes)
+   at System.Linq.Expressions.Interpreter.CallInstruction.SlowCreate(MethodInfo info, ParameterInfo[] pis)
+   at System.Linq.Expressions.Interpreter.CallInstruction.Create(MethodInfo info, ParameterInfo[] parameters)
+   at System.Linq.Expressions.Interpreter.LightCompiler.CompileMethodCallExpression(Expression object, MethodInfo method, IArgumentProvider arguments)
+   at System.Linq.Expressions.Interpreter.LightCompiler.Compile(Expression expr)
+   at System.Linq.Expressions.Interpreter.LightCompiler.CompileConvertUnaryExpression(Expression expr)
+   at System.Linq.Expressions.Interpreter.LightCompiler.Compile(Expression expr)
+   at System.Linq.Expressions.Interpreter.LightCompiler.CompileTop(LambdaExpression node)
+   at System.Linq.Expressions.Expression`1.Compile(Boolean preferInterpretation)
+   at Microsoft.EntityFrameworkCore.Query.Internal.ParameterExtractingExpressionVisitor.GetValue(Expression expression, String& parameterName)
+----- Inner Stack Trace -----
+   at System.RuntimeTypeHandle.Instantiate(Type[] inst)
+   at System.RuntimeType.MakeGenericType(Type[] typeArguments)
+
+Failed!  - Failed:     1, Passed:    21, Skipped:     0, Total:    22, Duration: 1 m 35 s - Pineda.Facturacion.IntegrationTests.dll (net10.0)
