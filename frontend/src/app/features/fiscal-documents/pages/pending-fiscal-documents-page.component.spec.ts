@@ -50,11 +50,12 @@ describe('PendingFiscalDocumentsPageComponent', () => {
     expect(continueLinks[1].getAttribute('href')).toBe(
       '/app/fiscal-documents?billingDocumentId=801',
     );
+    expect(fixture.nativeElement.textContent).toContain('Búsqueda manual');
 
     httpTesting.verify();
   });
 
-  it('shows the inbox as read only and hides operation links for auditors', async () => {
+  it('shows the inbox as read only and hides all operational navigation for auditors', async () => {
     permissionServiceStub.auditor = true;
     const fixture = TestBed.createComponent(PendingFiscalDocumentsPageComponent);
     const httpTesting = TestBed.inject(HttpTestingController);
@@ -65,8 +66,11 @@ describe('PendingFiscalDocumentsPageComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.querySelectorAll('a.button-link.small')).toHaveLength(0);
-    expect(fixture.nativeElement.textContent).toContain('Solo consulta');
+    expect(fixture.nativeElement.querySelectorAll('a.button-link')).toHaveLength(0);
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('Vista de solo consulta');
+    expect(text).toContain('Solo consulta');
+    expect(text).not.toContain('Búsqueda manual');
     httpTesting.verify();
   });
 });
