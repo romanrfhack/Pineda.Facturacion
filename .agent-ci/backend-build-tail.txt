@@ -12,8 +12,8 @@
   Pineda.Facturacion.Application -> /home/runner/work/Pineda.Facturacion/Pineda.Facturacion/src/Pineda.Facturacion.Application/bin/Release/net10.0/Pineda.Facturacion.Application.dll
   Pineda.Facturacion.Infrastructure.LegacyRead -> /home/runner/work/Pineda.Facturacion/Pineda.Facturacion/src/Pineda.Facturacion.Infrastructure.LegacyRead/bin/Release/net10.0/Pineda.Facturacion.Infrastructure.LegacyRead.dll
   Pineda.Facturacion.ArchitectureTests -> /home/runner/work/Pineda.Facturacion/Pineda.Facturacion/tests/Pineda.Facturacion.ArchitectureTests/bin/Release/net10.0/Pineda.Facturacion.ArchitectureTests.dll
-  Pineda.Facturacion.Infrastructure.FacturaloPlus -> /home/runner/work/Pineda.Facturacion/Pineda.Facturacion/src/Pineda.Facturacion.Infrastructure.FacturaloPlus/bin/Release/net10.0/Pineda.Facturacion.Infrastructure.FacturaloPlus.dll
   Pineda.Facturacion.Infrastructure.BillingWrite -> /home/runner/work/Pineda.Facturacion/Pineda.Facturacion/src/Pineda.Facturacion.Infrastructure.BillingWrite/bin/Release/net10.0/Pineda.Facturacion.Infrastructure.BillingWrite.dll
+  Pineda.Facturacion.Infrastructure.FacturaloPlus -> /home/runner/work/Pineda.Facturacion/Pineda.Facturacion/src/Pineda.Facturacion.Infrastructure.FacturaloPlus/bin/Release/net10.0/Pineda.Facturacion.Infrastructure.FacturaloPlus.dll
   Pineda.Facturacion.Infrastructure -> /home/runner/work/Pineda.Facturacion/Pineda.Facturacion/src/Pineda.Facturacion.Infrastructure/bin/Release/net10.0/Pineda.Facturacion.Infrastructure.dll
   Pineda.Facturacion.Api -> /home/runner/work/Pineda.Facturacion/Pineda.Facturacion/src/Pineda.Facturacion.Api/bin/Release/net10.0/Pineda.Facturacion.Api.dll
   Pineda.Facturacion.IntegrationTests -> /home/runner/work/Pineda.Facturacion/Pineda.Facturacion/tests/Pineda.Facturacion.IntegrationTests/bin/Release/net10.0/Pineda.Facturacion.IntegrationTests.dll
@@ -34,4 +34,4 @@ Build succeeded.
     10 Warning(s)
     0 Error(s)
 
-Time Elapsed 00:00:46.19
+Time Elapsed 00:00:45.75
