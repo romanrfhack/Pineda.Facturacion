@@ -1,27 +1,29 @@
-Get:16 http://azure.archive.ubuntu.com/ubuntu noble-updates/multiverse amd64 Packages [45.4 kB]
-Get:17 http://azure.archive.ubuntu.com/ubuntu noble-updates/multiverse Translation-en [12.3 kB]
-Get:22 https://dl.google.com/linux/chrome-stable/deb stable InRelease [2548 B]
-Get:18 http://azure.archive.ubuntu.com/ubuntu noble-updates/multiverse amd64 Components [940 B]
-Get:19 http://azure.archive.ubuntu.com/ubuntu noble-backports/main amd64 Components [5764 B]
-Get:20 http://azure.archive.ubuntu.com/ubuntu noble-backports/universe amd64 Packages [31.0 kB]
-Get:21 http://azure.archive.ubuntu.com/ubuntu noble-backports/universe amd64 Components [12.6 kB]
-Get:23 http://azure.archive.ubuntu.com/ubuntu noble-security/main amd64 Packages [927 kB]
-Get:24 http://azure.archive.ubuntu.com/ubuntu noble-security/main Translation-en [201 kB]
-Get:25 http://azure.archive.ubuntu.com/ubuntu noble-security/main amd64 Components [46.4 kB]
-Get:26 http://azure.archive.ubuntu.com/ubuntu noble-security/universe amd64 Packages [1199 kB]
-Get:27 http://azure.archive.ubuntu.com/ubuntu noble-security/universe Translation-en [239 kB]
-Get:28 http://azure.archive.ubuntu.com/ubuntu noble-security/universe amd64 Components [76.3 kB]
-Get:29 http://azure.archive.ubuntu.com/ubuntu noble-security/restricted amd64 Packages [1320 kB]
-Get:30 http://azure.archive.ubuntu.com/ubuntu noble-security/restricted Translation-en [302 kB]
-Get:31 http://azure.archive.ubuntu.com/ubuntu noble-security/multiverse amd64 Packages [40.3 kB]
-Get:32 http://azure.archive.ubuntu.com/ubuntu noble-security/multiverse Translation-en [10.6 kB]
-Get:33 https://packages.microsoft.com/repos/azure-cli noble/main amd64 Packages [2375 B]
-Get:34 https://packages.microsoft.com/ubuntu/24.04/prod noble/main armhf Packages [12.2 kB]
-Get:35 https://packages.microsoft.com/ubuntu/24.04/prod noble/main all Packages [643 B]
-Get:36 https://packages.microsoft.com/ubuntu/24.04/prod noble/main arm64 Packages [274 kB]
-Get:37 https://packages.microsoft.com/ubuntu/24.04/prod noble/main amd64 Packages [314 kB]
+Get:14 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 Packages [1184 kB]
+Get:15 http://azure.archive.ubuntu.com/ubuntu noble-updates/main Translation-en [281 kB]
+Get:16 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 Components [180 kB]
+Get:17 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 Packages [1682 kB]
+Get:18 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe Translation-en [335 kB]
+Get:19 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 Components [388 kB]
+Get:20 http://azure.archive.ubuntu.com/ubuntu noble-updates/restricted amd64 Packages [1414 kB]
+Get:21 http://azure.archive.ubuntu.com/ubuntu noble-updates/restricted Translation-en [320 kB]
+Get:22 http://azure.archive.ubuntu.com/ubuntu noble-updates/multiverse amd64 Packages [45.4 kB]
+Get:23 http://azure.archive.ubuntu.com/ubuntu noble-updates/multiverse Translation-en [12.3 kB]
+Get:24 http://azure.archive.ubuntu.com/ubuntu noble-updates/multiverse amd64 Components [940 B]
+Get:25 http://azure.archive.ubuntu.com/ubuntu noble-backports/main amd64 Components [5764 B]
+Get:26 http://azure.archive.ubuntu.com/ubuntu noble-backports/universe amd64 Packages [31.0 kB]
+Get:27 http://azure.archive.ubuntu.com/ubuntu noble-backports/universe amd64 Components [12.6 kB]
+Get:28 http://azure.archive.ubuntu.com/ubuntu noble-security/main amd64 Packages [927 kB]
+Get:29 http://azure.archive.ubuntu.com/ubuntu noble-security/main Translation-en [201 kB]
+Get:30 http://azure.archive.ubuntu.com/ubuntu noble-security/main amd64 Components [46.4 kB]
+Get:31 http://azure.archive.ubuntu.com/ubuntu noble-security/universe amd64 Packages [1199 kB]
+Get:32 http://azure.archive.ubuntu.com/ubuntu noble-security/universe Translation-en [239 kB]
+Get:33 http://azure.archive.ubuntu.com/ubuntu noble-security/universe amd64 Components [76.3 kB]
+Get:34 http://azure.archive.ubuntu.com/ubuntu noble-security/restricted amd64 Packages [1320 kB]
+Get:35 http://azure.archive.ubuntu.com/ubuntu noble-security/restricted Translation-en [302 kB]
+Get:36 http://azure.archive.ubuntu.com/ubuntu noble-security/multiverse amd64 Packages [40.3 kB]
+Get:37 http://azure.archive.ubuntu.com/ubuntu noble-security/multiverse Translation-en [10.6 kB]
 Get:38 https://dl.google.com/linux/chrome-stable/deb stable/main amd64 Packages [1407 B]
-Fetched 11.2 MB in 1s (8844 kB/s)
+Fetched 11.2 MB in 1s (8654 kB/s)
 Reading package lists...
 Reading package lists...
 Building dependency tree...
@@ -97,7 +99,7 @@ Get:7 http://azure.archive.ubuntu.com/ubuntu noble/main amd64 xfonts-encodings a
 Get:8 http://azure.archive.ubuntu.com/ubuntu noble/main amd64 xfonts-utils amd64 1:7.7+6build3 [94.4 kB]
 Get:9 http://azure.archive.ubuntu.com/ubuntu noble/universe amd64 xfonts-cyrillic all 1:1.0.5+nmu1 [384 kB]
 Get:10 http://azure.archive.ubuntu.com/ubuntu noble/main amd64 xfonts-scalable all 1:1.0.3-1.3 [304 kB]
-Fetched 21.1 MB in 1s (18.7 MB/s)
+Fetched 21.1 MB in 1s (25.0 MB/s)
 Selecting previously unselected package fonts-ipafont-gothic.
 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 202954 files and directories currently installed.)
 Preparing to unpack .../0-fonts-ipafont-gothic_00303-21ubuntu1_all.deb ...
@@ -196,25 +198,23 @@ Chrome Headless Shell 145.0.7632.6 (playwright chromium-headless-shell v1208) do
 
 [1A[2K[WebServer] [1m[33mPrebundling has been configured but will not be used because caching has been disabled.[39m[22m
 
-[1A[2K[WebServer] [1m[31m[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mTS2677: A type predicate's type must be assignable to its parameter's type.
-[WebServer]   Type 'LegacyOrderListItem' is not assignable to type '{ total: number; currencyCode: string | null | undefined; billingDocumentId: number | null | undefined; fiscalDocumentId: number | null | undefined; billingDocumentStatus: string | null | undefined; ... 9 more ...; importStatus?: string | null; }'.
-[WebServer]     Property 'currencyCode' is optional in type 'LegacyOrderListItem' but required in type '{ total: number; currencyCode: string | null | undefined; billingDocumentId: number | null | undefined; fiscalDocumentId: number | null | undefined; billingDocumentStatus: string | null | undefined; ... 9 more ...; importStatus?: string | ... 1 more ... | undefined; }'.[0m [1m[35m[plugin angular-compiler][0m
-[WebServer] 
-[WebServer]     src/app/features/orders/components/send-order-debt-summary-button.component.ts:273:34:
-[WebServer] [37m      273 │ ....filter((order): order is [32mLegacyOrderListItem[37m => order !== null);
-[WebServer]           ╵                              [32m~~~~~~~~~~~~~~~~~~~[0m
-[WebServer] 
-[WebServer] 
-[WebServer] [31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mTS2345: Argument of type '({ total: number; currencyCode: string | null | undefined; billingDocumentId: number | null | undefined; fiscalDocumentId: number | null | undefined; billingDocumentStatus: string | null | undefined; ... 9 more ...; importStatus?: string | ... 1 more ... | undefined; } | null)[]' is not assignable to parameter of type 'readonly LegacyOrderListItem[]'.
-[WebServer]   Type '{ total: number; currencyCode: string | null | undefined; billingDocumentId: number | null | undefined; fiscalDocumentId: number | null | undefined; billingDocumentStatus: string | null | undefined; ... 9 more ...; importStatus?: string | ... 1 more ... | undefined; } | null' is not assignable to type 'LegacyOrderListItem'.
-[WebServer]     Type 'null' is not assignable to type 'LegacyOrderListItem'.[0m [1m[35m[plugin angular-compiler][0m
-[WebServer] 
-[WebServer]     src/app/features/orders/components/send-order-debt-summary-button.component.ts:277:30:
-[WebServer] [37m      277 │       this.eligibleOrders.set([32meligibleOrders[37m);
-[WebServer]           ╵                               [32m~~~~~~~~~~~~~~[0m
-[WebServer] 
-[WebServer] [39m[22m
 
-Error: Timed out waiting 120000ms from config.webServer.
+Running 16 tests using 1 worker
 
-[1A[2K
+[1A[2K[1/16] e2e/accounts-receivable/payment-application.spec.ts:39:5 › operator creates an AR invoice then records and applies a payment
+[1A[2K[2/16] e2e/accounts-receivable/payment-application.spec.ts:60:5 › operator can continue when the payment amount matches the operational outstanding balance
+[1A[2K[3/16] e2e/accounts-receivable/payment-application.spec.ts:80:5 › operator can register the full received amount even when it exceeds the current operational outstanding balance
+[1A[2K[4/16] e2e/accounts-receivable/payment-application.spec.ts:100:5 › operator can reopen a payment by paymentId and apply its remainder to another invoice from the same receiver
+[1A[2K[5/16] e2e/audit-viewer.spec.ts:5:5 › login then open audit viewer apply filter and inspect detail
+[1A[2K[6/16] e2e/catalogs-receiver-imports.spec.ts:7:5 › login then apply all eligible receiver import rows
+[1A[2K[7/16] e2e/catalogs-receivers.spec.ts:5:5 › login then create receiver and find it in search results
+[1A[2K[8/16] e2e/evidence-viewer.spec.ts:5:5 › login then inspect stamped fiscal evidence and open XML
+[1A[2K[9/16] e2e/fiscal-document-preparation.spec.ts:5:5 › fiscal document preparation guides SAT capture and submits only SAT codes
+[1A[2K[10/16] e2e/guardrails/operational-guardrails.spec.ts:16:5 › operator sees read-only fiscal document actions
+[1A[2K[11/16] e2e/guardrails/operational-guardrails.spec.ts:30:5 › supervisor sees provider unavailable feedback when invoice stamp fails
+[1A[2K[12/16] e2e/guardrails/operational-guardrails.spec.ts:43:5 › mixed receivers validation is shown during payment complement preparation
+[1A[2K[13/16] e2e/invoice-flow/invoice-stamping.spec.ts:5:5 › supervisor completes invoice stamping journey and sees stamp evidence
+[1A[2K[14/16] e2e/login-orders-fiscal.spec.ts:5:5 › login then import order then create billing then open fiscal preparation
+[1A[2K[15/16] e2e/orders-billing-conflict.spec.ts:4:5 › repeated billing-document creation reuses the existing document and continues to fiscal documents
+[1A[2K[16/16] e2e/payment-complement/payment-complement-stamping.spec.ts:5:5 › supervisor prepares and stamps a payment complement from a deterministic payment state
+[1A[2K  16 passed (45.6s)
