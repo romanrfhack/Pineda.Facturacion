@@ -75,7 +75,8 @@ const PREVIEW_SCENARIOS: readonly LoaderPreviewScenario[] = [
       <aside>
         <strong>Integración actual:</strong>
         las operaciones de escritura y los documentos de procesamiento prolongado activan automáticamente el loader.
-        Las consultas ordinarias se incorporarán de forma selectiva para evitar bloquear búsquedas rápidas o campos con autocompletado.
+        También se habilitó de forma selectiva en consultas perceptibles de Órdenes, CFDI emitidos, Cartera,
+        workspaces de receptor, Pagos, bandejas REP y Auditoría; autocompletados y lecturas silenciosas permanecen sin bloqueo global.
       </aside>
     </section>
   `,
