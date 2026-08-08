@@ -25,7 +25,8 @@ public sealed class PreviewOrderDebtSummaryService
             return new OrderDebtSummaryPreviewResult
             {
                 Outcome = buildResult.Outcome,
-                ErrorMessage = buildResult.ErrorMessage
+                ErrorMessage = buildResult.ErrorMessage,
+                ValidationIssues = buildResult.ValidationIssues
             };
         }
 
