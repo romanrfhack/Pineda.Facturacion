@@ -25,9 +25,9 @@ public sealed class OrderDebtTraceReader : IOrderDebtTraceReader
             .Where(value => !string.IsNullOrWhiteSpace(value))
             .Select(value => value.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+            .ToList();
 
-        if (normalizedIds.Length == 0)
+        if (normalizedIds.Count == 0)
         {
             return new Dictionary<string, OrderDebtTraceSnapshot>(StringComparer.OrdinalIgnoreCase);
         }
@@ -43,8 +43,8 @@ public sealed class OrderDebtTraceReader : IOrderDebtTraceReader
         var requestedImportRecordIds = requestedImportRecords
             .Select(record => record.Id)
             .Distinct()
-            .ToArray();
-        var requestedSalesOrders = requestedImportRecordIds.Length == 0
+            .ToList();
+        var requestedSalesOrders = requestedImportRecordIds.Count == 0
             ? []
             : (await _dbContext.SalesOrders
                 .AsNoTracking()
@@ -54,16 +54,16 @@ public sealed class OrderDebtTraceReader : IOrderDebtTraceReader
         var requestedSalesOrderIds = requestedSalesOrders
             .Select(order => order.Id)
             .Distinct()
-            .ToArray();
+            .ToList();
 
-        var primaryBillingDocuments = requestedSalesOrderIds.Length == 0
+        var primaryBillingDocuments = requestedSalesOrderIds.Count == 0
             ? []
             : (await _dbContext.BillingDocuments
                 .AsNoTracking()
                 .Where(document => requestedSalesOrderIds.Contains(document.SalesOrderId))
                 .ToListAsync(cancellationToken))
                 .ToArray();
-        var requestedItemLinks = requestedSalesOrderIds.Length == 0
+        var requestedItemLinks = requestedSalesOrderIds.Count == 0
             ? []
             : (await _dbContext.BillingDocumentItems
                 .AsNoTracking()
@@ -77,22 +77,22 @@ public sealed class OrderDebtTraceReader : IOrderDebtTraceReader
             .Concat(primaryBillingDocuments.Select(document => document.Id))
             .Concat(requestedItemLinks.Select(item => item.BillingDocumentId))
             .Distinct()
-            .ToArray();
-        var billingDocuments = candidateBillingDocumentIds.Length == 0
+            .ToList();
+        var billingDocuments = candidateBillingDocumentIds.Count == 0
             ? []
             : (await _dbContext.BillingDocuments
                 .AsNoTracking()
                 .Where(document => candidateBillingDocumentIds.Contains(document.Id))
                 .ToListAsync(cancellationToken))
                 .ToArray();
-        var billingDocumentItems = candidateBillingDocumentIds.Length == 0
+        var billingDocumentItems = candidateBillingDocumentIds.Count == 0
             ? []
             : (await _dbContext.BillingDocumentItems
                 .AsNoTracking()
                 .Where(item => candidateBillingDocumentIds.Contains(item.BillingDocumentId))
                 .ToListAsync(cancellationToken))
                 .ToArray();
-        var fiscalDocuments = candidateBillingDocumentIds.Length == 0
+        var fiscalDocuments = candidateBillingDocumentIds.Count == 0
             ? []
             : (await _dbContext.FiscalDocuments
                 .AsNoTracking()
@@ -102,15 +102,15 @@ public sealed class OrderDebtTraceReader : IOrderDebtTraceReader
         var fiscalDocumentIds = fiscalDocuments
             .Select(document => document.Id)
             .Distinct()
-            .ToArray();
-        var fiscalStamps = fiscalDocumentIds.Length == 0
+            .ToList();
+        var fiscalStamps = fiscalDocumentIds.Count == 0
             ? []
             : (await _dbContext.FiscalStamps
                 .AsNoTracking()
                 .Where(stamp => fiscalDocumentIds.Contains(stamp.FiscalDocumentId))
                 .ToListAsync(cancellationToken))
                 .ToArray();
-        var receivableInvoices = fiscalDocumentIds.Length == 0
+        var receivableInvoices = fiscalDocumentIds.Count == 0
             ? []
             : (await _dbContext.AccountsReceivableInvoices
                 .AsNoTracking()
@@ -123,8 +123,8 @@ public sealed class OrderDebtTraceReader : IOrderDebtTraceReader
             .Concat(billingDocumentItems.Select(item => item.SalesOrderId))
             .Concat(requestedSalesOrderIds)
             .Distinct()
-            .ToArray();
-        var allSalesOrders = allAssociatedSalesOrderIds.Length == 0
+            .ToList();
+        var allSalesOrders = allAssociatedSalesOrderIds.Count == 0
             ? []
             : (await _dbContext.SalesOrders
                 .AsNoTracking()
@@ -134,8 +134,8 @@ public sealed class OrderDebtTraceReader : IOrderDebtTraceReader
         var allImportRecordIds = allSalesOrders
             .Select(order => order.LegacyImportRecordId)
             .Distinct()
-            .ToArray();
-        var allImportRecords = allImportRecordIds.Length == 0
+            .ToList();
+        var allImportRecords = allImportRecordIds.Count == 0
             ? []
             : (await _dbContext.LegacyImportRecords
                 .AsNoTracking()
