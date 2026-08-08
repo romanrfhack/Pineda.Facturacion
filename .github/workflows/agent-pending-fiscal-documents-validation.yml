@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 jobs:
-  diagnose-backend:
+  validate:
     runs-on: ubuntu-latest
     services:
       mysql:
@@ -37,73 +37,78 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "10.0.x"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
 
-      - name: Run backend diagnostics
-        id: diagnose
+      - name: Validate solution
+        id: validate
         shell: bash
         run: |
           set +e
+          : > final-validation.log
+          overall=0
 
-          dotnet restore Pineda.Facturacion.slnx > backend-restore.log 2>&1
-          restore_code=$?
+          run_logged() {
+            label="$1"
+            shift
+            printf '\n===== %s =====\n' "$label" | tee -a final-validation.log
+            "$@" 2>&1 | tee -a final-validation.log
+            code=${PIPESTATUS[0]}
+            printf '%s=%s\n' "$label" "$code" >> final-status.env
+            if [ "$code" -ne 0 ]; then
+              overall=1
+            fi
+          }
 
-          dotnet build -c Release Pineda.Facturacion.slnx --no-restore > backend-build.log 2>&1
-          build_code=$?
+          run_logged "dotnet_restore" dotnet restore Pineda.Facturacion.slnx
+          run_logged "dotnet_build" dotnet build -c Release Pineda.Facturacion.slnx --no-restore
+          run_logged "dotnet_test" dotnet test -c Release Pineda.Facturacion.slnx --no-build
+          run_logged "mysql_tests" bash -lc 'export PINEDA_FACTURACION_RUN_MYSQL_TESTS=true; export PINEDA_FACTURACION_MYSQL_TEST_CONNECTION="Server=127.0.0.1;Port=3306;User ID=root;Password=;AllowPublicKeyRetrieval=True;SslMode=None;"; dotnet test -c Release tests/Pineda.Facturacion.IntegrationTests/Pineda.Facturacion.IntegrationTests.csproj --filter "Category=MySqlIntegration" --no-build'
+          run_logged "npm_ci" bash -lc 'cd frontend && npm ci'
+          run_logged "frontend_build" bash -lc 'cd frontend && npm run build'
+          run_logged "frontend_unit_tests" bash -lc 'cd frontend && npm run test'
+          run_logged "playwright_install" bash -lc 'cd frontend && npx playwright install --with-deps chromium'
+          run_logged "frontend_e2e" bash -lc 'cd frontend && npm run e2e:ci'
 
-          dotnet test -c Release Pineda.Facturacion.slnx --no-build > backend-test.log 2>&1
-          test_code=$?
-
-          export PINEDA_FACTURACION_RUN_MYSQL_TESTS=true
-          export PINEDA_FACTURACION_MYSQL_TEST_CONNECTION="Server=127.0.0.1;Port=3306;User ID=root;Password=;AllowPublicKeyRetrieval=True;SslMode=None;"
-          dotnet test -c Release tests/Pineda.Facturacion.IntegrationTests/Pineda.Facturacion.IntegrationTests.csproj --filter "Category=MySqlIntegration" --no-build > mysql-test.log 2>&1
-          mysql_code=$?
-
-          printf 'restore=%s\nbuild=%s\ntest=%s\nmysql=%s\n' \
-            "$restore_code" "$build_code" "$test_code" "$mysql_code" > backend-status.env
-
-          echo "restore_code=$restore_code" >> "$GITHUB_OUTPUT"
-          echo "build_code=$build_code" >> "$GITHUB_OUTPUT"
-          echo "test_code=$test_code" >> "$GITHUB_OUTPUT"
-          echo "mysql_code=$mysql_code" >> "$GITHUB_OUTPUT"
+          echo "overall_status=$overall" >> "$GITHUB_OUTPUT"
           exit 0
 
-      - name: Persist backend diagnostics
+      - name: Persist final validation evidence
         if: always()
         shell: bash
         env:
+          OVERALL_STATUS: ${{ steps.validate.outputs.overall_status }}
           VALIDATED_SHA: ${{ github.sha }}
-          RESTORE_CODE: ${{ steps.diagnose.outputs.restore_code }}
-          BUILD_CODE: ${{ steps.diagnose.outputs.build_code }}
-          TEST_CODE: ${{ steps.diagnose.outputs.test_code }}
-          MYSQL_CODE: ${{ steps.diagnose.outputs.mysql_code }}
         run: |
           set -euo pipefail
           mkdir -p .agent-ci
-          tail -n 500 backend-restore.log > .agent-ci/backend-restore-tail.txt
-          tail -n 500 backend-build.log > .agent-ci/backend-build-tail.txt
-          tail -n 500 backend-test.log > .agent-ci/backend-test-tail.txt
-          tail -n 500 mysql-test.log > .agent-ci/mysql-test-tail.txt
+          tail -n 500 final-validation.log > .agent-ci/final-validation-log-tail.txt
 
-          cat > .agent-ci/backend-diagnostic-result.md <<EOF
-          # Pending fiscal documents backend diagnostics
+          if [ "$OVERALL_STATUS" = "0" ]; then
+            result="success"
+          else
+            result="failure"
+          fi
+
+          cat > .agent-ci/final-validation-result.md <<EOF
+          # Pending fiscal documents final validation
 
           - Commit validated: $VALIDATED_SHA
-          - Restore exit code: $RESTORE_CODE
-          - Build exit code: $BUILD_CODE
-          - Test exit code: $TEST_CODE
-          - MySQL exit code: $MYSQL_CODE
+          - Result: $result
+
+          ## Exit codes
           EOF
+          cat final-status.env >> .agent-ci/final-validation-result.md
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .agent-ci/backend-diagnostic-result.md \
-            .agent-ci/backend-restore-tail.txt \
-            .agent-ci/backend-build-tail.txt \
-            .agent-ci/backend-test-tail.txt \
-            .agent-ci/mysql-test-tail.txt
-          git commit -m "ci: record pending fiscal backend diagnostics [skip ci]"
+          git add .agent-ci/final-validation-result.md .agent-ci/final-validation-log-tail.txt
+          git commit -m "ci: record final pending fiscal validation [skip ci]"
           git push
 
-      - name: Fail when backend diagnostics fail
-        if: steps.diagnose.outputs.restore_code != '0' || steps.diagnose.outputs.build_code != '0' || steps.diagnose.outputs.test_code != '0' || steps.diagnose.outputs.mysql_code != '0'
+      - name: Fail when validation failed
+        if: steps.validate.outputs.overall_status != '0'
         run: exit 1
