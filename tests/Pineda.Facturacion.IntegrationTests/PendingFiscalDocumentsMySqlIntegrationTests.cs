@@ -1,4 +1,8 @@
+using System.Net;
+using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
+using Pineda.Facturacion.Api.Endpoints;
+using Pineda.Facturacion.Application.Security;
 using Pineda.Facturacion.Application.UseCases.FiscalDocuments;
 using Pineda.Facturacion.Domain.Entities;
 using Pineda.Facturacion.Domain.Enums;
@@ -18,7 +22,7 @@ public sealed class PendingFiscalDocumentsMySqlIntegrationTests
     }
 
     [MySqlFact]
-    public async Task PendingInbox_QueryExecutesOnMySql_AndExcludesSuccessfulStampEvidence()
+    public async Task PendingInbox_QueryExecutesOnMySql_ExcludesStampEvidence_AndAllowsAuditorRead()
     {
         await _fixture.ResetDatabaseAsync();
         await using var factory = _fixture.CreateApiFactory();
@@ -61,29 +65,51 @@ public sealed class PendingFiscalDocumentsMySqlIntegrationTests
             await db.SaveChangesAsync();
         }
 
-        await using var queryDb = _fixture.CreateDbContext();
-        var repository = new PendingFiscalDocumentRepository(queryDb);
-        var result = await repository.SearchAsync(new SearchPendingFiscalDocumentsFilter
+        await using (var queryDb = _fixture.CreateDbContext())
         {
-            Sort = PendingFiscalDocumentSort.LastActivityDesc
-        });
-
-        Assert.Equal(2, result.TotalCount);
-        Assert.Collection(
-            result.Items,
-            item =>
+            var repository = new PendingFiscalDocumentRepository(queryDb);
+            var result = await repository.SearchAsync(new SearchPendingFiscalDocumentsFilter
             {
-                Assert.Equal(8102, item.BillingDocumentId);
-                Assert.Equal(18102, item.FiscalDocumentId);
-                Assert.Equal(PendingFiscalDocumentWorkStatus.ReadyForStamping, item.WorkStatus);
-            },
-            item =>
-            {
-                Assert.Equal(8101, item.BillingDocumentId);
-                Assert.Null(item.FiscalDocumentId);
-                Assert.Equal(PendingFiscalDocumentWorkStatus.PendingPreparation, item.WorkStatus);
+                Sort = PendingFiscalDocumentSort.LastActivityDesc
             });
-        Assert.DoesNotContain(result.Items, item => item.BillingDocumentId == 8103);
+
+            Assert.Equal(2, result.TotalCount);
+            Assert.Collection(
+                result.Items,
+                item =>
+                {
+                    Assert.Equal(8102, item.BillingDocumentId);
+                    Assert.Equal(18102, item.FiscalDocumentId);
+                    Assert.Equal(PendingFiscalDocumentWorkStatus.ReadyForStamping, item.WorkStatus);
+                },
+                item =>
+                {
+                    Assert.Equal(8101, item.BillingDocumentId);
+                    Assert.Null(item.FiscalDocumentId);
+                    Assert.Equal(PendingFiscalDocumentWorkStatus.PendingPreparation, item.WorkStatus);
+                });
+            Assert.DoesNotContain(result.Items, item => item.BillingDocumentId == 8103);
+        }
+
+        await factory.SeedUserAsync(
+            "auditor-pending-documents",
+            "Audit123!",
+            isActive: true,
+            AppRoleNames.Auditor);
+        var client = await factory.CreateAuthenticatedClientAsync(
+            "auditor-pending-documents",
+            "Audit123!");
+
+        var response = await client.GetAsync(
+            "/api/fiscal-documents/pending-stamping?page=1&pageSize=25&workStatus=All&sort=LastActivityDesc");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<PendingFiscalDocumentListResponse>();
+        Assert.NotNull(body);
+        Assert.Equal(2, body!.TotalCount);
+        Assert.Contains(body.Items, item => item.BillingDocumentId == 8101 && item.FiscalDocumentId is null);
+        Assert.Contains(body.Items, item => item.BillingDocumentId == 8102 && item.FiscalDocumentId == 18102);
+        Assert.DoesNotContain(body.Items, item => item.BillingDocumentId == 8103);
     }
 
     private static void AddDraftBillingDocument(
