@@ -17,7 +17,7 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
   {
     label: 'Documentos fiscales',
     iconText: 'FD',
-    route: '/app/fiscal-documents',
+    route: '/app/fiscal-documents/open',
     roles: [AppRole.Admin, AppRole.FiscalSupervisor, AppRole.FiscalOperator, AppRole.Auditor]
   },
   {
