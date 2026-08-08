@@ -216,7 +216,11 @@ public sealed class PendingFiscalDocumentRepository : IPendingFiscalDocumentRepo
                 .ThenByDescending(row => row.LastActivityAtUtc)
                 .ThenByDescending(row => row.BillingDocumentId),
             _ => candidates
-                .OrderByDescending(row => row.LastActivityAtUtc)
+                .OrderBy(row => row.FiscalDocumentStatus == FiscalDocumentStatus.StampingRejected
+                    || row.FiscalDocumentStatus == FiscalDocumentStatus.DiscardedUnstamped
+                        ? 0
+                        : 1)
+                .ThenByDescending(row => row.LastActivityAtUtc)
                 .ThenByDescending(row => row.BillingDocumentId)
         };
     }
