@@ -105,7 +105,7 @@ public sealed class PendingFiscalDocumentRepository : IPendingFiscalDocumentRepo
         var pageBillingDocumentIds = pageRows
             .Select(row => row.BillingDocumentId)
             .Distinct()
-            .ToArray();
+            .ToList();
 
         var itemOrderLinks = await (
                 from item in _dbContext.BillingDocumentItems.AsNoTracking()
