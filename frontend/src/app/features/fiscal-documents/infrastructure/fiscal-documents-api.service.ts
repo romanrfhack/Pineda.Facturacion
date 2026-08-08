@@ -3,6 +3,7 @@ import { HttpClient, HttpContext } from '@angular/common/http';
 import { Observable, timeout } from 'rxjs';
 import { buildApiUrl } from '../../../core/config/api-url';
 import { SUPPRESS_GLOBAL_ERROR_TOAST } from '../../../core/http/api-error-context.tokens';
+import { createGlobalLoaderContext } from '../../../core/http/global-loader-context.tokens';
 import {
   BillingDocumentLookupResponse,
   GroupedBillingDocumentSearchResponse,
@@ -88,7 +89,15 @@ export class FiscalDocumentsApiService {
     setOptionalQuery(query, 'specialFieldCode', filters.specialFieldCode);
     setOptionalQuery(query, 'specialFieldValue', filters.specialFieldValue);
 
-    return this.http.get<IssuedFiscalDocumentListResponse>(buildApiUrl(`/fiscal-documents/issued?${query.toString()}`));
+    return this.http.get<IssuedFiscalDocumentListResponse>(
+      buildApiUrl(`/fiscal-documents/issued?${query.toString()}`),
+      {
+        context: createGlobalLoaderContext({
+          message: 'Consultando CFDI emitidos',
+          detail: 'Estamos recuperando los comprobantes que coinciden con los filtros seleccionados.'
+        })
+      }
+    );
   }
 
   getIssuedSpecialFieldOptions(): Observable<IssuedFiscalDocumentSpecialFieldOptionResponse[]> {
