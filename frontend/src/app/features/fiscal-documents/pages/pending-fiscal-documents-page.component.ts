@@ -30,9 +30,13 @@ import {
             corregirse antes del timbrado.
           </p>
         </div>
-        <a class="button-link secondary" routerLink="/app/fiscal-documents">
-          Búsqueda manual
-        </a>
+        @if (!permissionService.isReadOnlyAuditor()) {
+          <a class="button-link secondary" routerLink="/app/fiscal-documents">
+            Búsqueda manual
+          </a>
+        } @else {
+          <span class="read-only-label">Vista de solo consulta</span>
+        }
       </header>
 
       <section class="summary-card" aria-live="polite">
