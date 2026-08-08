@@ -37,6 +37,12 @@ public sealed class PendingFiscalDocumentRepository : IPendingFiscalDocumentRepo
                     || fiscalDocument.Status == FiscalDocumentStatus.ReadyForStamping
                     || fiscalDocument.Status == FiscalDocumentStatus.StampingRejected
                     || fiscalDocument.Status == FiscalDocumentStatus.DiscardedUnstamped)
+                && (fiscalDocument == null
+                    || !_dbContext.FiscalStamps.AsNoTracking().Any(stamp =>
+                        stamp.FiscalDocumentId == fiscalDocument.Id
+                        && stamp.Status == FiscalStampStatus.Succeeded
+                        && stamp.Uuid != null
+                        && stamp.Uuid != string.Empty))
             select new PendingFiscalDocumentBaseRow
             {
                 BillingDocumentId = billingDocument.Id,
