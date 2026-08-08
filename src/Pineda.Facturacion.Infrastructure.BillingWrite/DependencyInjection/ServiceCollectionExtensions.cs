@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
+using Pineda.Facturacion.Application.UseCases.FiscalDocuments;
 using Pineda.Facturacion.Application.UseCases.Orders;
 using Pineda.Facturacion.Infrastructure.BillingWrite.Operations.AccountsReceivable;
 using Pineda.Facturacion.Infrastructure.BillingWrite.Operations.ProductFiscalProfiles;
@@ -53,6 +54,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IImportedLegacyOrderLookupRepository, ImportedLegacyOrderLookupRepository>();
         services.AddScoped<IOrderDebtTraceReader, OrderDebtTraceReader>();
         services.AddScoped<OrderDebtSummaryEligibilityService>();
+        services.AddScoped<IPendingFiscalDocumentRepository, PendingFiscalDocumentRepository>();
+        services.AddScoped<SearchPendingFiscalDocumentsService>();
         services.AddScoped<IFiscalDocumentRepository, FiscalDocumentRepository>();
         services.AddScoped<IFiscalStampRepository, FiscalStampRepository>();
         services.AddScoped<IFiscalCancellationRepository, FiscalCancellationRepository>();
