@@ -3,6 +3,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
 import { FiscalDocumentsApiService } from './fiscal-documents-api.service';
 import { SUPPRESS_GLOBAL_ERROR_TOAST } from '../../../core/http/api-error-context.tokens';
+import { GLOBAL_LOADER_OPTIONS } from '../../../core/http/global-loader-context.tokens';
 
 describe('FiscalDocumentsApiService', () => {
   beforeEach(() => {
@@ -219,7 +220,7 @@ describe('FiscalDocumentsApiService', () => {
     httpTesting.verify();
   });
 
-  it('searches issued CFDI with paged filters', () => {
+  it('searches issued CFDI with paged filters and a contextual global loader', () => {
     const service = TestBed.inject(FiscalDocumentsApiService);
     const httpTesting = TestBed.inject(HttpTestingController);
 
@@ -237,6 +238,9 @@ describe('FiscalDocumentsApiService', () => {
 
     const req = httpTesting.expectOne('/api/fiscal-documents/issued?page=2&pageSize=10&fromDate=2026-03-01&toDate=2026-03-24&receiverRfc=BBB010101BBB&uuid=UUID-1&status=Stamped&specialFieldCode=AGENTE&specialFieldValue=Juan');
     expect(req.request.method).toBe('GET');
+    expect(req.request.context.get(GLOBAL_LOADER_OPTIONS)).toMatchObject({
+      message: 'Consultando CFDI emitidos'
+    });
     httpTesting.verify();
   });
 
