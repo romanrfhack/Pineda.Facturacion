@@ -1,6 +1,6 @@
 name: Agent Legacy Payment Prefill
 
-# Validation after moving import enrichment into the primary LegacyOrderReader.
+# Final validation after isolating advisory prefill from existing fiscal-document flows.
 on:
   push:
     branches:
@@ -54,6 +54,7 @@ jobs:
           python3 .github/agent/fix-legacy-payment-script.py
           python3 .github/agent/legacy-payment-prefill.py
           python3 .github/agent/postfix-legacy-payment-implementation.py
+          python3 .github/agent/postfix-legacy-payment-frontend.py
 
       - name: Backend restore and pre-migration build
         shell: bash
@@ -119,6 +120,7 @@ jobs:
           rm .github/agent/legacy-payment-prefill.py
           rm .github/agent/fix-legacy-payment-script.py
           rm .github/agent/postfix-legacy-payment-implementation.py
+          rm .github/agent/postfix-legacy-payment-frontend.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
