@@ -11,5 +11,15 @@ new_call = '''replace_once(
     "        builder.Property(x => x.PaymentCondition)\\n            .HasColumnName(\\\"payment_condition\\\")\\n            .HasMaxLength(10)\\n            .HasColumnType(\\\"varchar(10)\\\")\\n            .IsRequired();\\n\\n        builder.Property(x => x.PriceListCode)",
     "        builder.Property(x => x.PaymentCondition)\\n            .HasColumnName(\\\"payment_condition\\\")\\n            .HasMaxLength(10)\\n            .HasColumnType(\\\"varchar(10)\\\")\\n            .IsRequired();\\n\\n        builder.Property(x => x.LegacyPaymentCode)\\n            .HasColumnName(\\\"legacy_payment_code\\\")\\n            .HasMaxLength(15)\\n            .HasColumnType(\\\"varchar(15)\\\")\\n            .IsRequired(false);\\n\\n        builder.Property(x => x.LegacyPaymentDescription)\\n            .HasColumnName(\\\"legacy_payment_description\\\")\\n            .HasMaxLength(60)\\n            .HasColumnType(\\\"varchar(60)\\\")\\n            .IsRequired(false);\\n\\n        builder.Property(x => x.PriceListCode)")'''
 text = text[:start] + new_call + text[end:]
+
+endpoint_old = '''using Pineda.Facturacion.Api.Security;
+using Pineda.Facturacion.Application.UseCases.BillingDocuments;'''
+endpoint_new = '''using Pineda.Facturacion.Api.Security;
+using Pineda.Facturacion.Application.Security;
+using Pineda.Facturacion.Application.UseCases.BillingDocuments;'''
+if endpoint_old not in text:
+    raise RuntimeError('Expected endpoint authorization using block not found.')
+text = text.replace(endpoint_old, endpoint_new, 1)
+
 path.write_text(text, encoding='utf-8')
-print('Adjusted SalesOrderConfiguration patch.')
+print('Adjusted SalesOrderConfiguration patch and endpoint authorization namespace.')
