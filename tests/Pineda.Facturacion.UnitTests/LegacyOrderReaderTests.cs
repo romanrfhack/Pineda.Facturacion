@@ -80,6 +80,25 @@ public class LegacyOrderReaderTests
     }
 
     [Fact]
+    public void BuildHeaderSql_Joins_Vendedores_For_Legacy_Payment_Evidence()
+    {
+        var schema = CreateResolvedSchema(
+            ordersTableName: "Pedidos",
+            customersTableName: "Clientes",
+            orderItemsTableName: "PedidosDet",
+            articlesTableName: "Articulos",
+            articleNamesTableName: "NombresArticulos",
+            orderDateColumnName: "FechaPedido");
+
+        var sql = LegacyOrderReader.BuildHeaderSql(schema);
+
+        Assert.Contains("LEFT JOIN `Vendedores` v", sql, StringComparison.Ordinal);
+        Assert.Contains("v.`cveVendedor` = p.`cveVendedor`", sql, StringComparison.Ordinal);
+        Assert.Contains("AS LegacyPaymentCode", sql, StringComparison.Ordinal);
+        Assert.Contains("AS LegacyPaymentDescription", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildDetailSql_Uses_Resolved_Table_Names_And_Effective_Price()
     {
         var schema = CreateResolvedSchema(
@@ -380,6 +399,7 @@ public class LegacyOrderReaderTests
                 ("TipoDocPedido", "TipoDocPedido"),
                 ("noCliente", "noCliente"),
                 ("condPagoPedido", "condPagoPedido"),
+                ("cveVendedor", "cveVendedor"),
                 ("TipoEntrega", "TipoEntrega"),
                 ("MontoPedido", "MontoPedido")),
             CreateTable(
@@ -393,6 +413,11 @@ public class LegacyOrderReaderTests
                 ("RFC", "RFC"),
                 ("TipoCliente", "TipoCliente"),
                 ("noCliente", "noCliente")),
+            CreateTable(
+                "vendedores",
+                "Vendedores",
+                ("cveVendedor", "cveVendedor"),
+                ("Vendedor", "Vendedor")),
             CreateTable(
                 "pedidosdet",
                 orderItemsTableName,

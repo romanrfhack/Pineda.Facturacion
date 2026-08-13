@@ -26,6 +26,11 @@ public static class ServiceCollectionExtensions
             var options = serviceProvider.GetRequiredService<IOptions<LegacyReadOptions>>().Value;
             return new LegacyOrderReader(options);
         });
+        services.AddScoped<ILegacyOrderPaymentReader>(serviceProvider =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<LegacyReadOptions>>().Value;
+            return new LegacyOrderPaymentReader(options);
+        });
 
         return services;
     }

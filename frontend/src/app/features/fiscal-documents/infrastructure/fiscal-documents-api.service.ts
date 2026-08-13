@@ -6,6 +6,7 @@ import { SUPPRESS_GLOBAL_ERROR_TOAST } from '../../../core/http/api-error-contex
 import { createGlobalLoaderContext } from '../../../core/http/global-loader-context.tokens';
 import {
   BillingDocumentLookupResponse,
+  BillingDocumentLegacyPaymentSuggestionResponse,
   GroupedBillingDocumentSearchResponse,
   AssignPendingBillingItemsRequest,
   AssignPendingBillingItemsResponse,
@@ -60,6 +61,15 @@ export class FiscalDocumentsApiService {
 
   getBillingDocumentById(billingDocumentId: number): Observable<BillingDocumentLookupResponse> {
     return this.http.get<BillingDocumentLookupResponse>(buildApiUrl(`/billing-documents/${billingDocumentId}`));
+  }
+
+  getBillingDocumentPaymentSuggestion(
+    billingDocumentId: number,
+  ): Observable<BillingDocumentLegacyPaymentSuggestionResponse> {
+    return this.http.get<BillingDocumentLegacyPaymentSuggestionResponse>(
+      buildApiUrl(`/billing-documents/${billingDocumentId}/payment-suggestion`),
+      { context: new HttpContext().set(SUPPRESS_GLOBAL_ERROR_TOAST, true) },
+    );
   }
 
   searchBillingDocuments(query: string): Observable<BillingDocumentLookupResponse[]> {

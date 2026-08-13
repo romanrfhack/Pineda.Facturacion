@@ -5,6 +5,7 @@ internal sealed class LegacyOrderReadSchema
     public LegacyOrderReadSchema(
         ResolvedLegacyTable orders,
         ResolvedLegacyTable customers,
+        ResolvedLegacyTable vendors,
         ResolvedLegacyTable orderItems,
         ResolvedLegacyTable articles,
         ResolvedLegacyTable articleNames,
@@ -14,6 +15,7 @@ internal sealed class LegacyOrderReadSchema
     {
         Orders = orders;
         Customers = customers;
+        Vendors = vendors;
         OrderItems = orderItems;
         Articles = articles;
         ArticleNames = articleNames;
@@ -25,6 +27,8 @@ internal sealed class LegacyOrderReadSchema
     public ResolvedLegacyTable Orders { get; }
 
     public ResolvedLegacyTable Customers { get; }
+
+    public ResolvedLegacyTable Vendors { get; }
 
     public ResolvedLegacyTable OrderItems { get; }
 

@@ -18,6 +18,10 @@ public class LegacyOrderReadModel
 
     public string PaymentCondition { get; set; } = string.Empty;
 
+    public string? LegacyPaymentCode { get; set; }
+
+    public string? LegacyPaymentDescription { get; set; }
+
     public string? PriceListCode { get; set; }
 
     public string? DeliveryType { get; set; }

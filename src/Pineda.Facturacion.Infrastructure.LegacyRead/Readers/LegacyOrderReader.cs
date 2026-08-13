@@ -124,6 +124,8 @@ public class LegacyOrderReader : ILegacyOrderReader
             CustomerName = GetRequiredString(reader, "CustomerName"),
             CustomerRfc = GetNullableString(reader, "CustomerRfc"),
             PaymentCondition = GetRequiredString(reader, "PaymentCondition"),
+            LegacyPaymentCode = GetNullableString(reader, "LegacyPaymentCode"),
+            LegacyPaymentDescription = GetNullableString(reader, "LegacyPaymentDescription"),
             PriceListCode = GetNullableString(reader, "PriceListCode"),
             DeliveryType = GetNullableString(reader, "DeliveryType"),
             CurrencyCode = "MXN",
@@ -190,12 +192,17 @@ public class LegacyOrderReader : ILegacyOrderReader
         var orders = await ResolveTableAsync(
             connection,
             "pedidos",
-            ["noPedido", "refPedido", "TipoPedido", "TipoDocPedido", "noCliente", "condPagoPedido", "TipoEntrega", "MontoPedido"],
+            ["noPedido", "refPedido", "TipoPedido", "TipoDocPedido", "noCliente", "condPagoPedido", "TipoEntrega", "MontoPedido", "cveVendedor"],
             cancellationToken);
         var customers = await ResolveTableAsync(
             connection,
             "clientes",
             ["XRazonSocial", "Nombre", "Paterno", "Materno", "Cliente", "RFC", "TipoCliente", "noCliente"],
+            cancellationToken);
+        var vendors = await ResolveTableAsync(
+            connection,
+            "vendedores",
+            ["cveVendedor", "Vendedor"],
             cancellationToken);
         var orderItems = await ResolveTableAsync(
             connection,
@@ -229,7 +236,7 @@ public class LegacyOrderReader : ILegacyOrderReader
             OrderDateColumnCandidates,
             cancellationToken);
 
-        _schema = new LegacyOrderReadSchema(orders, customers, orderItems, articles, articleNames, invoices, salesNotes, orderDateColumn);
+        _schema = new LegacyOrderReadSchema(orders, customers, vendors, orderItems, articles, articleNames, invoices, salesNotes, orderDateColumn);
         return _schema;
     }
 
@@ -256,6 +263,8 @@ public class LegacyOrderReader : ILegacyOrderReader
                 {BuildCustomerNameExpression(schema)} AS CustomerName,
                 c.{Q(schema.Customers["RFC"])} AS CustomerRfc,
                 p.{Q(schema.Orders["condPagoPedido"])} AS PaymentCondition,
+                NULLIF(TRIM(p.{Q(schema.Orders["cveVendedor"])}), '') AS LegacyPaymentCode,
+                NULLIF(TRIM(v.{Q(schema.Vendors["Vendedor"])}), '') AS LegacyPaymentDescription,
                 c.{Q(schema.Customers["TipoCliente"])} AS PriceListCode,
                 p.{Q(schema.Orders["TipoEntrega"])} AS DeliveryType,
                 COALESCE((
@@ -269,6 +278,8 @@ public class LegacyOrderReader : ILegacyOrderReader
             FROM {Q(schema.Orders.ActualName)} p
             INNER JOIN {Q(schema.Customers.ActualName)} c
                 ON p.{Q(schema.Orders["noCliente"])} = c.{Q(schema.Customers["noCliente"])}
+            LEFT JOIN {Q(schema.Vendors.ActualName)} v
+                ON v.{Q(schema.Vendors["cveVendedor"])} = p.{Q(schema.Orders["cveVendedor"])}
             WHERE p.{Q(schema.Orders["noPedido"])} = @legacyOrderId
               AND p.{Q(schema.Orders["noCliente"])} <> 0
               AND p.{Q(schema.Orders["MontoPedido"])} <> 0.00
