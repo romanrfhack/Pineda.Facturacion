@@ -1,6 +1,6 @@
 name: Agent Legacy Payment Prefill
 
-# Retry after endpoint authorization namespace fix.
+# Validation after moving import enrichment into the primary LegacyOrderReader.
 on:
   push:
     branches:
@@ -53,8 +53,9 @@ jobs:
           set -euo pipefail
           python3 .github/agent/fix-legacy-payment-script.py
           python3 .github/agent/legacy-payment-prefill.py
+          python3 .github/agent/postfix-legacy-payment-implementation.py
 
-      - name: Backend restore and build diagnostics
+      - name: Backend restore and pre-migration build
         shell: bash
         run: |
           set -euo pipefail
@@ -73,6 +74,12 @@ jobs:
             --output-dir Persistence/Migrations \
             --configuration Release \
             --no-build
+
+      - name: Rebuild with generated migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet build -c Release Pineda.Facturacion.slnx
 
       - name: Backend tests
         shell: bash
@@ -111,6 +118,7 @@ jobs:
           rm .github/workflows/agent-legacy-payment-prefill.yml
           rm .github/agent/legacy-payment-prefill.py
           rm .github/agent/fix-legacy-payment-script.py
+          rm .github/agent/postfix-legacy-payment-implementation.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
