@@ -53,26 +53,33 @@ jobs:
           python3 .github/agent/fix-legacy-payment-script.py
           python3 .github/agent/legacy-payment-prefill.py
 
-      - name: Generate EF migration
+      - name: Backend restore and build diagnostics
         shell: bash
         run: |
           set -euo pipefail
           dotnet tool restore
           dotnet restore Pineda.Facturacion.slnx
+          dotnet build -c Release Pineda.Facturacion.slnx
+
+      - name: Generate EF migration
+        shell: bash
+        run: |
+          set -euo pipefail
           dotnet ef migrations add AddLegacyPaymentSuggestionSnapshot \
             --project src/Pineda.Facturacion.Infrastructure.BillingWrite/Pineda.Facturacion.Infrastructure.BillingWrite.csproj \
             --startup-project src/Pineda.Facturacion.Api/Pineda.Facturacion.Api.csproj \
             --context BillingDbContext \
-            --output-dir Persistence/Migrations
+            --output-dir Persistence/Migrations \
+            --configuration Release \
+            --no-build
 
-      - name: Backend build and tests
+      - name: Backend tests
         shell: bash
         env:
           DOTNET_ENVIRONMENT: Development
           ASPNETCORE_ENVIRONMENT: Development
         run: |
           set -euo pipefail
-          dotnet build -c Release Pineda.Facturacion.slnx
           dotnet test -c Release Pineda.Facturacion.slnx --no-build
 
       - name: MySQL-backed integration subset
