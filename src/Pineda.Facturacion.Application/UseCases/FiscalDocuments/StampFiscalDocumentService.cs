@@ -284,16 +284,22 @@ public class StampFiscalDocumentService
             }
         }
 
+        // El timbrado es un efecto fiscal externo. Una vez que se inicia la transición a
+        // StampingRequested, la operación debe terminar aunque el cliente HTTP se desconecte o
+        // cancele la solicitud; de lo contrario el CFDI puede quedar atorado en StampingRequested
+        // o perderse la respuesta del PAC. El HttpClient del PAC mantiene su timeout propio.
+        var stampExecutionCancellationToken = CancellationToken.None;
+
         var requestStartedAtUtc = GetUtcNow();
         fiscalDocument.Status = FiscalDocumentStatus.StampingRequested;
         fiscalDocument.UpdatedAtUtc = requestStartedAtUtc;
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await _unitOfWork.SaveChangesAsync(stampExecutionCancellationToken);
 
         FiscalStampingGatewayResult gatewayResult;
 
         try
         {
-            gatewayResult = await _fiscalStampingGateway.StampAsync(stampingRequest!, cancellationToken);
+            gatewayResult = await _fiscalStampingGateway.StampAsync(stampingRequest!, stampExecutionCancellationToken);
         }
         catch
         {
@@ -350,10 +356,10 @@ public class StampFiscalDocumentService
 
         if (existingStamp is null)
         {
-            await _fiscalStampRepository.AddAsync(fiscalStamp, cancellationToken);
+            await _fiscalStampRepository.AddAsync(fiscalStamp, stampExecutionCancellationToken);
         }
 
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await _unitOfWork.SaveChangesAsync(stampExecutionCancellationToken);
 
         result.FiscalDocumentStatus = fiscalDocument.Status;
         result.FiscalStampId = fiscalStamp.Id;
