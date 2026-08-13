@@ -56,6 +56,18 @@ public class SalesOrderConfiguration : IEntityTypeConfiguration<SalesOrder>
             .HasColumnType("varchar(10)")
             .IsRequired();
 
+        builder.Property(x => x.LegacyPaymentCode)
+            .HasColumnName("legacy_payment_code")
+            .HasMaxLength(15)
+            .HasColumnType("varchar(15)")
+            .IsRequired(false);
+
+        builder.Property(x => x.LegacyPaymentDescription)
+            .HasColumnName("legacy_payment_description")
+            .HasMaxLength(60)
+            .HasColumnType("varchar(60)")
+            .IsRequired(false);
+
         builder.Property(x => x.PriceListCode)
             .HasColumnName("price_list_code")
             .HasMaxLength(10)

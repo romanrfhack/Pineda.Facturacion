@@ -126,6 +126,16 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         }),
       ),
       searchBillingDocuments: vi.fn().mockReturnValue(of([])),
+      getBillingDocumentPaymentSuggestion: vi.fn().mockReturnValue(
+        of({
+          status: 'Unknown',
+          paymentMethodSat: null,
+          paymentFormSat: null,
+          isCreditSale: null,
+          sourceDescription: null,
+          sourceOrderCount: 1,
+        }),
+      ),
       searchBillingDocumentsGrouped: vi.fn().mockReturnValue(
         of({
           query: '',

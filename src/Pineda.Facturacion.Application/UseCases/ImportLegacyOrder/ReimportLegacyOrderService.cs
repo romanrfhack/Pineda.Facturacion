@@ -394,6 +394,8 @@ public sealed class ReimportLegacyOrderService
         salesOrder.CustomerName = replacementSnapshot.CustomerName;
         salesOrder.CustomerRfc = replacementSnapshot.CustomerRfc;
         salesOrder.PaymentCondition = replacementSnapshot.PaymentCondition;
+        salesOrder.LegacyPaymentCode = replacementSnapshot.LegacyPaymentCode;
+        salesOrder.LegacyPaymentDescription = replacementSnapshot.LegacyPaymentDescription;
         salesOrder.PriceListCode = replacementSnapshot.PriceListCode;
         salesOrder.DeliveryType = replacementSnapshot.DeliveryType;
         salesOrder.CurrencyCode = replacementSnapshot.CurrencyCode;

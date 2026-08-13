@@ -15,6 +15,7 @@ import {
   BillingDocumentRemovedItemAssignmentTraceResponse,
   BillingDocumentSearchGroupResponse,
   BillingDocumentLookupResponse,
+  BillingDocumentLegacyPaymentSuggestionResponse,
   BillingDocumentLookupItemResponse,
   AssignPendingBillingItemsResponse,
   CancelFiscalDocumentRequest,
@@ -712,9 +713,26 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
                   </option>
                 }
               </select>
-              <small class="helper"
-                >Selecciona primero el método SAT para guiar la forma de pago.</small
-              >
+              @if (legacyPaymentSuggestion()?.status === 'Suggested') {
+                <small class="helper">
+                  Sugerido desde orden Legacy: {{ legacyPaymentSuggestion()?.sourceDescription }}.
+                  Puedes modificarlo antes de preparar el CFDI.
+                </small>
+              } @else if (legacyPaymentSuggestion()?.status === 'Mixed') {
+                <small class="helper">
+                  Las órdenes asociadas tienen distintas formas de pago registradas en Legacy;
+                  selecciona manualmente los datos fiscales.
+                </small>
+              } @else if (legacyPaymentSuggestion()?.status === 'Unknown') {
+                <small class="helper">
+                  No se encontró una forma de pago Legacy reconocida y común para todas las órdenes;
+                  selecciona manualmente los datos fiscales.
+                </small>
+              } @else {
+                <small class="helper"
+                  >Selecciona primero el método SAT para guiar la forma de pago.</small
+                >
+              }
             </label>
 
             <label>
@@ -2189,6 +2207,8 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected readonly specialFieldDrafts = signal<ReceiverSpecialFieldDraft[]>([]);
   protected readonly paymentMethodCatalog = signal<FiscalReceiverSatCatalogOption[]>([]);
   protected readonly paymentFormCatalog = signal<FiscalReceiverSatCatalogOption[]>([]);
+  protected readonly legacyPaymentSuggestion =
+    signal<BillingDocumentLegacyPaymentSuggestionResponse | null>(null);
   private readonly pendingPrepareRequest = signal<PrepareFiscalDocumentRequest | null>(null);
 
   protected readonly receiverQuery = signal('');
@@ -2209,6 +2229,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected emailBody = '';
   protected additionalLegacyOrderId = '';
   private paymentConditionEditedByUser = false;
+  private paymentFieldsEditedByUser = false;
 
   protected readonly activeIssuerLabel = computed(() => {
     const issuer = this.activeIssuer();
@@ -2344,12 +2365,14 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   }
 
   protected onPaymentMethodChange(value: string): void {
+    this.paymentFieldsEditedByUser = true;
     this.paymentMethodSat = normalizeSatCode(value);
     this.syncPaymentMethodDependencies(true);
     this.syncCreditSaleWithPaymentMethod();
   }
 
   protected onPaymentFormChange(value: string): void {
+    this.paymentFieldsEditedByUser = true;
     this.paymentFormSat = normalizeSatCode(value);
   }
 
@@ -2359,6 +2382,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   }
 
   protected onCreditSaleChange(value: boolean): void {
+    this.paymentFieldsEditedByUser = true;
     this.isCreditSale = value;
     this.syncPaymentMethodDependencies(true);
     this.paymentConditionEditedByUser = false;
@@ -2602,6 +2626,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     this.pendingBillingItemsError.set(null);
     this.selectedPendingBillingRemovalIds.set([]);
     this.resetReceiverSelectionState();
+    this.resetPaymentPreparationState();
     this.billingDocumentId.set(null);
     this.billingDocumentQuery = '';
     this.billingDocumentSearchGroups.set([]);
@@ -3811,6 +3836,8 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       const isDifferentBillingDocument =
         this.billingDocumentId() !== null &&
         this.billingDocumentId() !== billingDocument.billingDocumentId;
+      const isNewBillingDocument =
+        this.billingDocumentContext()?.billingDocumentId !== billingDocument.billingDocumentId;
 
       this.clearMissingProductFiscalProfileState();
       this.closeEmailComposer();
@@ -3823,10 +3850,26 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
         this.blockingCanceledOrders.set([]);
       }
 
+      if (!preserveCurrentFiscalDocument && isNewBillingDocument) {
+        this.resetPaymentPreparationState();
+      }
+
       this.billingDocumentContext.set(billingDocument);
       this.selectedPendingBillingRemovalIds.set([]);
       this.billingDocumentId.set(billingDocument.billingDocumentId);
       this.billingDocumentQuery = `${billingDocument.billingDocumentId}`;
+      if (
+        !billingDocument.fiscalDocumentId &&
+        !preserveCurrentFiscalDocument &&
+        !this.fiscalDocument()
+      ) {
+        await this.loadLegacyPaymentSuggestion(
+          billingDocument.billingDocumentId,
+          !this.paymentFieldsEditedByUser,
+        );
+      } else {
+        this.legacyPaymentSuggestion.set(null);
+      }
       await this.loadPendingBillingItems();
 
       if (syncRoute) {
@@ -3860,6 +3903,58 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     if (billingDocumentId) {
       await this.loadBillingDocumentContext(billingDocumentId);
     }
+  }
+
+  private async loadLegacyPaymentSuggestion(
+    billingDocumentId: number,
+    applyToForm: boolean,
+  ): Promise<void> {
+    try {
+      const suggestion = await firstValueFrom(
+        this.api.getBillingDocumentPaymentSuggestion(billingDocumentId),
+      );
+      this.legacyPaymentSuggestion.set(suggestion);
+
+      if (!applyToForm) {
+        return;
+      }
+
+      if (
+        suggestion.status === 'Suggested' &&
+        suggestion.paymentMethodSat &&
+        suggestion.paymentFormSat &&
+        typeof suggestion.isCreditSale === 'boolean'
+      ) {
+        this.paymentMethodSat = normalizeSatCode(suggestion.paymentMethodSat);
+        this.paymentFormSat = normalizeSatCode(suggestion.paymentFormSat);
+        this.isCreditSale = suggestion.isCreditSale;
+        this.syncPaymentMethodDependencies(false);
+        this.applySuggestedPaymentCondition();
+        return;
+      }
+
+      this.clearPaymentSuggestionFields();
+    } catch {
+      this.legacyPaymentSuggestion.set(null);
+      if (applyToForm) {
+        this.clearPaymentSuggestionFields();
+      }
+    }
+  }
+
+  private resetPaymentPreparationState(): void {
+    this.paymentFieldsEditedByUser = false;
+    this.paymentConditionEditedByUser = false;
+    this.creditDays = 7;
+    this.legacyPaymentSuggestion.set(null);
+    this.clearPaymentSuggestionFields();
+  }
+
+  private clearPaymentSuggestionFields(): void {
+    this.paymentMethodSat = '';
+    this.paymentFormSat = '';
+    this.isCreditSale = false;
+    this.applySuggestedPaymentCondition();
   }
 
   private hasActiveSelectedReceiver(): boolean {
