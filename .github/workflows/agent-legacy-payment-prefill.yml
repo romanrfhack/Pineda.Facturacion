@@ -1,5 +1,6 @@
 name: Agent Legacy Payment Prefill
 
+# Retry after endpoint authorization namespace fix.
 on:
   push:
     branches:
