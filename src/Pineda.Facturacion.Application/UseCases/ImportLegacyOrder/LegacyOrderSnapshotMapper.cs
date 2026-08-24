@@ -19,6 +19,8 @@ internal static class LegacyOrderSnapshotMapper
             CustomerName = legacyOrder.CustomerName,
             CustomerRfc = legacyOrder.CustomerRfc,
             PaymentCondition = legacyOrder.PaymentCondition,
+            LegacyPaymentCode = legacyOrder.LegacyPaymentCode,
+            LegacyPaymentDescription = legacyOrder.LegacyPaymentDescription,
             PriceListCode = legacyOrder.PriceListCode,
             DeliveryType = legacyOrder.DeliveryType,
             CurrencyCode = legacyOrder.CurrencyCode,

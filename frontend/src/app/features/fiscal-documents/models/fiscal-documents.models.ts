@@ -47,6 +47,15 @@ export interface BillingDocumentLookupResponse {
   removedItems?: BillingDocumentRemovedItemTraceResponse[];
 }
 
+export interface BillingDocumentLegacyPaymentSuggestionResponse {
+  status: 'Suggested' | 'Mixed' | 'Unknown' | 'Unavailable' | string;
+  paymentMethodSat?: string | null;
+  paymentFormSat?: string | null;
+  isCreditSale?: boolean | null;
+  sourceDescription?: string | null;
+  sourceOrderCount: number;
+}
+
 export interface GroupedBillingDocumentSearchResponse {
   query: string;
   takePerGroup: number;
