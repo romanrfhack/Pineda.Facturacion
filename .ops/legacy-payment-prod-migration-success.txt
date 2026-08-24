@@ -1,0 +1,4 @@
+migration=20260813054914_AddLegacyPaymentSuggestionSnapshot
+verified=true
+commit=4a77b9468caa8a37b3bed465178d9c811bd02271
+verified_at_utc=2026-08-24T14:41:34Z
