@@ -1,0 +1,8 @@
+release_sha=9df4c51f668a2a57a305efd73cf22755dd1b3a84
+backend_match=false
+backend_expected_sha=da21399819317c331e5c304689ef4bf75944eeb5edd399248c4f74982d2e55ec
+backend_remote_sha=4de08c630a1f56a0a99aa375e3f941686e4eac0b2014a65a97cf005b8ae5eaf3
+service=active
+frontend_legacy_payment_ui=true
+frontend_legacy_payment_endpoint=false
+observed_at_utc=2026-08-24T14:55:57Z
