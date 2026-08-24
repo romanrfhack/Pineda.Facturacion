@@ -1,0 +1,4 @@
+release_sha=9df4c51f668a2a57a305efd73cf22755dd1b3a84
+backend_exact_sha_verified=true
+service_active=true
+deployed_at_utc=2026-08-24T14:58:22Z
