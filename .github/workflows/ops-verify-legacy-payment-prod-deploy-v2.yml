@@ -1,0 +1,133 @@
+name: OPS Verify Legacy Payment PROD Deploy V2
+
+on:
+  push:
+    branches:
+      - ops/legacy-payment-prod-migration
+    paths:
+      - .github/workflows/ops-verify-legacy-payment-prod-deploy-v2.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ops-legacy-payment-prod-deploy-v2
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    environment: facturas-production
+    env:
+      TARGET_SHA: 9df4c51f668a2a57a305efd73cf22755dd1b3a84
+      SSH_HOST: ${{ secrets.FACTURAS_SSH_HOST }}
+      SSH_PORT: ${{ secrets.FACTURAS_SSH_PORT }}
+      SSH_USER: ${{ secrets.FACTURAS_SSH_USER }}
+      SSH_KEY: ${{ secrets.FACTURAS_SSH_KEY }}
+      BACKEND_PATH: /var/www/facturas-backend/publish
+      FRONTEND_PATH: /var/www/facturas-frontend
+
+    steps:
+      - name: Checkout operations branch
+        uses: actions/checkout@v4
+        with:
+          ref: ops/legacy-payment-prod-migration
+          path: ops-control
+          fetch-depth: 1
+
+      - name: Checkout released source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          path: release-src
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Build exact released backend
+        shell: bash
+        working-directory: release-src
+        run: |
+          set -euo pipefail
+          dotnet restore Pineda.Facturacion.slnx
+          dotnet publish src/Pineda.Facturacion.Api/Pineda.Facturacion.Api.csproj -c Release -o out/api
+          test -f out/api/Pineda.Facturacion.Api.dll
+          sha256sum out/api/Pineda.Facturacion.Api.dll | cut -d ' ' -f1 > /tmp/local-backend.sha
+
+      - name: Setup SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "${SSH_HOST:-}" ]
+          [ -n "${SSH_PORT:-}" ]
+          [ -n "${SSH_USER:-}" ]
+          [ -n "${SSH_KEY:-}" ]
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keygen -y -f ~/.ssh/id_ed25519 > /dev/null
+          ssh-keyscan -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts
+
+      - name: Wait for exact backend and Legacy payment frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOCAL_BACKEND="$(cat /tmp/local-backend.sha)"
+
+          for attempt in $(seq 1 24); do
+            REMOTE_BACKEND="$(ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
+              "sha256sum '$BACKEND_PATH/Pineda.Facturacion.Api.dll' 2>/dev/null | cut -d ' ' -f1" || true)"
+            SERVICE_ACTIVE="$(ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
+              "systemctl is-active facturas-api 2>/dev/null || true" || true)"
+            FRONTEND_SUGGESTION="$(ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
+              "grep -RIl --binary-files=text 'Sugerido desde orden Legacy' '$FRONTEND_PATH' 2>/dev/null | head -n 1" || true)"
+            FRONTEND_ENDPOINT="$(ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
+              "grep -RIl --binary-files=text 'legacy-payment-suggestion' '$FRONTEND_PATH' 2>/dev/null | head -n 1" || true)"
+
+            BACKEND_MATCH=no
+            UI_MATCH=no
+            ENDPOINT_MATCH=no
+            [ "$REMOTE_BACKEND" = "$LOCAL_BACKEND" ] && BACKEND_MATCH=yes
+            [ -n "$FRONTEND_SUGGESTION" ] && UI_MATCH=yes
+            [ -n "$FRONTEND_ENDPOINT" ] && ENDPOINT_MATCH=yes
+
+            echo "Attempt $attempt/24: backend_match=$BACKEND_MATCH; ui_match=$UI_MATCH; endpoint_match=$ENDPOINT_MATCH; service=$SERVICE_ACTIVE"
+
+            if [ "$BACKEND_MATCH" = yes ] \
+              && [ "$UI_MATCH" = yes ] \
+              && [ "$ENDPOINT_MATCH" = yes ] \
+              && [ "$SERVICE_ACTIVE" = active ]; then
+              echo "Production deployment verified for $TARGET_SHA."
+              exit 0
+            fi
+
+            sleep 15
+          done
+
+          echo "ERROR: production did not converge to the released Legacy payment artifacts."
+          exit 1
+
+      - name: Record deployment verification marker
+        shell: bash
+        working-directory: ops-control
+        run: |
+          set -euo pipefail
+          mkdir -p .ops
+          cat > .ops/legacy-payment-prod-deploy-success-v2.txt <<EOF
+          release_sha=${TARGET_SHA}
+          backend_exact_sha_verified=true
+          frontend_legacy_payment_ui_verified=true
+          frontend_legacy_payment_endpoint_verified=true
+          service_active=true
+          verified_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .ops/legacy-payment-prod-deploy-success-v2.txt
+          git commit -m "ops: confirmar despliegue Legacy en producción v2"
+          git push origin HEAD:ops/legacy-payment-prod-migration
