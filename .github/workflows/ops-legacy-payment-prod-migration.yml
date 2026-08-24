@@ -1,0 +1,294 @@
+name: OPS Apply Legacy Payment Migration PROD
+
+on:
+  push:
+    branches:
+      - ops/legacy-payment-prod-migration
+    paths:
+      - .github/workflows/ops-legacy-payment-prod-migration.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ops-legacy-payment-prod-migration
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    environment: facturas-production
+    env:
+      SSH_HOST: ${{ secrets.FACTURAS_SSH_HOST }}
+      SSH_PORT: ${{ secrets.FACTURAS_SSH_PORT }}
+      SSH_USER: ${{ secrets.FACTURAS_SSH_USER }}
+      SSH_KEY: ${{ secrets.FACTURAS_SSH_KEY }}
+
+    steps:
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Build isolated migration runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/legacy-payment-migration-runner
+          cd /tmp/legacy-payment-migration-runner
+
+          cat > MigrationRunner.csproj <<'EOF'
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <OutputType>Exe</OutputType>
+              <TargetFramework>net10.0</TargetFramework>
+              <ImplicitUsings>enable</ImplicitUsings>
+              <Nullable>enable</Nullable>
+            </PropertyGroup>
+            <ItemGroup>
+              <PackageReference Include="MySqlConnector" Version="2.3.7" />
+            </ItemGroup>
+          </Project>
+          EOF
+
+          cat > Program.cs <<'EOF'
+          using System.Text.Json;
+          using MySqlConnector;
+
+          const string migrationId = "20260813054914_AddLegacyPaymentSuggestionSnapshot";
+          const string productVersion = "8.0.13";
+
+          if (args.Length != 1)
+          {
+              Console.Error.WriteLine("Usage: MigrationRunner <appsettings.Production.json>");
+              return 2;
+          }
+
+          var configurationPath = args[0];
+          if (!File.Exists(configurationPath))
+          {
+              Console.Error.WriteLine("Production configuration file was not found.");
+              return 3;
+          }
+
+          using var document = JsonDocument.Parse(await File.ReadAllTextAsync(configurationPath));
+          var root = document.RootElement;
+          string? connectionString = null;
+
+          if (root.TryGetProperty("ConnectionStrings", out var connectionStrings)
+              && connectionStrings.ValueKind == JsonValueKind.Object
+              && connectionStrings.TryGetProperty("BillingWrite", out var standardBillingWrite)
+              && standardBillingWrite.ValueKind == JsonValueKind.String)
+          {
+              connectionString = standardBillingWrite.GetString();
+          }
+
+          if (string.IsNullOrWhiteSpace(connectionString)
+              && root.TryGetProperty("BillingWrite", out var billingWrite)
+              && billingWrite.ValueKind == JsonValueKind.Object
+              && billingWrite.TryGetProperty("ConnectionString", out var legacyBillingWrite)
+              && legacyBillingWrite.ValueKind == JsonValueKind.String)
+          {
+              connectionString = legacyBillingWrite.GetString();
+          }
+
+          if (string.IsNullOrWhiteSpace(connectionString))
+          {
+              Console.Error.WriteLine("BillingWrite connection string is not configured in production settings.");
+              return 4;
+          }
+
+          var builder = new MySqlConnectionStringBuilder(connectionString);
+          Console.WriteLine($"Target database: {builder.Database}; server configured: {!string.IsNullOrWhiteSpace(builder.Server)}; port: {builder.Port}");
+
+          await using var connection = new MySqlConnection(connectionString);
+          await connection.OpenAsync();
+
+          static async Task<bool> TableExistsAsync(MySqlConnection connection, string tableName)
+          {
+              const string sql = "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = @tableName;";
+              await using var command = new MySqlCommand(sql, connection);
+              command.Parameters.AddWithValue("@tableName", tableName);
+              return Convert.ToInt32(await command.ExecuteScalarAsync()) == 1;
+          }
+
+          static async Task<(bool Exists, string? DataType, long? MaxLength, string? IsNullable)> ReadColumnAsync(
+              MySqlConnection connection,
+              string columnName)
+          {
+              const string sql = """
+                  SELECT DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, IS_NULLABLE
+                  FROM INFORMATION_SCHEMA.COLUMNS
+                  WHERE TABLE_SCHEMA = DATABASE()
+                    AND TABLE_NAME = 'sales_order'
+                    AND COLUMN_NAME = @columnName
+                  LIMIT 1;
+                  """;
+
+              await using var command = new MySqlCommand(sql, connection);
+              command.Parameters.AddWithValue("@columnName", columnName);
+              await using var reader = await command.ExecuteReaderAsync();
+              if (!await reader.ReadAsync())
+              {
+                  return (false, null, null, null);
+              }
+
+              return (
+                  true,
+                  reader.GetString(0),
+                  reader.IsDBNull(1) ? null : reader.GetInt64(1),
+                  reader.GetString(2));
+          }
+
+          static bool MatchesExpectedColumn(
+              (bool Exists, string? DataType, long? MaxLength, string? IsNullable) column,
+              long expectedLength)
+          {
+              return column.Exists
+                  && string.Equals(column.DataType, "varchar", StringComparison.OrdinalIgnoreCase)
+                  && column.MaxLength == expectedLength
+                  && string.Equals(column.IsNullable, "YES", StringComparison.OrdinalIgnoreCase);
+          }
+
+          static async Task<bool> MigrationHistoryExistsAsync(MySqlConnection connection, string migrationId)
+          {
+              const string sql = "SELECT COUNT(*) FROM `__EFMigrationsHistory` WHERE `MigrationId` = @migrationId;";
+              await using var command = new MySqlCommand(sql, connection);
+              command.Parameters.AddWithValue("@migrationId", migrationId);
+              return Convert.ToInt32(await command.ExecuteScalarAsync()) == 1;
+          }
+
+          if (!await TableExistsAsync(connection, "sales_order"))
+          {
+              Console.Error.WriteLine("Expected table sales_order does not exist. Migration aborted.");
+              return 5;
+          }
+
+          if (!await TableExistsAsync(connection, "__EFMigrationsHistory"))
+          {
+              Console.Error.WriteLine("Expected EF migration history table does not exist. Migration aborted.");
+              return 6;
+          }
+
+          var codeColumn = await ReadColumnAsync(connection, "legacy_payment_code");
+          var descriptionColumn = await ReadColumnAsync(connection, "legacy_payment_description");
+          var historyExists = await MigrationHistoryExistsAsync(connection, migrationId);
+
+          Console.WriteLine($"Preflight: codeColumn={codeColumn.Exists}; descriptionColumn={descriptionColumn.Exists}; history={historyExists}");
+
+          if (historyExists)
+          {
+              if (!MatchesExpectedColumn(codeColumn, 15) || !MatchesExpectedColumn(descriptionColumn, 60))
+              {
+                  Console.Error.WriteLine("Migration history is present but the expected columns do not match. No changes were made.");
+                  return 7;
+              }
+
+              Console.WriteLine("Migration already applied correctly. No changes required.");
+              return 0;
+          }
+
+          if (codeColumn.Exists != descriptionColumn.Exists)
+          {
+              Console.Error.WriteLine("Partial schema detected: only one Legacy payment column exists. No changes were made.");
+              return 8;
+          }
+
+          if (!codeColumn.Exists && !descriptionColumn.Exists)
+          {
+              const string alterSql = """
+                  ALTER TABLE `sales_order`
+                      ADD COLUMN `legacy_payment_code` varchar(15) CHARACTER SET utf8mb4 NULL,
+                      ADD COLUMN `legacy_payment_description` varchar(60) CHARACTER SET utf8mb4 NULL;
+                  """;
+              await using var alterCommand = new MySqlCommand(alterSql, connection);
+              await alterCommand.ExecuteNonQueryAsync();
+              Console.WriteLine("Schema columns added successfully.");
+          }
+          else if (!MatchesExpectedColumn(codeColumn, 15) || !MatchesExpectedColumn(descriptionColumn, 60))
+          {
+              Console.Error.WriteLine("Existing Legacy payment columns do not match the expected nullable varchar(15)/varchar(60) schema. No migration history was written.");
+              return 9;
+          }
+
+          const string historySql = """
+              INSERT INTO `__EFMigrationsHistory` (`MigrationId`, `ProductVersion`)
+              VALUES (@migrationId, @productVersion);
+              """;
+          await using (var historyCommand = new MySqlCommand(historySql, connection))
+          {
+              historyCommand.Parameters.AddWithValue("@migrationId", migrationId);
+              historyCommand.Parameters.AddWithValue("@productVersion", productVersion);
+              await historyCommand.ExecuteNonQueryAsync();
+          }
+
+          codeColumn = await ReadColumnAsync(connection, "legacy_payment_code");
+          descriptionColumn = await ReadColumnAsync(connection, "legacy_payment_description");
+          historyExists = await MigrationHistoryExistsAsync(connection, migrationId);
+
+          if (!MatchesExpectedColumn(codeColumn, 15)
+              || !MatchesExpectedColumn(descriptionColumn, 60)
+              || !historyExists)
+          {
+              Console.Error.WriteLine("Post-validation failed. Review production schema before deploying application code.");
+              return 10;
+          }
+
+          Console.WriteLine("Migration applied and post-validated successfully.");
+          return 0;
+          EOF
+
+          dotnet publish MigrationRunner.csproj \
+            -c Release \
+            -r linux-x64 \
+            --self-contained true \
+            -p:PublishSingleFile=true \
+            -p:DebugType=None \
+            -o publish
+
+          test -x publish/MigrationRunner
+
+      - name: Validate deploy secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "${SSH_HOST:-}" ] || { echo "ERROR: falta FACTURAS_SSH_HOST"; exit 1; }
+          [ -n "${SSH_PORT:-}" ] || { echo "ERROR: falta FACTURAS_SSH_PORT"; exit 1; }
+          [ -n "${SSH_USER:-}" ] || { echo "ERROR: falta FACTURAS_SSH_USER"; exit 1; }
+          [ -n "${SSH_KEY:-}" ] || { echo "ERROR: falta FACTURAS_SSH_KEY"; exit 1; }
+
+      - name: Setup SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keygen -y -f ~/.ssh/id_ed25519 > /dev/null
+          ssh-keyscan -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts
+
+      - name: Upload isolated migration runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          scp -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -P "$SSH_PORT" \
+            /tmp/legacy-payment-migration-runner/publish/MigrationRunner \
+            "$SSH_USER@$SSH_HOST:/tmp/pineda-legacy-payment-migration"
+
+      - name: Apply and validate production migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" \
+            "$SSH_USER@$SSH_HOST" \
+            "chmod 700 /tmp/pineda-legacy-payment-migration && sudo /tmp/pineda-legacy-payment-migration /etc/pineda/facturas/appsettings.Production.json"
+
+      - name: Cleanup remote migration runner
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" \
+            "$SSH_USER@$SSH_HOST" \
+            "rm -f /tmp/pineda-legacy-payment-migration" || true
