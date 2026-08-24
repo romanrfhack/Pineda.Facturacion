@@ -1,0 +1,134 @@
+name: OPS Deploy Legacy Payment Backend PROD
+
+on:
+  push:
+    branches:
+      - ops/legacy-payment-prod-migration
+    paths:
+      - .github/workflows/ops-deploy-legacy-payment-backend-prod.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ops-deploy-legacy-payment-backend-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: facturas-production
+    env:
+      TARGET_SHA: 9df4c51f668a2a57a305efd73cf22755dd1b3a84
+      SSH_HOST: ${{ secrets.FACTURAS_SSH_HOST }}
+      SSH_PORT: ${{ secrets.FACTURAS_SSH_PORT }}
+      SSH_USER: ${{ secrets.FACTURAS_SSH_USER }}
+      SSH_KEY: ${{ secrets.FACTURAS_SSH_KEY }}
+      DEPLOY_PATH: /var/www/facturas-backend/publish
+      SERVICE_NAME: facturas-api
+
+    steps:
+      - name: Checkout operations branch
+        uses: actions/checkout@v4
+        with:
+          ref: ops/legacy-payment-prod-migration
+          path: ops-control
+          fetch-depth: 1
+
+      - name: Checkout exact production release
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          path: release-src
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Publish exact release backend
+        shell: bash
+        working-directory: release-src
+        run: |
+          set -euo pipefail
+          dotnet restore Pineda.Facturacion.slnx
+          dotnet publish src/Pineda.Facturacion.Api/Pineda.Facturacion.Api.csproj -c Release -o out/api
+          test -f out/api/Pineda.Facturacion.Api.dll
+          test -f out/api/appsettings.json
+          sha256sum out/api/Pineda.Facturacion.Api.dll | cut -d ' ' -f1 > /tmp/expected-backend.sha
+
+      - name: Setup SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "${SSH_HOST:-}" ]
+          [ -n "${SSH_PORT:-}" ]
+          [ -n "${SSH_USER:-}" ]
+          [ -n "${SSH_KEY:-}" ]
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keygen -y -f ~/.ssh/id_ed25519 > /dev/null
+          ssh-keyscan -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts
+
+      - name: Validate persistent production configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" \
+            "$SSH_USER@$SSH_HOST" \
+            "test -f /etc/pineda/facturas/appsettings.Production.json && test -d /etc/systemd/system/facturas-api.service.d"
+
+      - name: Upload exact backend artifact
+        shell: bash
+        working-directory: release-src
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" \
+            "$SSH_USER@$SSH_HOST" "mkdir -p '$DEPLOY_PATH'"
+          rsync -az --delete -O --no-perms --no-owner --no-group \
+            out/api/ \
+            -e "ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p $SSH_PORT" \
+            "$SSH_USER@$SSH_HOST:$DEPLOY_PATH/"
+
+      - name: Set ownership and restart service
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" \
+            "$SSH_USER@$SSH_HOST" \
+            "sudo chown -R www-data:www-data /var/www/facturas-backend && sudo chmod -R 755 /var/www/facturas-backend && sudo systemctl daemon-reload && sudo systemctl restart '$SERVICE_NAME'"
+
+      - name: Verify exact backend deployed
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED="$(cat /tmp/expected-backend.sha)"
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" \
+            "$SSH_USER@$SSH_HOST" "sudo systemctl is-active --quiet '$SERVICE_NAME'"
+          REMOTE="$(ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
+            "sha256sum '$DEPLOY_PATH/Pineda.Facturacion.Api.dll' | cut -d ' ' -f1")"
+          echo "Expected backend SHA256: $EXPECTED"
+          echo "Remote backend SHA256:   $REMOTE"
+          test "$REMOTE" = "$EXPECTED"
+
+      - name: Record successful backend deployment
+        shell: bash
+        working-directory: ops-control
+        run: |
+          set -euo pipefail
+          mkdir -p .ops
+          cat > .ops/legacy-payment-prod-backend-deploy-success.txt <<EOF
+          release_sha=${TARGET_SHA}
+          backend_exact_sha_verified=true
+          service_active=true
+          deployed_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .ops/legacy-payment-prod-backend-deploy-success.txt
+          git commit -m "ops: confirmar backend Legacy en producción"
+          git push origin HEAD:ops/legacy-payment-prod-migration
