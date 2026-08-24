@@ -1,0 +1,103 @@
+name: OPS Diagnose Legacy Payment PROD Deploy
+
+on:
+  push:
+    branches:
+      - ops/legacy-payment-prod-migration
+    paths:
+      - .github/workflows/ops-diagnose-legacy-payment-prod-deploy.yml
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    environment: facturas-production
+    env:
+      TARGET_SHA: 9df4c51f668a2a57a305efd73cf22755dd1b3a84
+      SSH_HOST: ${{ secrets.FACTURAS_SSH_HOST }}
+      SSH_PORT: ${{ secrets.FACTURAS_SSH_PORT }}
+      SSH_USER: ${{ secrets.FACTURAS_SSH_USER }}
+      SSH_KEY: ${{ secrets.FACTURAS_SSH_KEY }}
+
+    steps:
+      - name: Checkout operations branch
+        uses: actions/checkout@v4
+        with:
+          ref: ops/legacy-payment-prod-migration
+          path: ops-control
+          fetch-depth: 1
+
+      - name: Checkout released source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          path: release-src
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Build released backend fingerprint
+        shell: bash
+        working-directory: release-src
+        run: |
+          set -euo pipefail
+          dotnet restore Pineda.Facturacion.slnx
+          dotnet publish src/Pineda.Facturacion.Api/Pineda.Facturacion.Api.csproj -c Release -o out/api
+          sha256sum out/api/Pineda.Facturacion.Api.dll | cut -d ' ' -f1 > /tmp/expected.sha
+
+      - name: Setup SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keygen -y -f ~/.ssh/id_ed25519 > /dev/null
+          ssh-keyscan -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts
+
+      - name: Collect non-sensitive production diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED="$(cat /tmp/expected.sha)"
+          REMOTE="$(ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "sha256sum /var/www/facturas-backend/publish/Pineda.Facturacion.Api.dll 2>/dev/null | cut -d ' ' -f1" || true)"
+          SERVICE="$(ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "systemctl is-active facturas-api 2>/dev/null || true" || true)"
+          UI_FILE="$(ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "grep -RIl --binary-files=text 'Sugerido desde orden Legacy' /var/www/facturas-frontend 2>/dev/null | head -n 1" || true)"
+          ENDPOINT_FILE="$(ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "grep -RIl --binary-files=text 'legacy-payment-suggestion' /var/www/facturas-frontend 2>/dev/null | head -n 1" || true)"
+          BACKEND_MATCH=false
+          UI_MATCH=false
+          ENDPOINT_MATCH=false
+          [ "$EXPECTED" = "$REMOTE" ] && BACKEND_MATCH=true
+          [ -n "$UI_FILE" ] && UI_MATCH=true
+          [ -n "$ENDPOINT_FILE" ] && ENDPOINT_MATCH=true
+
+          cat > /tmp/deploy-diagnostic.txt <<EOF
+          release_sha=${TARGET_SHA}
+          backend_match=${BACKEND_MATCH}
+          backend_expected_sha=${EXPECTED}
+          backend_remote_sha=${REMOTE}
+          service=${SERVICE}
+          frontend_legacy_payment_ui=${UI_MATCH}
+          frontend_legacy_payment_endpoint=${ENDPOINT_MATCH}
+          observed_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF
+
+      - name: Record deployment diagnostic
+        shell: bash
+        working-directory: ops-control
+        run: |
+          set -euo pipefail
+          mkdir -p .ops
+          cp /tmp/deploy-diagnostic.txt .ops/legacy-payment-prod-deploy-diagnostic.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .ops/legacy-payment-prod-deploy-diagnostic.txt
+          git commit -m "ops: registrar diagnóstico de despliegue Legacy"
+          git push origin HEAD:ops/legacy-payment-prod-migration
