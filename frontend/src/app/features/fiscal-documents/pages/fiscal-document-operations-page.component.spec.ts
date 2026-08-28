@@ -544,7 +544,10 @@ describe('FiscalDocumentOperationsPageComponent', () => {
             getSatCatalog: vi.fn().mockReturnValue(
               of({
                 regimenFiscal: [{ code: '601', description: 'General de Ley Personas Morales' }],
-                usoCfdi: [{ code: 'G03', description: 'Gastos en general' }],
+                usoCfdi: [
+                  { code: 'G03', description: 'Gastos en general' },
+                  { code: 'G01', description: 'Adquisición de mercancías' },
+                ],
                 paymentMethods: [
                   { code: 'PUE', description: 'Pago en una sola exhibición' },
                   { code: 'PPD', description: 'Pago en parcialidades o diferido' },
@@ -558,7 +561,10 @@ describe('FiscalDocumentOperationsPageComponent', () => {
                   {
                     code: '601',
                     description: 'General de Ley Personas Morales',
-                    allowedUsoCfdi: [{ code: 'G03', description: 'Gastos en general' }],
+                    allowedUsoCfdi: [
+                      { code: 'G03', description: 'Gastos en general' },
+                      { code: 'G01', description: 'Adquisición de mercancías' },
+                    ],
                   },
                 ],
               }),
@@ -659,6 +665,8 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       createdAtUtc: '2026-03-20T12:00:00Z',
       updatedAtUtc: '2026-03-20T12:00:00Z',
     });
+    fixture.componentInstance['receiverCfdiUseCode'] =
+      overrides?.cfdiUseCodeDefault ?? 'G03';
   }
 
   it('shows empty evidence state when the fiscal document is not stamped yet', async () => {
@@ -1739,6 +1747,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       createdAtUtc: '2026-03-20T12:00:00Z',
       updatedAtUtc: '2026-03-20T12:00:00Z',
     });
+    fixture.componentInstance['receiverCfdiUseCode'] = 'G03';
     fixture.detectChanges();
 
     const paymentMethodSelect = fixture.nativeElement.querySelector(
@@ -1873,8 +1882,134 @@ describe('FiscalDocumentOperationsPageComponent', () => {
         paymentMethodSat: 'PUE',
         paymentFormSat: '03',
         paymentCondition: 'Contado',
+        receiverCfdiUseCode: 'G03',
       }),
     );
+  });
+
+  it('preloads the receiver default CFDI use and sends a document-only override', async () => {
+    const prepareFiscalDocument = vi.fn().mockReturnValue(
+      of({
+        outcome: 'Created',
+        isSuccess: true,
+        fiscalDocumentId: 40,
+      }),
+    );
+    const fixture = await configure(
+      { prepareFiscalDocument },
+      { id: null, billingDocumentId: '30' },
+    );
+
+    await fixture.componentInstance['selectReceiver']({
+      id: 9,
+      rfc: 'BBB010101BBB',
+      legalName: 'Receiver One',
+      postalCode: '02000',
+      fiscalRegimeCode: '601',
+      cfdiUseCodeDefault: 'G03',
+      isActive: true,
+    });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const cfdiUseSelect = fixture.nativeElement.querySelector(
+      'select[name="receiverCfdiUseCode"]',
+    ) as HTMLSelectElement;
+    expect(fixture.componentInstance['receiverCfdiUseCode']).toBe('G03');
+    expect(cfdiUseSelect.value).toBe('G03');
+    expect(Array.from(cfdiUseSelect.options).map((option) => option.value)).toContain('G01');
+
+    fixture.componentInstance['onReceiverCfdiUseChange']('G01');
+    fixture.componentInstance['onCreditSaleChange'](false);
+    fixture.componentInstance['onPaymentMethodChange']('PUE');
+    fixture.componentInstance['onPaymentFormChange']('03');
+    fixture.componentInstance['onPaymentConditionChange']('Contado');
+    await fixture.componentInstance['prepare']();
+
+    expect(prepareFiscalDocument).toHaveBeenCalledWith(
+      30,
+      expect.objectContaining({
+        fiscalReceiverId: 9,
+        receiverCfdiUseCode: 'G01',
+      }),
+    );
+    expect(fixture.componentInstance['selectedReceiver']()?.cfdiUseCodeDefault).toBe('G03');
+  });
+
+  it('shows only CFDI uses compatible with the selected receiver regime', async () => {
+    const fixture = await configure(
+      undefined,
+      { id: null, billingDocumentId: '30' },
+      undefined,
+      {
+        getSatCatalog: vi.fn().mockReturnValue(
+          of({
+            regimenFiscal: [
+              { code: '601', description: 'General de Ley Personas Morales' },
+              { code: '605', description: 'Sueldos y Salarios' },
+            ],
+            usoCfdi: [
+              { code: 'G03', description: 'Gastos en general' },
+              { code: 'CN01', description: 'Nómina' },
+            ],
+            paymentMethods: [
+              { code: 'PUE', description: 'Pago en una sola exhibición' },
+              { code: 'PPD', description: 'Pago en parcialidades o diferido' },
+            ],
+            paymentForms: [
+              { code: '03', description: 'Transferencia electrónica de fondos' },
+              { code: '99', description: 'Por definir' },
+            ],
+            byRegimenFiscal: [
+              {
+                code: '601',
+                description: 'General de Ley Personas Morales',
+                allowedUsoCfdi: [{ code: 'G03', description: 'Gastos en general' }],
+              },
+              {
+                code: '605',
+                description: 'Sueldos y Salarios',
+                allowedUsoCfdi: [{ code: 'CN01', description: 'Nómina' }],
+              },
+            ],
+          }),
+        ),
+      },
+    );
+
+    setActiveSelectedReceiver(fixture, {
+      fiscalRegimeCode: '605',
+      cfdiUseCodeDefault: 'CN01',
+    });
+
+    expect(fixture.componentInstance['availableReceiverCfdiUseOptions']()).toEqual([
+      { code: 'CN01', description: 'Nómina' },
+    ]);
+    expect(fixture.componentInstance['receiverCfdiUseValidationError']()).toBeNull();
+  });
+
+  it('blocks preparation when a legacy receiver default is incompatible with its regime', async () => {
+    const prepareFiscalDocument = vi.fn();
+    const fixture = await configure(
+      { prepareFiscalDocument },
+      { id: null, billingDocumentId: '30' },
+    );
+
+    setActiveSelectedReceiver(fixture, { cfdiUseCodeDefault: 'D01' });
+    fixture.componentInstance['onCreditSaleChange'](false);
+    fixture.componentInstance['onPaymentMethodChange']('PUE');
+    fixture.componentInstance['onPaymentFormChange']('03');
+    fixture.componentInstance['onPaymentConditionChange']('Contado');
+
+    expect(fixture.componentInstance['receiverCfdiUseValidationError']()).toContain(
+      'no es compatible con el régimen 601',
+    );
+    expect(fixture.componentInstance['canPrepareFiscalDocument']()).toBe(false);
+
+    await fixture.componentInstance['prepare']();
+
+    expect(prepareFiscalDocument).not.toHaveBeenCalled();
   });
 
   it('does not call prepare api when there is no active selected receiver', async () => {
@@ -3517,6 +3652,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(fixture.componentInstance['billingDocumentId']()).toBe(31);
     expect(fixture.componentInstance['selectedReceiverId']).toBeNull();
     expect(fixture.componentInstance['selectedReceiver']()).toBeNull();
+    expect(fixture.componentInstance['receiverCfdiUseCode']).toBe('');
     expect(fixture.componentInstance['receiverQuery']()).toBe('');
     expect(fixture.componentInstance['receiverResults']()).toEqual([]);
     expect(fixture.componentInstance['specialFieldDrafts']()).toEqual([]);
@@ -3793,7 +3929,10 @@ describe('FiscalDocumentOperationsPageComponent', () => {
             getSatCatalog: vi.fn().mockReturnValue(
               of({
                 regimenFiscal: [{ code: '601', description: 'General de Ley Personas Morales' }],
-                usoCfdi: [{ code: 'G03', description: 'Gastos en general' }],
+                usoCfdi: [
+                  { code: 'G03', description: 'Gastos en general' },
+                  { code: 'G01', description: 'Adquisición de mercancías' },
+                ],
                 paymentMethods: [
                   { code: 'PUE', description: 'Pago en una sola exhibición' },
                   { code: 'PPD', description: 'Pago en parcialidades o diferido' },
@@ -3806,7 +3945,10 @@ describe('FiscalDocumentOperationsPageComponent', () => {
                   {
                     code: '601',
                     description: 'General de Ley Personas Morales',
-                    allowedUsoCfdi: [{ code: 'G03', description: 'Gastos en general' }],
+                    allowedUsoCfdi: [
+                      { code: 'G03', description: 'Gastos en general' },
+                      { code: 'G01', description: 'Adquisición de mercancías' },
+                    ],
                   },
                 ],
               }),
@@ -3832,6 +3974,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     setActiveSelectedReceiver(fixture);
+    fixture.componentInstance['onReceiverCfdiUseChange']('G01');
     fixture.componentInstance['onPaymentMethodChange']('PUE');
     fixture.componentInstance['onPaymentFormChange']('03');
     fixture.componentInstance['onPaymentConditionChange']('Contado');
@@ -3859,6 +4002,9 @@ describe('FiscalDocumentOperationsPageComponent', () => {
       isActive: true,
     });
     expect(prepareFiscalDocument).toHaveBeenCalledTimes(2);
+    expect(
+      prepareFiscalDocument.mock.calls.map(([, request]) => request.receiverCfdiUseCode),
+    ).toEqual(['G01', 'G01']);
     expect(feedback.show).toHaveBeenCalledWith(
       'success',
       'Perfil fiscal del producto MTE-4259 creado.',

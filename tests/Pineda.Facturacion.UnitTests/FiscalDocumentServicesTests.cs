@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Pineda.Facturacion.Application.Abstractions.Documents;
+using Pineda.Facturacion.Application.Abstractions.FiscalReceivers;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.UseCases.FiscalDocuments;
 using Pineda.Facturacion.Application.UseCases.ProductFiscalProfiles;
@@ -773,7 +774,10 @@ public class FiscalDocumentServicesTests
     public async Task PrepareFiscalDocument_UsesReceiverCfdiUseOverride_ElseFallsBackToDefault()
     {
         var repository = new FakeFiscalDocumentRepository();
-        var service = CreateService(fiscalDocumentRepository: repository);
+        var receiverSatCatalogProvider = new FakeFiscalReceiverSatCatalogProvider(["G03", "G01"]);
+        var service = CreateService(
+            fiscalDocumentRepository: repository,
+            receiverSatCatalogProvider: receiverSatCatalogProvider);
 
         var fallbackResult = await service.ExecuteAsync(new PrepareFiscalDocumentCommand
         {
@@ -797,7 +801,8 @@ public class FiscalDocumentServicesTests
             new FakeFiscalReceiverRepository { ExistingById = CreateReceiver() },
             new FakeProductFiscalProfileRepository { ExistingByCode = CreateProductFiscalProfile() },
             new FakeSatCatalogDescriptionProvider(),
-            new FakeUnitOfWork());
+            new FakeUnitOfWork(),
+            receiverSatCatalogProvider);
 
         var overrideResult = await service.ExecuteAsync(new PrepareFiscalDocumentCommand
         {
@@ -806,12 +811,39 @@ public class FiscalDocumentServicesTests
             PaymentMethodSat = "PUE",
             PaymentFormSat = "03",
             PaymentCondition = "Contado",
-            ReceiverCfdiUseCode = " D01 "
+            ReceiverCfdiUseCode = " G01 "
         });
 
         Assert.Equal(PrepareFiscalDocumentOutcome.Created, fallbackResult.Outcome);
         Assert.Equal(PrepareFiscalDocumentOutcome.Created, overrideResult.Outcome);
-        Assert.Equal("D01", repository.Added!.ReceiverCfdiUseCode);
+        Assert.Equal("G01", repository.Added!.ReceiverCfdiUseCode);
+    }
+
+    [Theory]
+    [InlineData("ZZZ", "not valid")]
+    [InlineData("D01", "not compatible")]
+    public async Task PrepareFiscalDocument_RejectsInvalidOrIncompatibleReceiverCfdiUseOverride(
+        string receiverCfdiUseCode,
+        string expectedError)
+    {
+        var repository = new FakeFiscalDocumentRepository();
+        var service = CreateService(
+            fiscalDocumentRepository: repository,
+            receiverSatCatalogProvider: new FakeFiscalReceiverSatCatalogProvider(["G03"]));
+
+        var result = await service.ExecuteAsync(new PrepareFiscalDocumentCommand
+        {
+            BillingDocumentId = 5,
+            FiscalReceiverId = 11,
+            PaymentMethodSat = "PUE",
+            PaymentFormSat = "03",
+            PaymentCondition = "Contado",
+            ReceiverCfdiUseCode = receiverCfdiUseCode
+        });
+
+        Assert.Equal(PrepareFiscalDocumentOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains(expectedError, result.ErrorMessage!, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(repository.Added);
     }
 
     [Fact]
@@ -1549,7 +1581,8 @@ public class FiscalDocumentServicesTests
         IssuerProfile? activeIssuer = null,
         FiscalReceiver? receiver = null,
         ProductFiscalProfile? productFiscalProfile = null,
-        FakeFiscalDocumentRepository? fiscalDocumentRepository = null)
+        FakeFiscalDocumentRepository? fiscalDocumentRepository = null,
+        IFiscalReceiverSatCatalogProvider? receiverSatCatalogProvider = null)
     {
         return new PrepareFiscalDocumentService(
             new FakeBillingDocumentRepository { BillingDocumentById = CreateBillingDocument() },
@@ -1558,7 +1591,8 @@ public class FiscalDocumentServicesTests
             new FakeFiscalReceiverRepository { ExistingById = receiver ?? CreateReceiver() },
             new FakeProductFiscalProfileRepository { ExistingByCode = productFiscalProfile ?? CreateProductFiscalProfile() },
             new FakeSatCatalogDescriptionProvider(),
-            new FakeUnitOfWork());
+            new FakeUnitOfWork(),
+            receiverSatCatalogProvider);
     }
 
     private static DateTime ConvertMexicoCityLocalToUtc(DateTime value)
@@ -1702,6 +1736,55 @@ public class FiscalDocumentServicesTests
         public string FormatPaymentMethod(string? code) => code ?? "N/D";
 
         public string FormatExportCode(string? code) => code ?? "N/D";
+    }
+
+    private sealed class FakeFiscalReceiverSatCatalogProvider(
+        IReadOnlyCollection<string> allowedCfdiUseCodes) : IFiscalReceiverSatCatalogProvider
+    {
+        private static readonly string[] KnownCfdiUseCodes = ["G03", "G01", "D01"];
+        private readonly HashSet<string> _allowedCfdiUseCodes = allowedCfdiUseCodes
+            .Select(Normalize)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        public FiscalReceiverSatCatalog GetCatalog()
+        {
+            return new FiscalReceiverSatCatalog
+            {
+                RegimenFiscal =
+                [
+                    new FiscalReceiverSatCatalogOption
+                    {
+                        Code = "601",
+                        Description = "General de Ley Personas Morales"
+                    }
+                ],
+                UsoCfdi = KnownCfdiUseCodes
+                    .Select(code => new FiscalReceiverSatCatalogOption { Code = code, Description = code })
+                    .ToArray(),
+                ByRegimenFiscal =
+                [
+                    new FiscalReceiverSatRegimeCompatibility
+                    {
+                        Code = "601",
+                        Description = "General de Ley Personas Morales",
+                        AllowedUsoCfdi = _allowedCfdiUseCodes
+                            .Select(code => new FiscalReceiverSatCatalogOption { Code = code, Description = code })
+                            .ToArray()
+                    }
+                ]
+            };
+        }
+
+        public bool FiscalRegimeExists(string code)
+            => string.Equals(Normalize(code), "601", StringComparison.OrdinalIgnoreCase);
+
+        public bool CfdiUseExists(string code)
+            => KnownCfdiUseCodes.Contains(Normalize(code), StringComparer.OrdinalIgnoreCase);
+
+        public bool IsCfdiUseCompatibleWithRegime(string fiscalRegimeCode, string cfdiUseCode)
+            => FiscalRegimeExists(fiscalRegimeCode) && _allowedCfdiUseCodes.Contains(Normalize(cfdiUseCode));
+
+        private static string Normalize(string value) => value.Trim().ToUpperInvariant();
     }
 
     private sealed class FakeBillingDocumentRepository : IBillingDocumentRepository
