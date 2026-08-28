@@ -1,4 +1,5 @@
 using Pineda.Facturacion.Application.Abstractions.Documents;
+using Pineda.Facturacion.Application.Abstractions.FiscalReceivers;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Common;
 using Pineda.Facturacion.Application.UseCases.ProductFiscalProfiles;
@@ -21,6 +22,7 @@ public class PrepareFiscalDocumentService
     private readonly SuggestSatAssignmentForLegacyItemService _suggestSatAssignmentForLegacyItemService;
     private readonly ProductFiscalProfileResolver _productFiscalProfileResolver;
     private readonly ProductFiscalProfileSatCatalogValidation _satCatalogValidation;
+    private readonly IFiscalReceiverSatCatalogProvider? _fiscalReceiverSatCatalogProvider;
     private readonly IUnitOfWork _unitOfWork;
 
     public PrepareFiscalDocumentService(
@@ -30,7 +32,8 @@ public class PrepareFiscalDocumentService
         IFiscalReceiverRepository fiscalReceiverRepository,
         IProductFiscalProfileRepository productFiscalProfileRepository,
         ISatCatalogDescriptionProvider satCatalogDescriptionProvider,
-        IUnitOfWork unitOfWork)
+        IUnitOfWork unitOfWork,
+        IFiscalReceiverSatCatalogProvider? fiscalReceiverSatCatalogProvider = null)
         : this(
             billingDocumentRepository,
             fiscalDocumentRepository,
@@ -39,7 +42,9 @@ public class PrepareFiscalDocumentService
             productFiscalProfileRepository,
             satCatalogDescriptionProvider,
             CreateNoOpSuggestionService(productFiscalProfileRepository),
-            unitOfWork)
+            unitOfWork,
+            null,
+            fiscalReceiverSatCatalogProvider)
     {
     }
 
@@ -52,7 +57,8 @@ public class PrepareFiscalDocumentService
         ISatCatalogDescriptionProvider satCatalogDescriptionProvider,
         SuggestSatAssignmentForLegacyItemService suggestSatAssignmentForLegacyItemService,
         IUnitOfWork unitOfWork,
-        ProductFiscalProfileResolver? productFiscalProfileResolver = null)
+        ProductFiscalProfileResolver? productFiscalProfileResolver = null,
+        IFiscalReceiverSatCatalogProvider? fiscalReceiverSatCatalogProvider = null)
         : this(
             billingDocumentRepository,
             fiscalDocumentRepository,
@@ -63,7 +69,8 @@ public class PrepareFiscalDocumentService
             suggestSatAssignmentForLegacyItemService,
             unitOfWork,
             productFiscalProfileResolver,
-            new ProductFiscalProfileSatCatalogValidation())
+            new ProductFiscalProfileSatCatalogValidation(),
+            fiscalReceiverSatCatalogProvider)
     {
     }
 
@@ -78,7 +85,8 @@ public class PrepareFiscalDocumentService
         IUnitOfWork unitOfWork,
         ProductFiscalProfileResolver productFiscalProfileResolver,
         ISatProductServiceCatalogRepository satProductServiceCatalogRepository,
-        ISatClaveUnidadRepository satClaveUnidadRepository)
+        ISatClaveUnidadRepository satClaveUnidadRepository,
+        IFiscalReceiverSatCatalogProvider? fiscalReceiverSatCatalogProvider = null)
         : this(
             billingDocumentRepository,
             fiscalDocumentRepository,
@@ -91,7 +99,8 @@ public class PrepareFiscalDocumentService
             productFiscalProfileResolver,
             new ProductFiscalProfileSatCatalogValidation(
                 satProductServiceCatalogRepository,
-                satClaveUnidadRepository))
+                satClaveUnidadRepository),
+            fiscalReceiverSatCatalogProvider)
     {
     }
 
@@ -105,7 +114,8 @@ public class PrepareFiscalDocumentService
         SuggestSatAssignmentForLegacyItemService suggestSatAssignmentForLegacyItemService,
         IUnitOfWork unitOfWork,
         ProductFiscalProfileResolver? productFiscalProfileResolver,
-        ProductFiscalProfileSatCatalogValidation satCatalogValidation)
+        ProductFiscalProfileSatCatalogValidation satCatalogValidation,
+        IFiscalReceiverSatCatalogProvider? fiscalReceiverSatCatalogProvider)
     {
         _billingDocumentRepository = billingDocumentRepository;
         _fiscalDocumentRepository = fiscalDocumentRepository;
@@ -117,6 +127,7 @@ public class PrepareFiscalDocumentService
         _productFiscalProfileResolver = productFiscalProfileResolver
             ?? CreateNoOpProductFiscalProfileResolver(productFiscalProfileRepository, suggestSatAssignmentForLegacyItemService);
         _satCatalogValidation = satCatalogValidation;
+        _fiscalReceiverSatCatalogProvider = fiscalReceiverSatCatalogProvider;
         _unitOfWork = unitOfWork;
     }
 
@@ -263,6 +274,12 @@ public class PrepareFiscalDocumentService
                 BillingDocumentId = command.BillingDocumentId,
                 ErrorMessage = "Fiscal receiver is missing required fiscal fields."
             };
+        }
+
+        var receiverCfdiUseValidationError = ValidateReceiverCfdiUseCode(fiscalReceiver, receiverCfdiUseCode!);
+        if (receiverCfdiUseValidationError is not null)
+        {
+            return ValidationFailure(command.BillingDocumentId, receiverCfdiUseValidationError);
         }
 
         var specialFieldValidationError = ValidateSpecialFields(fiscalReceiver, command.SpecialFields);
@@ -532,6 +549,34 @@ public class PrepareFiscalDocumentService
         return string.IsNullOrWhiteSpace(command.ReceiverCfdiUseCode)
             ? fiscalReceiver.CfdiUseCodeDefault
             : FiscalMasterDataNormalization.NormalizeRequiredCode(command.ReceiverCfdiUseCode);
+    }
+
+    private string? ValidateReceiverCfdiUseCode(FiscalReceiver fiscalReceiver, string receiverCfdiUseCode)
+    {
+        if (_fiscalReceiverSatCatalogProvider is null)
+        {
+            return null;
+        }
+
+        var fiscalRegimeCode = FiscalMasterDataNormalization.NormalizeRequiredCode(fiscalReceiver.FiscalRegimeCode);
+        var cfdiUseCode = FiscalMasterDataNormalization.NormalizeRequiredCode(receiverCfdiUseCode);
+
+        if (!_fiscalReceiverSatCatalogProvider.FiscalRegimeExists(fiscalRegimeCode))
+        {
+            return $"Receiver fiscal regime code '{fiscalRegimeCode}' is not valid for SAT CFDI 4.0.";
+        }
+
+        if (!_fiscalReceiverSatCatalogProvider.CfdiUseExists(cfdiUseCode))
+        {
+            return $"Receiver CFDI use code '{cfdiUseCode}' is not valid for SAT CFDI 4.0.";
+        }
+
+        if (!_fiscalReceiverSatCatalogProvider.IsCfdiUseCompatibleWithRegime(fiscalRegimeCode, cfdiUseCode))
+        {
+            return $"Receiver CFDI use code '{cfdiUseCode}' is not compatible with fiscal regime '{fiscalRegimeCode}'.";
+        }
+
+        return null;
     }
 
     private static string? ValidateSpecialFields(

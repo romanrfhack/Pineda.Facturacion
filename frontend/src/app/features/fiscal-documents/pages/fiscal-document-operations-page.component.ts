@@ -49,6 +49,7 @@ import { FiscalReceiversApiService } from '../../catalogs/infrastructure/fiscal-
 import { FiscalReceiverFormComponent } from '../../catalogs/components/fiscal-receiver-form.component';
 import {
   FiscalReceiver,
+  FiscalReceiverSatCatalog,
   FiscalReceiverSatCatalogOption,
   UpsertFiscalReceiverRequest,
   UpsertProductFiscalProfileRequest,
@@ -655,6 +656,30 @@ const billingItemRemovalDispositionOptions: BillingItemRemovalDispositionOption[
                     Cambiar
                   </button>
                 </section>
+
+                <label class="receiver-cfdi-use">
+                  <span>Uso CFDI para este documento</span>
+                  <select
+                    [ngModel]="receiverCfdiUseCode"
+                    (ngModelChange)="onReceiverCfdiUseChange($event)"
+                    name="receiverCfdiUseCode"
+                    required
+                  >
+                    <option value="">Selecciona un uso CFDI</option>
+                    @for (option of availableReceiverCfdiUseOptions(); track option.code) {
+                      <option [value]="option.code">
+                        {{ option.code }} - {{ option.description }}
+                      </option>
+                    }
+                  </select>
+                  <small class="helper">
+                    Se carga el predeterminado del receptor. Si lo cambias, sólo se aplicará a este
+                    documento fiscal.
+                  </small>
+                  @if (receiverCfdiUseValidationError(); as cfdiUseError) {
+                    <small class="error">{{ cfdiUseError }}</small>
+                  }
+                </label>
               }
             </section>
 
@@ -2205,6 +2230,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected readonly pendingCancellationAuthorizationsErrorDetail = signal<string | null>(null);
   protected readonly selectedPendingBillingRemovalIds = signal<number[]>([]);
   protected readonly specialFieldDrafts = signal<ReceiverSpecialFieldDraft[]>([]);
+  protected readonly receiverSatCatalog = signal<FiscalReceiverSatCatalog | null>(null);
   protected readonly paymentMethodCatalog = signal<FiscalReceiverSatCatalogOption[]>([]);
   protected readonly paymentFormCatalog = signal<FiscalReceiverSatCatalogOption[]>([]);
   protected readonly legacyPaymentSuggestion =
@@ -2214,6 +2240,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   protected readonly receiverQuery = signal('');
   protected billingDocumentQuery = '';
   protected selectedReceiverId: number | null = null;
+  protected receiverCfdiUseCode = '';
   protected paymentMethodSat = '';
   protected paymentFormSat = '';
   protected paymentCondition = '';
@@ -2311,6 +2338,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     this.receiverQuery.set(value);
     this.selectedReceiverId = null;
     this.selectedReceiver.set(null);
+    this.receiverCfdiUseCode = '';
     this.specialFieldDrafts.set([]);
     this.receiverSearchError.set(null);
     this.receiverSearchTouched.set(false);
@@ -2333,6 +2361,46 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
 
   protected paymentMethodOptions(): FiscalReceiverSatCatalogOption[] {
     return this.paymentMethodCatalog();
+  }
+
+  protected availableReceiverCfdiUseOptions(): FiscalReceiverSatCatalogOption[] {
+    const receiver = this.selectedReceiver();
+    const catalog = this.receiverSatCatalog();
+    if (!receiver || !catalog) {
+      return [];
+    }
+
+    const fiscalRegimeCode = normalizeSatCode(receiver.fiscalRegimeCode);
+    return catalog.byRegimenFiscal
+      .find((regime) => normalizeSatCode(regime.code) === fiscalRegimeCode)
+      ?.allowedUsoCfdi ?? [];
+  }
+
+  protected onReceiverCfdiUseChange(value: string): void {
+    this.receiverCfdiUseCode = normalizeSatCode(value);
+  }
+
+  protected receiverCfdiUseValidationError(): string | null {
+    const receiver = this.selectedReceiver();
+    if (!receiver || !receiver.isActive) {
+      return null;
+    }
+
+    if (!this.receiverSatCatalog()) {
+      return 'El catálogo SAT de usos CFDI no está disponible. Recarga la página antes de preparar el documento.';
+    }
+
+    const cfdiUseCode = normalizeSatCode(this.receiverCfdiUseCode);
+    if (!cfdiUseCode) {
+      return 'Selecciona el uso CFDI para este documento.';
+    }
+
+    const isCompatible = this.availableReceiverCfdiUseOptions()
+      .some((option) => normalizeSatCode(option.code) === cfdiUseCode);
+
+    return isCompatible
+      ? null
+      : `El uso CFDI ${cfdiUseCode} no es compatible con el régimen ${normalizeSatCode(receiver.fiscalRegimeCode)} del receptor.`;
   }
 
   protected availablePaymentFormOptions(): FiscalReceiverSatCatalogOption[] {
@@ -2359,6 +2427,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       !this.loadingPrepare() &&
       !this.savingMissingProductProfile() &&
       this.hasActiveSelectedReceiver() &&
+      !this.receiverCfdiUseValidationError() &&
       !this.validateSpecialFields() &&
       !this.getPaymentPreparationValidationError()
     );
@@ -3052,6 +3121,9 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   ): void {
     this.selectedReceiver.set(receiver);
     this.selectedReceiverId = receiver.id;
+    this.receiverCfdiUseCode = normalizeSatCode(
+      fiscalDocument?.receiverCfdiUseCode ?? receiver.cfdiUseCodeDefault,
+    );
     this.receiverQuery.set(`${receiver.rfc} · ${receiver.legalName}`);
     this.receiverResults.set([]);
     this.receiverSearchError.set(null);
@@ -3130,6 +3202,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
     } catch {
       this.selectedReceiver.set(null);
       this.selectedReceiverId = document.fiscalReceiverId;
+      this.receiverCfdiUseCode = '';
       this.specialFieldDrafts.set([]);
     }
   }
@@ -3212,6 +3285,12 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       return;
     }
 
+    const receiverCfdiUseValidationError = this.receiverCfdiUseValidationError();
+    if (receiverCfdiUseValidationError) {
+      this.feedbackService.show('error', receiverCfdiUseValidationError);
+      return;
+    }
+
     const paymentValidationError = this.getPaymentPreparationValidationError();
     if (paymentValidationError) {
       this.feedbackService.show('error', paymentValidationError);
@@ -3233,6 +3312,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
       paymentCondition: this.paymentCondition.trim(),
       isCreditSale: this.isCreditSale,
       creditDays: this.creditDays,
+      receiverCfdiUseCode: normalizeSatCode(this.receiverCfdiUseCode),
       specialFields: this.activeReceiverSpecialFields().map((field) => ({
         fieldCode: field.fieldCode,
         value: field.value.trim(),
@@ -3786,17 +3866,19 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   private async loadSatCatalogs(): Promise<void> {
     try {
       const catalog = await firstValueFrom(this.fiscalReceiversApi.getSatCatalog());
+      this.receiverSatCatalog.set(catalog);
       this.paymentMethodCatalog.set(catalog.paymentMethods ?? []);
       this.paymentFormCatalog.set(catalog.paymentForms ?? []);
       this.syncPaymentMethodDependencies(false);
       this.syncCreditSaleWithPaymentMethod();
       this.applySuggestedPaymentCondition();
     } catch {
+      this.receiverSatCatalog.set(null);
       this.paymentMethodCatalog.set([]);
       this.paymentFormCatalog.set([]);
       this.feedbackService.show(
         'warning',
-        'No se pudieron cargar los catálogos SAT de método y forma de pago.',
+        'No se pudieron cargar los catálogos SAT de uso CFDI, método y forma de pago.',
       );
     }
   }
@@ -3970,6 +4052,7 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
   private resetReceiverSelectionState(): void {
     this.selectedReceiver.set(null);
     this.selectedReceiverId = null;
+    this.receiverCfdiUseCode = '';
     this.specialFieldDrafts.set([]);
     this.receiverQuery.set('');
     this.receiverResults.set([]);

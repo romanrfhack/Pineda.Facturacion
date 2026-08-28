@@ -291,7 +291,8 @@ public static class BillingDocumentsEndpoints
                 request.PaymentMethodSat,
                 request.PaymentFormSat,
                 request.IsCreditSale,
-                request.CreditDays
+                request.CreditDays,
+                request.ReceiverCfdiUseCode
             },
             new { result.FiscalDocumentId, result.Status },
             result.ErrorMessage,
