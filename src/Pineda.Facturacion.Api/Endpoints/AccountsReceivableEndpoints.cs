@@ -1426,6 +1426,10 @@ public static class AccountsReceivableEndpoints
             Html = result.Html,
             PdfBase64 = result.PdfContent is null ? null : Convert.ToBase64String(result.PdfContent),
             PdfFileName = result.PdfFileName,
+            PdfErrorMessage = result.PdfErrorMessage,
+            PrintPdfBase64 = result.PrintPdfContent is null ? null : Convert.ToBase64String(result.PrintPdfContent),
+            PrintPdfFileName = result.PrintPdfFileName,
+            PrintPdfErrorMessage = result.PrintPdfErrorMessage,
             Summary = result.Document is null ? null : MapSummarySelection(result.Document.Selection),
             FinalSummary = result.Document is null ? null : MapSummaryFinal(result.Document)
         };
@@ -2313,6 +2317,14 @@ public class ReceivablesSummaryPreviewResponse
     public string? PdfBase64 { get; set; }
 
     public string? PdfFileName { get; set; }
+
+    public string? PdfErrorMessage { get; set; }
+
+    public string? PrintPdfBase64 { get; set; }
+
+    public string? PrintPdfFileName { get; set; }
+
+    public string? PrintPdfErrorMessage { get; set; }
 
     public ReceivablesSummarySelectionResponse? Summary { get; set; }
 

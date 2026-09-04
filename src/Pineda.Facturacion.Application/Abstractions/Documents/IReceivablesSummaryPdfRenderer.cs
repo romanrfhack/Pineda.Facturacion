@@ -4,5 +4,8 @@ namespace Pineda.Facturacion.Application.Abstractions.Documents;
 
 public interface IReceivablesSummaryPdfRenderer
 {
-    Task<byte[]> RenderAsync(ReceivablesSummaryDocument document, CancellationToken cancellationToken = default);
+    Task<byte[]> RenderAsync(
+        ReceivablesSummaryDocument document,
+        ReceivablesSummaryPdfVariant variant,
+        CancellationToken cancellationToken = default);
 }

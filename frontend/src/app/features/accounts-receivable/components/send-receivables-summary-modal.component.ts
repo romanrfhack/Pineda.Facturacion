@@ -187,6 +187,9 @@ type SummaryStep = 1 | 2 | 3;
 
             @if (step() === 2) {
               <section class="modal-step">
+                <p class="helper delivery-helper">
+                  El correo es opcional para compartir por WhatsApp o descargar. Solo será obligatorio si eliges enviar por correo.
+                </p>
                 <div class="filter-grid">
                   <label class="wide-field">
                     <span>Para</span>
@@ -236,17 +239,48 @@ type SummaryStep = 1 | 2 | 3;
                   <p class="helper">Generando vista previa...</p>
                 } @else if (preview(); as currentPreview) {
                   <section class="final-summary">
-                    <article><strong>Destinatarios</strong><span>{{ currentPreview.finalSummary?.to?.join(', ') || 'Sin destinatario' }}</span></article>
+                    <article><strong>Destinatarios</strong><span>{{ currentPreview.finalSummary?.to?.join(', ') || 'Sin destinatario de correo' }}</span></article>
                     <article><strong>Facturas</strong><span>{{ currentPreview.finalSummary?.invoiceCount ?? selectionSummary().invoiceCount }}</span></article>
                     <article><strong>Total</strong><span>{{ formatTotals('outstandingBalance') }}</span></article>
                     <article><strong>Formato</strong><span>{{ formatLabel(currentPreview.finalSummary?.format || format) }}</span></article>
                   </section>
 
-                  @if (currentPreview.pdfBase64) {
+                  <section class="pdf-actions-panel">
                     <div class="actions compact-actions">
-                      <button type="button" class="secondary" (click)="openPdfPreview(false)">Ver PDF</button>
-                      <button type="button" class="secondary" (click)="openPdfPreview(true)">Descargar PDF</button>
+                      <button
+                        type="button"
+                        class="whatsapp-action"
+                        (click)="sharePdf()"
+                        [disabled]="pdfAction() !== null || !currentPreview.pdfBase64"
+                      >
+                        {{ pdfAction() === 'share' ? 'Abriendo opciones...' : 'Compartir por WhatsApp' }}
+                      </button>
+                      <button
+                        type="button"
+                        class="secondary"
+                        (click)="downloadPrintPdf()"
+                        [disabled]="pdfAction() !== null || !currentPreview.printPdfBase64"
+                      >
+                        {{ pdfAction() === 'download' ? 'Descargando...' : 'Descargar para imprimir' }}
+                      </button>
                     </div>
+                    <p class="helper">
+                      WhatsApp usa la versión digital del resumen. La descarga usa una versión tamaño carta, con fondo blanco y bajo consumo de tinta.
+                    </p>
+                    <p class="helper">
+                      En celular, selecciona WhatsApp y después el contacto. Si el navegador no permite compartir archivos,
+                      el PDF se descargará y WhatsApp se abrirá para que lo adjuntes manualmente.
+                    </p>
+                  </section>
+
+                  @if (currentPreview.pdfErrorMessage) {
+                    <section class="status-panel status-panel-warning">{{ currentPreview.pdfErrorMessage }}</section>
+                  }
+                  @if (currentPreview.printPdfErrorMessage) {
+                    <section class="status-panel status-panel-warning">{{ currentPreview.printPdfErrorMessage }}</section>
+                  }
+                  @if (shareStatusMessage()) {
+                    <section class="status-panel status-panel-success">{{ shareStatusMessage() }}</section>
                   }
 
                   <section class="email-preview" [innerHTML]="previewHtml()"></section>
@@ -265,7 +299,7 @@ type SummaryStep = 1 | 2 | 3;
               </button>
             } @else {
               <button type="button" (click)="send()" [disabled]="sending() || previewing() || !preview()?.success">
-                {{ sending() ? 'Enviando...' : 'Enviar resumen' }}
+                {{ sending() ? 'Enviando...' : 'Enviar por correo' }}
               </button>
             }
           </footer>
@@ -309,8 +343,12 @@ type SummaryStep = 1 | 2 | 3;
       input, select, textarea { border:1px solid #d8d1c2; border-radius:.75rem; padding:.7rem .85rem; background:#fffdf8; font:inherit; }
       .wide-field { grid-column:1 / -1; }
       .status-panel { border-radius:.9rem; padding:.9rem 1rem; border:1px solid #ecd9aa; background:#fff8ea; color:#4d3a16; }
+      .status-panel-success { border-color:#b9ddca; background:#eef9f3; color:#16583f; }
       .email-preview { border:1px solid #d8d1c2; border-radius:1rem; background:#f7f4ed; max-height:480px; overflow:auto; }
       .compact-actions { justify-content:flex-start; }
+      .delivery-helper { border-left:3px solid #2d5f8b; padding:.25rem 0 .25rem .75rem; }
+      .pdf-actions-panel { display:grid; gap:.35rem; }
+      button.whatsapp-action { background:#1f7a55; }
       @media (max-width:720px) {
         .stepper { grid-template-columns:1fr; }
         .modal-header, .modal-footer { flex-direction:column; align-items:stretch; }
@@ -339,6 +377,8 @@ export class SendReceivablesSummaryModalComponent {
   protected readonly scope = signal<ReceivablesSummaryScope>('all_pending');
   protected readonly manualSelectedIds = signal<number[]>([]);
   protected readonly preview = signal<ReceivablesSummaryPreviewResponse | null>(null);
+  protected readonly pdfAction = signal<'download' | 'share' | null>(null);
+  protected readonly shareStatusMessage = signal<string | null>(null);
   protected readonly previewHtml = computed<SafeHtml>(() =>
     this.sanitizer.bypassSecurityTrustHtml(this.preview()?.html || ''),
   );
@@ -448,7 +488,7 @@ export class SendReceivablesSummaryModalComponent {
       return;
     }
     if (step === 3) {
-      if (!this.validateSelection() || !this.validateEmailConfiguration()) {
+      if (!this.validateSelection() || !this.validatePreviewConfiguration()) {
         return;
       }
       if (!this.preview()) {
@@ -466,7 +506,7 @@ export class SendReceivablesSummaryModalComponent {
       return;
     }
 
-    if (this.step() === 2 && this.validateEmailConfiguration()) {
+    if (this.step() === 2 && this.validatePreviewConfiguration()) {
       await this.generatePreview();
     }
   }
@@ -508,26 +548,60 @@ export class SendReceivablesSummaryModalComponent {
     }
   }
 
-  protected openPdfPreview(download: boolean): void {
-    const currentPreview = this.preview();
-    if (!currentPreview?.pdfBase64) {
+  protected downloadPrintPdf(): void {
+    const file = this.buildPdfFile('print');
+    if (!file || this.pdfAction() !== null) {
       return;
     }
 
-    const bytes = Uint8Array.from(atob(currentPreview.pdfBase64), (character) => character.charCodeAt(0));
-    const blob = new Blob([bytes], { type: 'application/pdf' });
-    const objectUrl = window.URL.createObjectURL(blob);
-    if (download) {
-      const link = document.createElement('a');
-      link.href = objectUrl;
-      link.download = currentPreview.pdfFileName || 'resumen-adeudos.pdf';
-      link.click();
-      window.URL.revokeObjectURL(objectUrl);
+    this.pdfAction.set('download');
+    this.errorMessage.set(null);
+    this.shareStatusMessage.set(null);
+    try {
+      this.downloadFile(file);
+      this.shareStatusMessage.set('PDF para impresión descargado correctamente.');
+    } finally {
+      this.pdfAction.set(null);
+    }
+  }
+
+  protected async sharePdf(): Promise<void> {
+    const file = this.buildPdfFile('digital');
+    if (!file || this.pdfAction() !== null) {
       return;
     }
 
-    window.open(objectUrl, '_blank', 'noopener');
-    window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 30_000);
+    this.pdfAction.set('share');
+    this.errorMessage.set(null);
+    this.shareStatusMessage.set(null);
+
+    const shareData: ShareData = {
+      files: [file],
+      title: 'Resumen de adeudos pendientes',
+      text: `Resumen de adeudos pendientes de ${this.candidateResponse()?.receiver.legalName || 'cliente'}.`,
+    };
+
+    try {
+      if (
+        typeof navigator.share === 'function'
+        && typeof navigator.canShare === 'function'
+        && navigator.canShare(shareData)
+      ) {
+        await navigator.share(shareData);
+        this.shareStatusMessage.set('Archivo compartido correctamente.');
+        return;
+      }
+
+      this.openWhatsAppFallback(file);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return;
+      }
+
+      this.openWhatsAppFallback(file);
+    } finally {
+      this.pdfAction.set(null);
+    }
   }
 
   private async loadCandidates(): Promise<void> {
@@ -568,6 +642,8 @@ export class SendReceivablesSummaryModalComponent {
     this.errorMessage.set(null);
     this.candidateError.set(null);
     this.preview.set(null);
+    this.pdfAction.set(null);
+    this.shareStatusMessage.set(null);
     this.ccInput = '';
     this.bccInput = '';
     this.format = 'html';
@@ -577,6 +653,7 @@ export class SendReceivablesSummaryModalComponent {
     this.previewing.set(true);
     this.errorMessage.set(null);
     this.preview.set(null);
+    this.shareStatusMessage.set(null);
     try {
       const response = await firstValueFrom(
         this.api.previewReceivablesSummary(this.receiverId(), this.buildRequest()),
@@ -614,6 +691,9 @@ export class SendReceivablesSummaryModalComponent {
   }
 
   private validateEmailConfiguration(): boolean {
+    if (!this.validatePreviewConfiguration()) {
+      return false;
+    }
     if (!parseEmailRecipients(this.toInput).length) {
       this.errorMessage.set('Captura al menos un correo válido en Para.');
       return false;
@@ -624,6 +704,11 @@ export class SendReceivablesSummaryModalComponent {
       this.errorMessage.set(`Correo inválido: ${invalid.join(', ')}`);
       return false;
     }
+    this.errorMessage.set(null);
+    return true;
+  }
+
+  private validatePreviewConfiguration(): boolean {
     if (!this.subject.trim()) {
       this.errorMessage.set('Captura el asunto del correo.');
       return false;
@@ -653,6 +738,55 @@ export class SendReceivablesSummaryModalComponent {
 
   private effectiveSelectedIds(): readonly number[] {
     return this.scope() === 'current_selection' ? this.currentSelection() : this.manualSelectedIds();
+  }
+
+  private buildPdfFile(variant: 'digital' | 'print'): File | null {
+    const currentPreview = this.preview();
+    const base64 = variant === 'print' ? currentPreview?.printPdfBase64 : currentPreview?.pdfBase64;
+    const errorMessage = variant === 'print'
+      ? currentPreview?.printPdfErrorMessage
+      : currentPreview?.pdfErrorMessage;
+    if (!base64) {
+      this.errorMessage.set(errorMessage || 'El PDF no está disponible en esta vista previa.');
+      return null;
+    }
+
+    try {
+      const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
+      const fileName = variant === 'print'
+        ? currentPreview?.printPdfFileName || 'resumen-adeudos-impresion.pdf'
+        : currentPreview?.pdfFileName || 'resumen-adeudos.pdf';
+      return new File([bytes], fileName, { type: 'application/pdf' });
+    } catch {
+      this.errorMessage.set('No fue posible preparar el archivo PDF.');
+      return null;
+    }
+  }
+
+  private downloadFile(file: File): void {
+    const objectUrl = window.URL.createObjectURL(file);
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = file.name;
+    link.click();
+    window.URL.revokeObjectURL(objectUrl);
+  }
+
+  private openWhatsAppFallback(file: File): void {
+    this.downloadFile(file);
+
+    const text = 'Te comparto el resumen de adeudos pendientes. Adjuntaré el PDF descargado en este mensaje.';
+    const whatsappWindow = window.open(
+      `https://wa.me/?text=${encodeURIComponent(text)}`,
+      '_blank',
+      'noopener,noreferrer',
+    );
+
+    this.shareStatusMessage.set(
+      whatsappWindow
+        ? 'El PDF se descargó y WhatsApp se abrió. Selecciona el contacto y adjunta manualmente el archivo.'
+        : 'El PDF se descargó. Abre WhatsApp, selecciona el contacto y adjunta manualmente el archivo.',
+    );
   }
 }
 

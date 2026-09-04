@@ -15,6 +15,12 @@ public enum ReceivablesSummaryFormat
     Pdf
 }
 
+public enum ReceivablesSummaryPdfVariant
+{
+    Digital,
+    Print
+}
+
 public enum ReceivablesSummaryOutcome
 {
     Found,
@@ -228,6 +234,14 @@ public sealed class ReceivablesSummaryPreviewResult
     public byte[]? PdfContent { get; init; }
 
     public string? PdfFileName { get; init; }
+
+    public string? PdfErrorMessage { get; init; }
+
+    public byte[]? PrintPdfContent { get; init; }
+
+    public string? PrintPdfFileName { get; init; }
+
+    public string? PrintPdfErrorMessage { get; init; }
 }
 
 public sealed class SendReceivablesSummaryResult
