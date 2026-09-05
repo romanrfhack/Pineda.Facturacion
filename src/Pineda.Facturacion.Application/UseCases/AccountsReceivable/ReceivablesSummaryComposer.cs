@@ -201,6 +201,13 @@ public static class ReceivablesSummaryComposer
         return $"resumen_adeudos_{receiverToken}_{dateToken}.pdf";
     }
 
+    public static string BuildPrintPdfFileName(ReceivablesSummaryDocument document)
+    {
+        var receiverToken = SanitizeFileToken(document.Receiver.Rfc);
+        var dateToken = document.GeneratedAtUtc.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
+        return $"resumen_adeudos_impresion_{receiverToken}_{dateToken}.pdf";
+    }
+
     public static ReceivablesSummaryCandidate MapCandidate(
         AccountsReceivablePortfolioItem item,
         DateTime nowUtc)

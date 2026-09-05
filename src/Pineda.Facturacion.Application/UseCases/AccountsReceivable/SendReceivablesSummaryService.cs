@@ -58,7 +58,10 @@ public sealed class SendReceivablesSummaryService
         {
             try
             {
-                pdfContent = await _pdfRenderer.RenderAsync(document, cancellationToken);
+                pdfContent = await _pdfRenderer.RenderAsync(
+                    document,
+                    ReceivablesSummaryPdfVariant.Digital,
+                    cancellationToken);
                 pdfFileName = ReceivablesSummaryComposer.BuildPdfFileName(document);
             }
             catch (Exception exception)

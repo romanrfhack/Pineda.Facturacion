@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Pineda.Facturacion.Application.Abstractions.Communication;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
@@ -11,6 +12,7 @@ using Pineda.Facturacion.Domain.Entities;
 using Pineda.Facturacion.Domain.Enums;
 using Pineda.Facturacion.Infrastructure.BillingWrite.Persistence;
 using Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Repositories;
+using Pineda.Facturacion.Infrastructure.Documents;
 
 namespace Pineda.Facturacion.UnitTests;
 
@@ -2263,9 +2265,10 @@ public class AccountsReceivableServicesTests
                 CreatePortfolioItem(202, "USD", total: 300m, paid: 0m, outstanding: 300m, dueAtUtc: today.AddDays(-2))
             ]
         };
+        var pdfRenderer = new ArFakeReceivablesSummaryPdfRenderer();
         var service = new PreviewReceivablesSummaryService(
             CreateSummaryDocumentFactory(invoiceRepository),
-            new ArFakeReceivablesSummaryPdfRenderer());
+            pdfRenderer);
 
         var result = await service.ExecuteAsync(new ReceivablesSummaryCommand
         {
@@ -2283,7 +2286,11 @@ public class AccountsReceivableServicesTests
         Assert.Equal(2, result.Document!.Selection.InvoiceCount);
         Assert.Contains(result.Document.Selection.TotalsByCurrency, x => x.CurrencyCode == "MXN" && x.OutstandingBalance == 750m);
         Assert.Contains(result.Document.Selection.TotalsByCurrency, x => x.CurrencyCode == "USD" && x.OverdueBalance == 300m);
-        Assert.Equal("%PDF-summary"u8.ToArray(), result.PdfContent);
+        Assert.Equal("%PDF-digital"u8.ToArray(), result.PdfContent);
+        Assert.Equal("%PDF-print"u8.ToArray(), result.PrintPdfContent);
+        Assert.Equal(
+            [ReceivablesSummaryPdfVariant.Digital, ReceivablesSummaryPdfVariant.Print],
+            pdfRenderer.RenderedVariants);
         Assert.Contains("Resumen de adeudos", result.Html, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("<td class=\"content\" style=\"padding:20px 24px 24px;\">", result.Html, StringComparison.Ordinal);
         Assert.DoesNotContain("Logo del emisor", result.Html, StringComparison.Ordinal);
@@ -2582,19 +2589,17 @@ public class AccountsReceivableServicesTests
     }
 
     [Fact]
-    public async Task PreviewReceivablesSummary_RejectsInvalidCcOrBcc()
+    public async Task BuildReceivablesSummaryForEmail_RejectsInvalidCcOrBcc()
     {
-        var service = new PreviewReceivablesSummaryService(
-            CreateSummaryDocumentFactory(new ArFakeAccountsReceivableInvoiceRepository
+        var factory = CreateSummaryDocumentFactory(new ArFakeAccountsReceivableInvoiceRepository
             {
                 PortfolioItems =
                 [
                     CreatePortfolioItem(201, "MXN", total: 1000m, paid: 0m, outstanding: 1000m, dueAtUtc: DateTime.UtcNow.Date.AddDays(3))
                 ]
-            }),
-            new ArFakeReceivablesSummaryPdfRenderer());
+            });
 
-        var result = await service.ExecuteAsync(new ReceivablesSummaryCommand
+        var result = await factory.BuildDocumentAsync(new ReceivablesSummaryCommand
         {
             ReceiverId = 77,
             Scope = "all_pending",
@@ -2611,19 +2616,17 @@ public class AccountsReceivableServicesTests
     }
 
     [Fact]
-    public async Task PreviewReceivablesSummary_Rejects_Invalid_Recipients_When_A_Single_Entry_Contains_Multiple_Emails()
+    public async Task BuildReceivablesSummaryForEmail_Rejects_Invalid_Recipients_When_A_Single_Entry_Contains_Multiple_Emails()
     {
-        var service = new PreviewReceivablesSummaryService(
-            CreateSummaryDocumentFactory(new ArFakeAccountsReceivableInvoiceRepository
+        var factory = CreateSummaryDocumentFactory(new ArFakeAccountsReceivableInvoiceRepository
             {
                 PortfolioItems =
                 [
                     CreatePortfolioItem(201, "MXN", total: 1000m, paid: 0m, outstanding: 1000m, dueAtUtc: DateTime.UtcNow.Date.AddDays(3))
                 ]
-            }),
-            new ArFakeReceivablesSummaryPdfRenderer());
+            });
 
-        var result = await service.ExecuteAsync(new ReceivablesSummaryCommand
+        var result = await factory.BuildDocumentAsync(new ReceivablesSummaryCommand
         {
             ReceiverId = 77,
             Scope = "all_pending",
@@ -2705,7 +2708,7 @@ public class AccountsReceivableServicesTests
     }
 
     [Fact]
-    public async Task PreviewReceivablesSummary_ReturnsPdfGenerationFailure_WhenRendererFails()
+    public async Task PreviewReceivablesSummary_KeepsHtmlAvailable_WhenPdfRendererFails()
     {
         var service = new PreviewReceivablesSummaryService(
             CreateSummaryDocumentFactory(new ArFakeAccountsReceivableInvoiceRepository
@@ -2727,9 +2730,126 @@ public class AccountsReceivableServicesTests
             Format = "html_with_pdf"
         });
 
-        Assert.Equal(ReceivablesSummaryOutcome.PdfGenerationFailed, result.Outcome);
-        Assert.Contains("PDF roto", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(ReceivablesSummaryOutcome.Found, result.Outcome);
+        Assert.True(result.IsSuccess);
+        Assert.Null(result.ErrorMessage);
+        Assert.Contains("PDF roto", result.PdfErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("PDF roto", result.PrintPdfErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(result.PdfContent);
+        Assert.Null(result.PrintPdfContent);
         Assert.NotNull(result.Html);
+    }
+
+    [Fact]
+    public async Task PreviewReceivablesSummary_AllowsMissingEmailRecipients_AndBuildsBothPdfs()
+    {
+        var pdfRenderer = new ArFakeReceivablesSummaryPdfRenderer();
+        var service = new PreviewReceivablesSummaryService(
+            CreateSummaryDocumentFactory(new ArFakeAccountsReceivableInvoiceRepository
+            {
+                PortfolioItems =
+                [
+                    CreatePortfolioItem(201, "MXN", total: 1000m, paid: 0m, outstanding: 1000m, dueAtUtc: DateTime.UtcNow.Date.AddDays(2))
+                ]
+            }, receiverEmail: null),
+            pdfRenderer);
+
+        var result = await service.ExecuteAsync(new ReceivablesSummaryCommand
+        {
+            ReceiverId = 77,
+            Scope = "all_pending",
+            To = [],
+            Subject = "Resumen",
+            Message = "Mensaje",
+            Format = "html"
+        });
+
+        Assert.Equal(ReceivablesSummaryOutcome.Found, result.Outcome);
+        Assert.True(result.IsSuccess);
+        Assert.Empty(result.Document!.To);
+        Assert.NotNull(result.PdfContent);
+        Assert.NotNull(result.PrintPdfContent);
+        Assert.Equal(
+            [ReceivablesSummaryPdfVariant.Digital, ReceivablesSummaryPdfVariant.Print],
+            pdfRenderer.RenderedVariants);
+    }
+
+    [Fact]
+    public async Task ReceivablesSummaryPdfRenderer_CreatesLetterDigitalAndLowInkPrintVariants()
+    {
+        var document = new ReceivablesSummaryDocument
+        {
+            ReceiverId = 77,
+            Scope = ReceivablesSummaryScope.AllPending,
+            Format = ReceivablesSummaryFormat.Html,
+            Receiver = new ReceivablesSummaryParty
+            {
+                LegalName = "Cliente Uno",
+                Rfc = "AAA010101AAA",
+                FiscalRegimeCode = "601",
+                PostalCode = "01000"
+            },
+            Issuer = new ReceivablesSummaryParty
+            {
+                LegalName = "Emisor Uno",
+                Rfc = "III010101III",
+                FiscalRegimeCode = "601",
+                PostalCode = "02000"
+            },
+            Invoices =
+            [
+                new ReceivablesSummaryCandidate
+                {
+                    AccountsReceivableInvoiceId = 201,
+                    FiscalSeries = "A",
+                    FiscalFolio = "201",
+                    IssuedAtUtc = new DateTime(2026, 7, 1, 0, 0, 0, DateTimeKind.Utc),
+                    DueAtUtc = new DateTime(2026, 7, 10, 0, 0, 0, DateTimeKind.Utc),
+                    DaysPastDue = 5,
+                    CurrencyCode = "MXN",
+                    Total = 1000m,
+                    OutstandingBalance = 1000m,
+                    Status = "Open",
+                    IsOverdue = true
+                }
+            ],
+            Selection = new ReceivablesSummarySelection
+            {
+                InvoiceCount = 1,
+                OutstandingBalance = 1000m,
+                OverdueBalance = 1000m,
+                TotalsByCurrency =
+                [
+                    new ReceivablesSummaryTotalByCurrency
+                    {
+                        CurrencyCode = "MXN",
+                        InvoiceCount = 1,
+                        Total = 1000m,
+                        OutstandingBalance = 1000m,
+                        OverdueBalance = 1000m
+                    }
+                ]
+            },
+            Subject = "Resumen",
+            Message = "Mensaje para el cliente",
+            GeneratedAtUtc = new DateTime(2026, 7, 30, 12, 0, 0, DateTimeKind.Utc)
+        };
+        var renderer = new ReceivablesSummaryPdfRenderer();
+
+        var digital = Encoding.Latin1.GetString(await renderer.RenderAsync(
+            document,
+            ReceivablesSummaryPdfVariant.Digital));
+        var print = Encoding.Latin1.GetString(await renderer.RenderAsync(
+            document,
+            ReceivablesSummaryPdfVariant.Print));
+
+        Assert.StartsWith("%PDF-1.4", digital, StringComparison.Ordinal);
+        Assert.StartsWith("%PDF-1.4", print, StringComparison.Ordinal);
+        Assert.Contains("/MediaBox [0 0 612 792]", digital, StringComparison.Ordinal);
+        Assert.Contains("/MediaBox [0 0 612 792]", print, StringComparison.Ordinal);
+        Assert.Contains(" re f", digital, StringComparison.Ordinal);
+        Assert.DoesNotContain(" re f", print, StringComparison.Ordinal);
+        Assert.Contains("RESUMEN DE ADEUDOS PENDIENTES", print, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -3516,14 +3636,22 @@ public class AccountsReceivableServicesTests
     {
         public Exception? Exception { get; set; }
 
-        public Task<byte[]> RenderAsync(ReceivablesSummaryDocument document, CancellationToken cancellationToken = default)
+        public List<ReceivablesSummaryPdfVariant> RenderedVariants { get; } = [];
+
+        public Task<byte[]> RenderAsync(
+            ReceivablesSummaryDocument document,
+            ReceivablesSummaryPdfVariant variant,
+            CancellationToken cancellationToken = default)
         {
+            RenderedVariants.Add(variant);
             if (Exception is not null)
             {
                 throw Exception;
             }
 
-            return Task.FromResult("%PDF-summary"u8.ToArray());
+            return Task.FromResult(variant == ReceivablesSummaryPdfVariant.Print
+                ? "%PDF-print"u8.ToArray()
+                : "%PDF-digital"u8.ToArray());
         }
     }
 

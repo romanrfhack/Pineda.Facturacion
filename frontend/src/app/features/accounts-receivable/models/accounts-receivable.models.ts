@@ -518,6 +518,10 @@ export interface ReceivablesSummaryPreviewResponse {
   html?: string | null;
   pdfBase64?: string | null;
   pdfFileName?: string | null;
+  pdfErrorMessage?: string | null;
+  printPdfBase64?: string | null;
+  printPdfFileName?: string | null;
+  printPdfErrorMessage?: string | null;
   summary?: ReceivablesSummarySelectionResponse | null;
   finalSummary?: ReceivablesSummaryFinalResponse | null;
 }

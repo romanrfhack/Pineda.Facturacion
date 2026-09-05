@@ -103,6 +103,21 @@ public sealed class ReceivablesSummaryDocumentFactory
         ReceivablesSummaryCommand command,
         CancellationToken cancellationToken = default)
     {
+        return await BuildDocumentCoreAsync(command, requireEmailDeliveryFields: true, cancellationToken);
+    }
+
+    public async Task<ReceivablesSummaryDocumentBuildResult> BuildPreviewDocumentAsync(
+        ReceivablesSummaryCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        return await BuildDocumentCoreAsync(command, requireEmailDeliveryFields: false, cancellationToken);
+    }
+
+    private async Task<ReceivablesSummaryDocumentBuildResult> BuildDocumentCoreAsync(
+        ReceivablesSummaryCommand command,
+        bool requireEmailDeliveryFields,
+        CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(command);
 
         if (!ReceivablesSummaryComposer.TryParseScope(command.Scope, out var scope))
@@ -148,21 +163,25 @@ public sealed class ReceivablesSummaryDocumentFactory
                 : "No hay facturas seleccionadas para enviar.");
         }
 
-        var invalidRecipients = EmailRecipientParser.FindInvalidRecipients(command.To)
-            .Concat(EmailRecipientParser.FindInvalidRecipients(command.Cc))
-            .Concat(EmailRecipientParser.FindInvalidRecipients(command.Bcc))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-        if (invalidRecipients.Length > 0)
+        if (requireEmailDeliveryFields)
         {
-            return ValidationFailure($"Correo inválido: {string.Join(", ", invalidRecipients)}.");
+            var invalidRecipients = EmailRecipientParser.FindInvalidRecipients(command.To)
+                .Concat(EmailRecipientParser.FindInvalidRecipients(command.Cc))
+                .Concat(EmailRecipientParser.FindInvalidRecipients(command.Bcc))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            if (invalidRecipients.Length > 0)
+            {
+                return ValidationFailure($"Correo inválido: {string.Join(", ", invalidRecipients)}.");
+            }
+
+            if (ReceivablesSummaryComposer.NormalizeRecipients(command.To).Count == 0)
+            {
+                return ValidationFailure("Captura al menos un correo destinatario válido para continuar.");
+            }
         }
 
         var to = ReceivablesSummaryComposer.NormalizeRecipients(command.To);
-        if (to.Count == 0)
-        {
-            return ValidationFailure("Captura al menos un correo destinatario válido para continuar.");
-        }
 
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         var subject = command.Subject?.Trim();
