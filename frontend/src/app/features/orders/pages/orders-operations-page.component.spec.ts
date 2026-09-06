@@ -1117,6 +1117,80 @@ describe('OrdersOperationsPageComponent', () => {
     expect(fixture.componentInstance['importedOrder']()?.salesOrderId).toBe(20);
   });
 
+  it('keeps an incomplete import unavailable when the API returns no sales order', async () => {
+    const { fixture, feedback } = await configure({
+      importLegacyOrder: vi.fn().mockReturnValue(of({
+        outcome: 'Idempotent',
+        isSuccess: true,
+        isIdempotent: true,
+        sourceSystem: 'legacy',
+        sourceTable: 'pedidos',
+        legacyOrderId: 'LEG-1001',
+        sourceHash: 'hash',
+        legacyImportRecordId: 10,
+        salesOrderId: null,
+        importStatus: 'Pending',
+        currentRevisionNumber: 1
+      }))
+    });
+    const order = fixture.componentInstance['ordersPage']()!.items[0];
+
+    await fixture.componentInstance['importOrderFromList'](order);
+
+    expect(fixture.componentInstance['importedOrder']()).toBeNull();
+    expect(fixture.componentInstance['ordersPage']()!.items[0].isImported).toBe(false);
+    expect(fixture.componentInstance['localError']()).toContain('no se generó la orden interna');
+    expect(feedback.show).not.toHaveBeenCalled();
+  });
+
+  it('retries the import when a stale imported row has no sales order id', async () => {
+    const { fixture, api } = await configure({
+      searchLegacyOrders: vi.fn().mockReturnValue(of({
+        isSuccess: true,
+        items: [
+          {
+            legacyOrderId: 'LEG-2001',
+            orderDateUtc: '2026-03-23T08:00:00Z',
+            customerName: 'Cliente Importado',
+            total: 116,
+            legacyOrderType: 'F',
+            isImported: true,
+            salesOrderId: null,
+            billingDocumentId: null,
+            billingDocumentStatus: null,
+            fiscalDocumentId: null,
+            fiscalDocumentStatus: null,
+            importStatus: 'Pending'
+          }
+        ],
+        totalCount: 1,
+        totalPages: 1,
+        page: 1,
+        pageSize: 10
+      })),
+      importLegacyOrder: vi.fn().mockReturnValue(of({
+        outcome: 'Imported',
+        isSuccess: true,
+        isIdempotent: false,
+        sourceSystem: 'legacy',
+        sourceTable: 'pedidos',
+        legacyOrderId: 'LEG-2001',
+        sourceHash: 'hash',
+        legacyImportRecordId: 10,
+        salesOrderId: 22,
+        importStatus: 'Imported',
+        currentRevisionNumber: 1
+      }))
+    });
+    const order = fixture.componentInstance['ordersPage']()!.items[0];
+
+    await fixture.componentInstance['continueOrder'](order);
+
+    expect(api.importLegacyOrder).toHaveBeenCalledWith('LEG-2001');
+    expect(fixture.componentInstance['importedOrder']()?.salesOrderId).toBe(22);
+    expect(fixture.componentInstance['ordersPage']()!.items[0].isImported).toBe(true);
+  });
+
   it('continues with an imported order without billing document by selecting it locally', async () => {
     const { fixture, feedback } = await configure({
       searchLegacyOrders: vi.fn().mockReturnValue(of({
