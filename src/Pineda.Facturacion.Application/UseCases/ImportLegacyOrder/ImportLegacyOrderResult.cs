@@ -5,6 +5,7 @@ namespace Pineda.Facturacion.Application.UseCases.ImportLegacyOrder;
 public class ImportLegacyOrderResult
 {
     public const string LegacyOrderAlreadyImportedWithDifferentSourceHashErrorCode = "LegacyOrderAlreadyImportedWithDifferentSourceHash";
+    public const string LegacyImportSnapshotMissingErrorCode = "LegacyImportSnapshotMissing";
     public const string ViewExistingSalesOrderAction = "view_existing_sales_order";
     public const string ViewExistingBillingDocumentAction = "view_existing_billing_document";
     public const string ViewExistingFiscalDocumentAction = "view_existing_fiscal_document";

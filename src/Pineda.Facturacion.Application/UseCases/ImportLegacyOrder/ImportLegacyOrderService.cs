@@ -2,6 +2,7 @@ using Pineda.Facturacion.Application.Abstractions.Hashing;
 using Pineda.Facturacion.Application.Abstractions.Legacy;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
 using Pineda.Facturacion.Application.Common;
+using Pineda.Facturacion.Application.Models.Legacy;
 using Pineda.Facturacion.Domain.Entities;
 using Pineda.Facturacion.Domain.Enums;
 
@@ -72,6 +73,7 @@ public class ImportLegacyOrderService
         {
             return await HandleExistingImportRecordAsync(
                 command,
+                legacyOrder,
                 sourceHash,
                 existingImportRecord,
                 cancellationToken);
@@ -92,39 +94,30 @@ public class ImportLegacyOrderService
         await _legacyImportRecordRepository.AddAsync(importRecord, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        var salesOrder = LegacyOrderSnapshotMapper.MapToSalesOrder(legacyOrder, importRecord.Id);
-
-        await _salesOrderRepository.AddAsync(salesOrder, cancellationToken);
-
-        importRecord.ImportStatus = ImportStatus.Imported;
-        importRecord.LastSeenAtUtc = DateTime.UtcNow;
-
-        await _legacyImportRecordRepository.UpdateAsync(importRecord, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-        var currentRevisionNumber = await _legacyImportRevisionRecorder.RecordImportedAsync(importRecord, legacyOrder, salesOrder, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        return new ImportLegacyOrderResult
-        {
-            Outcome = ImportLegacyOrderOutcome.Imported,
-            IsSuccess = true,
-            SourceSystem = command.SourceSystem,
-            SourceTable = command.SourceTable,
-            LegacyOrderId = legacyOrder.LegacyOrderId,
-            SourceHash = sourceHash,
-            LegacyImportRecordId = importRecord.Id,
-            SalesOrderId = salesOrder.Id,
-            ImportStatus = importRecord.ImportStatus,
-            CurrentRevisionNumber = currentRevisionNumber
-        };
+        return await CompleteImportAsync(command, legacyOrder, sourceHash, importRecord, cancellationToken);
     }
 
     private async Task<ImportLegacyOrderResult> HandleExistingImportRecordAsync(
         ImportLegacyOrderCommand command,
+        LegacyOrderReadModel legacyOrder,
         string sourceHash,
         LegacyImportRecord existingImportRecord,
         CancellationToken cancellationToken)
     {
+        var existingSalesOrder = await _salesOrderRepository.GetByLegacyImportRecordIdAsync(
+            existingImportRecord.Id,
+            cancellationToken);
+
+        if (existingSalesOrder is null && CanResumePendingImport(existingImportRecord))
+        {
+            return await CompleteImportAsync(
+                command,
+                legacyOrder,
+                sourceHash,
+                existingImportRecord,
+                cancellationToken);
+        }
+
         if (!string.Equals(existingImportRecord.SourceHash, sourceHash, StringComparison.Ordinal))
         {
             var existingContext = await _importedLegacyOrderLookupRepository.GetByLegacyOrderIdsAsync(
@@ -160,9 +153,14 @@ public class ImportLegacyOrderService
             };
         }
 
-        var existingSalesOrder = await _salesOrderRepository.GetByLegacyImportRecordIdAsync(
-            existingImportRecord.Id,
-            cancellationToken);
+        if (existingSalesOrder is null)
+        {
+            return await CreateIncompleteImportResultAsync(
+                command,
+                sourceHash,
+                existingImportRecord,
+                cancellationToken);
+        }
 
         return new ImportLegacyOrderResult
         {
@@ -178,6 +176,82 @@ public class ImportLegacyOrderService
             ImportStatus = existingImportRecord.ImportStatus,
             CurrentRevisionNumber = await _legacyImportRevisionRecorder.ResolveCurrentRevisionNumberAsync(existingImportRecord, cancellationToken)
         };
+    }
+
+    private async Task<ImportLegacyOrderResult> CompleteImportAsync(
+        ImportLegacyOrderCommand command,
+        LegacyOrderReadModel legacyOrder,
+        string sourceHash,
+        LegacyImportRecord importRecord,
+        CancellationToken cancellationToken)
+    {
+        var salesOrder = LegacyOrderSnapshotMapper.MapToSalesOrder(legacyOrder, importRecord.Id);
+        await _salesOrderRepository.AddAsync(salesOrder, cancellationToken);
+
+        var importedAtUtc = DateTime.UtcNow;
+        importRecord.SourceDocumentType = legacyOrder.LegacyOrderType ?? string.Empty;
+        importRecord.SourceHash = sourceHash;
+        importRecord.ImportStatus = ImportStatus.Imported;
+        importRecord.ImportedAtUtc = importedAtUtc;
+        importRecord.LastSeenAtUtc = importedAtUtc;
+        importRecord.ErrorMessage = null;
+
+        await _legacyImportRecordRepository.UpdateAsync(importRecord, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        var currentRevisionNumber = await _legacyImportRevisionRecorder.RecordImportedAsync(
+            importRecord,
+            legacyOrder,
+            salesOrder,
+            cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return new ImportLegacyOrderResult
+        {
+            Outcome = ImportLegacyOrderOutcome.Imported,
+            IsSuccess = true,
+            SourceSystem = command.SourceSystem,
+            SourceTable = command.SourceTable,
+            LegacyOrderId = legacyOrder.LegacyOrderId,
+            SourceHash = sourceHash,
+            LegacyImportRecordId = importRecord.Id,
+            SalesOrderId = salesOrder.Id,
+            ImportStatus = importRecord.ImportStatus,
+            ImportedAtUtc = importRecord.ImportedAtUtc,
+            CurrentRevisionNumber = currentRevisionNumber
+        };
+    }
+
+    private async Task<ImportLegacyOrderResult> CreateIncompleteImportResultAsync(
+        ImportLegacyOrderCommand command,
+        string sourceHash,
+        LegacyImportRecord importRecord,
+        CancellationToken cancellationToken)
+    {
+        return new ImportLegacyOrderResult
+        {
+            Outcome = ImportLegacyOrderOutcome.Conflict,
+            IsSuccess = false,
+            ErrorCode = ImportLegacyOrderResult.LegacyImportSnapshotMissingErrorCode,
+            ErrorMessage = $"La orden legacy '{command.LegacyOrderId}' tiene un registro de importación incompleto sin una orden interna asociada. Se requiere revisión antes de continuar.",
+            SourceSystem = command.SourceSystem,
+            SourceTable = command.SourceTable,
+            LegacyOrderId = command.LegacyOrderId,
+            SourceHash = sourceHash,
+            LegacyImportRecordId = importRecord.Id,
+            ImportStatus = importRecord.ImportStatus,
+            ExistingBillingDocumentId = importRecord.BillingDocumentId,
+            ImportedAtUtc = importRecord.ImportedAtUtc,
+            ExistingSourceHash = importRecord.SourceHash,
+            CurrentSourceHash = sourceHash,
+            CurrentRevisionNumber = await _legacyImportRevisionRecorder.ResolveCurrentRevisionNumberAsync(importRecord, cancellationToken)
+        };
+    }
+
+    private static bool CanResumePendingImport(LegacyImportRecord importRecord)
+    {
+        return importRecord.ImportStatus == ImportStatus.Pending
+            && !importRecord.BillingDocumentId.HasValue;
     }
 
     private static ImportLegacyOrderResult CreateFailureResult(
