@@ -71,6 +71,157 @@ public class ImportLegacyOrderServiceTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_ResumesImport_WhenPendingRecordHasNoSalesOrder()
+    {
+        var legacyOrder = CreateLegacyOrder();
+        var importRecord = new LegacyImportRecord
+        {
+            Id = 10,
+            SourceHash = "same-hash",
+            ImportStatus = ImportStatus.Pending,
+            BillingDocumentId = null
+        };
+        var importRecordRepository = new FakeLegacyImportRecordRepository
+        {
+            Existing = importRecord
+        };
+        var salesOrderRepository = new FakeSalesOrderRepository();
+        var unitOfWork = new FakeUnitOfWork();
+        var revisionRepository = new FakeLegacyImportRevisionRepository();
+        var service = CreateService(
+            new FakeLegacyOrderReader { Result = legacyOrder },
+            new FakeContentHashGenerator { Hash = "same-hash" },
+            importRecordRepository,
+            salesOrderRepository,
+            unitOfWork,
+            revisionRepository);
+
+        var result = await service.ExecuteAsync(new ImportLegacyOrderCommand
+        {
+            SourceSystem = "legacy",
+            SourceTable = "orders",
+            LegacyOrderId = legacyOrder.LegacyOrderId
+        });
+
+        Assert.True(result.IsSuccess);
+        Assert.False(result.IsIdempotent);
+        Assert.Equal(ImportLegacyOrderOutcome.Imported, result.Outcome);
+        Assert.Equal(10, result.LegacyImportRecordId);
+        Assert.Equal(202, result.SalesOrderId);
+        Assert.Equal(ImportStatus.Imported, result.ImportStatus);
+        Assert.Null(importRecordRepository.Added);
+        Assert.Same(importRecord, importRecordRepository.Updated);
+        Assert.Equal(ImportStatus.Imported, importRecord.ImportStatus);
+        Assert.NotNull(importRecord.ImportedAtUtc);
+        Assert.Equal("same-hash", importRecord.SourceHash);
+        Assert.Equal(10, salesOrderRepository.Added?.LegacyImportRecordId);
+        Assert.Equal(2, unitOfWork.SaveChangesCallCount);
+        var revision = Assert.Single(revisionRepository.Revisions);
+        Assert.Equal(202, revision.SalesOrderId);
+        Assert.Equal(1, result.CurrentRevisionNumber);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ResumesPendingImportWithCurrentSnapshot_WhenSourceChangedBeforeRecovery()
+    {
+        var legacyOrder = CreateLegacyOrder();
+        var importRecord = new LegacyImportRecord
+        {
+            Id = 10,
+            SourceHash = "old-hash",
+            ImportStatus = ImportStatus.Pending,
+            BillingDocumentId = null
+        };
+        var service = CreateService(
+            new FakeLegacyOrderReader { Result = legacyOrder },
+            new FakeContentHashGenerator { Hash = "current-hash" },
+            new FakeLegacyImportRecordRepository { Existing = importRecord },
+            new FakeSalesOrderRepository(),
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new ImportLegacyOrderCommand
+        {
+            SourceSystem = "legacy",
+            SourceTable = "orders",
+            LegacyOrderId = legacyOrder.LegacyOrderId
+        });
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(ImportLegacyOrderOutcome.Imported, result.Outcome);
+        Assert.Equal("current-hash", result.SourceHash);
+        Assert.Equal("current-hash", importRecord.SourceHash);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ReturnsConflict_WhenImportedRecordHasNoSalesOrder()
+    {
+        var legacyOrder = CreateLegacyOrder();
+        var salesOrderRepository = new FakeSalesOrderRepository();
+        var service = CreateService(
+            new FakeLegacyOrderReader { Result = legacyOrder },
+            new FakeContentHashGenerator { Hash = "same-hash" },
+            new FakeLegacyImportRecordRepository
+            {
+                Existing = new LegacyImportRecord
+                {
+                    Id = 10,
+                    SourceHash = "same-hash",
+                    ImportStatus = ImportStatus.Imported
+                }
+            },
+            salesOrderRepository,
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new ImportLegacyOrderCommand
+        {
+            SourceSystem = "legacy",
+            SourceTable = "orders",
+            LegacyOrderId = legacyOrder.LegacyOrderId
+        });
+
+        Assert.False(result.IsSuccess);
+        Assert.False(result.IsIdempotent);
+        Assert.Equal(ImportLegacyOrderOutcome.Conflict, result.Outcome);
+        Assert.Equal(ImportLegacyOrderResult.LegacyImportSnapshotMissingErrorCode, result.ErrorCode);
+        Assert.Null(salesOrderRepository.Added);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ReturnsConflict_WhenPendingRecordWithoutSalesOrderIsLinkedToBillingDocument()
+    {
+        var legacyOrder = CreateLegacyOrder();
+        var salesOrderRepository = new FakeSalesOrderRepository();
+        var service = CreateService(
+            new FakeLegacyOrderReader { Result = legacyOrder },
+            new FakeContentHashGenerator { Hash = "same-hash" },
+            new FakeLegacyImportRecordRepository
+            {
+                Existing = new LegacyImportRecord
+                {
+                    Id = 10,
+                    SourceHash = "same-hash",
+                    ImportStatus = ImportStatus.Pending,
+                    BillingDocumentId = 30
+                }
+            },
+            salesOrderRepository,
+            new FakeUnitOfWork());
+
+        var result = await service.ExecuteAsync(new ImportLegacyOrderCommand
+        {
+            SourceSystem = "legacy",
+            SourceTable = "orders",
+            LegacyOrderId = legacyOrder.LegacyOrderId
+        });
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ImportLegacyOrderOutcome.Conflict, result.Outcome);
+        Assert.Equal(ImportLegacyOrderResult.LegacyImportSnapshotMissingErrorCode, result.ErrorCode);
+        Assert.Equal(30, result.ExistingBillingDocumentId);
+        Assert.Null(salesOrderRepository.Added);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_ReturnsFailure_WhenExistingImportHasDifferentHash()
     {
         var legacyOrder = CreateLegacyOrder();

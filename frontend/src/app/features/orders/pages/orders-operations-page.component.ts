@@ -1253,6 +1253,11 @@ export class OrdersOperationsPageComponent implements OnInit {
   }
 
   protected async continueOrder(order: LegacyOrderListItem): Promise<void> {
+    if (!order.salesOrderId) {
+      await this.importOrderInternal(order.legacyOrderId, order.legacyOrderId);
+      return;
+    }
+
     this.localError.set(null);
     this.importConflict.set(null);
     this.importPreview.set(null);
@@ -1369,11 +1374,25 @@ export class OrdersOperationsPageComponent implements OnInit {
       const response = await firstValueFrom(this.ordersApi.importLegacyOrder(legacyOrderId));
       this.legacyOrderId = legacyOrderId;
       this.selectedLegacyOrderId.set(legacyOrderId);
+
+      if (!response.salesOrderId) {
+        this.importedOrder.set(null);
+        this.updateOrderInPage(legacyOrderId, (order) => ({
+          ...order,
+          isImported: false,
+          salesOrderId: null,
+          importStatus: response.importStatus ?? order.importStatus
+        }));
+        this.localError.set(
+          'La importación quedó incompleta porque no se generó la orden interna. Vuelve a intentar; si el problema persiste, solicita soporte.');
+        return;
+      }
+
       this.importedOrder.set(response);
       this.updateOrderInPage(legacyOrderId, (order) => ({
         ...order,
         isImported: true,
-        salesOrderId: response.salesOrderId ?? order.salesOrderId,
+        salesOrderId: response.salesOrderId,
         importStatus: response.importStatus ?? order.importStatus
       }));
       this.feedbackService.show(
