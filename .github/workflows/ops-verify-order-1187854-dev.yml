@@ -1,0 +1,85 @@
+name: OPS Verify Order 1187854 DEV
+
+on:
+  push:
+    branches:
+      - ops/verify-order-1187854-dev
+    paths:
+      - .github/workflows/ops-verify-order-1187854-dev.yml
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      TARGET_SHA: 8edd442110ea190972738cd1e5c1b4f7cff183ec
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ops/verify-order-1187854-dev
+          fetch-depth: 1
+
+      - name: Wait for DEV CI and backend deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$TARGET_SHA&per_page=100"
+          ci_status="pending"
+          ci_conclusion=""
+          ci_run_id=""
+          deploy_status="pending"
+          deploy_conclusion=""
+          deploy_run_id=""
+
+          for attempt in $(seq 1 60); do
+            payload="$(curl -fsSL \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "$api")"
+
+            ci_status="$(jq -r '[.workflow_runs[] | select(.name == "CI")] | sort_by(.created_at) | last | .status // "pending"' <<<"$payload")"
+            ci_conclusion="$(jq -r '[.workflow_runs[] | select(.name == "CI")] | sort_by(.created_at) | last | .conclusion // ""' <<<"$payload")"
+            ci_run_id="$(jq -r '[.workflow_runs[] | select(.name == "CI")] | sort_by(.created_at) | last | .id // ""' <<<"$payload")"
+            deploy_status="$(jq -r '[.workflow_runs[] | select(.name == "Deploy Backend DEV (Facturas API)")] | sort_by(.created_at) | last | .status // "pending"' <<<"$payload")"
+            deploy_conclusion="$(jq -r '[.workflow_runs[] | select(.name == "Deploy Backend DEV (Facturas API)")] | sort_by(.created_at) | last | .conclusion // ""' <<<"$payload")"
+            deploy_run_id="$(jq -r '[.workflow_runs[] | select(.name == "Deploy Backend DEV (Facturas API)")] | sort_by(.created_at) | last | .id // ""' <<<"$payload")"
+
+            if [ "$ci_status" = "completed" ] && [ "$ci_conclusion" != "success" ]; then
+              break
+            fi
+
+            if [ "$deploy_status" = "completed" ]; then
+              break
+            fi
+
+            sleep 15
+          done
+
+          {
+            printf 'target_sha=%s\n' "$TARGET_SHA"
+            printf 'ci_status=%s\n' "$ci_status"
+            printf 'ci_conclusion=%s\n' "$ci_conclusion"
+            printf 'ci_run_id=%s\n' "$ci_run_id"
+            printf 'deploy_status=%s\n' "$deploy_status"
+            printf 'deploy_conclusion=%s\n' "$deploy_conclusion"
+            printf 'deploy_run_id=%s\n' "$deploy_run_id"
+            printf 'verified_at_utc=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > /tmp/order-1187854-dev-verification.txt
+
+      - name: Record verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .ops
+          cp /tmp/order-1187854-dev-verification.txt .ops/order-1187854-dev-verification.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .ops/order-1187854-dev-verification.txt
+          git commit -m "ops: registrar validación DEV de orden 1187854"
+          git push origin HEAD:ops/verify-order-1187854-dev
