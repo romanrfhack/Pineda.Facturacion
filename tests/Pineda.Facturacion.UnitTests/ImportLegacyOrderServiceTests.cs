@@ -122,6 +122,57 @@ public class ImportLegacyOrderServiceTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_ResumesPendingImport_WhenLegacyCustomerRfcExceedsSnapshotLimit()
+    {
+        const string overlengthLegacyRfc = "CEMI8902422GG0";
+        var legacyOrder = CreateLegacyOrder();
+        legacyOrder.CustomerRfc = overlengthLegacyRfc;
+        var importRecord = new LegacyImportRecord
+        {
+            Id = 10,
+            SourceHash = "same-hash",
+            ImportStatus = ImportStatus.Pending,
+            BillingDocumentId = null
+        };
+        var salesOrderRepository = new FakeSalesOrderRepository();
+        var revisionRepository = new FakeLegacyImportRevisionRepository();
+        var service = CreateService(
+            new FakeLegacyOrderReader { Result = legacyOrder },
+            new FakeContentHashGenerator { Hash = "same-hash" },
+            new FakeLegacyImportRecordRepository { Existing = importRecord },
+            salesOrderRepository,
+            new FakeUnitOfWork(),
+            revisionRepository);
+
+        var result = await service.ExecuteAsync(new ImportLegacyOrderCommand
+        {
+            SourceSystem = "legacy",
+            SourceTable = "orders",
+            LegacyOrderId = legacyOrder.LegacyOrderId
+        });
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(ImportLegacyOrderOutcome.Imported, result.Outcome);
+        Assert.Null(salesOrderRepository.Added?.CustomerRfc);
+        var revision = Assert.Single(revisionRepository.Revisions);
+        Assert.NotNull(revision.SnapshotJson);
+        Assert.Contains(overlengthLegacyRfc, revision.SnapshotJson, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(" xaxx010101000 ", "XAXX010101000")]
+    [InlineData("CEMI8902422GG0", null)]
+    [InlineData("   ", null)]
+    public void NormalizeCustomerRfc_FitsSnapshotColumnWithoutTruncatingInvalidSource(
+        string sourceRfc,
+        string? expected)
+    {
+        var result = LegacyOrderSnapshotMapper.NormalizeCustomerRfc(sourceRfc);
+
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_ResumesPendingImportWithCurrentSnapshot_WhenSourceChangedBeforeRecovery()
     {
         var legacyOrder = CreateLegacyOrder();
