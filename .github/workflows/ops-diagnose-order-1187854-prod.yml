@@ -1,0 +1,94 @@
+name: OPS Diagnose Order 1187854 PROD
+
+on:
+  push:
+    branches:
+      - ops/diagnose-order-1187854-prod
+    paths:
+      - .github/workflows/ops-diagnose-order-1187854-prod.yml
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    environment: facturas-production
+    env:
+      SSH_HOST: ${{ secrets.FACTURAS_SSH_HOST }}
+      SSH_PORT: ${{ secrets.FACTURAS_SSH_PORT }}
+      SSH_USER: ${{ secrets.FACTURAS_SSH_USER }}
+      SSH_KEY: ${{ secrets.FACTURAS_SSH_KEY }}
+      SERVICE_NAME: facturas-api
+
+    steps:
+      - name: Checkout operations branch
+        uses: actions/checkout@v4
+        with:
+          ref: ops/diagnose-order-1187854-prod
+          fetch-depth: 1
+
+      - name: Setup SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "${SSH_HOST:-}" ]
+          [ -n "${SSH_PORT:-}" ]
+          [ -n "${SSH_USER:-}" ]
+          [ -n "${SSH_KEY:-}" ]
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keygen -y -f ~/.ssh/id_ed25519 > /dev/null
+          ssh-keyscan -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts
+
+      - name: Collect redacted endpoint diagnostic
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" \
+            "$SSH_USER@$SSH_HOST" \
+            "sudo journalctl -u '$SERVICE_NAME' --since '2026-09-07 00:00:00 UTC' --no-pager -o cat" \
+            > /tmp/facturas-api.log
+
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          source = Path("/tmp/facturas-api.log").read_text(encoding="utf-8", errors="replace").splitlines()
+          matches = [index for index, line in enumerate(source) if "/api/orders/1187854/import" in line]
+          output = [
+              "endpoint=/api/orders/1187854/import",
+              f"matching_log_entries={len(matches)}",
+          ]
+
+          if matches:
+              start = max(0, matches[-1] - 4)
+              end = min(len(source), matches[-1] + 120)
+              block = "\n".join(source[start:end])
+              block = re.sub(
+                  r"(?i)(password|pwd|user id|uid|server|host)\s*=\s*[^;\s]+",
+                  r"\1=[REDACTED]",
+                  block,
+              )
+              block = re.sub(r"(?i)bearer\s+[A-Za-z0-9._~+/-]+=*", "Bearer [REDACTED]", block)
+              output.extend(["diagnostic_begin", block, "diagnostic_end"])
+
+          Path("/tmp/order-1187854-prod-diagnostic.txt").write_text(
+              "\n".join(output) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Record diagnostic
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .ops
+          cp /tmp/order-1187854-prod-diagnostic.txt .ops/order-1187854-prod-diagnostic.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .ops/order-1187854-prod-diagnostic.txt
+          git commit -m "ops: registrar diagnóstico de importación 1187854"
+          git push origin HEAD:ops/diagnose-order-1187854-prod
