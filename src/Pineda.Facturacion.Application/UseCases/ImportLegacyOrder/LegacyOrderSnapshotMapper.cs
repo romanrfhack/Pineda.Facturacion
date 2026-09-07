@@ -6,6 +6,8 @@ namespace Pineda.Facturacion.Application.UseCases.ImportLegacyOrder;
 
 internal static class LegacyOrderSnapshotMapper
 {
+    internal const int MaxPersistedCustomerRfcLength = 13;
+
     public static SalesOrder MapToSalesOrder(
         Models.Legacy.LegacyOrderReadModel legacyOrder,
         long legacyImportRecordId)
@@ -17,7 +19,7 @@ internal static class LegacyOrderSnapshotMapper
             LegacyOrderType = legacyOrder.LegacyOrderType,
             CustomerLegacyId = legacyOrder.CustomerLegacyId,
             CustomerName = legacyOrder.CustomerName,
-            CustomerRfc = legacyOrder.CustomerRfc,
+            CustomerRfc = NormalizeCustomerRfc(legacyOrder.CustomerRfc),
             PaymentCondition = legacyOrder.PaymentCondition,
             LegacyPaymentCode = legacyOrder.LegacyPaymentCode,
             LegacyPaymentDescription = legacyOrder.LegacyPaymentDescription,
@@ -47,5 +49,22 @@ internal static class LegacyOrderSnapshotMapper
 
         StandardVat16Calculator.ApplyStandardVat(salesOrder);
         return salesOrder;
+    }
+
+    internal static string? NormalizeCustomerRfc(string? customerRfc)
+    {
+        if (string.IsNullOrWhiteSpace(customerRfc))
+        {
+            return null;
+        }
+
+        var normalized = customerRfc.Trim().ToUpperInvariant();
+
+        // The commercial snapshot can only carry a Mexican RFC-sized value.
+        // Overlength legacy values remain intact in the source hash and revision
+        // SnapshotJson; the selected FiscalReceiver remains the fiscal source of truth.
+        return normalized.Length <= MaxPersistedCustomerRfcLength
+            ? normalized
+            : null;
     }
 }
