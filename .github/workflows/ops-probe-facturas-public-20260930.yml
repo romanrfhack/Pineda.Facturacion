@@ -1,0 +1,31 @@
+name: OPS Probe Facturas Public Endpoints 2026-09-30
+
+on:
+  push:
+    branches:
+      - ops/diagnose-vps-outage-20260930
+    paths:
+      - .github/workflows/ops-probe-facturas-public-20260930.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe DNS HTTPS and common ports
+        shell: bash
+        run: |
+          set +e
+          for host in facturas.autorefaccionespineda.site dev-facturas.autorefaccionespineda.site; do
+            printf 'host=%s\n' "$host"
+            getent ahostsv4 "$host" || true
+            for port in 22 80 443; do
+              timeout 8 nc -vz "$host" "$port"
+              printf 'port=%s exit=%s\n' "$port" "$?"
+            done
+            curl -vkI --connect-timeout 8 --max-time 15 "https://$host/" 2>&1 | tail -35
+            printf 'curl_exit=%s\n\n' "$?"
+          done
