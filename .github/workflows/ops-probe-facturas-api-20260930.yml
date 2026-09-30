@@ -1,0 +1,33 @@
+name: OPS Probe Facturas API 2026-09-30
+
+on:
+  push:
+    branches:
+      - ops/diagnose-vps-outage-20260930
+    paths:
+      - .github/workflows/ops-probe-facturas-api-20260930.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe API through Nginx
+        shell: bash
+        run: |
+          set +e
+          for host in facturas.autorefaccionespineda.site dev-facturas.autorefaccionespineda.site; do
+            base="https://$host"
+            printf 'host=%s\n' "$host"
+            for path in /api/auth/me '/api/fiscal-documents/pending-stamping?page=1&pageSize=1'; do
+              body=$(mktemp)
+              code=$(curl -sS --connect-timeout 8 --max-time 20 -o "$body" -w '%{http_code}' "$base$path")
+              rc=$?
+              printf 'path=%s rc=%s code=%s bytes=%s body=' "$path" "$rc" "$code" "$(wc -c < "$body")"
+              head -c 500 "$body" | tr '\n' ' '
+              printf '\n'
+            done
+          done
