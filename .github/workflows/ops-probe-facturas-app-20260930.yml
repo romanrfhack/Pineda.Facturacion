@@ -1,0 +1,50 @@
+name: OPS Probe Facturas Application 2026-09-30
+
+on:
+  push:
+    branches:
+      - ops/diagnose-vps-outage-20260930
+    paths:
+      - .github/workflows/ops-probe-facturas-app-20260930.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate frontend bundles and API health
+        shell: bash
+        run: |
+          set -u
+          overall=0
+          for host in facturas.autorefaccionespineda.site dev-facturas.autorefaccionespineda.site; do
+            base="https://$host"
+            printf 'host=%s\n' "$host"
+            index_file=$(mktemp)
+            code=$(curl -sS --connect-timeout 8 --max-time 20 -o "$index_file" -w '%{http_code}' "$base/")
+            printf 'index code=%s bytes=%s\n' "$code" "$(wc -c < "$index_file")"
+            [ "$code" = 200 ] || overall=1
+
+            grep -Eo '(src|href)="[^"]+\.(js|css)"' "$index_file" | sed -E 's/^(src|href)="//; s/"$//' | sort -u | while read -r asset; do
+              case "$asset" in
+                http*) url="$asset" ;;
+                /*) url="$base$asset" ;;
+                *) url="$base/$asset" ;;
+              esac
+              asset_code=$(curl -sS --connect-timeout 8 --max-time 20 -o /dev/null -w '%{http_code}' "$url")
+              printf 'asset code=%s url=%s\n' "$asset_code" "$url"
+            done
+
+            for path in /health/live /health/ready /api/health/live /api/health/ready; do
+              body=$(mktemp)
+              health_code=$(curl -sS --connect-timeout 8 --max-time 20 -o "$body" -w '%{http_code}' "$base$path")
+              printf 'health path=%s code=%s bytes=%s body=' "$path" "$health_code" "$(wc -c < "$body")"
+              head -c 600 "$body" | tr '\n' ' '
+              printf '\n'
+            done
+            printf '\n'
+          done
+          exit "$overall"
