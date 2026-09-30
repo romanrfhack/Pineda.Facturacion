@@ -1,0 +1,104 @@
+name: OPS Diagnose VPS Outage 2026-09-30
+
+on:
+  push:
+    branches:
+      - ops/diagnose-vps-outage-20260930
+    paths:
+      - .github/workflows/ops-diagnose-vps-outage-20260930.yml
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    environment: facturas-production
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.FACTURAS_SSH_HOST }}
+      SSH_PORT: ${{ secrets.FACTURAS_SSH_PORT }}
+      SSH_USER: ${{ secrets.FACTURAS_SSH_USER }}
+      SSH_KEY: ${{ secrets.FACTURAS_SSH_KEY }}
+
+    steps:
+      - name: Validate diagnostic credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "${SSH_HOST:-}" ]
+          [ -n "${SSH_PORT:-}" ]
+          [ -n "${SSH_USER:-}" ]
+          [ -n "${SSH_KEY:-}" ]
+
+      - name: Setup SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keygen -y -f ~/.ssh/id_ed25519 >/dev/null
+
+      - name: Check TCP and SSH reachability
+        shell: bash
+        run: |
+          set -u
+          timeout 12 bash -c "cat < /dev/null > /dev/tcp/$SSH_HOST/$SSH_PORT"
+          tcp_status=$?
+          printf 'ssh_tcp_status=%s\n' "$tcp_status"
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=no             -o ConnectTimeout=12 -p "$SSH_PORT" "$SSH_USER@$SSH_HOST"             "printf 'ssh_ok=yes\\n'; hostname; date -Is; uptime"
+          exit $?
+
+      - name: Read-only VPS diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=no             -o ConnectTimeout=12 -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set +e
+          printf 'section=system\n'
+          uptime
+          free -h
+          df -h /
+          df -i /
+          printf 'system_state='
+          systemctl is-system-running || true
+
+          printf '\nsection=services\n'
+          for unit in nginx facturas-api facturas-dev-api; do
+            printf '%s active=' "$unit"
+            systemctl is-active "$unit" || true
+            printf '%s enabled=' "$unit"
+            systemctl is-enabled "$unit" || true
+            systemctl show "$unit" -p ActiveEnterTimestamp -p ExecMainStatus -p NRestarts --no-pager || true
+          done
+
+          printf '\nsection=nginx\n'
+          sudo nginx -t 2>&1 || true
+          sudo systemctl status nginx --no-pager -l | tail -35 || true
+
+          printf '\nsection=listeners\n'
+          sudo ss -lntp | awk 'NR == 1 || /:80 |:443 |:5000 |:5007 /' || true
+
+          printf '\nsection=local_http\n'
+          for url in http://127.0.0.1:5000/health/live http://127.0.0.1:5000/health/ready http://127.0.0.1:5007/health/live http://127.0.0.1:5007/health/ready; do
+            code=$(curl -sS --connect-timeout 3 --max-time 8 -o /tmp/facturas-health-body -w '%{http_code}' "$url")
+            rc=$?
+            printf '%s rc=%s code=%s body=' "$url" "$rc" "$code"
+            head -c 500 /tmp/facturas-health-body 2>/dev/null
+            printf '\n'
+          done
+
+          printf '\nsection=frontend_files\n'
+          for file in /var/www/facturas-frontend/index.html /var/www/facturas-dev-frontend/index.html; do
+            if [ -s "$file" ]; then
+              stat -c '%n size=%s modified=%y' "$file"
+            else
+              printf '%s missing_or_empty\n' "$file"
+            fi
+          done
+
+          printf '\nsection=recent_service_errors\n'
+          sudo journalctl -u nginx -u facturas-api -u facturas-dev-api -p warning -n 80 --no-pager --output=short-iso 2>&1 || true
+          REMOTE
