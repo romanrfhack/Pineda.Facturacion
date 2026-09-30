@@ -1,0 +1,40 @@
+name: OPS Diagnose VPS Reboot Cause 2026-09-30
+
+on:
+  push:
+    branches:
+      - ops/diagnose-vps-outage-20260930
+    paths:
+      - .github/workflows/ops-diagnose-vps-reboot-cause-20260930.yml
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    environment: facturas-production
+    timeout-minutes: 5
+    env:
+      SSH_USER: ${{ secrets.FACTURAS_SSH_USER }}
+      SSH_KEY: ${{ secrets.FACTURAS_SSH_KEY }}
+
+    steps:
+      - name: Inspect boot history read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=no             -o ConnectTimeout=12 -p 22 "$SSH_USER@facturas.autorefaccionespineda.site" 'bash -s' <<'REMOTE'
+          set +e
+          printf 'boot_history\n'
+          last -x -F | head -25
+          printf '\nboot_list\n'
+          sudo journalctl --list-boots --no-pager | tail -10
+          printf '\nprevious_boot_tail\n'
+          sudo journalctl -b -1 -n 120 --no-pager --output=short-iso 2>&1
+          printf '\ncurrent_boot_warnings\n'
+          sudo journalctl -b 0 -p warning -n 120 --no-pager --output=short-iso 2>&1
+          REMOTE
