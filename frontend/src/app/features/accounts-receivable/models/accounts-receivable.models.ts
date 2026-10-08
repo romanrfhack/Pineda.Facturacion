@@ -275,7 +275,16 @@ export interface AccountsReceivablePaymentResponse {
   applications: AccountsReceivablePaymentApplicationResponse[];
 }
 
+export interface AccountsReceivableInvoiceReferenceResponse {
+  accountsReceivableInvoiceId: number;
+  fiscalDocumentId?: number | null;
+  fiscalSeries?: string | null;
+  fiscalFolio?: string | null;
+  fiscalUuid?: string | null;
+}
+
 export interface AccountsReceivablePaymentSummaryItemResponse {
+  appliedInvoices?: AccountsReceivableInvoiceReferenceResponse[];
   paymentId: number;
   receivedAtUtc: string;
   amount: number;
@@ -536,3 +545,4 @@ export interface SendReceivablesSummaryResponse {
   attachedPdf: boolean;
   summary?: ReceivablesSummarySelectionResponse | null;
 }
+

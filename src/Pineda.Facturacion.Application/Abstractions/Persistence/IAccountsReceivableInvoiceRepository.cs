@@ -29,5 +29,10 @@ public interface IAccountsReceivableInvoiceRepository
 
     Task<IReadOnlyList<AccountsReceivablePortfolioItem>> SearchPortfolioAsync(SearchAccountsReceivablePortfolioFilter filter, CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<AccountsReceivableInvoiceReference>> GetReferencesByIdsAsync(
+        IReadOnlyCollection<long> accountsReceivableInvoiceIds,
+        CancellationToken cancellationToken = default);
+
     Task AddAsync(AccountsReceivableInvoice accountsReceivableInvoice, CancellationToken cancellationToken = default);
 }
+

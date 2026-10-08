@@ -635,6 +635,38 @@ describe('AccountsReceivablePageComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Nuevo pago');
   });
 
+  it('shows all applied invoice links even when settled invoices are absent from the workspace portfolio', async () => {
+    queryParams$.next(convertToParamMap({ fiscalReceiverId: '77' }));
+    const folios = ['35568', '35567', '35535', '35533', '35499', '35470'];
+    const ids = [438, 437, 429, 428, 424, 422];
+    api.getReceiverWorkspace.mockReturnValueOnce(of(createWorkspace({
+      invoices: [],
+      payments: [{
+        paymentId: 96, receivedAtUtc: '2026-10-07T23:48:00Z',
+        amount: 8644, appliedAmount: 8644, unappliedAmount: 0,
+        customerCreditBalanceAmount: 0, currencyCode: 'MXN', fiscalReceiverId: 77,
+        operationalStatus: 'FullyApplied', repStatus: 'ReadyToPrepare',
+        readyToPrepareRep: true, unappliedDisposition: 'PendingAllocation',
+        applicationsCount: 6, repReservedAmount: 0, repFiscalizedAmount: 0,
+        appliedInvoices: folios.map((folio, index) => ({
+          accountsReceivableInvoiceId: ids[index], fiscalSeries: 'A', fiscalFolio: folio,
+        })),
+      }],
+    })));
+    const fixture = TestBed.createComponent(AccountsReceivablePageComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const block: HTMLElement = fixture.nativeElement.querySelector('[data-testid="workspace-payment-invoices"]');
+    expect(block).not.toBeNull();
+    const links = Array.from(block.querySelectorAll('a'));
+    expect(links.map(link => link.textContent?.trim())).toEqual(folios.map(folio => `A-${folio}`));
+    links.forEach((link, index) => expect(link.getAttribute('href')).toContain(`invoiceId=${ids[index]}`));
+    expect(api.getInvoiceById).not.toHaveBeenCalled();
+    expect(api.getPaymentById).not.toHaveBeenCalled();
+  });
+
   it('shows payment mutation actions for unapplied workspace payments without REP references', async () => {
     queryParams$.next(convertToParamMap({ fiscalReceiverId: '77' }));
     api.getReceiverWorkspace.mockReturnValueOnce(
@@ -1881,3 +1913,4 @@ function getOverdueCountButton(fixture: ComponentFixture<AccountsReceivablePageC
 
   return button as HTMLButtonElement;
 }
+

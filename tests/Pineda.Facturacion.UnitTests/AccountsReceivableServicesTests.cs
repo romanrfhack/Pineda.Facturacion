@@ -1662,6 +1662,101 @@ public class AccountsReceivableServicesTests
     }
 
     [Fact]
+    public async Task SearchAccountsReceivablePayments_IncludesSettledInvoiceReferencesOncePerPayment_InApplicationOrder()
+    {
+        var paid = CreateInvoice(id: 438, total: 100m);
+        paid.Status = AccountsReceivableInvoiceStatus.Paid;
+        paid.PaidTotal = 100m;
+        paid.OutstandingBalance = 0m;
+        var second = CreateInvoice(id: 437, total: 200m);
+        var payment = CreatePayment(id: 96, amount: 200m, receiverId: 77);
+        payment.Applications =
+        [
+            CreatePaymentApplication(96, 437, 100m, 200m, 100m, id: 451),
+            CreatePaymentApplication(96, 438, 50m, 100m, 50m, id: 450),
+            CreatePaymentApplication(96, 438, 50m, 50m, 0m, id: 452)
+        ];
+        var other = CreatePayment(id: 97, amount: 10m, receiverId: 77);
+        other.Applications = [CreatePaymentApplication(97, 999, 10m, 10m, 0m, id: 460)];
+        var invoices = new ArFakeAccountsReceivableInvoiceRepository
+        {
+            TrackedById = new() { [438] = paid, [437] = second },
+            InvoiceReferences =
+            [
+                new() { AccountsReceivableInvoiceId = 437, FiscalSeries = "A", FiscalFolio = "35567" },
+                new() { AccountsReceivableInvoiceId = 438, FiscalSeries = "A", FiscalFolio = "35568" }
+            ]
+        };
+        var service = new SearchAccountsReceivablePaymentsService(
+            new ArFakeAccountsReceivablePaymentRepository { SearchResults = [payment, other] },
+            invoices,
+            new ArFakeFiscalReceiverRepository(),
+            new ArFakePaymentComplementDocumentRepository());
+
+        var result = await service.ExecuteAsync(new SearchAccountsReceivablePaymentsFilter());
+
+        var item = Assert.Single(result.Items, x => x.PaymentId == 96);
+        Assert.Equal(new long[] { 438, 437 }, item.AppliedInvoices.Select(x => x.AccountsReceivableInvoiceId));
+        Assert.Equal(new[] { "35568", "35567" }, item.AppliedInvoices.Select(x => x.FiscalFolio));
+        Assert.Equal(3, item.ApplicationsCount);
+        Assert.Equal(200m, item.AppliedAmount);
+        Assert.Equal(0m, item.UnappliedAmount);
+        var fallback = Assert.Single(Assert.Single(result.Items, x => x.PaymentId == 97).AppliedInvoices);
+        Assert.Equal(999, fallback.AccountsReceivableInvoiceId);
+        Assert.Null(fallback.FiscalFolio);
+        Assert.Equal(1, invoices.GetReferencesByIdsAsyncCallCount);
+        Assert.Equal(new long[] { 437, 438, 999 }, invoices.LastReferenceIds.OrderBy(x => x));
+    }
+
+    [Fact]
+    public async Task InvoiceReferences_IncludeSettledInternalAndExternalDocuments_AndOnlyRequestedIds()
+    {
+        await using var dbContext = CreateDbContext();
+        var document = CreateStampedFiscalDocument();
+        document.Series = "A";
+        document.Folio = "35568";
+        var stamp = CreateFiscalStamp();
+        stamp.FiscalDocumentId = document.Id;
+        var paid = CreateInvoice(id: 438);
+        paid.FiscalDocumentId = document.Id;
+        paid.FiscalStampId = stamp.Id;
+        paid.Status = AccountsReceivableInvoiceStatus.Paid;
+        paid.OutstandingBalance = 0m;
+        var external = new ExternalRepBaseDocument
+        {
+            Id = 15, Uuid = "11111111-1111-1111-1111-111111111111",
+            Series = "EXT", Folio = "72"
+        };
+        var imported = CreateInvoice(id: 439);
+        imported.FiscalDocumentId = null;
+        imported.FiscalStampId = null;
+        imported.BillingDocumentId = null;
+        imported.ExternalRepBaseDocumentId = external.Id;
+        var missing = CreateInvoice(id: 440);
+        missing.FiscalDocumentId = null;
+        missing.FiscalStampId = null;
+        dbContext.FiscalDocuments.Add(document);
+        dbContext.FiscalStamps.Add(stamp);
+        dbContext.ExternalRepBaseDocuments.Add(external);
+        dbContext.AccountsReceivableInvoices.AddRange(paid, imported, missing, CreateInvoice(id: 441));
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+        var repository = new AccountsReceivableInvoiceRepository(dbContext);
+
+        var result = await repository.GetReferencesByIdsAsync([438, 439, 440]);
+
+        Assert.Equal(3, result.Count);
+        Assert.Equal("35568", Assert.Single(result, x => x.AccountsReceivableInvoiceId == 438).FiscalFolio);
+        var externalReference = Assert.Single(result, x => x.AccountsReceivableInvoiceId == 439);
+        Assert.Equal("EXT", externalReference.FiscalSeries);
+        Assert.Equal("72", externalReference.FiscalFolio);
+        Assert.Equal(external.Uuid, externalReference.FiscalUuid);
+        Assert.Null(Assert.Single(result, x => x.AccountsReceivableInvoiceId == 440).FiscalFolio);
+        Assert.Empty(dbContext.ChangeTracker.Entries());
+        Assert.Empty(await repository.GetReferencesByIdsAsync([]));
+    }
+
+    [Fact]
     public async Task SearchAccountsReceivablePayments_ProjectsPendingAndConfirmedUnappliedStates()
     {
         var receiver = new FiscalReceiver
@@ -3311,6 +3406,22 @@ public class AccountsReceivableServicesTests
 
     private sealed class ArFakeAccountsReceivableInvoiceRepository : IAccountsReceivableInvoiceRepository
     {
+        public IReadOnlyList<AccountsReceivableInvoiceReference> InvoiceReferences { get; set; } = [];
+
+        public int GetReferencesByIdsAsyncCallCount { get; private set; }
+
+        public IReadOnlyList<long> LastReferenceIds { get; private set; } = [];
+
+        public Task<IReadOnlyList<AccountsReceivableInvoiceReference>> GetReferencesByIdsAsync(
+            IReadOnlyCollection<long> accountsReceivableInvoiceIds,
+            CancellationToken cancellationToken = default)
+        {
+            GetReferencesByIdsAsyncCallCount++;
+            LastReferenceIds = accountsReceivableInvoiceIds.ToArray();
+            return Task.FromResult<IReadOnlyList<AccountsReceivableInvoiceReference>>(
+                InvoiceReferences.Where(x => accountsReceivableInvoiceIds.Contains(x.AccountsReceivableInvoiceId)).ToArray());
+        }
+
         public AccountsReceivableInvoice? ExistingByFiscalDocumentId { get; set; }
 
         public AccountsReceivableInvoice? ExistingByExternalRepBaseDocumentId { get; set; }
@@ -3882,3 +3993,4 @@ public class AccountsReceivableServicesTests
         public string FormatPaymentMethod(string? code) => code ?? string.Empty;
     }
 }
+

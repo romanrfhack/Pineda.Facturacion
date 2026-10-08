@@ -1318,6 +1318,14 @@ public static class AccountsReceivableEndpoints
             RepBlockReason = item.RepBlockReason,
             UnappliedDisposition = item.UnappliedDisposition,
             RepDocumentStatus = item.RepDocumentStatus,
+            AppliedInvoices = item.AppliedInvoices.Select(invoice => new AccountsReceivableInvoiceReferenceResponse
+            {
+                AccountsReceivableInvoiceId = invoice.AccountsReceivableInvoiceId,
+                FiscalDocumentId = invoice.FiscalDocumentId,
+                FiscalSeries = invoice.FiscalSeries,
+                FiscalFolio = invoice.FiscalFolio,
+                FiscalUuid = invoice.FiscalUuid
+            }).ToList(),
             ApplicationsCount = item.ApplicationsCount,
             LinkedFiscalDocumentId = item.LinkedFiscalDocumentId,
             RepReservedAmount = item.RepReservedAmount,
@@ -2117,8 +2125,23 @@ public class AccountsReceivablePaymentsResponse
     public List<AccountsReceivablePaymentSummaryItemResponse> Items { get; set; } = [];
 }
 
+public class AccountsReceivableInvoiceReferenceResponse
+{
+    public long AccountsReceivableInvoiceId { get; set; }
+
+    public long? FiscalDocumentId { get; set; }
+
+    public string? FiscalSeries { get; set; }
+
+    public string? FiscalFolio { get; set; }
+
+    public string? FiscalUuid { get; set; }
+}
+
 public class AccountsReceivablePaymentSummaryItemResponse
 {
+    public List<AccountsReceivableInvoiceReferenceResponse> AppliedInvoices { get; set; } = [];
+
     public long PaymentId { get; set; }
 
     public DateTime ReceivedAtUtc { get; set; }
@@ -2398,3 +2421,4 @@ public class ReceivablesSummaryFinalResponse
 
     public List<ReceivablesSummaryTotalByCurrencyResponse> TotalsByCurrency { get; set; } = [];
 }
+

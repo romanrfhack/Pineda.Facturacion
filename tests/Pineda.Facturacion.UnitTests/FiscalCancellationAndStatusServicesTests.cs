@@ -1391,6 +1391,13 @@ public class FiscalCancellationAndStatusServicesTests
 
     private sealed class FakeAccountsReceivableInvoiceRepository : IAccountsReceivableInvoiceRepository
     {
+        public Task<IReadOnlyList<AccountsReceivableInvoiceReference>> GetReferencesByIdsAsync(
+            IReadOnlyCollection<long> accountsReceivableInvoiceIds,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<IReadOnlyList<AccountsReceivableInvoiceReference>>([]);
+        }
+
         public AccountsReceivableInvoice? ExistingTrackedByFiscalDocumentId { get; set; }
 
         public Task<AccountsReceivableInvoice?> GetByFiscalDocumentIdAsync(long fiscalDocumentId, CancellationToken cancellationToken = default)
@@ -1531,3 +1538,4 @@ public class FiscalCancellationAndStatusServicesTests
         }
     }
 }
+

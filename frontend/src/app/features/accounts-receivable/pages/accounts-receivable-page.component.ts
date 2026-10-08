@@ -881,6 +881,20 @@ const REASSIGN_PAYMENT_APPLICATIONS_SUCCESS_MESSAGE =
                           [queryParams]="{ paymentId: item.paymentId }"
                           >Ver detalle</a
                         >
+                        @if (item.appliedInvoices?.length) {
+                          <div class="workspace-payment-invoices" data-testid="workspace-payment-invoices">
+                            <span class="subtle">Facturas aplicadas:</span>
+                            <div>
+                              @for (invoice of item.appliedInvoices; track invoice.accountsReceivableInvoiceId; let last = $last) {
+                                <a
+                                  [routerLink]="['/app/accounts-receivable']"
+                                  [queryParams]="{ invoiceId: invoice.accountsReceivableInvoiceId }"
+                                  >{{ formatFiscalLabel(invoice) }}</a
+                                >@if (!last) {<span>, </span>}
+                              }
+                            </div>
+                          </div>
+                        }
                         @if (permissionService.canManagePayments() && canMutatePayment(item)) {
                           <div class="row-inline-actions">
                             <button
@@ -2405,7 +2419,10 @@ export class AccountsReceivablePageComponent {
     });
   }
 
-  protected formatFiscalLabel(item: AccountsReceivablePortfolioItemResponse): string {
+  protected formatFiscalLabel(
+    item: Pick<AccountsReceivablePortfolioItemResponse,
+      'accountsReceivableInvoiceId' | 'fiscalDocumentId' | 'fiscalSeries' | 'fiscalFolio'>,
+  ): string {
     const series = item.fiscalSeries?.trim();
     const folio = item.fiscalFolio?.trim();
     if (series || folio) {
@@ -3292,3 +3309,4 @@ function readHttpStatus(error: unknown): number | null {
   const status = (error as { status?: unknown }).status;
   return typeof status === 'number' ? status : null;
 }
+

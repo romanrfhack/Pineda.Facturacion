@@ -3242,6 +3242,13 @@ public class PaymentComplementServicesTests
 
     private sealed class PcFakeAccountsReceivableInvoiceRepository : IAccountsReceivableInvoiceRepository
     {
+        public Task<IReadOnlyList<AccountsReceivableInvoiceReference>> GetReferencesByIdsAsync(
+            IReadOnlyCollection<long> accountsReceivableInvoiceIds,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<IReadOnlyList<AccountsReceivableInvoiceReference>>([]);
+        }
+
         public Dictionary<long, AccountsReceivableInvoice> TrackedById { get; set; } = [];
 
         public int GetTrackedByIdAsyncCallCount { get; private set; }
@@ -3745,3 +3752,4 @@ public class PaymentComplementServicesTests
         public string FormatPaymentMethod(string? code) => code ?? string.Empty;
     }
 }
+
