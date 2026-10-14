@@ -181,6 +181,11 @@ public class AccountsReceivableInvoiceRepository : IAccountsReceivableInvoiceRep
                 FiscalSeries = x.FiscalDocument != null ? x.FiscalDocument.Series : null,
                 FiscalFolio = x.FiscalDocument != null ? x.FiscalDocument.Folio : null,
                 FiscalUuid = x.FiscalStamp != null ? x.FiscalStamp.Uuid : null,
+                ReceiverBranchName = x.FiscalDocument == null ? null : x.FiscalDocument.SpecialFieldValues
+                    .Where(field => field.FieldCode.Trim().ToUpper() == ReceivablesSummaryComposer.ReceiverBranchFieldCode)
+                    .OrderBy(field => field.Id)
+                    .Select(field => field.Value)
+                    .FirstOrDefault(),
                 x.Invoice.CurrencyCode,
                 x.Invoice.Total,
                 x.Invoice.PaidTotal,
@@ -202,6 +207,7 @@ public class AccountsReceivableInvoiceRepository : IAccountsReceivableInvoiceRep
                 FiscalSeries = x.FiscalSeries,
                 FiscalFolio = x.FiscalFolio,
                 FiscalUuid = x.FiscalUuid,
+                ReceiverBranchName = x.ReceiverBranchName,
                 CurrencyCode = x.CurrencyCode,
                 Total = x.Total,
                 PaidTotal = x.PaidTotal,
