@@ -2253,6 +2253,67 @@ public class AccountsReceivableServicesTests
         Assert.Single(result.Workspace.RecentNotes);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReceivablesSummary_PreservesBranchSnapshotsAndMissingHistory(bool configured)
+    {
+        var factory = CreateSummaryDocumentFactory(new ArFakeAccountsReceivableInvoiceRepository
+        {
+            PortfolioItems =
+            [
+                new AccountsReceivablePortfolioItem { AccountsReceivableInvoiceId = 201, FiscalReceiverId = 77,
+                    ReceiverBranchName = "  Norte <Nissan>  ", CurrencyCode = "MXN", Total = 100m, OutstandingBalance = 100m },
+                new AccountsReceivablePortfolioItem { AccountsReceivableInvoiceId = 202, FiscalReceiverId = 77,
+                    ReceiverBranchName = "Sur", CurrencyCode = "MXN", Total = 200m, OutstandingBalance = 200m },
+                new AccountsReceivablePortfolioItem { AccountsReceivableInvoiceId = 203, FiscalReceiverId = 77,
+                    CurrencyCode = "MXN", Total = 50m, OutstandingBalance = 50m }
+            ]
+        }, branchConfigured: configured);
+        var result = await factory.BuildPreviewDocumentAsync(new ReceivablesSummaryCommand
+        {
+            ReceiverId = 77, Scope = "all_pending", Format = "html", Subject = "Resumen", Message = "Adeudos"
+        });
+        Assert.True(result.IsSuccess);
+        var document = result.Document!;
+        Assert.Equal("Norte <Nissan>", document.Invoices.Single(x => x.AccountsReceivableInvoiceId == 201).ReceiverBranchName);
+        Assert.Equal("Sur", document.Invoices.Single(x => x.AccountsReceivableInvoiceId == 202).ReceiverBranchName);
+        Assert.Equal(ReceivablesSummaryComposer.MissingReceiverBranch,
+            document.Invoices.Single(x => x.AccountsReceivableInvoiceId == 203).ReceiverBranchName);
+        Assert.Equal(350m, document.Selection.OutstandingBalance);
+        var html = ReceivablesSummaryComposer.BuildHtml(document);
+        Assert.Contains("Sucursal: Norte &lt;Nissan&gt;", html);
+        Assert.DoesNotContain("Norte <Nissan>", html);
+        Assert.Contains("Sucursal: Sur", html);
+        Assert.Contains(ReceivablesSummaryComposer.MissingReceiverBranch, html);
+
+        foreach (var variant in new[] { ReceivablesSummaryPdfVariant.Digital, ReceivablesSummaryPdfVariant.Print })
+        {
+            var pdf = Encoding.Latin1.GetString(await new ReceivablesSummaryPdfRenderer().RenderAsync(document, variant));
+            Assert.Contains("Sucursal: Norte", pdf);
+            Assert.Contains("Sucursal: Sur", pdf);
+            Assert.Contains("Sin sucursal", pdf);
+            Assert.Contains("registrada", pdf);
+            Assert.Contains("/MediaBox [0 0 612 792]", pdf);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReceivablesSummary_OnlyShowsMissingBranchWhenReceiverUsesBranch(bool configured)
+    {
+        var factory = CreateSummaryDocumentFactory(new ArFakeAccountsReceivableInvoiceRepository
+        {
+            PortfolioItems = [CreatePortfolioItem(201, "MXN", 100m, 0m, 100m, null)]
+        }, branchConfigured: configured);
+        var result = await factory.GetCandidatesAsync(77);
+        Assert.Equal(configured ? ReceivablesSummaryComposer.MissingReceiverBranch : null,
+            Assert.Single(result.Invoices).ReceiverBranchName);
+        var html = ReceivablesSummaryComposer.BuildHtml(new ReceivablesSummaryDocument { Invoices = result.Invoices });
+        Assert.Equal(configured, html.Contains("Sucursal:"));
+    }
+
     [Fact]
     public async Task PreviewReceivablesSummary_SelectsAllPending_AndKeepsTotalsByCurrency()
     {
@@ -3076,7 +3137,8 @@ public class AccountsReceivableServicesTests
     private static ReceivablesSummaryDocumentFactory CreateSummaryDocumentFactory(
         ArFakeAccountsReceivableInvoiceRepository invoiceRepository,
         string? receiverEmail = "cliente@example.com",
-        byte[]? issuerLogoData = null)
+        byte[]? issuerLogoData = null,
+        bool branchConfigured = false)
     {
         return new ReceivablesSummaryDocumentFactory(
             new SearchAccountsReceivablePortfolioService(
@@ -3091,6 +3153,9 @@ public class AccountsReceivableServicesTests
                     LegalName = "Cliente Uno",
                     Email = receiverEmail,
                     FiscalRegimeCode = "601",
+                    SpecialFieldDefinitions = branchConfigured
+                        ? [new FiscalReceiverSpecialFieldDefinition { Code = "SUCURSAL", Label = "Sucursal del cliente", IsActive = true }]
+                        : [],
                     PostalCode = "01000"
                 }
             },

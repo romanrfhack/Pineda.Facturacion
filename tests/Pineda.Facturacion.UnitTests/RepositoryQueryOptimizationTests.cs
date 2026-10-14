@@ -120,6 +120,36 @@ public class RepositoryQueryOptimizationTests
         Assert.All(result.PaymentHistory.Where(x => x.AccountsReceivablePaymentId == 501), x => Assert.Equal(35m, x.RemainingPaymentAmount));
     }
 
+    [Fact]
+    public async Task AccountsReceivablePortfolio_ReadsBranchFromEachDocumentSnapshot()
+    {
+        await using var db = CreateDbContext();
+        SeedInternalRepDocument(db, 400, 300, 200, 100);
+        SeedInternalRepDocument(db, 401, 301, 201, 101);
+        SeedExternalRepDocument(db, 700, 800);
+        foreach (var (id, name) in new[] { (300L, "Norte"), (301L, "Sur") })
+        {
+            var document = db.FiscalDocuments.Local.Single(x => x.Id == id);
+            document.SpecialFieldValues.Add(new FiscalDocumentSpecialFieldValue
+            {
+                FiscalDocumentId = id, FiscalReceiverSpecialFieldDefinitionId = 1,
+                FieldCode = "SUCURSAL", FieldLabelSnapshot = "Sucursal original", Value = name
+            });
+            document.SpecialFieldValues.Add(new FiscalDocumentSpecialFieldValue
+            {
+                FiscalDocumentId = id, FiscalReceiverSpecialFieldDefinitionId = 2,
+                FieldCode = "PEDIDO", FieldLabelSnapshot = "Pedido", Value = "No es sucursal"
+            });
+        }
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        var items = await new AccountsReceivableInvoiceRepository(db).SearchPortfolioAsync(new());
+        Assert.Equal("Norte", items.Single(x => x.AccountsReceivableInvoiceId == 400).ReceiverBranchName);
+        Assert.Equal("Sur", items.Single(x => x.AccountsReceivableInvoiceId == 401).ReceiverBranchName);
+        Assert.Null(items.Single(x => x.AccountsReceivableInvoiceId == 800).ReceiverBranchName);
+        Assert.Equal(300m, items.Sum(x => x.OutstandingBalance));
+    }
+
     private static BillingDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<BillingDbContext>()

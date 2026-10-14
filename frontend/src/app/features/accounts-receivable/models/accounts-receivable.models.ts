@@ -433,6 +433,7 @@ export interface ReceivablesSummaryPartyResponse {
 }
 
 export interface ReceivablesSummaryCandidateResponse {
+  receiverBranchName?: string | null;
   accountsReceivableInvoiceId: number;
   fiscalDocumentId?: number | null;
   fiscalSeries?: string | null;

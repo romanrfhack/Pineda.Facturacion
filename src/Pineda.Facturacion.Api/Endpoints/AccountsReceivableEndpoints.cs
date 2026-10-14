@@ -1472,6 +1472,7 @@ public static class AccountsReceivableEndpoints
             FiscalSeries = item.FiscalSeries,
             FiscalFolio = item.FiscalFolio,
             FiscalUuid = item.FiscalUuid,
+            ReceiverBranchName = item.ReceiverBranchName,
             IssuedAtUtc = item.IssuedAtUtc,
             DueAtUtc = item.DueAtUtc,
             DaysPastDue = item.DaysPastDue,
@@ -2282,6 +2283,8 @@ public class ReceivablesSummaryCandidateResponse
     public string? FiscalFolio { get; set; }
 
     public string? FiscalUuid { get; set; }
+
+    public string? ReceiverBranchName { get; set; }
 
     public DateTime IssuedAtUtc { get; set; }
 

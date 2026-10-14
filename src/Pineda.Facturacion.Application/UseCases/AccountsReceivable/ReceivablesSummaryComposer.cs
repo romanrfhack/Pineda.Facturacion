@@ -8,6 +8,9 @@ namespace Pineda.Facturacion.Application.UseCases.AccountsReceivable;
 
 public static class ReceivablesSummaryComposer
 {
+    public const string ReceiverBranchFieldCode = "SUCURSAL";
+    public const string MissingReceiverBranch = "Sin sucursal registrada";
+
     public const string IssuerLogoContentId = "issuer-logo";
 
     private const string ContentCellStyle = "padding:20px 24px 24px;";
@@ -210,7 +213,8 @@ public static class ReceivablesSummaryComposer
 
     public static ReceivablesSummaryCandidate MapCandidate(
         AccountsReceivablePortfolioItem item,
-        DateTime nowUtc)
+        DateTime nowUtc,
+        bool includeReceiverBranch = false)
     {
         var dueDate = item.DueAtUtc?.Date;
         var isOverdue = item.OutstandingBalance > 0m
@@ -226,6 +230,9 @@ public static class ReceivablesSummaryComposer
             FiscalSeries = item.FiscalSeries,
             FiscalFolio = item.FiscalFolio,
             FiscalUuid = item.FiscalUuid,
+            ReceiverBranchName = !string.IsNullOrWhiteSpace(item.ReceiverBranchName)
+                ? item.ReceiverBranchName.Trim()
+                : includeReceiverBranch ? MissingReceiverBranch : null,
             IssuedAtUtc = item.IssuedAtUtc,
             DueAtUtc = item.DueAtUtc,
             DaysPastDue = daysPastDue,
@@ -318,7 +325,15 @@ public static class ReceivablesSummaryComposer
                 builder.Append(" class=\"overdue\" style=\"background:#fff4f1;\"");
             }
             builder.Append(">");
-            AppendDataCell(builder, FormatInvoiceLabel(invoice));
+            builder.Append("<td style=\"").Append(DataCellStyle).Append("\">")
+                .Append(Html(FormatInvoiceLabel(invoice)));
+            if (document.Invoices.Any(x => x.ReceiverBranchName is not null))
+            {
+                builder.Append("<br><small>Sucursal: ")
+                    .Append(Html(invoice.ReceiverBranchName ?? MissingReceiverBranch))
+                    .Append("</small>");
+            }
+            builder.Append("</td>");
             AppendDataCell(builder, FormatDate(invoice.IssuedAtUtc));
             AppendDataCell(builder, FormatDate(invoice.DueAtUtc));
             AppendDataCell(builder, invoice.IsOverdue ? invoice.DaysPastDue.ToString(CultureInfo.InvariantCulture) : "-");

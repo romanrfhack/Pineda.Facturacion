@@ -161,6 +161,9 @@ type SummaryStep = 1 | 2 | 3;
                           </td>
                           <td data-label="Factura">
                             <strong>{{ formatInvoiceLabel(invoice) }}</strong>
+                            @if (invoice.receiverBranchName) {
+                              <div class="subtle">Sucursal: {{ invoice.receiverBranchName }}</div>
+                            }
                             <div class="subtle">{{ invoice.fiscalUuid || 'UUID pendiente' }}</div>
                           </td>
                           <td data-label="Emisión">{{ invoice.issuedAtUtc | date: 'yyyy-MM-dd' }}</td>

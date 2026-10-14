@@ -16,7 +16,7 @@ describe('SendReceivablesSummaryModalComponent', () => {
     });
   });
 
-  async function configure() {
+  async function configure(receiverBranchName?: string) {
     const api = {
       getReceivablesSummaryCandidates: vi.fn().mockReturnValue(
         of({
@@ -46,6 +46,7 @@ describe('SendReceivablesSummaryModalComponent', () => {
               fiscalSeries: 'A',
               fiscalFolio: '201',
               fiscalUuid: 'UUID-201',
+              receiverBranchName,
               issuedAtUtc: '2026-07-01T00:00:00Z',
               dueAtUtc: '2026-07-10T00:00:00Z',
               daysPastDue: 0,
@@ -79,6 +80,17 @@ describe('SendReceivablesSummaryModalComponent', () => {
 
     return { fixture, api };
   }
+
+  it('shows the branch saved on the invoice and escapes its text', async () => {
+    const { fixture } = await configure('Norte <Nissan>');
+    expect(fixture.nativeElement.textContent).toContain('Sucursal: Norte <Nissan>');
+    expect(fixture.nativeElement.querySelector('nissan')).toBeNull();
+  });
+
+  it('keeps customers without branches unchanged', async () => {
+    const { fixture } = await configure();
+    expect(fixture.nativeElement.textContent).not.toContain('Sucursal:');
+  });
 
   it('loads multiple default recipients from the catalog using semicolon format', async () => {
     const { fixture } = await configure();
