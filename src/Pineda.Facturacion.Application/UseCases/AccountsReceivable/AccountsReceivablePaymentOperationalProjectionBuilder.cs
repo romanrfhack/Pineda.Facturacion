@@ -9,7 +9,8 @@ public static class AccountsReceivablePaymentOperationalProjectionBuilder
         AccountsReceivablePayment payment,
         IReadOnlyCollection<AccountsReceivableInvoice> linkedInvoices,
         PaymentComplementDocument? paymentComplementDocument,
-        string? payerName)
+        string? payerName,
+        IReadOnlyDictionary<long, AccountsReceivableInvoiceReference>? invoiceReferences = null)
     {
         ArgumentNullException.ThrowIfNull(payment);
         ArgumentNullException.ThrowIfNull(linkedInvoices);
@@ -47,6 +48,15 @@ public static class AccountsReceivablePaymentOperationalProjectionBuilder
             RepDocumentStatus = paymentComplementDocument?.Status.ToString(),
             RepReservedAmount = repReservedAmount,
             RepFiscalizedAmount = repFiscalizedAmount,
+            AppliedInvoices = payment.Applications
+                .OrderBy(x => x.Id)
+                .Select(x => x.AccountsReceivableInvoiceId)
+                .Distinct()
+                .Select(id => invoiceReferences?.GetValueOrDefault(id) ?? new AccountsReceivableInvoiceReference
+                {
+                    AccountsReceivableInvoiceId = id
+                })
+                .ToArray(),
             ApplicationsCount = payment.Applications.Count,
             LinkedFiscalDocumentId = linkedFiscalDocumentIds.Length == 1 ? linkedFiscalDocumentIds[0] : null
         };
@@ -241,3 +251,4 @@ public static class AccountsReceivablePaymentOperationalProjectionBuilder
     private static decimal NormalizeMoney(decimal value)
         => decimal.Round(value, 2, MidpointRounding.AwayFromZero);
 }
+

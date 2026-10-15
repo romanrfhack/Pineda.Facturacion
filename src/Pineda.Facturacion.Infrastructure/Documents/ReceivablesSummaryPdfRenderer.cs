@@ -423,7 +423,9 @@ public sealed class ReceivablesSummaryPdfRenderer : IReceivablesSummaryPdfRender
                 ReceivablesSummaryComposer.FormatMoney(invoice.Total, invoice.CurrencyCode),
                 ReceivablesSummaryComposer.FormatMoney(invoice.PaidTotal, invoice.CurrencyCode),
                 ReceivablesSummaryComposer.FormatMoney(invoice.OutstandingBalance, invoice.CurrencyCode),
-                invoice.Status
+                _document.Invoices.Any(x => x.ReceiverBranchName is not null)
+                    ? $"{invoice.Status}\nSucursal: {invoice.ReceiverBranchName ?? ReceivablesSummaryComposer.MissingReceiverBranch}"
+                    : invoice.Status
             };
             var cells = values
                 .Select((value, index) => WrapText(value, columns[index] - 10f, 6.8f))

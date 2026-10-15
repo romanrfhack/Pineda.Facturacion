@@ -1662,6 +1662,101 @@ public class AccountsReceivableServicesTests
     }
 
     [Fact]
+    public async Task SearchAccountsReceivablePayments_IncludesSettledInvoiceReferencesOncePerPayment_InApplicationOrder()
+    {
+        var paid = CreateInvoice(id: 438, total: 100m);
+        paid.Status = AccountsReceivableInvoiceStatus.Paid;
+        paid.PaidTotal = 100m;
+        paid.OutstandingBalance = 0m;
+        var second = CreateInvoice(id: 437, total: 200m);
+        var payment = CreatePayment(id: 96, amount: 200m, receiverId: 77);
+        payment.Applications =
+        [
+            CreatePaymentApplication(96, 437, 100m, 200m, 100m, id: 451),
+            CreatePaymentApplication(96, 438, 50m, 100m, 50m, id: 450),
+            CreatePaymentApplication(96, 438, 50m, 50m, 0m, id: 452)
+        ];
+        var other = CreatePayment(id: 97, amount: 10m, receiverId: 77);
+        other.Applications = [CreatePaymentApplication(97, 999, 10m, 10m, 0m, id: 460)];
+        var invoices = new ArFakeAccountsReceivableInvoiceRepository
+        {
+            TrackedById = new() { [438] = paid, [437] = second },
+            InvoiceReferences =
+            [
+                new() { AccountsReceivableInvoiceId = 437, FiscalSeries = "A", FiscalFolio = "35567" },
+                new() { AccountsReceivableInvoiceId = 438, FiscalSeries = "A", FiscalFolio = "35568" }
+            ]
+        };
+        var service = new SearchAccountsReceivablePaymentsService(
+            new ArFakeAccountsReceivablePaymentRepository { SearchResults = [payment, other] },
+            invoices,
+            new ArFakeFiscalReceiverRepository(),
+            new ArFakePaymentComplementDocumentRepository());
+
+        var result = await service.ExecuteAsync(new SearchAccountsReceivablePaymentsFilter());
+
+        var item = Assert.Single(result.Items, x => x.PaymentId == 96);
+        Assert.Equal(new long[] { 438, 437 }, item.AppliedInvoices.Select(x => x.AccountsReceivableInvoiceId));
+        Assert.Equal(new[] { "35568", "35567" }, item.AppliedInvoices.Select(x => x.FiscalFolio));
+        Assert.Equal(3, item.ApplicationsCount);
+        Assert.Equal(200m, item.AppliedAmount);
+        Assert.Equal(0m, item.UnappliedAmount);
+        var fallback = Assert.Single(Assert.Single(result.Items, x => x.PaymentId == 97).AppliedInvoices);
+        Assert.Equal(999, fallback.AccountsReceivableInvoiceId);
+        Assert.Null(fallback.FiscalFolio);
+        Assert.Equal(1, invoices.GetReferencesByIdsAsyncCallCount);
+        Assert.Equal(new long[] { 437, 438, 999 }, invoices.LastReferenceIds.OrderBy(x => x));
+    }
+
+    [Fact]
+    public async Task InvoiceReferences_IncludeSettledInternalAndExternalDocuments_AndOnlyRequestedIds()
+    {
+        await using var dbContext = CreateDbContext();
+        var document = CreateStampedFiscalDocument();
+        document.Series = "A";
+        document.Folio = "35568";
+        var stamp = CreateFiscalStamp();
+        stamp.FiscalDocumentId = document.Id;
+        var paid = CreateInvoice(id: 438);
+        paid.FiscalDocumentId = document.Id;
+        paid.FiscalStampId = stamp.Id;
+        paid.Status = AccountsReceivableInvoiceStatus.Paid;
+        paid.OutstandingBalance = 0m;
+        var external = new ExternalRepBaseDocument
+        {
+            Id = 15, Uuid = "11111111-1111-1111-1111-111111111111",
+            Series = "EXT", Folio = "72"
+        };
+        var imported = CreateInvoice(id: 439);
+        imported.FiscalDocumentId = null;
+        imported.FiscalStampId = null;
+        imported.BillingDocumentId = null;
+        imported.ExternalRepBaseDocumentId = external.Id;
+        var missing = CreateInvoice(id: 440);
+        missing.FiscalDocumentId = null;
+        missing.FiscalStampId = null;
+        dbContext.FiscalDocuments.Add(document);
+        dbContext.FiscalStamps.Add(stamp);
+        dbContext.ExternalRepBaseDocuments.Add(external);
+        dbContext.AccountsReceivableInvoices.AddRange(paid, imported, missing, CreateInvoice(id: 441));
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+        var repository = new AccountsReceivableInvoiceRepository(dbContext);
+
+        var result = await repository.GetReferencesByIdsAsync([438, 439, 440]);
+
+        Assert.Equal(3, result.Count);
+        Assert.Equal("35568", Assert.Single(result, x => x.AccountsReceivableInvoiceId == 438).FiscalFolio);
+        var externalReference = Assert.Single(result, x => x.AccountsReceivableInvoiceId == 439);
+        Assert.Equal("EXT", externalReference.FiscalSeries);
+        Assert.Equal("72", externalReference.FiscalFolio);
+        Assert.Equal(external.Uuid, externalReference.FiscalUuid);
+        Assert.Null(Assert.Single(result, x => x.AccountsReceivableInvoiceId == 440).FiscalFolio);
+        Assert.Empty(dbContext.ChangeTracker.Entries());
+        Assert.Empty(await repository.GetReferencesByIdsAsync([]));
+    }
+
+    [Fact]
     public async Task SearchAccountsReceivablePayments_ProjectsPendingAndConfirmedUnappliedStates()
     {
         var receiver = new FiscalReceiver
@@ -2251,6 +2346,67 @@ public class AccountsReceivableServicesTests
         Assert.True(result.Workspace.Summary.HasPendingCommitment);
         Assert.Single(result.Workspace.PendingCommitments);
         Assert.Single(result.Workspace.RecentNotes);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReceivablesSummary_PreservesBranchSnapshotsAndMissingHistory(bool configured)
+    {
+        var factory = CreateSummaryDocumentFactory(new ArFakeAccountsReceivableInvoiceRepository
+        {
+            PortfolioItems =
+            [
+                new AccountsReceivablePortfolioItem { AccountsReceivableInvoiceId = 201, FiscalReceiverId = 77,
+                    ReceiverBranchName = "  Norte <Nissan>  ", CurrencyCode = "MXN", Total = 100m, OutstandingBalance = 100m },
+                new AccountsReceivablePortfolioItem { AccountsReceivableInvoiceId = 202, FiscalReceiverId = 77,
+                    ReceiverBranchName = "Sur", CurrencyCode = "MXN", Total = 200m, OutstandingBalance = 200m },
+                new AccountsReceivablePortfolioItem { AccountsReceivableInvoiceId = 203, FiscalReceiverId = 77,
+                    CurrencyCode = "MXN", Total = 50m, OutstandingBalance = 50m }
+            ]
+        }, branchConfigured: configured);
+        var result = await factory.BuildPreviewDocumentAsync(new ReceivablesSummaryCommand
+        {
+            ReceiverId = 77, Scope = "all_pending", Format = "html", Subject = "Resumen", Message = "Adeudos"
+        });
+        Assert.True(result.IsSuccess);
+        var document = result.Document!;
+        Assert.Equal("Norte <Nissan>", document.Invoices.Single(x => x.AccountsReceivableInvoiceId == 201).ReceiverBranchName);
+        Assert.Equal("Sur", document.Invoices.Single(x => x.AccountsReceivableInvoiceId == 202).ReceiverBranchName);
+        Assert.Equal(ReceivablesSummaryComposer.MissingReceiverBranch,
+            document.Invoices.Single(x => x.AccountsReceivableInvoiceId == 203).ReceiverBranchName);
+        Assert.Equal(350m, document.Selection.OutstandingBalance);
+        var html = ReceivablesSummaryComposer.BuildHtml(document);
+        Assert.Contains("Sucursal: Norte &lt;Nissan&gt;", html);
+        Assert.DoesNotContain("Norte <Nissan>", html);
+        Assert.Contains("Sucursal: Sur", html);
+        Assert.Contains(ReceivablesSummaryComposer.MissingReceiverBranch, html);
+
+        foreach (var variant in new[] { ReceivablesSummaryPdfVariant.Digital, ReceivablesSummaryPdfVariant.Print })
+        {
+            var pdf = Encoding.Latin1.GetString(await new ReceivablesSummaryPdfRenderer().RenderAsync(document, variant));
+            Assert.Contains("Sucursal: Norte", pdf);
+            Assert.Contains("Sucursal: Sur", pdf);
+            Assert.Contains("Sin sucursal", pdf);
+            Assert.Contains("registrada", pdf);
+            Assert.Contains("/MediaBox [0 0 612 792]", pdf);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReceivablesSummary_OnlyShowsMissingBranchWhenReceiverUsesBranch(bool configured)
+    {
+        var factory = CreateSummaryDocumentFactory(new ArFakeAccountsReceivableInvoiceRepository
+        {
+            PortfolioItems = [CreatePortfolioItem(201, "MXN", 100m, 0m, 100m, null)]
+        }, branchConfigured: configured);
+        var result = await factory.GetCandidatesAsync(77);
+        Assert.Equal(configured ? ReceivablesSummaryComposer.MissingReceiverBranch : null,
+            Assert.Single(result.Invoices).ReceiverBranchName);
+        var html = ReceivablesSummaryComposer.BuildHtml(new ReceivablesSummaryDocument { Invoices = result.Invoices });
+        Assert.Equal(configured, html.Contains("Sucursal:"));
     }
 
     [Fact]
@@ -3076,7 +3232,8 @@ public class AccountsReceivableServicesTests
     private static ReceivablesSummaryDocumentFactory CreateSummaryDocumentFactory(
         ArFakeAccountsReceivableInvoiceRepository invoiceRepository,
         string? receiverEmail = "cliente@example.com",
-        byte[]? issuerLogoData = null)
+        byte[]? issuerLogoData = null,
+        bool branchConfigured = false)
     {
         return new ReceivablesSummaryDocumentFactory(
             new SearchAccountsReceivablePortfolioService(
@@ -3091,6 +3248,9 @@ public class AccountsReceivableServicesTests
                     LegalName = "Cliente Uno",
                     Email = receiverEmail,
                     FiscalRegimeCode = "601",
+                    SpecialFieldDefinitions = branchConfigured
+                        ? [new FiscalReceiverSpecialFieldDefinition { Code = "SUCURSAL", Label = "Sucursal del cliente", IsActive = true }]
+                        : [],
                     PostalCode = "01000"
                 }
             },
@@ -3311,6 +3471,22 @@ public class AccountsReceivableServicesTests
 
     private sealed class ArFakeAccountsReceivableInvoiceRepository : IAccountsReceivableInvoiceRepository
     {
+        public IReadOnlyList<AccountsReceivableInvoiceReference> InvoiceReferences { get; set; } = [];
+
+        public int GetReferencesByIdsAsyncCallCount { get; private set; }
+
+        public IReadOnlyList<long> LastReferenceIds { get; private set; } = [];
+
+        public Task<IReadOnlyList<AccountsReceivableInvoiceReference>> GetReferencesByIdsAsync(
+            IReadOnlyCollection<long> accountsReceivableInvoiceIds,
+            CancellationToken cancellationToken = default)
+        {
+            GetReferencesByIdsAsyncCallCount++;
+            LastReferenceIds = accountsReceivableInvoiceIds.ToArray();
+            return Task.FromResult<IReadOnlyList<AccountsReceivableInvoiceReference>>(
+                InvoiceReferences.Where(x => accountsReceivableInvoiceIds.Contains(x.AccountsReceivableInvoiceId)).ToArray());
+        }
+
         public AccountsReceivableInvoice? ExistingByFiscalDocumentId { get; set; }
 
         public AccountsReceivableInvoice? ExistingByExternalRepBaseDocumentId { get; set; }
@@ -3882,3 +4058,4 @@ public class AccountsReceivableServicesTests
         public string FormatPaymentMethod(string? code) => code ?? string.Empty;
     }
 }
+

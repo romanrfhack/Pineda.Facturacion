@@ -99,6 +99,8 @@ public sealed class ReceivablesSummaryCandidate
 
     public string? FiscalUuid { get; init; }
 
+    public string? ReceiverBranchName { get; init; }
+
     public DateTime IssuedAtUtc { get; init; }
 
     public DateTime? DueAtUtc { get; init; }

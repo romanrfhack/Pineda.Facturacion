@@ -45,10 +45,14 @@ public sealed class ReceivablesSummaryDocumentFactory
             },
             cancellationToken);
 
+        var includeReceiverBranch = receiver?.SpecialFieldDefinitions.Any(field =>
+            field.IsActive && string.Equals(field.Code.Trim(), ReceivablesSummaryComposer.ReceiverBranchFieldCode,
+                StringComparison.OrdinalIgnoreCase)) == true
+            || portfolio.Items.Any(item => item.ReceiverBranchName is not null);
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         var invoices = portfolio.Items
             .Where(ReceivablesSummaryComposer.IsEligible)
-            .Select(item => ReceivablesSummaryComposer.MapCandidate(item, now))
+            .Select(item => ReceivablesSummaryComposer.MapCandidate(item, now, includeReceiverBranch))
             .OrderByDescending(x => x.IsOverdue)
             .ThenBy(x => x.DueAtUtc ?? DateTime.MaxValue)
             .ThenBy(x => x.AccountsReceivableInvoiceId)

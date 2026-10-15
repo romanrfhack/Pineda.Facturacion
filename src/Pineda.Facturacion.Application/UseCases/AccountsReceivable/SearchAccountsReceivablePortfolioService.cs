@@ -70,6 +70,7 @@ public sealed class SearchAccountsReceivablePortfolioService
                     FiscalSeries = item.FiscalSeries,
                     FiscalFolio = item.FiscalFolio,
                     FiscalUuid = item.FiscalUuid,
+                    ReceiverBranchName = item.ReceiverBranchName,
                     CurrencyCode = item.CurrencyCode,
                     Total = item.Total,
                     PaidTotal = item.PaidTotal,
