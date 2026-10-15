@@ -42,6 +42,10 @@ public sealed class SearchAccountsReceivablePaymentsService
 
         var linkedInvoices = await _accountsReceivableInvoiceRepository.GetByIdsAsync(invoiceIds, cancellationToken);
         var invoiceById = linkedInvoices.ToDictionary(x => x.Id, x => x);
+        var invoiceReferences = invoiceIds.Length == 0
+            ? new Dictionary<long, AccountsReceivableInvoiceReference>()
+            : (await _accountsReceivableInvoiceRepository.GetReferencesByIdsAsync(invoiceIds, cancellationToken))
+                .ToDictionary(x => x.AccountsReceivableInvoiceId);
 
         var paymentIds = payments.Select(x => x.Id).ToArray();
         var paymentComplements = await _paymentComplementDocumentRepository.GetByPaymentIdsAsync(paymentIds, cancellationToken);
@@ -81,7 +85,8 @@ public sealed class SearchAccountsReceivablePaymentsService
                     payment,
                     paymentLinkedInvoices,
                     paymentComplementDocument,
-                    payerName);
+                    payerName,
+                    invoiceReferences);
             })
             .Where(item => MatchesOperationalStatus(filter.OperationalStatus, item))
             .Where(item => !filter.HasUnappliedAmount.HasValue || filter.HasUnappliedAmount.Value == (item.UnappliedAmount > 0m))
@@ -106,3 +111,4 @@ public sealed class SearchAccountsReceivablePaymentsService
             StringComparison.OrdinalIgnoreCase);
     }
 }
+

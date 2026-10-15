@@ -38,7 +38,10 @@ public sealed class AccountsReceivablePaymentOperationalProjection
 
     public decimal RepFiscalizedAmount { get; init; }
 
+    public IReadOnlyList<AccountsReceivableInvoiceReference> AppliedInvoices { get; init; } = [];
+
     public int ApplicationsCount { get; init; }
 
     public long? LinkedFiscalDocumentId { get; init; }
 }
+

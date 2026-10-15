@@ -102,6 +102,38 @@ public class AccountsReceivableInvoiceRepository : IAccountsReceivableInvoiceRep
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<AccountsReceivableInvoiceReference>> GetReferencesByIdsAsync(
+        IReadOnlyCollection<long> accountsReceivableInvoiceIds,
+        CancellationToken cancellationToken = default)
+    {
+        if (accountsReceivableInvoiceIds.Count == 0)
+        {
+            return [];
+        }
+
+        // Payment history includes settled invoices; do not apply portfolio balance filters.
+        return await (
+            from invoice in _dbContext.AccountsReceivableInvoices.AsNoTracking()
+            where accountsReceivableInvoiceIds.Contains(invoice.Id)
+            join documentLeft in _dbContext.FiscalDocuments.AsNoTracking()
+                on invoice.FiscalDocumentId equals documentLeft.Id into documents
+            from document in documents.DefaultIfEmpty()
+            join stampLeft in _dbContext.FiscalStamps.AsNoTracking()
+                on invoice.FiscalStampId equals stampLeft.Id into stamps
+            from stamp in stamps.DefaultIfEmpty()
+            join externalLeft in _dbContext.ExternalRepBaseDocuments.AsNoTracking()
+                on invoice.ExternalRepBaseDocumentId equals externalLeft.Id into externals
+            from external in externals.DefaultIfEmpty()
+            select new AccountsReceivableInvoiceReference
+            {
+                AccountsReceivableInvoiceId = invoice.Id,
+                FiscalDocumentId = invoice.FiscalDocumentId,
+                FiscalSeries = document != null ? document.Series : external != null ? external.Series : null,
+                FiscalFolio = document != null ? document.Folio : external != null ? external.Folio : null,
+                FiscalUuid = stamp != null ? stamp.Uuid : external != null ? external.Uuid : null
+            }).ToListAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<AccountsReceivablePortfolioItem>> SearchPortfolioAsync(SearchAccountsReceivablePortfolioFilter filter, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(filter);
@@ -227,3 +259,4 @@ public class AccountsReceivableInvoiceRepository : IAccountsReceivableInvoiceRep
         await _dbContext.AccountsReceivableInvoices.AddAsync(accountsReceivableInvoice, cancellationToken);
     }
 }
+

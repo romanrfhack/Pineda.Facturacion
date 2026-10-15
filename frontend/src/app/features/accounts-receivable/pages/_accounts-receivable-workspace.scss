@@ -369,3 +369,12 @@ app-accounts-receivable-page .collapsible-content {
     box-shadow: none;
   }
 }
+
+
+app-accounts-receivable-page .workspace-payment-invoices {
+  max-width: 28rem;
+  margin-top: 0.5rem;
+  line-height: 1.6;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
