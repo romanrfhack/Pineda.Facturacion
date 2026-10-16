@@ -71,6 +71,7 @@ import {
         <div class="email-field-header">
           <span>Correo(s)</span>
           <small class="helper">Para varios correos, agrégalos uno por uno o pégalos separados con punto y coma (;).</small>
+          <small class="helper">Máximo {{ emailMaxLength }} caracteres en total, incluidos los separadores.</small>
         </div>
 
         <div class="email-entry-row">
@@ -294,7 +295,7 @@ import {
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class FiscalReceiverFormComponent implements OnChanges {
-  private static readonly emailMaxLength = 200;
+  protected readonly emailMaxLength = 500;
 
   private readonly fiscalReceiverSatCatalogService = inject(FiscalReceiverSatCatalogService);
 
@@ -367,9 +368,9 @@ export class FiscalReceiverFormComponent implements OnChanges {
       return;
     }
 
-    if (normalizedEmail.length > FiscalReceiverFormComponent.emailMaxLength) {
+    if (normalizedEmail.length > this.emailMaxLength) {
       this.localErrorMessage.set(
-        `El campo Correo(s) permite máximo ${FiscalReceiverFormComponent.emailMaxLength} caracteres.`,
+        `El campo Correo(s) permite máximo ${this.emailMaxLength} caracteres.`,
       );
       return;
     }
@@ -419,9 +420,9 @@ export class FiscalReceiverFormComponent implements OnChanges {
     const nextRecipients = mergeEmailRecipients(this.emailRecipients, parseEmailRecipients(rawInput));
     const normalizedEmail = joinEmailRecipients(nextRecipients);
 
-    if (normalizedEmail.length > FiscalReceiverFormComponent.emailMaxLength) {
+    if (normalizedEmail.length > this.emailMaxLength) {
       this.localErrorMessage.set(
-        `El campo Correo(s) permite máximo ${FiscalReceiverFormComponent.emailMaxLength} caracteres.`,
+        `El campo Correo(s) permite máximo ${this.emailMaxLength} caracteres.`,
       );
       return;
     }

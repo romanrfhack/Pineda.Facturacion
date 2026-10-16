@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/ops/">
+    <Project Path="ops/ReceiverEmailMigration/ReceiverEmailMigration.csproj" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/Pineda.Facturacion.Api/Pineda.Facturacion.Api.csproj" />
     <Project Path="src/Pineda.Facturacion.Application/Pineda.Facturacion.Application.csproj" />

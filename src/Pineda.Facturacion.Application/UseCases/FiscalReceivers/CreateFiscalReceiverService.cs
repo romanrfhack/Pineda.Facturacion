@@ -11,7 +11,7 @@ public class CreateFiscalReceiverService
     private readonly IFiscalReceiverSatCatalogProvider _fiscalReceiverSatCatalogProvider;
     private readonly IUnitOfWork _unitOfWork;
 
-    internal const int EmailMaxLength = 200;
+    internal const int EmailMaxLength = 500;
 
     public CreateFiscalReceiverService(
         IFiscalReceiverRepository fiscalReceiverRepository,

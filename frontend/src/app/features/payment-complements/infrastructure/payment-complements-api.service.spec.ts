@@ -10,6 +10,32 @@ describe('PaymentComplementsApiService', () => {
     });
   });
 
+  it('does not retry rejected complements by default', () => {
+    const service = TestBed.inject(PaymentComplementsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.stamp(70).subscribe();
+
+    const req = httpTesting.expectOne('/api/payment-complements/70/stamp');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ retryRejected: false });
+    req.flush({});
+    httpTesting.verify();
+  });
+
+  it('sends an explicit retry for the existing rejected complement', () => {
+    const service = TestBed.inject(PaymentComplementsApiService);
+    const httpTesting = TestBed.inject(HttpTestingController);
+
+    service.stamp(70, true).subscribe();
+
+    const req = httpTesting.expectOne('/api/payment-complements/70/stamp');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ retryRejected: true });
+    req.flush({});
+    httpTesting.verify();
+  });
+
   it('gets payment-complement stamp xml as plain text', () => {
     const service = TestBed.inject(PaymentComplementsApiService);
     const httpTesting = TestBed.inject(HttpTestingController);

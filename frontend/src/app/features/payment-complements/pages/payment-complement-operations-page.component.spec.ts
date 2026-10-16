@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap } from '@angular/router';
-import { of } from 'rxjs';
+import { HttpErrorResponse } from '@angular/common/http';
+import { of, Subject, throwError } from 'rxjs';
 import { PermissionService } from '../../../core/auth/permission.service';
 import { FeedbackService } from '../../../core/ui/feedback.service';
 import { AccountsReceivableApiService } from '../../accounts-receivable/infrastructure/accounts-receivable-api.service';
@@ -145,6 +146,7 @@ describe('PaymentComplementOperationsPageComponent', () => {
     const fixture = TestBed.createComponent(PaymentComplementOperationsPageComponent);
     fixture.detectChanges();
     await fixture.whenStable();
+    await vi.waitFor(() => expect(fixture.componentInstance['loading']()).toBe(false));
     fixture.detectChanges();
 
     return { fixture, arApi, paymentComplementsApi, feedbackService };
@@ -194,7 +196,88 @@ describe('PaymentComplementOperationsPageComponent', () => {
 
     expect(fixture.componentInstance['getStampActionLabel'](createComplement({ status: 'Stamped' }))).toBe('Timbrado');
     expect(fixture.componentInstance['getStampActionLabel'](createComplement({ status: 'ReadyForStamping' }))).toBe('Timbrar');
-    expect(fixture.componentInstance['getStampActionLabel'](createComplement({ status: 'StampingRejected' }))).toBe('Timbrar');
+    expect(fixture.componentInstance['getStampActionLabel'](createComplement({ status: 'StampingRejected' }))).toBe('Reintentar timbrado');
+  });
+
+  it('prepares a complement when the payment does not have one', async () => {
+    const { fixture, arApi } = await configure();
+
+    await fixture.componentInstance['prepare']();
+
+    expect(arApi.preparePaymentComplement).toHaveBeenCalledExactlyOnceWith(7);
+    expect(arApi.getPaymentComplementByPaymentId).toHaveBeenCalledWith(7);
+  });
+
+  it.each(['ReadyForStamping', 'StampingRejected', 'Stamped'])(
+    'disables preparation and prevents a duplicate request for a %s complement',
+    async (status) => {
+      const { fixture, arApi } = await configure({ repDocumentStatus: status }, { status });
+      const prepareButton = Array.from(fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>)
+        .find((button) => button.textContent?.trim() === 'Preparar complemento de pago');
+
+      expect(prepareButton?.disabled).toBe(true);
+      await fixture.componentInstance['prepare']();
+      expect(arApi.preparePaymentComplement).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ['ReadyForStamping', false, 'Timbrar'],
+    ['StampingRejected', true, 'Reintentar timbrado'],
+  ])('stamps a %s complement with retryRejected=%s', async (status, retryRejected, label) => {
+    const { fixture, arApi, paymentComplementsApi } = await configure({ repDocumentStatus: status }, { status });
+    const stampButton = Array.from(fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>)
+      .find((button) => button.textContent?.trim() === label);
+
+    expect(stampButton?.disabled).toBe(false);
+    stampButton!.click();
+    await fixture.whenStable();
+
+    expect(paymentComplementsApi.stamp).toHaveBeenCalledExactlyOnceWith(70, retryRejected);
+    expect(arApi.preparePaymentComplement).not.toHaveBeenCalled();
+  });
+
+  it('refreshes the rejected status and PAC evidence after an HTTP error so the next attempt is a retry', async () => {
+    const { fixture, arApi, paymentComplementsApi, feedbackService } = await configure({ repDocumentStatus: 'ReadyForStamping' });
+    arApi.getPaymentComplementByPaymentId.mockReturnValue(of(createComplement({ status: 'StampingRejected' })));
+    paymentComplementsApi.getStamp.mockReturnValue(of({
+      paymentComplementDocumentId: 70,
+      outcome: 'Found',
+      providerName: 'Facturalo',
+      stampedAtUtc: '',
+      providerMessage: 'Rechazo de prueba del proveedor',
+    }));
+    paymentComplementsApi.stamp.mockReturnValue(throwError(() => new HttpErrorResponse({
+      status: 409,
+      error: { errorMessage: 'Rechazo de prueba del proveedor' },
+    })));
+
+    await fixture.componentInstance['stamp']();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Reintentar timbrado');
+    expect(fixture.nativeElement.textContent).toContain('Rechazo de prueba del proveedor');
+    expect(feedbackService.show).toHaveBeenCalledWith('error', 'Rechazo de prueba del proveedor');
+    expect(paymentComplementsApi.getStamp).toHaveBeenCalledTimes(2);
+
+    await fixture.componentInstance['stamp']();
+    expect(paymentComplementsApi.stamp).toHaveBeenNthCalledWith(1, 70, false);
+    expect(paymentComplementsApi.stamp).toHaveBeenNthCalledWith(2, 70, true);
+    expect(arApi.preparePaymentComplement).not.toHaveBeenCalled();
+  });
+
+  it('does not send a second stamp request while the first one is pending', async () => {
+    const { fixture, paymentComplementsApi } = await configure({ repDocumentStatus: 'StampingRejected' }, { status: 'StampingRejected' });
+    const pending = new Subject<never>();
+    paymentComplementsApi.stamp.mockReturnValue(pending);
+
+    const firstAttempt = fixture.componentInstance['stamp']();
+    await fixture.componentInstance['stamp']();
+
+    expect(paymentComplementsApi.stamp).toHaveBeenCalledExactlyOnceWith(70, true);
+    pending.error(new HttpErrorResponse({ status: 503 }));
+    await firstAttempt;
+    expect(fixture.componentInstance['loading']()).toBe(false);
   });
 
   it('does not call the stamp API when the complement is already stamped', async () => {

@@ -47,6 +47,9 @@ jobs:
       - name: Publish API
         run: dotnet publish src/Pineda.Facturacion.Api/Pineda.Facturacion.Api.csproj -c Release -o out/api
 
+      - name: Publish guarded receiver-email migration
+        run: dotnet publish ops/ReceiverEmailMigration/ReceiverEmailMigration.csproj -c Release -o out/receiver-email-migration
+
       - name: Validate publish output
         shell: bash
         run: |
@@ -75,6 +78,21 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keygen -y -f ~/.ssh/id_ed25519 > /dev/null
           ssh-keyscan -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts
+
+      - name: Apply and verify receiver-email migration before replacing API
+        shell: bash
+        run: |
+          set -euo pipefail
+          MIGRATION_PATH="/var/www/facturas-backend/receiver-email-migration/$GITHUB_SHA"
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" \
+            "$SSH_USER@$SSH_HOST" "mkdir -p '$MIGRATION_PATH'"
+          rsync -az -O --no-perms --no-owner --no-group \
+            out/receiver-email-migration/ \
+            -e "ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p $SSH_PORT" \
+            "$SSH_USER@$SSH_HOST:$MIGRATION_PATH/"
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" \
+            "$SSH_USER@$SSH_HOST" \
+            "set -eu; pid=\$(systemctl show '$SERVICE_NAME' -p MainPID --value); sudo dotnet '$MIGRATION_PATH/ReceiverEmailMigration.dll' --service-pid \"\$pid\""
 
       - name: Upload API to server
         run: |

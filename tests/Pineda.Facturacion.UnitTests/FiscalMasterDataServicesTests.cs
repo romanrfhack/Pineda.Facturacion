@@ -528,6 +528,87 @@ public class FiscalMasterDataServicesTests
         Assert.Equal("cliente@example.com; COBRANZA@example.com", repository.Added!.Email);
     }
 
+    [Theory]
+    [InlineData(300)]
+    [InlineData(499)]
+    [InlineData(500)]
+    [InlineData(501)]
+    public async Task CreateFiscalReceiver_EnforcesCombinedEmailLength(int length)
+    {
+        var repository = new FakeFiscalReceiverRepository();
+        var unitOfWork = new FakeUnitOfWork();
+        var service = new CreateFiscalReceiverService(repository, FakeFiscalReceiverSatCatalogProvider.Default(), unitOfWork);
+        var email = BuildEmailList(length);
+
+        var result = await service.ExecuteAsync(new CreateFiscalReceiverCommand
+        {
+            Rfc = "XEXX010101000",
+            LegalName = "Receiver",
+            FiscalRegimeCode = "601",
+            CfdiUseCodeDefault = "G03",
+            PostalCode = "64000",
+            Email = email
+        });
+
+        Assert.Equal(length, email.Length);
+        if (length <= 500)
+        {
+            Assert.True(result.IsSuccess, result.ErrorMessage);
+            Assert.Equal(email, repository.Added!.Email);
+            Assert.Equal(1, unitOfWork.SaveChangesCallCount);
+        }
+        else
+        {
+            Assert.Equal(CreateFiscalReceiverOutcome.ValidationFailed, result.Outcome);
+            Assert.Equal("El campo Correo(s) permite máximo 500 caracteres.", result.ErrorMessage);
+            Assert.Null(repository.Added);
+            Assert.Equal(0, unitOfWork.SaveChangesCallCount);
+        }
+    }
+
+    [Theory]
+    [InlineData(300)]
+    [InlineData(499)]
+    [InlineData(500)]
+    [InlineData(501)]
+    public async Task UpdateFiscalReceiver_EnforcesCombinedEmailLength(int length)
+    {
+        var existing = CreateReceiverWithSpecialFields();
+        existing.Email = "original@example.com";
+        var repository = new FakeFiscalReceiverRepository { ExistingById = existing, ExistingByRfc = existing };
+        var unitOfWork = new FakeUnitOfWork();
+        var service = new UpdateFiscalReceiverService(repository, FakeFiscalReceiverSatCatalogProvider.Default(), unitOfWork);
+        var email = BuildEmailList(length);
+
+        var result = await service.ExecuteAsync(CreateUpdateCommand(existing, email));
+
+        Assert.Equal(length, email.Length);
+        if (length <= 500)
+        {
+            Assert.True(result.IsSuccess, result.ErrorMessage);
+            Assert.Equal(email, existing.Email);
+            Assert.Equal(1, unitOfWork.SaveChangesCallCount);
+        }
+        else
+        {
+            Assert.Equal(UpdateFiscalReceiverOutcome.ValidationFailed, result.Outcome);
+            Assert.Equal("El campo Correo(s) permite máximo 500 caracteres.", result.ErrorMessage);
+            Assert.Equal("original@example.com", existing.Email);
+            Assert.Equal(0, unitOfWork.SaveChangesCallCount);
+        }
+    }
+
+    private static string BuildEmailList(int totalLength)
+    {
+        var domain = new string('x', 50) + ".example.com";
+        var addressCharacters = totalLength - 6; // Three canonical "; " separators.
+        return string.Join("; ", Enumerable.Range(0, 4).Select(index =>
+        {
+            var addressLength = addressCharacters / 4 + (index < addressCharacters % 4 ? 1 : 0);
+            return new string((char)('a' + index), addressLength - domain.Length - 1) + "@" + domain;
+        }));
+    }
+
     [Fact]
     public async Task CreateFiscalReceiver_Rejects_Invalid_Email_List()
     {
