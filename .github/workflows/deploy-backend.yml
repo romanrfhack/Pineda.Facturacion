@@ -135,6 +135,14 @@ jobs:
             "$SSH_USER@$SSH_HOST" \
             "sudo systemctl is-active --quiet '$SERVICE_NAME' && sudo systemctl status '$SERVICE_NAME' --no-pager -l"
 
+      - name: Verify API health and database readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" \
+            "$SSH_USER@$SSH_HOST" \
+            "curl -fsS --retry 10 --retry-connrefused --retry-delay 2 http://localhost:5006/health/ready && curl -fsS http://localhost:5006/health/live"
+
       - name: Collect diagnostics on failure
         if: failure()
         shell: bash
@@ -143,8 +151,6 @@ jobs:
           ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" \
             "$SSH_USER@$SSH_HOST" \
             "sudo systemctl status '$SERVICE_NAME' --no-pager -l || true; \
-             echo; \
-             sudo systemctl cat '$SERVICE_NAME' || true; \
              echo; \
              sudo systemctl show '$SERVICE_NAME' -p EnvironmentFiles --no-pager || true; \
              echo; \
