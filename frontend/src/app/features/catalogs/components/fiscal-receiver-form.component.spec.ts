@@ -186,6 +186,47 @@ describe('FiscalReceiverFormComponent', () => {
     );
   });
 
+  it.each([300, 499, 500])('adds and saves four emails totaling %i characters', async (length) => {
+    const fixture = await renderComponent({ initialValue: buildRequest() });
+    const emitted = vi.spyOn(fixture.componentInstance.submitted, 'emit');
+    const email = buildEmailList(length);
+
+    await setEmailInputValue(fixture, email);
+    await clickAddEmailButton(fixture);
+    await submitForm(fixture);
+
+    expect(email).toHaveLength(length);
+    expect(getEmailRecipientChipTexts(fixture)).toHaveLength(4);
+    expect(emitted).toHaveBeenCalledWith(expect.objectContaining({ email }));
+    expect(fixture.nativeElement.textContent).toContain('Máximo 500 caracteres en total');
+  });
+
+  it('rejects a fourth email exceeding 500 characters and preserves the existing three', async () => {
+    const recipients = buildEmailList(501).split('; ');
+    const fixture = await renderComponent({
+      receiver: buildReceiver({ email: recipients.slice(0, 3).join('; ') })
+    });
+
+    await setEmailInputValue(fixture, recipients[3]);
+    await clickAddEmailButton(fixture);
+
+    expect(getEmailRecipientChipTexts(fixture)).toEqual(recipients.slice(0, 3));
+    expect(getEmailInput(fixture).value).toBe(recipients[3]);
+    expect(fixture.nativeElement.textContent).toContain('El campo Correo(s) permite máximo 500 caracteres.');
+  });
+
+  it('blocks saving an email list longer than 500 characters', async () => {
+    const fixture = await renderComponent({
+      receiver: buildReceiver({ email: buildEmailList(501) })
+    });
+    const emitted = vi.spyOn(fixture.componentInstance.submitted, 'emit');
+
+    await submitForm(fixture);
+
+    expect(emitted).not.toHaveBeenCalled();
+    expect(fixture.nativeElement.textContent).toContain('El campo Correo(s) permite máximo 500 caracteres.');
+  });
+
   it('keeps the current empty email behavior when there are no emails', async () => {
     const fixture = await renderComponent({
       initialValue: buildRequest({ email: null })
@@ -443,4 +484,13 @@ function getInvalidEmailRecipientChipTexts(fixture: ComponentFixture<FiscalRecei
 
 function normalizeTextContent(value: string | null): string {
   return (value ?? '').replace(/\s+/g, ' ').trim();
+}
+
+function buildEmailList(totalLength: number): string {
+  const domain = `${'x'.repeat(50)}.example.com`;
+  const addressCharacters = totalLength - 6; // Three canonical '; ' separators.
+  return Array.from({ length: 4 }, (_, index) => {
+    const addressLength = Math.floor(addressCharacters / 4) + (index < addressCharacters % 4 ? 1 : 0);
+    return `${String.fromCharCode(97 + index).repeat(addressLength - domain.length - 1)}@${domain}`;
+  }).join('; ');
 }

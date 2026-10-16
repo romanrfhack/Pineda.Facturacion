@@ -1893,8 +1893,8 @@ namespace Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Migrations
                         .HasColumnName("credit_updated_by");
 
                     b.Property<string>("Email")
-                        .HasMaxLength(200)
-                        .HasColumnType("varchar(200)")
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)")
                         .HasColumnName("email");
 
                     b.Property<string>("FiscalRegimeCode")
