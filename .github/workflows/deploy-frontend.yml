@@ -2,7 +2,8 @@ name: Deploy Frontend (Facturas)
 
 on:
   workflow_run:
-    workflows: ["CI"]
+    # Publish the UI only after the matching backend/schema deployment succeeds.
+    workflows: ["Deploy Backend (Facturas API)"]
     types: [completed]
   workflow_dispatch:
 

@@ -29,6 +29,7 @@ jobs:
           list-files: shell
           filters: |
             backend:
+              - 'ops/ReceiverEmailMigration/**'
               - 'src/Pineda.Facturacion.Api/**'
               - 'src/Pineda.Facturacion.Application/**'
               - 'src/Pineda.Facturacion.Domain/**'

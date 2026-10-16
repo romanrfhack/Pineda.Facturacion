@@ -308,8 +308,8 @@ export class PaymentComplementsApiService {
     );
   }
 
-  stamp(paymentComplementId: number): Observable<StampPaymentComplementResponse> {
-    return this.http.post<StampPaymentComplementResponse>(buildApiUrl(`/payment-complements/${paymentComplementId}/stamp`), { retryRejected: false });
+  stamp(paymentComplementId: number, retryRejected = false): Observable<StampPaymentComplementResponse> {
+    return this.http.post<StampPaymentComplementResponse>(buildApiUrl(`/payment-complements/${paymentComplementId}/stamp`), { retryRejected });
   }
 
   getStamp(paymentComplementId: number): Observable<PaymentComplementStampResponse> {

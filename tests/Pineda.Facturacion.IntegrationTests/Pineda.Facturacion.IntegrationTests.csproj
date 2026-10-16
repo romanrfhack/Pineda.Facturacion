@@ -19,6 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../../ops/ReceiverEmailMigration/ReceiverEmailMigration.csproj" />
     <ProjectReference Include="..\..\src\Pineda.Facturacion.Api\Pineda.Facturacion.Api.csproj" />
     <ProjectReference Include="..\..\src\Pineda.Facturacion.Application\Pineda.Facturacion.Application.csproj" />
     <ProjectReference Include="..\..\src\Pineda.Facturacion.Infrastructure.BillingWrite\Pineda.Facturacion.Infrastructure.BillingWrite.csproj" />

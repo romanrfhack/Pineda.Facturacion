@@ -66,8 +66,8 @@ public class FiscalReceiverConfiguration : IEntityTypeConfiguration<FiscalReceiv
 
         builder.Property(x => x.Email)
             .HasColumnName("email")
-            .HasMaxLength(200)
-            .HasColumnType("varchar(200)")
+            .HasMaxLength(500)
+            .HasColumnType("varchar(500)")
             .IsRequired(false);
 
         builder.Property(x => x.Phone)

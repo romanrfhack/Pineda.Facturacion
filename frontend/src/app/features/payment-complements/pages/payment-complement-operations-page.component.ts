@@ -34,7 +34,10 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
           <h3>Evento de pago #{{ paymentId() }}</h3>
           <p class="helper">Este flujo puntual se conserva para operación existente sobre un paymentId ya identificado.</p>
           @if (permissionService.canManagePayments()) {
-            <button type="button" (click)="prepare()" [disabled]="loading()">Preparar complemento de pago</button>
+            <button type="button" (click)="prepare()" [disabled]="loading() || !!complement()">Preparar complemento de pago</button>
+            @if (complement()) {
+              <p class="helper">Este pago ya tiene un complemento preparado. Continúa con las acciones del complemento existente.</p>
+            }
           }
         </section>
       }
@@ -120,13 +123,13 @@ export class PaymentComplementOperationsPageComponent {
 
   constructor() {
     if (this.paymentId()) {
-      void this.initializePaymentContext(this.paymentId()!);
+      void this.run(() => this.initializePaymentContext(this.paymentId()!));
     }
   }
 
   protected async prepare(): Promise<void> {
     const paymentId = this.paymentId();
-    if (!paymentId) {
+    if (!paymentId || this.complement()) {
       return;
     }
 
@@ -154,23 +157,29 @@ export class PaymentComplementOperationsPageComponent {
     }
 
     await this.run(async () => {
-      const response = await firstValueFrom(this.paymentComplementsApi.stamp(paymentComplementId));
-      if (response.warningMessages.length) {
-        this.feedbackService.show('warning', response.warningMessages.join(' | '));
-      }
+      try {
+        const response = await firstValueFrom(this.paymentComplementsApi.stamp(
+          paymentComplementId,
+          complement.status === 'StampingRejected',
+        ));
+        if (response.warningMessages.length) {
+          this.feedbackService.show('warning', response.warningMessages.join(' | '));
+        }
 
-      const successMessage = buildPaymentComplementStampFeedbackMessage(
-        response.email,
-        'Complemento de pago timbrado correctamente.',
-      );
-      this.feedbackService.show(
-        response.isSuccess ? 'success' : 'warning',
-        response.isSuccess
-          ? successMessage
-          : response.providerMessage || response.supportMessage || response.errorMessage || getDisplayLabel(response.outcome),
-      );
-      await this.loadComplementByPayment(complement.accountsReceivablePaymentId);
-      await this.loadStamp(paymentComplementId);
+        const successMessage = buildPaymentComplementStampFeedbackMessage(
+          response.email,
+          'Complemento de pago timbrado correctamente.',
+        );
+        this.feedbackService.show(
+          response.isSuccess ? 'success' : 'warning',
+          response.isSuccess
+            ? successMessage
+            : response.providerMessage || response.supportMessage || response.errorMessage || getDisplayLabel(response.outcome),
+        );
+      } finally {
+        // A rejected HTTP response can still persist a new status and PAC evidence.
+        await this.loadComplementByPayment(this.paymentId() ?? complement.accountsReceivablePaymentId);
+      }
     });
   }
 
@@ -213,6 +222,10 @@ export class PaymentComplementOperationsPageComponent {
   }
 
   protected getStampActionLabel(complement: PaymentComplementDocumentResponse): string {
+    if (complement.status === 'StampingRejected') {
+      return 'Reintentar timbrado';
+    }
+
     return complement.status === 'Stamped' ? 'Timbrado' : 'Timbrar';
   }
 
@@ -316,6 +329,10 @@ export class PaymentComplementOperationsPageComponent {
   }
 
   private async run(operation: () => Promise<void>): Promise<void> {
+    if (this.loading()) {
+      return;
+    }
+
     this.loading.set(true);
     try {
       await operation();

@@ -29,6 +29,7 @@ using Pineda.Facturacion.Domain.Enums;
 using Pineda.Facturacion.Infrastructure.BillingWrite.Persistence;
 using Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Configurations;
 using Pineda.Facturacion.Infrastructure.BillingWrite.Persistence.Repositories;
+using Pineda.Facturacion.Operations;
 
 namespace Pineda.Facturacion.IntegrationTests;
 
@@ -41,6 +42,53 @@ public sealed class MySqlBackedIntegrationTests
     public MySqlBackedIntegrationTests(MySqlDatabaseFixture fixture)
     {
         _fixture = fixture;
+    }
+
+    [MySqlFact]
+    public async Task ReceiverEmailMigration_PreservesExistingEmails_Allows500_AndIsIdempotent()
+    {
+        await _fixture.ResetDatabaseAsync("20260813054914_AddLegacyPaymentSuggestionSnapshot");
+        await using var db = _fixture.CreateDbContext();
+        var receiver = new FiscalReceiver
+        {
+            Rfc = "XEXX010101000", LegalName = "Email Migration Test", NormalizedLegalName = "EMAIL MIGRATION TEST",
+            FiscalRegimeCode = "601", CfdiUseCodeDefault = "G03", PostalCode = "01000",
+            Email = "first@example.com; second@example.com; third@example.com", IsActive = true,
+            CreatedAtUtc = DateTime.UtcNow, UpdatedAtUtc = DateTime.UtcNow
+        };
+        db.Set<FiscalReceiver>().Add(receiver);
+        await db.SaveChangesAsync();
+        var originalEmail = receiver.Email;
+
+        Assert.Equal(500, await ReceiverEmailSchemaMigration.ApplyAsync(db));
+        await db.Entry(receiver).ReloadAsync();
+        Assert.Equal(originalEmail, receiver.Email);
+
+        var domain = new string('x', 50) + ".example.com";
+        receiver.Email = string.Join("; ", Enumerable.Range(0, 4).Select(index =>
+            new string((char)('a' + index), (index < 2 ? 124 : 123) - domain.Length - 1) + "@" + domain));
+        Assert.Equal(500, receiver.Email.Length);
+        await db.SaveChangesAsync();
+        var expandedEmail = receiver.Email;
+
+        Assert.Equal(500, await ReceiverEmailSchemaMigration.ApplyAsync(db));
+        await db.Entry(receiver).ReloadAsync();
+        Assert.Equal(expandedEmail, receiver.Email);
+        Assert.Contains(ReceiverEmailSchemaMigration.TargetMigration, await db.Database.GetAppliedMigrationsAsync());
+    }
+
+    [MySqlFact]
+    public async Task ReceiverEmailMigration_RefusesOtherPendingMigrations_WithoutChangingHistory()
+    {
+        await _fixture.ResetDatabaseAsync("20260604210847_AddFiscalReceiverCreditSupportForPos");
+        await using var db = _fixture.CreateDbContext();
+        var before = (await db.Database.GetAppliedMigrationsAsync()).ToArray();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => ReceiverEmailSchemaMigration.ApplyAsync(db));
+
+        Assert.Equal(before, (await db.Database.GetAppliedMigrationsAsync()).ToArray());
+        Assert.Equal(200, await _fixture.ExecuteScalarAsync<int>(
+            "SELECT CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='fiscal_receiver' AND COLUMN_NAME='email'"));
     }
 
     [MySqlFact]
