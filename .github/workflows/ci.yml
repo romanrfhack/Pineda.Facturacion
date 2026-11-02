@@ -184,7 +184,7 @@ jobs:
   frontend_tests:
     needs: changes
     if: needs.changes.outputs.frontend_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Setup Node
