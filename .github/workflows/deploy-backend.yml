@@ -28,6 +28,7 @@ jobs:
       ASPNETCORE_ENVIRONMENT: Production
       DEPLOY_PATH: /var/www/facturas-backend/publish
       SERVICE_NAME: facturas-api
+      DEPLOY_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
     steps:
       - name: Checkout
@@ -142,6 +143,22 @@ jobs:
           ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" \
             "$SSH_USER@$SSH_HOST" \
             "curl -fsS --retry 10 --retry-connrefused --retry-delay 2 http://localhost:5006/health/ready && curl -fsS http://localhost:5006/health/live"
+
+      - name: Apply and verify production SMTP .com
+        shell: bash
+        run: |
+          set -euo pipefail
+          SMTP_OPS_PATH="/var/www/facturas-backend/smtp-ops/$DEPLOY_SHA"
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" \
+            "$SSH_USER@$SSH_HOST" "mkdir -p '$SMTP_OPS_PATH'"
+          rsync -az -O --no-perms --no-owner --no-group \
+            ops/smtp/pineda_configurar_correo_com_dev.py \
+            ops/smtp/pineda_configurar_correo_com_prod.py \
+            -e "ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p $SSH_PORT" \
+            "$SSH_USER@$SSH_HOST:$SMTP_OPS_PATH/"
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -p "$SSH_PORT" \
+            "$SSH_USER@$SSH_HOST" \
+            "sudo python3 '$SMTP_OPS_PATH/pineda_configurar_correo_com_prod.py' --apply --send-test"
 
       - name: Collect diagnostics on failure
         if: failure()

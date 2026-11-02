@@ -54,6 +54,18 @@ class ProcessConfigurationTests(unittest.TestCase):
         self.assertTrue(public["passwordConfigured"])
         self.assertNotIn("test-only-secret", json.dumps(public))
 
+    def test_json_comments_and_trailing_commas_preserve_strings(self):
+        (self.publish / "appsettings.json").write_text('''{
+          // Same syntax accepted by the .NET JSON provider.
+          "Email": { "SafeRecipient": "test@example.org", /* keep comma */ },
+          "Url": "https://example.org/a//b/*literal*/, }",
+          "Quoted": "a\\\"/*still literal*/",
+        }''')
+        current = tool.snapshot()
+        self.assertEqual(current["safe"], "test@example.org")
+        self.assertEqual(current["config"]["url"], "https://example.org/a//b/*literal*/, }")
+        self.assertEqual(current["config"]["quoted"], 'a"/*still literal*/')
+
     def test_environment_recipient_overrides_json_without_using_fallback_alias(self):
         self.env.update(Email__SafeRecipient="effective-test@example.org", EMAIL_SAFE_RECIPIENT="ignored@example.org")
         self.write_env()
@@ -78,6 +90,24 @@ class ProcessConfigurationTests(unittest.TestCase):
         with self.assertRaises(tool.Stop) as result:
             tool.snapshot()
         self.assertNotIn("do-not-log", str(result.exception))
+
+    def test_explicit_production_snapshot_requires_production_environment(self):
+        with self.assertRaises(tool.Stop):
+            tool.snapshot(service="facturas-api.service", publish=self.publish, environment="Production")
+        self.env["ASPNETCORE_ENVIRONMENT"] = "Production"
+        self.write_env()
+        current = tool.snapshot(service="facturas-api.service", publish=self.publish, environment="Production")
+        self.assertEqual(current["environment"], "Production")
+        self.assertEqual(current["service"], "facturas-api.service")
+
+    def test_production_does_not_load_sandbox_usersecrets(self):
+        self.env["ASPNETCORE_ENVIRONMENT"] = "Production"
+        self.write_env()
+        secret_file = self.root / "home/.microsoft/usersecrets" / tool.USER_SECRETS_ID / "secrets.json"
+        secret_file.parent.mkdir(parents=True)
+        secret_file.write_text(json.dumps({"Email:SafeRecipient": "sandbox-only@example.org"}))
+        current = tool.snapshot(service="facturas-api.service", publish=self.publish, environment="Production")
+        self.assertEqual(current["safe"], "current-test@example.org")
 
     def test_case_colliding_environment_variables_are_refused(self):
         self.env["SmtpEmail__Password"] = "different-secret"

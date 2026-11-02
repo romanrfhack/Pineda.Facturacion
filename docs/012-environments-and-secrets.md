@@ -94,6 +94,7 @@ These steps are operational and were not auto-executed from the repository:
 - Deploy workflows publish binaries, copy them to the server, reload systemd, restart the service, and verify health.
 - Deploy must not re-inject secrets into `publish`.
 - Persistent server env files are prepared one time and then preserved across future deploys.
+- Production SMTP `.site` to `.com` migration is performed by `ops/smtp/pineda_configurar_correo_com_prod.py` after API health checks. The first migration reads the verified `.com` SMTP credentials from the live DEV process on the same VPS; it never copies the `Email` recipient policy. Production stores independent private SMTP overrides in `/etc/pineda/facturas/smtp-com.env`. Later deploys validate Production's own credentials without depending on DEV. See `ops/smtp/README.md` for guarded verification and rollback.
 
 ## DBA checklist
 - Create a dedicated legacy MySQL user with `SELECT` only on the required legacy schema.
