@@ -1,4 +1,5 @@
 using System.Net.Mail;
+using System.Text.RegularExpressions;
 using Pineda.Facturacion.Application.Abstractions.Communication;
 using Pineda.Facturacion.Application.Abstractions.Documents;
 using Pineda.Facturacion.Application.Abstractions.Persistence;
@@ -9,6 +10,8 @@ namespace Pineda.Facturacion.Application.UseCases.FiscalDocuments;
 
 public class SendFiscalDocumentEmailService
 {
+    private static readonly Regex SmtpEnhancedStatusCodePattern = new(@"(?<![\d.])[245]\.[0-9]{1,3}\.[0-9]{1,3}(?![0-9]|\.[0-9])");
+
     private readonly IFiscalDocumentRepository _fiscalDocumentRepository;
     private readonly IFiscalStampRepository _fiscalStampRepository;
     private readonly IEmailSender _emailSender;
@@ -130,8 +133,11 @@ public class SendFiscalDocumentEmailService
                 Outcome = SendFiscalDocumentEmailOutcome.DeliveryFailed,
                 FiscalDocumentId = command.FiscalDocumentId,
                 Recipients = recipients,
-                ErrorMessage = "No fue posible enviar el CFDI por correo. Revisa la conectividad SMTP, credenciales o restricciones del servidor.",
-                SupportMessage = $"SmtpStatusCode={exception.StatusCode} | Detail={exception.Message}"
+                ErrorMessage = exception is SmtpFailedRecipientException
+                    ? "El servidor de correo rechazó uno o más destinatarios. Verifica quién recibió el CFDI antes de reenviar."
+                    : "No fue posible enviar el CFDI por correo. Revisa la conectividad SMTP, credenciales o restricciones del servidor.",
+                SupportMessage = $"SmtpStatusCode={exception.StatusCode} | Detail={exception.Message}",
+                DeliveryFailure = DescribeSmtpFailure(exception)
             };
         }
         catch (InvalidOperationException exception)
@@ -142,7 +148,8 @@ public class SendFiscalDocumentEmailService
                 FiscalDocumentId = command.FiscalDocumentId,
                 Recipients = recipients,
                 ErrorMessage = "El envío por correo no está configurado correctamente en el servidor.",
-                SupportMessage = exception.Message
+                SupportMessage = exception.Message,
+                DeliveryFailure = new FiscalDocumentEmailFailure(exception.GetType().Name, exception.InnerException?.GetType().Name)
             };
         }
 
@@ -165,6 +172,22 @@ public class SendFiscalDocumentEmailService
     internal static IReadOnlyList<string> FindInvalidRecipients(IEnumerable<string>? recipients)
     {
         return EmailRecipientParser.FindInvalidRecipients(recipients);
+    }
+
+    private static FiscalDocumentEmailFailure DescribeSmtpFailure(SmtpException exception)
+    {
+        SmtpException[] failures = exception is SmtpFailedRecipientsException { InnerExceptions.Length: > 0 } multipleFailures
+            ? multipleFailures.InnerExceptions
+            : [exception];
+
+        return new FiscalDocumentEmailFailure(
+            exception.GetType().Name,
+            exception.InnerException?.GetType().Name,
+            failures.Select(failure => (int)failure.StatusCode).Distinct().ToArray(),
+            failures.Select(failure => SmtpEnhancedStatusCodePattern.Match(failure.Message).Value)
+                .Where(code => code.Length > 0)
+                .Distinct()
+                .ToArray());
     }
 
     private static string BuildDefaultSubject(string? series, string? folio, string uuid)

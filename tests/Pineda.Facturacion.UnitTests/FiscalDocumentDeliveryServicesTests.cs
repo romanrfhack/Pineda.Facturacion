@@ -127,6 +127,33 @@ public class FiscalDocumentDeliveryServicesTests
     }
 
     [Fact]
+    public async Task SendFiscalDocumentEmail_Reports_Recipient_Rejections_With_Their_Smtp_Codes()
+    {
+        var smtpException = new SmtpFailedRecipientsException("Recipients rejected", [
+            new SmtpFailedRecipientException(SmtpStatusCode.MailboxUnavailable, "cliente@example.com", "5.1.1 Unknown user"),
+            new SmtpFailedRecipientException(SmtpStatusCode.MailboxBusy, "cobranza@example.com", "4.2.0 Mailbox busy")
+        ]);
+        var service = new SendFiscalDocumentEmailService(
+            new FakeFiscalDocumentRepository { Existing = CreateFiscalDocument() },
+            new FakeFiscalStampRepository { Existing = CreateFiscalStamp() },
+            new FakeEmailSender { Exception = smtpException },
+            new FakeFiscalDocumentPdfRenderer());
+
+        var result = await service.ExecuteAsync(new SendFiscalDocumentEmailCommand
+        {
+            FiscalDocumentId = 8,
+            Recipients = ["cliente@example.com; cobranza@example.com"]
+        });
+
+        Assert.Equal(SendFiscalDocumentEmailOutcome.DeliveryFailed, result.Outcome);
+        Assert.Contains("rechazó uno o más destinatarios", result.ErrorMessage, StringComparison.Ordinal);
+        Assert.Contains("antes de reenviar", result.ErrorMessage, StringComparison.Ordinal);
+        Assert.NotNull(result.DeliveryFailure);
+        Assert.Equal([550, 450], result.DeliveryFailure.SmtpStatusCodes);
+        Assert.Equal(["5.1.1", "4.2.0"], result.DeliveryFailure.SmtpEnhancedStatusCodes);
+    }
+
+    [Fact]
     public async Task SendFiscalDocumentEmail_Returns_Clear_Message_When_Smtp_Is_Not_Configured()
     {
         var service = new SendFiscalDocumentEmailService(

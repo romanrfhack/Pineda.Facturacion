@@ -24,4 +24,12 @@ public class SendFiscalDocumentEmailResult
     public string? ErrorMessage { get; set; }
 
     public string? SupportMessage { get; set; }
+
+    public FiscalDocumentEmailFailure? DeliveryFailure { get; set; }
 }
+
+public sealed record FiscalDocumentEmailFailure(
+    string ExceptionType,
+    string? InnerExceptionType,
+    IReadOnlyList<int>? SmtpStatusCodes = null,
+    IReadOnlyList<string>? SmtpEnhancedStatusCodes = null);

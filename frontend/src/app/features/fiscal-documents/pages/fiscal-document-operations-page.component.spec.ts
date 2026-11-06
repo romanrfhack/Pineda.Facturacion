@@ -1528,7 +1528,7 @@ describe('FiscalDocumentOperationsPageComponent', () => {
     expect(fixture.componentInstance['lastOperationMessage']()).toBeNull();
     expect(feedback.show).toHaveBeenCalledWith(
       'success',
-      'CFDI timbrado correctamente, pero no fue posible enviar el correo.',
+      'CFDI timbrado correctamente. SMTP no disponible.',
     );
 
     fixture.componentInstance['fiscalDocument'].set(stampedDocument);
