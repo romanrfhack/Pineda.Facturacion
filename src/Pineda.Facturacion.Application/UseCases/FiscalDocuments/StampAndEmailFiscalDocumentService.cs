@@ -84,15 +84,17 @@ public class StampAndEmailFiscalDocumentService
                 : StampAndEmailFiscalDocumentEmailStatus.Failed;
             result.EmailRecipients = sendResult.Recipients;
             result.EmailSentAtUtc = sendResult.SentAtUtc;
+            result.EmailDeliveryFailure = sendResult.DeliveryFailure;
             result.EmailMessage = sendResult.IsSuccess
                 ? $"El correo fue enviado automáticamente a: {string.Join(", ", sendResult.Recipients)}."
-                : sendResult.ErrorMessage ?? sendResult.SupportMessage ?? "No fue posible enviar el CFDI por correo.";
+                : sendResult.ErrorMessage ?? "No fue posible enviar el CFDI por correo.";
         }
         catch (Exception exception)
         {
             result.EmailSent = false;
             result.EmailStatus = StampAndEmailFiscalDocumentEmailStatus.Failed;
-            result.EmailMessage = $"No fue posible enviar el CFDI por correo por un error inesperado del servidor. {exception.Message}";
+            result.EmailMessage = "No fue posible preparar o enviar el CFDI por correo debido a un error inesperado del servidor.";
+            result.EmailDeliveryFailure = new FiscalDocumentEmailFailure(exception.GetType().Name, exception.InnerException?.GetType().Name);
         }
 
         return result;

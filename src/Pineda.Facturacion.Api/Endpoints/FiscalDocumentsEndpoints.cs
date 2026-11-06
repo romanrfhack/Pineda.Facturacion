@@ -783,7 +783,7 @@ public static class FiscalDocumentsEndpoints
             fiscalDocumentId.ToString(),
             result.Outcome.ToString(),
             new { fiscalDocumentId, request.Recipients, request.Subject },
-            new { result.Recipients, result.SentAtUtc, result.SupportMessage },
+            new { result.Recipients, result.SentAtUtc, result.SupportMessage, result.DeliveryFailure },
             result.ErrorMessage,
             cancellationToken);
 
@@ -1382,7 +1382,8 @@ public static class FiscalDocumentsEndpoints
                 result.EmailRecipients,
                 result.InvalidRecipients,
                 result.EmailSentAtUtc,
-                result.EmailMessage
+                result.EmailMessage,
+                DeliveryFailure = result.EmailDeliveryFailure
             },
             result.EmailStatus == StampAndEmailFiscalDocumentEmailStatus.Sent ? null : result.EmailMessage,
             cancellationToken);
