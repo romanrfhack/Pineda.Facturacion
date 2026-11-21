@@ -204,7 +204,11 @@ export class FiscalDocumentsApiService {
   }
 
   sendByEmail(fiscalDocumentId: number, request: SendFiscalDocumentEmailRequest): Observable<SendFiscalDocumentEmailResponse> {
-    return this.http.post<SendFiscalDocumentEmailResponse>(buildApiUrl(`/fiscal-documents/${fiscalDocumentId}/email`), request);
+    return this.http.post<SendFiscalDocumentEmailResponse>(
+      buildApiUrl(`/fiscal-documents/${fiscalDocumentId}/email`),
+      request,
+      { context: new HttpContext().set(SUPPRESS_GLOBAL_ERROR_TOAST, true) },
+    );
   }
 
   cancelFiscalDocument(

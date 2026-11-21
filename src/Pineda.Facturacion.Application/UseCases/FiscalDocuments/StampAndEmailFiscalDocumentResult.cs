@@ -48,6 +48,8 @@ public class StampAndEmailFiscalDocumentResult
 
     public string? EmailMessage { get; set; }
 
+    public FiscalDocumentEmailFailure? EmailDeliveryFailure { get; set; }
+
     public DateTime? EmailSentAtUtc { get; set; }
 
     public IReadOnlyList<LegacyOrderStampingBlockingOrder> BlockingCanceledOrders { get; set; } = [];

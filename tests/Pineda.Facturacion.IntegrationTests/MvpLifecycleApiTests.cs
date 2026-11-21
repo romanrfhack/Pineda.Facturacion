@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Net.Mail;
 using System.Text;
 using System.Text.Json;
 using ClosedXML.Excel;
@@ -2198,6 +2199,58 @@ public class MvpLifecycleApiTests
 
         var productResponse = await client.PostAsync("/api/fiscal/imports/products/preview", productContent);
         Assert.Equal(HttpStatusCode.BadRequest, productResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task StampAndEmailFiscalDocument_AuditsSmtpRejectionAndPreservesStamp()
+    {
+        await using var factory = new MvpApiFactory();
+        using var client = await factory.CreateAuthenticatedClientAsync();
+        var fiscalDocumentId = await PrepareFiscalDocumentThroughApiAsync(factory, client, "LEG-EMAIL-AUDIT");
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<BillingDbContext>();
+            var fiscalDocument = await db.Set<FiscalDocument>().SingleAsync(x => x.Id == fiscalDocumentId);
+            var receiver = await db.Set<FiscalReceiver>().SingleAsync(x => x.Id == fiscalDocument.FiscalReceiverId);
+            receiver.Email = "cliente@example.com";
+            await db.SaveChangesAsync();
+        }
+
+        factory.FiscalStampingGateway.ResponseFactory = _ => new FiscalStampingGatewayResult
+        {
+            Outcome = FiscalStampingGatewayOutcome.Stamped,
+            ProviderName = "FacturaloPlus",
+            ProviderOperation = "stamp",
+            Uuid = "UUID-FISCAL-EMAIL-AUDIT",
+            StampedAtUtc = DateTime.UtcNow,
+            XmlContent = "<cfdi:Comprobante Version=\"4.0\" />",
+            XmlHash = "XML-HASH-FISCAL"
+        };
+        const string rejectedAddress = "monitor@example.com";
+        factory.EmailSender.Failure = new SmtpFailedRecipientException(
+            SmtpStatusCode.MailboxUnavailable, rejectedAddress, $"5.1.1 Unknown user {rejectedAddress}");
+
+        using var response = await client.PostAsJsonAsync(
+            $"/api/fiscal-documents/{fiscalDocumentId}/stamp-and-email", new FiscalDocumentsEndpoints.StampFiscalDocumentRequest());
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<FiscalDocumentsEndpoints.StampAndEmailFiscalDocumentResponse>();
+        Assert.NotNull(body);
+        Assert.True(body.Stamped);
+        Assert.True(body.Email.Attempted);
+        Assert.False(body.Email.Sent);
+        Assert.Equal("failed", body.Email.Status);
+        Assert.Contains("rechazó uno o más destinatarios", body.Email.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(rejectedAddress, body.Email.Message, StringComparison.Ordinal);
+
+        var audit = Assert.Single(await factory.GetAuditEventsAsync(), x => x.ActionType == "FiscalDocument.Email");
+        Assert.Equal(fiscalDocumentId.ToString(), audit.EntityId);
+        Assert.Equal("Failed", audit.Outcome);
+        Assert.DoesNotContain(rejectedAddress, audit.ResponseSummaryJson, StringComparison.Ordinal);
+        using var summary = JsonDocument.Parse(audit.ResponseSummaryJson!);
+        var failure = summary.RootElement.GetProperty("deliveryFailure");
+        Assert.Equal(550, failure.GetProperty("smtpStatusCodes")[0].GetInt32());
+        Assert.Equal("5.1.1", failure.GetProperty("smtpEnhancedStatusCodes")[0].GetString());
     }
 
     [Fact]
@@ -6355,9 +6408,15 @@ internal sealed class FakePaymentComplementStatusQueryGateway : IPaymentCompleme
 internal sealed class FakeEmailSender : IEmailSender
 {
     public List<EmailMessage> SentMessages { get; } = [];
+    public Exception? Failure { get; set; }
 
     public Task SendAsync(EmailMessage message, CancellationToken cancellationToken = default)
     {
+        if (Failure is not null)
+        {
+            return Task.FromException(Failure);
+        }
+
         SentMessages.Add(message);
         return Task.CompletedTask;
     }

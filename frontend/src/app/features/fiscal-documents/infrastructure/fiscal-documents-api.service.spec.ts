@@ -80,7 +80,7 @@ describe('FiscalDocumentsApiService', () => {
     httpTesting.verify();
   });
 
-  it('posts fiscal document email request', () => {
+  it('posts the fiscal document email request with errors handled by the composer', () => {
     const service = TestBed.inject(FiscalDocumentsApiService);
     const httpTesting = TestBed.inject(HttpTestingController);
 
@@ -93,6 +93,7 @@ describe('FiscalDocumentsApiService', () => {
     const req = httpTesting.expectOne('/api/fiscal-documents/40/email');
     expect(req.request.method).toBe('POST');
     expect(req.request.body.recipients).toEqual(['cliente@example.com']);
+    expect(req.request.context.get(SUPPRESS_GLOBAL_ERROR_TOAST)).toBe(true);
     httpTesting.verify();
   });
 

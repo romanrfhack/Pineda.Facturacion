@@ -4280,8 +4280,12 @@ export class FiscalDocumentOperationsPageComponent implements OnDestroy {
         return 'CFDI timbrado correctamente. El receptor no tiene un email registrado.';
       case 'invalid':
         return 'CFDI timbrado correctamente. El email registrado del receptor no es válido.';
-      case 'failed':
-        return 'CFDI timbrado correctamente, pero no fue posible enviar el correo.';
+      case 'failed': {
+        const message = response.email.message?.trim();
+        return message
+          ? `CFDI timbrado correctamente. ${message}`
+          : 'CFDI timbrado correctamente, pero no fue posible enviar el correo.';
+      }
       default:
         return retryRejected
           ? 'Reintento de timbrado ejecutado correctamente.'
