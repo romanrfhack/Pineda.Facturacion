@@ -31,15 +31,36 @@ public sealed class PaymentComplementPdfRenderer : IPaymentComplementPdfRenderer
         XDocument document;
         try
         {
-            document = XDocument.Parse(paymentComplementStamp.XmlContent, LoadOptions.PreserveWhitespace);
+            using var reader = XmlReader.Create(new StringReader(paymentComplementStamp.XmlContent), new XmlReaderSettings
+            {
+                DtdProcessing = DtdProcessing.Prohibit,
+                XmlResolver = null
+            });
+            document = XDocument.Load(reader, LoadOptions.PreserveWhitespace);
         }
         catch (Exception exception) when (exception is XmlException or InvalidOperationException)
         {
             throw new InvalidOperationException("Stamped XML could not be parsed to build the payment complement PDF.", exception);
         }
 
+        XNamespace cfdi = "http://www.sat.gob.mx/cfd/4";
+        XNamespace pagos = "http://www.sat.gob.mx/Pagos20";
+        XNamespace tfd = "http://www.sat.gob.mx/TimbreFiscalDigital";
+        var root = document.Root;
+        var complement = root?.Element(cfdi + "Complemento");
+        var payments = complement?.Element(pagos + "Pagos");
+        var timbre = complement?.Element(tfd + "TimbreFiscalDigital");
+        if (root?.Name != cfdi + "Comprobante" || GetAttribute(root, "TipoDeComprobante") != "P"
+            || GetAttribute(payments, "Version") != "2.0"
+            || payments?.Element(pagos + "Totales") is null || !payments.Elements(pagos + "Pago").Any()
+            || string.IsNullOrWhiteSpace(GetAttribute(timbre, "UUID"))
+            || !string.Equals(GetAttribute(timbre, "UUID"), paymentComplementStamp.Uuid, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Se requiere el XML timbrado de este complemento de pagos 2.0 para generar el PDF.");
+        }
+
         var surrogateFiscalDocument = BuildSurrogateFiscalDocument(paymentComplementDocument, document);
-        var surrogateFiscalStamp = BuildSurrogateFiscalStamp(paymentComplementStamp);
+        var surrogateFiscalStamp = BuildSurrogateFiscalStamp(paymentComplementStamp, timbre!);
         return await _fiscalDocumentPdfRenderer.RenderAsync(surrogateFiscalDocument, surrogateFiscalStamp, cancellationToken);
     }
 
@@ -47,8 +68,6 @@ public sealed class PaymentComplementPdfRenderer : IPaymentComplementPdfRenderer
     {
         var comprobante = stampedXml.Descendants().FirstOrDefault(static node => node.Name.LocalName == "Comprobante");
         var receptor = stampedXml.Descendants().FirstOrDefault(static node => node.Name.LocalName == "Receptor");
-        var pagos = stampedXml.Descendants().FirstOrDefault(static node => node.Name.LocalName == "Pagos");
-        var firstPago = stampedXml.Descendants().FirstOrDefault(static node => node.Name.LocalName == "Pago");
 
         return new FiscalDocument
         {
@@ -68,9 +87,12 @@ public sealed class PaymentComplementPdfRenderer : IPaymentComplementPdfRenderer
             PaymentCondition = null,
             IsCreditSale = false,
             CreditDays = null,
-            Status = paymentComplementDocument.Status == Domain.Enums.PaymentComplementDocumentStatus.Cancelled
-                ? Domain.Enums.FiscalDocumentStatus.Cancelled
-                : Domain.Enums.FiscalDocumentStatus.Stamped,
+            Status = paymentComplementDocument.Status switch
+            {
+                Domain.Enums.PaymentComplementDocumentStatus.Cancelled => Domain.Enums.FiscalDocumentStatus.Cancelled,
+                Domain.Enums.PaymentComplementDocumentStatus.CancellationRequested => Domain.Enums.FiscalDocumentStatus.CancellationRequested,
+                _ => Domain.Enums.FiscalDocumentStatus.Stamped
+            },
             IssuerRfc = paymentComplementDocument.IssuerRfc,
             IssuerLegalName = paymentComplementDocument.IssuerLegalName,
             IssuerFiscalRegimeCode = paymentComplementDocument.IssuerFiscalRegimeCode,
@@ -96,7 +118,7 @@ public sealed class PaymentComplementPdfRenderer : IPaymentComplementPdfRenderer
         };
     }
 
-    private static FiscalStamp BuildSurrogateFiscalStamp(PaymentComplementStamp paymentComplementStamp)
+    private static FiscalStamp BuildSurrogateFiscalStamp(PaymentComplementStamp paymentComplementStamp, XElement timbre)
     {
         return new FiscalStamp
         {
@@ -113,8 +135,8 @@ public sealed class PaymentComplementPdfRenderer : IPaymentComplementPdfRenderer
             StampedAtUtc = paymentComplementStamp.StampedAtUtc,
             XmlContent = paymentComplementStamp.XmlContent,
             XmlHash = paymentComplementStamp.XmlHash,
-            OriginalString = paymentComplementStamp.OriginalString,
-            QrCodeTextOrUrl = paymentComplementStamp.QrCodeTextOrUrl,
+            OriginalString = BuildTimbreOriginalString(timbre) ?? paymentComplementStamp.OriginalString,
+            QrCodeTextOrUrl = null, // Rebuild the SAT verification URL from this stamped XML (CFDI Total remains zero).
             RawResponseSummaryJson = paymentComplementStamp.RawResponseSummaryJson,
             ErrorCode = paymentComplementStamp.ErrorCode,
             ErrorMessage = paymentComplementStamp.ErrorMessage,
@@ -165,6 +187,8 @@ public sealed class PaymentComplementPdfRenderer : IPaymentComplementPdfRenderer
             AddField(fields, fiscalDocumentId, ref displayOrder, $"REP_PAYMENT_{paymentNumber}_FIELD_MONTO", "Monto", GetAttribute(pago, "Monto"), createdAtUtc);
             AddField(fields, fiscalDocumentId, ref displayOrder, $"REP_PAYMENT_{paymentNumber}_FIELD_NUMOPERACION", "Numero de operacion", GetAttribute(pago, "NumOperacion"), createdAtUtc);
 
+            AddRemainingAttributes(fields, fiscalDocumentId, ref displayOrder, $"REP_PAYMENT_{paymentNumber}", pago, createdAtUtc);
+
             AddTaxFields(
                 fields,
                 fiscalDocumentId,
@@ -193,6 +217,8 @@ public sealed class PaymentComplementPdfRenderer : IPaymentComplementPdfRenderer
                 AddField(fields, fiscalDocumentId, ref displayOrder, $"{fieldCodePrefix}_FIELD_IMPSALDOINSOLUTO", "Saldo insoluto", GetAttribute(relatedDocument, "ImpSaldoInsoluto"), createdAtUtc);
                 AddField(fields, fiscalDocumentId, ref displayOrder, $"{fieldCodePrefix}_FIELD_OBJETOIMPDR", "Objeto de impuesto", GetAttribute(relatedDocument, "ObjetoImpDR"), createdAtUtc);
 
+                AddRemainingAttributes(fields, fiscalDocumentId, ref displayOrder, fieldCodePrefix, relatedDocument, createdAtUtc);
+
                 AddTaxFields(
                     fields,
                     fiscalDocumentId,
@@ -207,6 +233,25 @@ public sealed class PaymentComplementPdfRenderer : IPaymentComplementPdfRenderer
         }
 
         return fields;
+    }
+
+    private static string? BuildTimbreOriginalString(XElement timbre)
+    {
+        var names = new[] { "Version", "UUID", "FechaTimbrado", "RfcProvCertif", "Leyenda", "SelloCFD", "NoCertificadoSAT" };
+        if (names.Where(name => name != "Leyenda").Any(name => string.IsNullOrWhiteSpace(GetAttribute(timbre, name))))
+            return null;
+        return "||" + string.Join("|", names.Select(name => GetAttribute(timbre, name)).Where(value => !string.IsNullOrWhiteSpace(value))) + "||";
+    }
+
+    private static void AddRemainingAttributes(List<FiscalDocumentSpecialFieldValue> fields, long id,
+        ref int order, string prefix, XElement element, DateTime createdAt)
+    {
+        foreach (var attribute in element.Attributes().Where(attribute => !attribute.IsNamespaceDeclaration))
+        {
+            var code = $"{prefix}_FIELD_{NormalizeFieldCodeToken(attribute.Name.LocalName)}";
+            if (fields.Any(field => field.FieldCode == code)) continue;
+            AddField(fields, id, ref order, code, HumanizeAttributeName(attribute.Name.LocalName), attribute.Value, createdAt);
+        }
     }
 
     private static void AddTaxFields(

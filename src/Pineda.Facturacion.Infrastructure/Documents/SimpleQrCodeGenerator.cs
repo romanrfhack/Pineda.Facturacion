@@ -8,10 +8,10 @@ internal static class SimpleQrCodeGenerator
 {
     private enum Ecc
     {
-        Low = 1,
-        Medium = 0,
-        Quartile = 3,
-        High = 2
+        Low = 0,
+        Medium = 1,
+        Quartile = 2,
+        High = 3
     }
 
     public static QrMatrix? TryEncode(string text)
@@ -249,7 +249,9 @@ internal static class SimpleQrCodeGenerator
 
         private void DrawFormatBits(int mask)
         {
-            var data = ((int)ErrorCorrectionLevel << 3) | mask;
+            // Capacity/ECC tables use ordinal L/M/Q/H, while the format bits use 1/0/3/2.
+            var formatBits = new[] { 1, 0, 3, 2 }[(int)ErrorCorrectionLevel];
+            var data = (formatBits << 3) | mask;
             var remainder = data;
             for (var i = 0; i < 10; i++)
             {

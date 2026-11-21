@@ -15,13 +15,14 @@ import { PaymentComplementCardComponent } from '../components/payment-complement
 import { PaymentComplementStampCardComponent } from '../components/payment-complement-stamp-card.component';
 import { PaymentComplementCancellationCardComponent } from '../components/payment-complement-cancellation-card.component';
 import { PaymentComplementStampEvidenceDetailComponent } from '../components/payment-complement-stamp-evidence-detail.component';
+import { PaymentComplementPdfDialogComponent } from '../components/payment-complement-pdf-dialog.component';
 import { XmlViewerPanelComponent } from '../../../shared/components/xml-viewer-panel.component';
 import { getDisplayLabel } from '../../../shared/ui/display-labels';
 import { extractApiErrorMessage } from '../../../core/http/api-error-message';
 
 @Component({
   selector: 'app-payment-complement-operations-page',
-  imports: [PaymentComplementCardComponent, PaymentComplementStampCardComponent, PaymentComplementCancellationCardComponent, PaymentComplementStampEvidenceDetailComponent, XmlViewerPanelComponent],
+  imports: [PaymentComplementPdfDialogComponent, PaymentComplementCardComponent, PaymentComplementStampCardComponent, PaymentComplementCancellationCardComponent, PaymentComplementStampEvidenceDetailComponent, XmlViewerPanelComponent],
   template: `
     <section class="page">
       <header>
@@ -60,6 +61,9 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
       @if (stampEvidence(); as currentStamp) {
         <app-payment-complement-stamp-card
           [stamp]="currentStamp"
+          [pdfAvailable]="canOpenPdf()"
+          [busy]="loading()"
+          (pdfRequested)="showPdf.set(true)"
           (detailsRequested)="toggleStampDetail()"
           (xmlRequested)="openStampXml()"
         />
@@ -71,6 +75,15 @@ import { extractApiErrorMessage } from '../../../core/http/api-error-message';
           <h3>Evidencia de timbrado del complemento</h3>
           <p class="helper">Aún no hay evidencia de timbrado disponible. Primero timbra el complemento de pago para consultar metadatos persistidos y XML.</p>
         </section>
+      }
+
+      @if (showPdf() && canOpenPdf()) {
+        <app-payment-complement-pdf-dialog
+          [complementId]="stampEvidence()!.paymentComplementDocumentId"
+          [uuid]="stampEvidence()!.uuid!"
+          [status]="complement()!.status"
+          (closed)="showPdf.set(false)"
+        />
       }
 
       @if (showStampXmlPanel()) {
@@ -115,6 +128,7 @@ export class PaymentComplementOperationsPageComponent {
   protected readonly stampEvidence = signal<PaymentComplementStampResponse | null>(null);
   protected readonly cancellation = signal<PaymentComplementCancellationResponse | null>(null);
   protected readonly loading = signal(false);
+  protected readonly showPdf = signal(false);
   protected readonly showStampDetail = signal(false);
   protected readonly showStampXmlPanel = signal(false);
   protected readonly loadingStampXml = signal(false);
@@ -237,6 +251,14 @@ export class PaymentComplementOperationsPageComponent {
     return complement.status === 'Stamped' || complement.status === 'CancellationRequested' || complement.status === 'CancellationRejected' || complement.status === 'Cancelled';
   }
 
+  protected canOpenPdf(): boolean {
+    const evidence = this.stampEvidence();
+    return !!evidence?.uuid && !!this.complement()
+      && evidence.paymentComplementDocumentId === resolvePaymentComplementId(this.complement()!)
+      && (evidence.status === 'Succeeded' || evidence.status === 'Stamped')
+      && ['Stamped', 'CancellationRequested', 'CancellationRejected', 'Cancelled'].includes(this.complement()?.status ?? '');
+  }
+
   protected toggleStampDetail(): void {
     this.showStampDetail.update((value) => !value);
   }
@@ -293,6 +315,7 @@ export class PaymentComplementOperationsPageComponent {
   }
 
   private async loadComplementByPayment(paymentId: number): Promise<void> {
+    this.showPdf.set(false);
     try {
       const complement = await firstValueFrom(this.arApi.getPaymentComplementByPaymentId(paymentId));
       this.complement.set(complement);

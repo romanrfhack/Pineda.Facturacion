@@ -2303,7 +2303,7 @@ public class PaymentComplementServicesTests
         Assert.Contains("MXN", pdfText, StringComparison.Ordinal);
         Assert.Contains("Subtotal", pdfText, StringComparison.Ordinal);
         Assert.Contains("Descuento", pdfText, StringComparison.Ordinal);
-        Assert.Contains("Impuestos", pdfText, StringComparison.Ordinal);
+        Assert.Contains("Total CFDI", pdfText, StringComparison.Ordinal);
         Assert.Contains("Total", pdfText, StringComparison.Ordinal);
         Assert.Contains("XXX", pdfText, StringComparison.Ordinal);
         Assert.Equal(1, CountOccurrences(pdfText, "Forma de pago"));
@@ -2382,9 +2382,98 @@ public class PaymentComplementServicesTests
         Assert.Contains("Pago 3 - Documento relacionado 3", pdfText, StringComparison.Ordinal);
         Assert.Contains("UUID-REP-03-03", pdfText, StringComparison.Ordinal);
         Assert.Contains("OP-03-9999999999999999999999999999", pdfText, StringComparison.Ordinal);
-        Assert.Contains("Datos adicionales", pdfText, StringComparison.Ordinal);
+        Assert.Contains("CONTINUACION", pdfText, StringComparison.Ordinal);
         Assert.DoesNotContain("Pago 1 - FechaPago", pdfText, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task PaymentComplementPdfRenderer_Uses_Xml_Amounts_And_Preserves_Optional_Bank_Data()
+    {
+        var document = CreatePaymentComplementDocument();
+        document.TotalPaymentsAmount = 999999m; // Mutable snapshot must not replace certified values.
+        document.ReceiverLegalName = "WRONG SNAPSHOT RECEIVER";
+        var xml = CreateStampedPaymentComplementXml(amount: 427m)
+            .Replace("NumOperacion=\"OP-12345\"", "NumOperacion=\"OP-12345\" RfcEmisorCtaOrd=\"AAA010101AAA\" CtaOrdenante=\"1234567890\" CtaBeneficiario=\"0987654321\" NomBancoOrdExt=\"BANCO PRUEBA\" TipoCadPago=\"01\" CertPago=\"CERTIFICADO-PRUEBA\" CadPago=\"CADENA-PAGO-PRUEBA\" SelloPago=\"SELLO-PAGO-PRUEBA\"");
+        var bytes = await CreateRepPdfRenderer().RenderAsync(document, CreatePaymentComplementStamp(xmlContent: xml));
+        var text = System.Text.Encoding.ASCII.GetString(bytes);
+        Assert.Contains("427.00 MXN", text);
+        Assert.DoesNotContain("999999", text);
+        Assert.DoesNotContain("WRONG SNAPSHOT RECEIVER", text);
+        foreach (var value in new[] { "1234567890", "0987654321", "BANCO PRUEBA", "CERTIFICADO-PRUEBA", "CADENA-PAGO-PRUEBA", "SELLO-PAGO-PRUEBA" })
+            Assert.Contains(value, text);
+        Assert.Contains("/MediaBox [0 0 612 792]", text);
+        // Background rectangles may be white only; color belongs to text and rules.
+        foreach (System.Text.RegularExpressions.Match match in System.Text.RegularExpressions.Regex.Matches(text, @"([\d.]+ [\d.]+ [\d.]+) rg\r?\n[\d. ]+ re f"))
+            Assert.Equal("1 1 1", match.Groups[1].Value);
+    }
+
+    [Theory]
+    [InlineData(PaymentComplementDocumentStatus.Cancelled, "CANCELADO - evidencia historica")]
+    [InlineData(PaymentComplementDocumentStatus.CancellationRequested, "CANCELACION SOLICITADA")]
+    public async Task PaymentComplementPdfRenderer_Marks_Cancellation_State(PaymentComplementDocumentStatus status, string expected)
+    {
+        var document = CreatePaymentComplementDocument();
+        document.Status = status;
+        var text = System.Text.Encoding.ASCII.GetString(await CreateRepPdfRenderer().RenderAsync(document, CreatePaymentComplementStamp()));
+        Assert.Contains(expected, text);
+        Assert.DoesNotContain("TIMBRADO - evidencia", text);
+    }
+
+    [Theory]
+    [InlineData("<broken")]
+    [InlineData("<root />")]
+    [InlineData("<!DOCTYPE foo [<!ENTITY bar SYSTEM 'file:///etc/passwd'>]><foo>&bar;</foo>")]
+    public async Task PaymentComplementPdfRenderer_Rejects_Invalid_Xml(string xml)
+    {
+        await Assert.ThrowsAsync<InvalidOperationException>(() => CreateRepPdfRenderer().RenderAsync(
+            CreatePaymentComplementDocument(), CreatePaymentComplementStamp(xmlContent: xml)));
+    }
+
+    [Fact]
+    public async Task PaymentComplementPdfRenderer_Rejects_Xml_From_Another_Complement()
+    {
+        await Assert.ThrowsAsync<InvalidOperationException>(() => CreateRepPdfRenderer().RenderAsync(
+            CreatePaymentComplementDocument(), CreatePaymentComplementStamp(uuid: "OTHER-UUID", xmlContent: CreateStampedPaymentComplementXml())));
+    }
+
+    [Fact]
+    public async Task PaymentComplementPdfRenderer_Derives_Qr_And_Certification_Chain_From_Stamped_Xml()
+    {
+        var xml = CreateStampedPaymentComplementXml(uuid: "00000000-0000-4000-8000-000000000057")
+            .Replace("NoCertificadoSAT=", "RfcProvCertif=\"AAA010101AAA\" NoCertificadoSAT=");
+        var stamp = CreatePaymentComplementStamp(uuid: "00000000-0000-4000-8000-000000000057", xmlContent: xml);
+        stamp.OriginalString = "INCORRECT-CACHED-CHAIN";
+        stamp.QrCodeTextOrUrl = "https://incorrect.example/another-complement";
+        var text = System.Text.Encoding.ASCII.GetString(await CreateRepPdfRenderer().RenderAsync(CreatePaymentComplementDocument(), stamp));
+        Assert.DoesNotContain("INCORRECT-CACHED-CHAIN", text);
+        Assert.DoesNotContain("incorrect.example", text);
+        Assert.Contains("CADENA ORIGINAL", text);
+        Assert.Contains("||1.1|00000000-0000-4000-8000-000000000057|", text);
+        Assert.Contains("&tt=0&fe=34567890", ExtractRepPdfText(text));
+    }
+
+    [Fact]
+    public async Task PaymentComplementPdfRenderer_Retains_Long_Optional_Values_Across_Pages()
+    {
+        var xml = CreateStampedPaymentComplementXml().Replace("NumOperacion=\"OP-12345\"", $"NumOperacion=\"OP-12345\" CadPago=\"{new string('X', 12000)}END-OF-PAYMENT-CHAIN\"");
+        var text = System.Text.Encoding.ASCII.GetString(await CreateRepPdfRenderer().RenderAsync(
+            CreatePaymentComplementDocument(), CreatePaymentComplementStamp(xmlContent: xml)));
+        Assert.Contains("END-OF-PAYMENT-CHAIN", ExtractRepPdfText(text));
+        Assert.Contains("SELLOSATTEST0987654321", text);
+        Assert.Contains("CONTINUACION", text);
+        foreach (System.Text.RegularExpressions.Match match in System.Text.RegularExpressions.Regex.Matches(text, @"([\d.]+) ([\d.]+) Td"))
+        {
+            var y = float.Parse(match.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture);
+            Assert.InRange(y, 20f, 770f);
+        }
+    }
+
+    private static string ExtractRepPdfText(string pdf) => string.Concat(
+        System.Text.RegularExpressions.Regex.Matches(pdf, @"\(((?:\\.|[^\\)])*)\) Tj")
+            .Select(match => match.Groups[1].Value));
+
+    private static PaymentComplementPdfRenderer CreateRepPdfRenderer() => new(
+        new FiscalDocumentPdfRenderer(new PcFakeIssuerProfileRepository(), new PcFakeIssuerProfileLogoStorage(), new PcFakeSatCatalogDescriptionProvider()));
 
     [Fact]
     public void PaymentComplementApiResponses_AndEntity_DoNotExposeSecrets()
