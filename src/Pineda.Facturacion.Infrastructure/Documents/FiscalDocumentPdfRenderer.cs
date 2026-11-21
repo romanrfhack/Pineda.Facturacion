@@ -11,7 +11,7 @@ using Pineda.Facturacion.Domain.Entities;
 
 namespace Pineda.Facturacion.Infrastructure.Documents;
 
-public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
+public sealed partial class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
 {
     private static readonly Regex RepPaymentFieldCodePattern = new(@"^REP_PAYMENT_(\d+)_FIELD_(.+)$", RegexOptions.Compiled);
     private static readonly Regex RepPaymentTaxCodePattern = new(@"^REP_PAYMENT_(\d+)_TAX_(.+)_(\d+)$", RegexOptions.Compiled);
@@ -123,6 +123,7 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
         public required string DocumentTitle { get; init; }
         public required string DocumentType { get; init; }
         public required string DocumentTypeCode { get; init; }
+        public required Domain.Enums.FiscalDocumentStatus Status { get; init; }
         public required string CfdiVersion { get; init; }
         public required string Uuid { get; init; }
         public required string SeriesFolio { get; init; }
@@ -175,6 +176,7 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
                 DocumentTitle = "Representacion impresa del CFDI",
                 DocumentType = ResolveDocumentType(documentTypeCode),
                 DocumentTypeCode = documentTypeCode,
+                Status = fiscalDocument.Status,
                 CfdiVersion = GetAttribute(comprobante, "Version") ?? "4.0",
                 Uuid = GetAttribute(timbre, "UUID") ?? fiscalStamp.Uuid ?? "N/D",
                 SeriesFolio = CombineDocumentNumber(GetAttribute(comprobante, "Serie"), GetAttribute(comprobante, "Folio")),
@@ -546,11 +548,11 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
         return value?.ToString("yyyy-MM-dd HH:mm:ss 'UTC'", CultureInfo.InvariantCulture) ?? "N/D";
     }
 
-    private sealed class FiscalPdfDocument
+    private sealed partial class FiscalPdfDocument
     {
         private const float PageWidth = 612f;
         private const float PageHeight = 792f;
-        private const float Margin = 10f;
+        private float Margin => _model?.DocumentTypeCode == "P" ? 30f : 10f;
         private const float SectionGap = 4f;
         private const float FooterReserve = 30f;
 
@@ -574,6 +576,12 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
         private byte[] Build(PdfViewModel model, PdfImageAsset? logo, PdfImageAsset? qr)
         {
             _model = model;
+            if (model.DocumentTypeCode == "P" && TryBuildRepAdditionalLayout(model.AdditionalFields, out var rep))
+            {
+                _cursorY = PageHeight - Margin;
+                return BuildPaymentComplement(model, rep, logo, qr);
+            }
+
             DrawHeader(model, logo);
             DrawReceiverSection(model);
             DrawAdditionalFields(model.AdditionalFields);
@@ -606,6 +614,7 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
             _page = new PdfPageBuilder(PageWidth, PageHeight);
             _pages.Add(_page);
             _cursorY = PageHeight - Margin;
+            if (_model?.DocumentTypeCode == "P") DrawRepContinuationHeader(_model);
         }
 
         private void DrawHeader(PdfViewModel model, PdfImageAsset? logo)
@@ -1663,6 +1672,11 @@ public sealed class FiscalDocumentPdfRenderer : IFiscalDocumentPdfRenderer
 
         private void DrawFooter(PdfViewModel model)
         {
+            if (model.DocumentTypeCode == "P")
+            {
+                DrawRepFooter(model);
+                return;
+            }
             var footerY = 28f;
             _page.DrawLine(Margin, footerY, PageWidth - Margin, footerY, new PdfColor(210, 204, 193), 0.7f);
             _page.DrawText("Este documento es una representacion impresa de un CFDI 4.0", Margin, footerY - 12f, 8f, PdfFont.Regular, new PdfColor(92, 98, 110));
