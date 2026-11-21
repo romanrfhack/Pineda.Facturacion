@@ -11,7 +11,7 @@
 
 La migración `20261016164158_ExpandFiscalReceiverEmailTo500` amplía únicamente `fiscal_receiver.email` a `varchar(500)` y conserva su nulabilidad/charset.
 
-El workflow de backend publica y ejecuta `ops/ReceiverEmailMigration` antes de reemplazar la API. Lee la conexión BillingWrite del entorno del proceso activo de `facturas-api`; no imprime ni pasa credenciales como argumentos. Requiere acceso sudo al runtime .NET y permisos de ALTER para la conexión de la aplicación.
+El workflow de backend publica y ejecuta `ops/ReceiverEmailMigration` antes de reemplazar la API. Lee la conexión BillingWrite del entorno y de `appsettings.Production.json` en el directorio de trabajo del proceso activo de `facturas-api`, con la precedencia de configuración de la API; no imprime ni pasa credenciales como argumentos. El VPS copia ese archivo desde `/etc/pineda/facturas/appsettings.Production.json` mediante `ExecStartPre`. Requiere acceso sudo al runtime .NET y permisos de ALTER para la conexión de la aplicación.
 
 El ejecutor rechaza la operación si hay otras migraciones pendientes, si no puede identificar el proceso/conexión, o si la columna tiene una capacidad inesperada. Aplica la migración EF y consulta `information_schema` para verificar la capacidad. Si ya fue aplicada, solo verifica. Cualquier fallo detiene el despliegue antes de reemplazar la API.
 

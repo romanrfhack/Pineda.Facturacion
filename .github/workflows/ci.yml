@@ -20,6 +20,7 @@ jobs:
       frontend: ${{ steps.filter.outputs.frontend }}
       backend_changed: ${{ steps.filter.outputs.backend }}
       frontend_changed: ${{ steps.filter.outputs.frontend }}
+      smtp_ops: ${{ steps.filter.outputs.smtp_ops }}
     steps:
       - uses: actions/checkout@v4
       - name: Detect changed areas
@@ -28,6 +29,10 @@ jobs:
         with:
           list-files: shell
           filters: |
+            smtp_ops:
+              - 'ops/smtp/**'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/deploy-backend.yml'
             backend:
               - 'ops/ReceiverEmailMigration/**'
               - 'src/Pineda.Facturacion.Api/**'
@@ -108,6 +113,15 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  smtp_operations_tests:
+    needs: changes
+    if: needs.changes.outputs.smtp_ops == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test SMTP configuration, routing isolation and rollback
+        run: python3 -m unittest discover -s ops/smtp -p 'test_*.py' -v
+
   backend_tests:
     needs: changes
     if: needs.changes.outputs.backend_changed == 'true'
@@ -170,7 +184,7 @@ jobs:
   frontend_tests:
     needs: changes
     if: needs.changes.outputs.frontend_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Setup Node

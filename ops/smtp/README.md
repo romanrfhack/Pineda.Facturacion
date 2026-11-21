@@ -1,6 +1,6 @@
 # Correo .com en DEV de Facturación Pineda
 
-Esta herramienta configura **únicamente** `facturas-dev-api.service` en `Sandbox`.
+`pineda_configurar_correo_com_dev.py` configura **únicamente** `facturas-dev-api.service` en `Sandbox`.
 No modifica producción, la base de datos, la aplicación ni los destinatarios.
 Requiere Python 3.10+, systemd y ejecución como root en el VPS.
 
@@ -126,7 +126,56 @@ Después de validar DEV, volver a comparar ambas ramas e integrar los cambios
 nuevos a `main`. El merge **no promueve los secretos del servidor**, ni copia la
 redirección de pruebas a producción: el buzón/usuario/remitente `.com` deben
 configurarse por separado para el servicio de producción, conservando su
-política de destinatarios reales. Esta herramienta no ejecuta ese paso.
+política de destinatarios reales. La herramienta DEV no ejecuta ese paso.
+
+## Configuración de producción mediante el despliegue
+
+`pineda_configurar_correo_com_prod.py` migra **sólo** `facturas-api.service`,
+con ambiente efectivo `Production` y publish `/var/www/facturas-backend/publish`.
+El workflow `Deploy Backend (Facturas API)` copia ambos scripts de la revisión
+desplegada y ejecuta el ajuste con `sudo`, después de validar salud de la API.
+
+En la primera migración:
+
+1. Comprueba el proceso y la configuración efectiva de producción. Exige que
+   el remitente anterior sea `facturacion@autorefaccionespineda.site`.
+2. Lee únicamente en el VPS las credenciales SMTP **efectivas** de DEV, exige
+   usuario/remitente `.com`, puerto 587 y TLS, verifica DNS y autentica antes de
+   modificar producción. La contraseña nunca pasa por GitHub Secrets, el repo,
+   argumentos, logs ni reportes. El destinatario interno de la prueba está fijado
+   en `pinedaautorefacciones@gmail.com`.
+3. Guarda respaldo y agrega únicamente variables `SmtpEmail__*` en
+   `/etc/pineda/facturas/smtp-com.env` (`root:root`, `0600`), cargado por un drop-in
+   independiente de `facturas-api.service`. Conserva archivos de configuración
+   existentes, nombre visible del remitente y toda la sección `Email`.
+4. Reinicia sólo producción, verifica health/live y health/ready en 5006 y
+   comprueba remitente, usuario, contraseña y política Email efectivos. Si falla,
+   restaura automáticamente los dos archivos administrados y la salud previa.
+5. Con `--send-test`, envía `[PRODUCCION] Pineda - prueba SMTP dominio .com` al
+   destinatario interno autorizado. Esa prueba no modifica el envío normal a
+   clientes, ni timbra, cancela o reenvía documentos fiscales.
+
+En despliegues posteriores, si producción ya usa `.com`, valida sus propias
+credenciales sin consultar DEV, cambiar su contraseña, reiniciar por este ajuste
+ni enviar mensajes técnicos adicionales. `--verify --send-test` permite pedir
+otra prueba de forma explícita. Las pruebas de recepción en bandeja y envío de
+documentos desde la UI siguen siendo comprobaciones independientes.
+
+El reporte sanitizado queda en `/root/pineda_correo_com_prod_resultado.json`.
+Los respaldos privados quedan en `/root/pineda-smtp-com-prod-backups/`.
+Para revisar o revertir, conservar los dos scripts juntos y usar la revisión
+indicada por el despliegue:
+
+```bash
+python3 /ruta/desplegada/pineda_configurar_correo_com_prod.py --verify
+python3 /ruta/desplegada/pineda_configurar_correo_com_prod.py --rollback /root/pineda-smtp-com-prod-backups/FECHA-ID
+```
+
+El rollback rechaza respaldos de DEV y modificaciones concurrentes. Si una
+configuración de correo con mayor prioridad (por ejemplo JSON externo) impide
+el override, el ajuste se detiene antes de tocar producción. Las dos herramientas
+comparten lectura de configuración, TLS, escritura privada y rollback; la CLI
+DEV continúa sin ofrecer un modo de producción.
 
 ## Pruebas locales
 

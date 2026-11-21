@@ -69,7 +69,14 @@ def load_json(path: Path) -> dict:
     if not path.exists():
         return {}
     try:
-        return flatten(json.loads(path.read_text(encoding="utf-8-sig")))
+        text = path.read_text(encoding="utf-8-sig")
+        # Match the JSON configuration provider: comments/trailing commas are
+        # accepted, but quoted URLs, passwords and escaped quotes stay intact.
+        text = re.sub(r'"(?:\\.|[^"\\])*"|//[^\r\n]*|/\*[\s\S]*?\*/',
+                      lambda match: match[0] if match[0].startswith('"') else " ", text)
+        text = re.sub(r'"(?:\\.|[^"\\])*"|,\s*(?=[}\]])',
+                      lambda match: match[0] if match[0].startswith('"') else "", text)
+        return flatten(json.loads(text))
     except (ValueError, AttributeError, TypeError):
         raise Stop("No se pudo interpretar un JSON de configuración; no se modificó.") from None
 
@@ -86,10 +93,12 @@ def valid_address(address: str) -> str:
     return address
 
 
-def snapshot() -> dict:
-    state = service_state()
+def snapshot(*, service: str | None = None, publish: Path | None = None, environment: str = "Sandbox") -> dict:
+    service = service or SERVICE
+    publish = publish or PUBLISH
+    state = service_state(service)
     if state.get("ActiveState") != "active" or int(state.get("MainPID", "0")) <= 0:
-        raise Stop("DEV debe estar activo para inspeccionar su configuración efectiva.")
+        raise Stop("El servicio debe estar activo para inspeccionar su configuración efectiva.")
     proc = Path("/proc") / state["MainPID"]
     env = dict(part.decode().split("=", 1) for part in (proc / "environ").read_bytes().split(b"\0") if b"=" in part)
     env_keys = {}
@@ -101,17 +110,17 @@ def snapshot() -> dict:
     folded_env = {key.lower(): value for key, value in env.items()}
     aspnet = folded_env.get("aspnetcore_environment", "")
     dotnet = folded_env.get("dotnet_environment", "")
-    if (dotnet or aspnet).lower() != "sandbox" or (dotnet and aspnet and dotnet.lower() != aspnet.lower()):
-        raise Stop("Esta herramienta sólo admite el servicio DEV en ambiente Sandbox.")
+    if (dotnet or aspnet).lower() != environment.lower() or (dotnet and aspnet and dotnet.lower() != aspnet.lower()):
+        raise Stop("El ambiente efectivo no coincide con el servicio solicitado.")
     cwd = (proc / "cwd").resolve()
-    if cwd != PUBLISH:
-        raise Stop("El directorio de ejecución no coincide con el publish de DEV esperado.")
+    if cwd != publish:
+        raise Stop("El directorio de ejecución no coincide con el publish esperado.")
     if any(key.lower() in {"aspnetcore_contentroot", "dotnet_contentroot"} for key in env):
         raise Stop("Hay un content root personalizado; revisar antes de aplicar.")
     args = [part.decode() for part in (proc / "cmdline").read_bytes().split(b"\0") if part]
     # Accept only the normal dotnet app invocation and optional URL flags.
     if not any(arg.endswith("Pineda.Facturacion.Api.dll") for arg in args):
-        raise Stop("El proceso DEV no corresponde a Pineda.Facturacion.Api.dll.")
+        raise Stop("El proceso no corresponde a Pineda.Facturacion.Api.dll.")
     app_index = next(i for i, arg in enumerate(args) if arg.endswith("Pineda.Facturacion.Api.dll"))
     tail = args[app_index + 1:]
     while tail:
@@ -119,7 +128,7 @@ def snapshot() -> dict:
         if option == "--urls" and tail:
             tail.pop(0)
         elif not option.startswith("--urls="):
-            raise Stop("DEV usa argumentos adicionales; revisar precedencia antes de aplicar.")
+            raise Stop("El servicio usa argumentos adicionales; revisar precedencia antes de aplicar.")
     config = load_json(cwd / "appsettings.json")
     config.update(load_json(cwd / f"appsettings.{dotnet or aspnet}.json"))
     config.update({key.replace("__", ":").lower(): value for key, value in env.items()})
@@ -130,7 +139,7 @@ def snapshot() -> dict:
     secret_roots = [Path(home) / ".microsoft/usersecrets" / USER_SECRETS_ID]
     if env.get("APPDATA"):
         secret_roots.append(Path(env["APPDATA"]) / "Microsoft/UserSecrets" / USER_SECRETS_ID)
-    for root in secret_roots:
+    for root in secret_roots if environment.lower() in {"sandbox", "development"} else []:
         user_settings = load_json(root / "secrets.json")
         if any(protected_setting(key) for key in user_settings):
             raise Stop("UserSecrets contiene ajustes de correo o precedencia; revisar antes de aplicar.")
@@ -145,12 +154,13 @@ def snapshot() -> dict:
             raise Stop("El JSON externo contiene ajustes de correo; revisar antes de aplicar.")
         config.update(extra)
     safe = valid_address(config.get("email:saferecipient", "").strip() or config.get("email_safe_recipient", ""))
-    return {"state": state, "env": env, "envKeys": env_keys, "config": config, "safe": safe}
+    return {"state": state, "env": env, "envKeys": env_keys, "config": config, "safe": safe,
+            "service": service, "environment": environment}
 
 
 def public_snapshot(current: dict) -> dict:
     config = current["config"]
-    return {"service": SERVICE, "environment": "Sandbox", "safeRecipient": current["safe"],
+    return {"service": current.get("service", SERVICE), "environment": current.get("environment", "Sandbox"), "safeRecipient": current["safe"],
             "host": config.get("smtpemail:host"), "port": config.get("smtpemail:port"),
             "enableSsl": config.get("smtpemail:enablessl"),
             "username": config.get("smtpemail:username"), "fromAddress": config.get("smtpemail:fromaddress"),
@@ -189,7 +199,7 @@ def dns_check() -> dict:
             "dmarcPresent": any(value.lower().startswith("v=dmarc1") for value in dmarc), "mx": mx}
 
 
-def smtp_probe(password: str, safe: str, send: bool = False) -> dict:
+def smtp_probe(password: str, safe: str, send: bool = False, label: str = "SANDBOX") -> dict:
     # STARTTLS on 587 matches System.Net.Mail.SmtpClient in this application.
     with smtplib.SMTP(HOST, 587, timeout=20) as client:
         client.ehlo()
@@ -203,11 +213,11 @@ def smtp_probe(password: str, safe: str, send: bool = False) -> dict:
             message = EmailMessage()
             message["From"] = MAILBOX
             message["To"] = valid_address(safe)
-            message["Subject"] = "[SANDBOX] Pineda - prueba SMTP dominio .com"
+            message["Subject"] = f"[{label}] Pineda - prueba SMTP dominio .com"
             message["Date"] = formatdate(localtime=False)
             message["Message-ID"] = make_msgid(domain=DOMAIN)
-            message.set_content("Prueba técnica de correo DEV desde el buzón .com.\n"
-                                "El destinatario de pruebas permanece sin cambios.\n"
+            message.set_content(f"Prueba técnica de correo {label} desde el buzón .com.\n"
+                                "Las reglas de destinatarios de la aplicación permanecen sin cambios.\n"
                                 "No contiene facturas ni datos de clientes.\n")
             if client.send_message(message, from_addr=MAILBOX, to_addrs=[safe]):
                 raise Stop("El proveedor rechazó al destinatario de prueba.")
@@ -219,7 +229,7 @@ def environment_text(current: dict, password: str) -> str:
     if not password or any(ord(char) < 32 or ord(char) == 127 for char in password):
         raise Stop("La contraseña debe ser no vacía y no contener caracteres de control.")
     values = dict(SMTP_VALUES, Password=password)
-    lines = ["# Pineda DEV SMTP .com. Private: root:root, 0600. No recipient overrides."]
+    lines = ["# Pineda SMTP .com. Private: root:root, 0600. No recipient overrides."]
     for name, value in values.items():
         canonical = f"smtpemail:{name}".lower()
         key = current["envKeys"].get(canonical, f"SmtpEmail__{name}")
@@ -256,19 +266,19 @@ def digest(path: Path) -> str | None:
     return hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None
 
 
-def health() -> None:
+def health(base_url: str = "http://127.0.0.1:5007") -> None:
     deadline = time.monotonic() + 50
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     while time.monotonic() < deadline:
         try:
             for suffix in ["live", "ready"]:
-                with opener.open(f"http://127.0.0.1:5007/health/{suffix}", timeout=3) as response:
+                with opener.open(f"{base_url}/health/{suffix}", timeout=3) as response:
                     if response.status != 200:
                         raise Stop("Health check no satisfactorio.")
             return
         except Exception:
             time.sleep(1)
-    raise Stop("DEV no superó health/live y health/ready; se restaurará el ajuste anterior.")
+    raise Stop("El servicio no superó health/live y health/ready; se restaurará el ajuste anterior.")
 
 
 def verify_values(before: dict, after: dict, password: str) -> None:
@@ -281,8 +291,8 @@ def verify_values(before: dict, after: dict, password: str) -> None:
         raise Stop("Cambió la política de destinatarios; se restaurará la configuración anterior.")
 
 
-def backup_files(updates: dict[Path, bytes]) -> Path:
-    folder = BACKUPS / (time.strftime("%Y%m%d-%H%M%S", time.gmtime()) + "-" + uuid.uuid4().hex[:8])
+def backup_files(updates: dict[Path, bytes], *, backup_root: Path | None = None, service: str | None = None) -> Path:
+    folder = (backup_root or BACKUPS) / (time.strftime("%Y%m%d-%H%M%S", time.gmtime()) + "-" + uuid.uuid4().hex[:8])
     secure_parent(folder)
     folder.mkdir(mode=0o700, parents=True)
     records = []
@@ -294,19 +304,22 @@ def backup_files(updates: dict[Path, bytes]) -> Path:
             record.update(backup=f"{index}.before", mode=target.stat().st_mode & 0o777)
             atomic_write(folder / record["backup"], target.read_bytes())
         records.append(record)
-    atomic_write(folder / "journal.json", json.dumps({"service": SERVICE, "files": records}, indent=2).encode())
+    atomic_write(folder / "journal.json", json.dumps({"service": service or SERVICE, "files": records}, indent=2).encode())
     return folder
 
 
-def restore(folder: Path, check_hash: bool = True) -> None:
+def restore(folder: Path, check_hash: bool = True, *, backup_root: Path | None = None,
+            service: str | None = None, targets: set[Path] | None = None, health_base: str | None = None) -> None:
+    service = service or SERVICE
+    expected_targets = {str(target) for target in targets} if targets is not None else {str(ENV_FILE), str(DROP_IN)}
     secure_parent(folder)
-    if folder.parent != BACKUPS or not folder.is_dir():
+    if folder.parent != (backup_root or BACKUPS) or not folder.is_dir():
         raise Stop("El rollback debe apuntar a un respaldo generado por esta herramienta.")
     secure_parent(folder / "journal.json")
     journal = json.loads((folder / "journal.json").read_text())
     records = journal["files"]
-    if journal.get("service") != SERVICE or {row["target"] for row in records} != {str(ENV_FILE), str(DROP_IN)} or len(records) != 2:
-        raise Stop("El respaldo no corresponde a los dos archivos DEV esperados.")
+    if journal.get("service") != service or {row["target"] for row in records} != expected_targets or len(records) != 2:
+        raise Stop("El respaldo no corresponde a los dos archivos del servicio esperado.")
     for row in records:
         target = Path(row["target"])
         secure_parent(target)
@@ -325,8 +338,11 @@ def restore(folder: Path, check_hash: bool = True) -> None:
         else:
             target.unlink(missing_ok=True)
     command("systemctl", "daemon-reload")
-    command("systemctl", "restart", SERVICE)
-    health()
+    command("systemctl", "restart", service)
+    if health_base is None:
+        health()
+    else:
+        health(health_base)
 
 
 def apply(current: dict, report: dict, send_test: bool) -> None:

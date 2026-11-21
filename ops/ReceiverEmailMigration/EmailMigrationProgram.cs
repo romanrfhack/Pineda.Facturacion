@@ -22,18 +22,15 @@ internal static class EmailMigrationProgram
                 return 1;
             }
 
-            // Read only the billing connection from the running service; never print secrets
-            // or pass them through command-line arguments or GitHub Actions outputs.
+            // Match the active API's deployed production configuration and environment.
+            // Never print credentials or pass them through command-line arguments.
             var entries = (await File.ReadAllTextAsync($"/proc/{pid}/environ")).Split('\0');
-            string? ReadSetting(string key) => entries.FirstOrDefault(value => value.StartsWith(key + "=", StringComparison.Ordinal))?[(key.Length + 1)..];
-            var connectionString = ReadSetting("ConnectionStrings__BillingWrite");
+            var settingsPath = $"/proc/{pid}/cwd/appsettings.Production.json";
+            var productionSettings = File.Exists(settingsPath) ? await File.ReadAllTextAsync(settingsPath) : null;
+            var connectionString = ServiceBillingConnectionResolver.Resolve(entries, productionSettings);
             if (string.IsNullOrWhiteSpace(connectionString))
             {
-                connectionString = ReadSetting("BillingWrite__ConnectionString");
-            }
-            if (string.IsNullOrWhiteSpace(connectionString))
-            {
-                Console.Error.WriteLine("The running service has no billing connection in its environment. Migration refused.");
+                Console.Error.WriteLine("The running service has no billing connection in its environment or production settings. Migration refused.");
                 return 1;
             }
 
